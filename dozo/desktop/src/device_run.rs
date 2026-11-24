@@ -29,12 +29,12 @@ const MAX_WORK: usize = 16;
 /// Commands, finished or not, whose leftovers this app still tracks (upstream's limit).
 const MAX_OWNED: usize = 256;
 /// Carries each command's mark (`Owned::mark`).
-const MARK_VAR: &str = "DOZO_COMMAND_MARK";
-const BUSY: &str = "Local computer is busy. Try again shortly.";
-const INVALID: &str = "Local computer request is invalid";
+pub(crate) const MARK_VAR: &str = "DOZO_COMMAND_MARK";
+pub(crate) const BUSY: &str = "Local computer is busy. Try again shortly.";
+pub(crate) const INVALID: &str = "Local computer request is invalid";
 const FAILED: &str = "Local computer operation failed";
 const NO_SCREEN: &str = "Screen control is not available on this computer.";
-const NOT_HERE: &str = "Not available on this computer";
+pub(crate) const NOT_HERE: &str = "Not available on this computer";
 
 /// Variables a shell, tools and app launchers need. Nothing else of the app's own reaches a
 /// command (upstream's `HOST_COMMAND_ENV`), compared without case and with every `LC_*`.
@@ -123,7 +123,7 @@ impl Reply {
         self.out.send(body).await.is_ok()
     }
 
-    async fn error(&self, message: &str) {
+    pub(crate) async fn error(&self, message: &str) {
         self.send(json!({ "error": message })).await;
     }
 }
@@ -146,6 +146,8 @@ pub struct Runner {
     calls: AtomicUsize,
     owned: Mutex<Vec<Owned>>,
     browsers: crate::browser::Browsers,
+    #[cfg(unix)]
+    agents: crate::device_agent::Agents,
 }
 
 /// Released when a call ends, however it ends.
@@ -170,6 +172,8 @@ impl Runner {
         browsers: crate::browser::Browsers,
     ) -> Arc<Self> {
         let runner = Arc::new(Self {
+            #[cfg(unix)]
+            agents: crate::device_agent::Agents::new(root.join("agents")),
             root,
             home,
             calls: AtomicUsize::new(0),
@@ -258,6 +262,8 @@ impl Runner {
         // A dropped connection keeps the browsers: the person may be using one.
         if escaped {
             self.browsers.close_all();
+            #[cfg(unix)]
+            self.agents.close_all();
         }
     }
 
@@ -334,6 +340,15 @@ impl Runner {
 
     /// Answers one request. Every outcome is a frame, unless the call was cancelled.
     pub async fn handle(self: &Arc<Self>, request: &Value, reply: &Reply) {
+        // An agent's turn lasts as long as the agent works: it holds no call slot.
+        if let Some("agentTurn" | "agentToolResult" | "agentStop") =
+            request.get("method").and_then(Value::as_str)
+        {
+            #[cfg(unix)]
+            return self.agents.handle(self, request, reply).await;
+            #[cfg(not(unix))]
+            return reply.error(NOT_HERE).await;
+        }
         if self.calls.fetch_add(1, Ordering::SeqCst) >= MAX_CALLS {
             self.calls.fetch_sub(1, Ordering::SeqCst);
             return reply.error(BUSY).await;
@@ -365,6 +380,8 @@ impl Runner {
             },
             "stop" | "destroy" => {
                 self.stop_where(|o| o.bot == key, true);
+                #[cfg(unix)]
+                self.agents.close_bot(&key);
                 if crate::browser::DECLARED {
                     self.browsers.close(&key, method == "destroy").await;
                 }
@@ -455,8 +472,28 @@ impl Runner {
         json!({ "platform": platform(), "home": self.home.to_string_lossy(), "shell": shell })
     }
 
-    fn bot_home(&self, bot: &str) -> PathBuf {
+    pub(crate) fn bot_home(&self, bot: &str) -> PathBuf {
         self.root.join("desktop-computers").join(bot_key(bot))
+    }
+
+    /// The person's home folder.
+    #[cfg(unix)]
+    pub(crate) fn person_home(&self) -> &Path {
+        &self.home
+    }
+
+    /// The agents of this computer's catalog the person lets bots use (`device_agent.rs`).
+    #[cfg(unix)]
+    pub fn agents(&self) -> &crate::device_agent::Agents {
+        &self.agents
+    }
+
+    /// The agent ids offered to the server: allowed by the person and found on their PATH.
+    pub async fn agent_ids(&self) -> Vec<&'static str> {
+        #[cfg(unix)]
+        return self.agents.offered().await;
+        #[cfg(not(unix))]
+        Vec::new()
     }
 
     /// Streams the command's output as process events, then `exit` and `done`.
@@ -623,7 +660,7 @@ fn why(cancel: &watch::Receiver<u8>) -> u8 {
 }
 
 /// Resolves with the cancel reason once the call is cancelled; `LOST` when its sender is gone.
-async fn cancelled(cancel: &mut watch::Receiver<u8>) -> u8 {
+pub(crate) async fn cancelled(cancel: &mut watch::Receiver<u8>) -> u8 {
     match cancel.wait_for(|kind| *kind != 0).await {
         Ok(kind) => *kind,
         Err(_) => LOST,
@@ -701,7 +738,7 @@ fn parse_command(command: &Value) -> Option<Exec> {
 
 /// The command's environment: the allowed part of this app's own, then the request's, minus
 /// what the request unsets.
-fn environment(
+pub(crate) fn environment(
     inherited: impl Iterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
     set: &[(String, String)],
     unset: &[String],
@@ -902,7 +939,7 @@ fn exit_code(status: std::process::ExitStatus) -> (i32, Option<i32>) {
 
 /// The command leads its own process group, so stopping it stops what it started too.
 #[cfg(unix)]
-fn own_group(command: &mut Command) {
+pub(crate) fn own_group(command: &mut Command) {
     command.process_group(0);
 }
 
@@ -913,7 +950,7 @@ fn own_group(command: &mut Command) {
     command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
 }
 
-fn new_mark() -> String {
+pub(crate) fn new_mark() -> String {
     use std::hash::{BuildHasher, RandomState};
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let next = NEXT.fetch_add(1, Ordering::SeqCst);
@@ -955,7 +992,7 @@ fn marked(mark: &str) -> Vec<(i32, i32)> {
 /// Stops a command's group and, with `escaped`, every process carrying its mark (what it started
 /// in a new session or group).
 #[cfg(unix)]
-fn kill(pid: u32, mark: &str, escaped: bool) {
+pub(crate) fn kill(pid: u32, mark: &str, escaped: bool) {
     send_signal(pid, mark, libc::SIGKILL, escaped);
 }
 
@@ -1648,6 +1685,17 @@ mod tests {
             assert_eq!(text.push(Some(&[0xE2]), &mut pipe), "");
             assert_eq!(text.push(None, &mut pipe), "\u{FFFD}");
             assert!(pipe.is_none());
+        }
+    }
+
+    /// The agent methods are Unix only: elsewhere they answer as any method this app lacks.
+    #[cfg(not(unix))]
+    #[tokio::test]
+    async fn the_agent_methods_are_not_available_here() {
+        let (runner, _dir) = runner();
+        for method in ["agentTurn", "agentToolResult", "agentStop"] {
+            let answered = frames(&runner, json!({ "method": method, "botId": "bot-1" })).await;
+            assert_eq!(answered, [json!({ "error": NOT_HERE })]);
         }
     }
 }
