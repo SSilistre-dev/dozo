@@ -38,6 +38,7 @@ mod stack_setup;
 mod stack_update;
 mod start;
 mod talk;
+mod titlebar;
 mod update;
 mod words;
 
@@ -52,7 +53,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuIte
 use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent};
 use tauri::{
     AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
-    Wry, window::Color,
+    Wry,
 };
 use tauri_plugin_autostart::ManagerExt;
 
@@ -935,7 +936,7 @@ fn main() {
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(420.0, 520.0)
                 .theme(Some(Theme::Dark))
-                .background_color(Color(20, 20, 20, 255))
+                .background_color(titlebar::FALLBACK)
                 .on_navigation({
                     let app = app.clone();
                     move |url| {
@@ -984,6 +985,8 @@ fn main() {
                         let page = window.url().ok();
                         let count = alerts::count_for(page.as_ref(), chosen(&app).as_ref(), &title);
                         alerts::show_unread(&window, count);
+                        let on_server = alerts::on_server(page.as_ref(), chosen(&app).as_ref());
+                        titlebar::show(&window, titlebar::colour_for(on_server, &title));
                     }
                 })
                 // Leaving the server (Change Server, the connection screens) clears the badge
@@ -993,6 +996,7 @@ fn main() {
                     move |window, load| {
                         if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
                             alerts::show_unread(&window, 0);
+                            titlebar::show(&window, titlebar::FALLBACK);
                         }
                         // A page of the server loaded, as after signing in again: pair if
                         // allowed.
