@@ -62,6 +62,8 @@ packages/adapters/src/dozo-call-preflight.ts	module	let registryAddresses: Map<s
 packages/adapters/src/dozo-command-gate.ts	module	const commandBlocks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-command-gate.ts	module	const hostedMatches = new WeakMap<	request	keyed by a tool-call object's identity; holds that call's own rule match, read for the run's member
+packages/adapters/src/dozo-command-gate.ts	module	const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);	global-safe	constant tool names, never written
+packages/adapters/src/dozo-command-gate.ts	module	const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);	global-safe	constant action kinds, never written
 packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const large: string[] = [];	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const visited = new Set<string>();	local	per-call local, dies with the call
@@ -229,5 +231,3 @@ packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<objec
 packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call
-packages/adapters/src/dozo-command-gate.ts	module	const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);	global-safe	constant tool names, never written
-packages/adapters/src/dozo-command-gate.ts	module	const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);	global-safe	constant action kinds, never written
