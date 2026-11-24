@@ -19,11 +19,11 @@ pub const LABEL: &str = "Push to Talk (⇧⌘Space)";
 #[cfg(not(target_os = "macos"))]
 pub const LABEL: &str = "Push to Talk (Ctrl+Shift+Space)";
 
-/// The shortcut's keys as the message about a refused one names them.
+/// The shortcut's keys as the message about a refused one, and the web app's section, name them.
 #[cfg(target_os = "macos")]
-const KEYS: &str = "⇧⌘Space";
+pub const KEYS: &str = "⇧⌘Space";
 #[cfg(not(target_os = "macos"))]
-const KEYS: &str = "Ctrl+Shift+Space";
+pub const KEYS: &str = "Ctrl+Shift+Space";
 
 pub fn shortcut() -> Shortcut {
     let command = if cfg!(target_os = "macos") {

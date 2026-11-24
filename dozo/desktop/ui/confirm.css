@@ -1,0 +1,7 @@
+/* The question a server's page asked for: the look of the fill question, and Turn On greyed while
+   it does not answer yet. */
+@import url("fill.css");
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

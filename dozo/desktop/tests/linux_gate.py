@@ -10,11 +10,14 @@ desktop's notification service (tests/fake_notifications.py, which needs python3
 checks the microphone (src/alerts.rs, src/microphone_gtk.rs) against a PulseAudio sine source and
 Push to Talk (src/talk.rs): the shortcut reaches the server's page, brings the window back, and a
 shortcut another program holds turns the switch off with a message (needs pulseaudio and
-gstreamer1.0-pulseaudio).
+gstreamer1.0-pulseaudio). A fifth checks the bridge of the server's page (src/page_bridge.rs): what
+it may read and set, that frames have none, that bad requests change nothing, that a sensitive
+switch only asks in the app's own window, which Enter cancels, and that a burst is cut off.
 Exit 0 pass, 2 fail.
 """
 
 import http.server
+import json
 import os
 import pathlib
 import subprocess
@@ -22,6 +25,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 
 seen = {"a": [], "b": []}
 step = {"now": "wait"}
@@ -423,6 +427,132 @@ document.body.onclick = async () => {{
         os.environ.pop("PULSE_SERVER", None)
 
 
+def bridge_gate(binary):
+    """The server's page reads the app's switches and sets the harmless ones through its bridge
+    (src/page_bridge.rs); a frame inside it, from another origin or its own, has no bridge; a bad
+    request changes nothing; a sensitive switch only asks, in a window of the app's own that Enter
+    cancels; and a burst of calls is cut off."""
+    report = {"a": [], "b": []}
+    steps = {"now": "wait"}
+
+    def reporting(name, pages):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                path, _, query = self.path.partition("?")
+                if path == "/report":
+                    report[name].append(urllib.parse.parse_qs(query))
+                body = steps["now"] if path == "/step" else pages.get(path, "")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body.encode())
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    frame = """<script>
+let up;
+try { up = typeof top.dozoDesktop; } catch (error) { up = error.name; }
+fetch('/report?' + new URLSearchParams({ who: '{who}', bridge: typeof window.dozoDesktop,
+  internals: typeof window.__TAURI_INTERNALS__, up }));
+</script>"""
+    other = reporting("b", {"/frame": frame.replace("{who}", "other")})
+    server = reporting("a", {
+        "/same": frame.replace("{who}", "same"),
+        "/": f"""<body><iframe src="{other}/frame"></iframe><iframe src="/same"></iframe><script>
+const report = (what) => fetch('/report?' + new URLSearchParams(what));
+const step = async (name) => {{
+  while ((await (await fetch('/step')).text()) !== name) await new Promise((go) => setTimeout(go, 200));
+}};
+(async () => {{
+  const bridge = window.dozoDesktop;
+  report({{ who: 'page', bridge: typeof bridge }});
+  if (!bridge) return;
+  const first = await bridge.settings(null);
+  report({{ step: 'read', state: JSON.stringify(first) }});
+  const answers = [
+    await bridge.set('keepRunning', true),
+    await bridge.set('openAtLogin', 'yes'),
+    await bridge.set('relay', true),
+    await bridge.set('KeepRunning', false),
+    await bridge.open('back-up'),
+  ];
+  report({{ step: 'answers', answers: JSON.stringify(answers) }});
+  const second = await bridge.settings(first);
+  report({{ step: 'after', state: JSON.stringify(second) }});
+  await bridge.set('passwordManager', true);
+  await bridge.set('passwordManager', true);
+  report({{ step: 'asked' }});
+  await step('burst');
+  const burst = await Promise.all(Array.from({{ length: 30 }}, () => bridge.settings(null)));
+  report({{ step: 'burst', refused: String(burst.filter((answer) => answer === null).length) }});
+}})();
+</script></body>""",
+    })
+    wm = subprocess.Popen(["openbox"], stderr=subprocess.DEVNULL)
+    app = None
+    try:
+        work, _, env = sandbox(server)
+        app = subprocess.Popen([binary], env=env, stderr=(work / "app.log").open("w"))
+        settings = work / "home/.config/dev.ssilistre.dozo/server"
+
+        def check(what, condition):
+            if not condition:
+                print(f"FAIL: {what}\n  server: {report['a']}\n  frame: {report['b']}")
+                print(f"  app stderr:\n{(work / 'app.log').read_text()[-3000:]}")
+                sys.exit(2)
+            print(f"ok: {what}")
+
+        def got(name, key, value):
+            return next((r for r in report[name] if r.get(key) == [value]), None)
+
+        def state(name):
+            return json.loads(got("a", "step", name)["state"][0])
+
+        def switches(name):
+            return {entry["key"]: entry["on"] for entry in state(name)["switches"]}
+
+        until("the server's page has the bridge", lambda: got("a", "who", "page"))
+        check("it is the app's", got("a", "who", "page")["bridge"] == ["object"])
+        until("and reads the switches", lambda: got("a", "step", "read"))
+        check("with the version", state("read")["version"].count(".") == 2)
+        check("Keep Running in Background is off", switches("read").get("keepRunning") is False)
+        until("a frame from another origin has loaded", lambda: got("b", "who", "other"))
+        other_frame = got("b", "who", "other")
+        check(f"and has no bridge and no way to the app ({other_frame})",
+              other_frame["bridge"] == ["undefined"] and other_frame["internals"] == ["undefined"]
+              and other_frame["up"] == ["SecurityError"])
+        until("a frame of the server's own has loaded", lambda: got("a", "who", "same"))
+        check("and has no bridge of its own", got("a", "who", "same")["bridge"] == ["undefined"])
+        until("the page changed a switch", lambda: got("a", "step", "after"))
+        check("every write answers the same nothing",
+              json.loads(got("a", "step", "answers")["answers"][0]) == [None] * 5)
+        check("Keep Running in Background is on", switches("after").get("keepRunning") is True)
+        check("and saved", "keep_running=true" in settings.read_text())
+        check("a wrong type, an unknown name or another case changed nothing",
+              "open_at_login=false" in settings.read_text() and "relay" not in settings.read_text())
+        until("the page asked for the password manager", lambda: got("a", "step", "asked"))
+        until("the app asks the person in a window of its own", lambda: len(windows()) == 2)
+        stays("only one, though the page asked twice", lambda: len(windows()) == 2, seconds=2)
+        check("nothing is turned on before an answer", "password_manager" not in settings.read_text())
+        subprocess.run(["xdotool", "key", "Return"], check=True)
+        until("Enter cancels the question", lambda: len(windows()) == 1)
+        stays("and the password manager stays off", lambda: "password_manager" not in settings.read_text())
+        steps["now"] = "burst"
+        until("the page sent a burst of calls", lambda: got("a", "step", "burst"))
+        refused = int(got("a", "step", "burst")["refused"][0])
+        check(f"and the app answered only some of them ({30 - refused} of 30)", 15 <= refused < 30)
+    finally:
+        if app:
+            app.kill()
+        wm.kill()
+
+
 def wmctrl_close():
     subprocess.run(["wmctrl", "-c", "Dozo"], check=True)
 
@@ -500,6 +630,7 @@ setInterval(async () => {{
         background_gate(binary, a)
         notify_gate(binary)
         talk_gate(binary)
+        bridge_gate(binary)
         print("linux gate: PASS")
     finally:
         app.kill()

@@ -21,6 +21,7 @@ mod frames;
 mod frames;
 #[cfg(target_os = "linux")]
 mod microphone_gtk;
+mod page_bridge;
 mod password_links;
 mod password_manager;
 mod passwords_ui;
@@ -357,11 +358,20 @@ fn follow(app: &AppHandle, verdict: Verdict) -> bool {
     }
 }
 
-/// Tells the web app it is in this app's window, so it can offer the "Desktop app" row
-/// (`apps/web/src/components/dozo-desktop-app.tsx`); a browser never has it. It gives the page
-/// nothing to call: the row only goes to [`server::APP_SETTINGS`].
-const SHELL_MARK: &str =
-    "Object.defineProperty(window, \"dozoDesktopShell\", { value: true, enumerable: false });";
+/// Tells the web app it is in this app's window, so it can show the "Desktop app" section
+/// (`apps/web/src/components/dozo-desktop-app.tsx`); a browser never has it. `dozoDesktop` is the
+/// bridge that section calls, the three commands of `page_bridge.rs`, which answer only the chosen
+/// server's page. The web view runs this in the window's own page, never in a frame inside it.
+const SHELL_MARK: &str = r#"Object.defineProperty(window, "dozoDesktopShell", { value: true, enumerable: false });
+(() => {
+  const call = (command, args) => window.__TAURI_INTERNALS__.invoke(command, args);
+  const bridge = Object.freeze({
+    settings: (seen) => call("desktop_settings", { seen: seen ?? null }),
+    set: (key, on) => call("desktop_set", { key, on }),
+    open: (what) => call("desktop_open", { what }),
+  });
+  Object.defineProperty(window, "dozoDesktop", { value: bridge, enumerable: false });
+})();"#;
 
 /// What picking a Dozo menu item does; the Settings window's rows do the same (`prefs.rs`).
 /// Runs on the main thread. A switch has already flipped when this runs.
@@ -872,7 +882,12 @@ fn main() {
             passwords_ui::logins_link,
             passwords_ui::logins_remove,
             passwords_ui::fill_question,
-            passwords_ui::fill_answer
+            passwords_ui::fill_answer,
+            page_bridge::desktop_settings,
+            page_bridge::desktop_set,
+            page_bridge::desktop_open,
+            page_bridge::confirm_question,
+            page_bridge::confirm_answer
         ])
         .menu(menu)
         .on_menu_event(|app, event| run(app, event.id().as_ref()))
@@ -1000,7 +1015,10 @@ fn main() {
                         if server == Some(load.url().origin()) {
                             let first = app.state::<start::FirstLoad>();
                             match load.event() {
-                                PageLoadEvent::Started => first.report(start::Load::Committed),
+                                PageLoadEvent::Started => {
+                                    first.report(start::Load::Committed);
+                                    page_bridge::admit(&app, load.url());
+                                }
                                 PageLoadEvent::Finished => {
                                     first.report(start::Load::Finished);
                                     device::wake(&app);
@@ -1030,6 +1048,7 @@ fn main() {
                             Close::Quit => {
                                 phone::close(&app);
                                 prefs::close(&app);
+                                page_bridge::close(&app);
                             }
                             Close::Hide => {
                                 api.prevent_close();

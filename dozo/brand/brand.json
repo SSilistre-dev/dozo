@@ -9046,7 +9046,7 @@
       "requires": [
         "apps/web/src/components/dozo-desktop-app.tsx"
       ],
-      "reason": "desktop app settings: in the desktop app, General settings have a row that opens the app's own Settings window (dozo/desktop/src/prefs.rs); in a browser it shows nothing"
+      "reason": "desktop app settings: in the desktop app, General settings show the app's own switches and version, through its bridge (dozo/desktop/src/page_bridge.rs), or for an older app a row that opens its Settings window; in a browser it shows nothing"
     },
     {
       "file": "apps/web/src/components/ComputerDeviceSettings.tsx",
@@ -9078,8 +9078,8 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
-      "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
-      "reason": "desktop app settings: the Turkish copy of the Computers link (\"Desktop app\" and \"Open\" are upstream's)"
+      "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Open at login\"\nmsgstr \"Açılışta aç\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Keep running in background\"\nmsgstr \"Arka planda çalış\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Push to talk\"\nmsgstr \"Bas ve konuş\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Let bots use this computer\"\nmsgstr \"Botlar bu bilgisayarı kullansın\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Password manager\"\nmsgstr \"Parola yöneticisi\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
+      "reason": "desktop app settings: the Turkish copy of the Computers link and of the desktop app's switches, in the words of its own menu (dozo/desktop/src/words.rs); \"Desktop app\", \"Open\", \"Change server\", \"Logins\" and \"Version\" are upstream's"
     },
     {
       "file": "packages/core/src/bot-templates.ts",
