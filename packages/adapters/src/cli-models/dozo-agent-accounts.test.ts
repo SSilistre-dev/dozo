@@ -56,9 +56,9 @@ describe.skipIf(process.platform === "win32")("connecting an agent", () => {
     vi.unstubAllEnvs();
   });
 
-  it("lists an agent only once it is turned on for this server", async () => {
+  it("lists an agent whether or not its mode is on for this server", async () => {
     computer("reply", false);
-    expect(agentView(await readCliTools(deps(), "ada"))).toBeUndefined();
+    expect(agentView(await readCliTools(deps(), "ada"))).toMatchObject({ found: true });
     computer("reply");
     expect(agentView(await readCliTools(deps(), "ada"))).toEqual({
       provider: CODEX_AGENT_PROVIDER_ID,

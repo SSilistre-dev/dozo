@@ -18,6 +18,8 @@ export const DozoCliToolSchema = /* @__PURE__ */ (() =>
     canAdd: z.boolean(),
     /** An agent whose maker's terms count this use as a reason to close the account. */
     termsRisk: z.boolean().optional(),
+    /** The maker's own page to get an agent from (https, fixed), while it is not installed. */
+    downloadUrl: z.string().regex(/^https:\/\//).optional(),
     /** Another account's sign-in in progress, with the address the tool printed, or why it ended. */
     login: z
       .object({

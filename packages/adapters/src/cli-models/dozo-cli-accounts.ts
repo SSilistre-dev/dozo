@@ -18,6 +18,7 @@ import { cliLoginView, liveCliLogins, startCliLogin } from "./dozo-cli-login.js"
 import { CLI_MODEL_DRIVERS } from "./dozo-cli-providers.js";
 import { personalCliAccessCheck } from "./personal-access.js";
 
+export { recordAgentConnection } from "./dozo-agent-modes.js";
 export { cancelCliLogin, sendCliLoginCode } from "./dozo-cli-login.js";
 
 export type CliAccountsDeps = {
@@ -46,6 +47,8 @@ export interface CliToolView {
   login?: CliLoginView;
   /** An agent whose maker's terms put the person's account at risk (dozo-agent-accounts.ts). */
   termsRisk?: true;
+  /** The maker's page to get an agent from, only while it is not installed here. */
+  downloadUrl?: string;
 }
 
 /**

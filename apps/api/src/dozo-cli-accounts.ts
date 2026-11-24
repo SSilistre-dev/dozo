@@ -2,6 +2,7 @@ import {
   cancelCliLogin,
   cliHomeConnection,
   readCliTools,
+  recordAgentConnection,
   sendCliLoginCode,
   startCliAccountLogin,
 } from "@rakazo/adapters";
@@ -34,6 +35,8 @@ export function dozoCliAccountsRoutes(ctx: RouterContext) {
           { ...connection, credentialId: null, keepExistingDefault: true, signal: context.signal },
           codexCatalog,
         );
+        // An agent's mode is turned on by connecting it, after the person agreed (adapters).
+        await recordAgentConnection(deps.prisma, connection.provider);
         changed(context.actor.userId);
         return tools(context.actor.userId);
       }),

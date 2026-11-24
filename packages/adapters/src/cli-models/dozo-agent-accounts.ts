@@ -6,7 +6,7 @@ import type { AgentDriver } from "./dozo-agent.js";
 import { AGENT_OWN_MODEL, agentDataFolder } from "./dozo-agent.js";
 import type { LocalCliHost } from "./dozo-cli-driver.js";
 import { cliAccountRef } from "./dozo-cli-driver.js";
-import { enabledAgentDrivers } from "./dozo-cli-providers.js";
+import { availableAgentDrivers } from "./dozo-cli-providers.js";
 
 /** An agent as settings show it: installed or not, and whether it is connected. */
 export interface AgentToolView {
@@ -19,6 +19,8 @@ export interface AgentToolView {
   canAdd: false;
   /** Its maker's terms put the person's account at risk; connecting asks them to accept that. */
   termsRisk?: true;
+  /** The maker's page to get it from, only while it is not installed here. */
+  downloadUrl?: string;
 }
 
 export class AgentConsentError extends ClientError {
@@ -39,13 +41,13 @@ export class AgentUnavailableError extends ClientError {
   }
 }
 
-/** The agents turned on for this server, each read fresh: installed, and connected or not. */
+/** The agents this computer offers, each read fresh: installed, and connected or not. */
 export async function readAgentTools(
   prisma: PrismaClient,
   userId: string,
   host: LocalCliHost,
 ): Promise<AgentToolView[]> {
-  const drivers = enabledAgentDrivers();
+  const drivers = availableAgentDrivers();
   if (!drivers.length) return [];
   const connected = new Set(
     (
@@ -56,21 +58,25 @@ export async function readAgentTools(
     ).map((row) => row.provider),
   );
   return Promise.all(
-    drivers.map(async (driver) => ({
-      provider: driver.provider,
-      name: driver.name,
-      mode: "agent" as const,
-      found: await driver.installed(host),
-      signedIn: null,
-      connected: connected.has(driver.provider),
-      canAdd: false as const,
-      ...(driver.termsRisk ? { termsRisk: true as const } : {}),
-    })),
+    drivers.map(async (driver) => {
+      const found = await driver.installed(host);
+      return {
+        provider: driver.provider,
+        name: driver.name,
+        mode: "agent" as const,
+        found,
+        signedIn: null,
+        connected: connected.has(driver.provider),
+        canAdd: false as const,
+        ...(driver.termsRisk ? { termsRisk: true as const } : {}),
+        ...(!found && driver.downloadUrl ? { downloadUrl: driver.downloadUrl } : {}),
+      };
+    }),
   );
 }
 
 export function agentDriverFor(provider: string): AgentDriver | undefined {
-  return enabledAgentDrivers().find((driver) => driver.provider === provider);
+  return availableAgentDrivers().find((driver) => driver.provider === provider);
 }
 
 /**

@@ -127,6 +127,7 @@ describe.skipIf(process.platform === "win32")("agent mode with Codex", () => {
     );
     expect(textOf(events)).toBe("from the model");
     await expect(collect(runtime().run(request(), {}))).rejects.toThrow(/not turned on/);
+    // On a hosted server (no person's computer) the catalog has no agent in it at all.
     expect(
       registerLocalCliProviders(builtinModels() as MutableModels).getProvider(
         CODEX_AGENT_PROVIDER_ID,
@@ -134,10 +135,15 @@ describe.skipIf(process.platform === "win32")("agent mode with Codex", () => {
     ).toBeUndefined();
   });
 
-  it("offers the agent only once it is turned on for this server", async () => {
+  it("runs the agent only once its mode is turned on for this server, and lists it either way", async () => {
     computer("reply", { enabled: false });
     expect(enabledAgentProviders().size).toBe(0);
     await expect(collect(runtime().run(request(), {}))).rejects.toThrow(/not turned on/);
+    expect(
+      registerLocalCliProviders(builtinModels() as MutableModels).getProvider(
+        CODEX_AGENT_PROVIDER_ID,
+      ),
+    ).toBeDefined();
     computer("reply");
     const models = registerLocalCliProviders(builtinModels() as MutableModels);
     const provider = models.getProvider(CODEX_AGENT_PROVIDER_ID);

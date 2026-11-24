@@ -38,7 +38,14 @@ const TOOL = {
 };
 const CONNECTION = { provider: "tool-a", label: "Tool A", plaintext: "ref", modelId: "m-1" };
 const publishRosterChange = vi.fn(async () => undefined);
-const prisma = { space: { findUnique: async () => null } };
+const executed: string[] = [];
+const prisma = {
+  space: { findUnique: async () => null },
+  $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    executed.push(`${strings.join("?")}|${values.join(",")}`);
+    return 1;
+  },
+};
 const secrets = { load: vi.fn() };
 
 function client(userId: string | null) {
@@ -71,6 +78,7 @@ describe("CLI account routes", () => {
     fake.sendCode.mockReset();
     fake.cancel.mockReset().mockResolvedValue(undefined);
     publishRosterChange.mockClear();
+    executed.length = 0;
   });
 
   it("lists the caller's tools", async () => {
@@ -105,6 +113,22 @@ describe("CLI account routes", () => {
       consent: true,
       termsConsent: true,
     });
+  });
+
+  it("turns an agent's mode on by connecting it, and no other tool's", async () => {
+    await client("ada").connect({ provider: "tool-a" });
+    expect(executed).toEqual([]);
+    fake.connection.mockResolvedValue({ ...CONNECTION, provider: "codex-agent" });
+    await client("ada").connect({ provider: "codex-agent", consent: true });
+    expect(executed).toHaveLength(1);
+    expect(executed[0]).toContain("dozo_agent_modes");
+    expect(executed[0]).toMatch(/\|codex-agent$/);
+  });
+
+  it("leaves the mode off when the connection is refused", async () => {
+    fake.connection.mockRejectedValue(new ClientError("BAD_REQUEST", "Agree first."));
+    await expect(client("ada").connect({ provider: "codex-agent" })).rejects.toThrow();
+    expect(executed).toEqual([]);
   });
 
   it("passes a refusal on and saves nothing", async () => {
