@@ -128,5 +128,14 @@ test("llms.txt states the plans the page shows and calls Dozo source available",
   const plans = llms.slice(llms.indexOf("## Plans"), llms.indexOf("## Links"));
   const shown = new Set(prices(html.slice(html.indexOf('id="plans"'))));
   for (const price of new Set(prices(plans))) assert.ok(shown.has(price), `${price} is not on the page`);
+  // The computers each paid plan allows, as the code sets them.
+  const code = readFileSync(new URL("../../packages/contracts/src/dozo-plans.ts", import.meta.url), "utf8");
+  const computers = (name) => Number(code.match(new RegExp(`const ${name} = \\{[^}]*?computers: (\\d+)`))[1]);
+  const line = (plan) => plans.split("\n").find((l) => l.startsWith(`- ${plan}:`));
+  assert.equal(computers("free"), 0);
+  assert.doesNotMatch(line("Free"), /vCPU/);
+  assert.equal(computers("premium"), 1);
+  assert.match(line("Premium"), /One shared computer/);
+  assert.match(line("Premium Plus"), new RegExp(`Up to ${computers("premiumPlus")} computers`));
   for (const url of llms.match(/https:\/\/[^\s)]+/g)) assert.doesNotMatch(url, /[.,]$/);
 });

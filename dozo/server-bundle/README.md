@@ -214,7 +214,9 @@ node rakazo-server/dozo-local-backup.mjs create <file> --home <server folder>
 node rakazo-server/dozo-local-backup.mjs restore <file> --home <server folder>
 ```
 
-The password is the first line of standard input (at least 8 characters). Postgres is the bundle's
+The password is the first line of standard input: at least 12 characters for a new backup
+(`SEALED_MIN_PASSWORD_LENGTH` in `packages/core/src/dozo-sealed-file.ts`, which Settings > Data and
+the desktop app's Back Up window take too); a restore still opens a backup sealed with 8 or more. Postgres is the bundle's
 own (`../../postgres/bin` from `rakazo-server/`; `DOZO_PG_BIN` and `DOZO_SERVER_DIR` override).
 One JSON line on stdout: `{"created": <path>, "server": <version>}`, `{"restored": <path>,
 "server": <version>, "migrate": <bool>}` or `{"error": <sentence>, "reason": <code>}`. Exit 0 done,
