@@ -11,7 +11,7 @@
 
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpStream};
+use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -190,22 +190,56 @@ pub trait Checks: Send + Sync + 'static {
 pub struct RealChecks;
 
 impl Checks for RealChecks {
-    fn postgres(&self, bin: &Path, port: u16) -> bool {
-        let mut command = std::process::Command::new(bin.join(exe("pg_isready")));
-        command
-            .args(["-q", "-t", "2", "-h", "127.0.0.1", "-p", &port.to_string()])
-            .env_clear();
-        // Windows opens no socket without it.
-        if let Some(root) = std::env::var_os("SystemRoot").filter(|_| cfg!(windows)) {
-            command.env("SystemRoot", root);
-        }
-        #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
-        command.status().is_ok_and(|status| status.success())
+    // One connection and one start-up message, as `pg_isready` sends, without starting a program
+    // every time. A plain connect is not enough: Postgres listens while it is still starting up,
+    // and `createdb` then fails.
+    fn postgres(&self, _bin: &Path, port: u16) -> bool {
+        postgres_accepts(port)
     }
 
     fn server(&self, ports: Ports) -> bool {
         answers_200(ports.api, "/health") && answers_200(ports.web, "/")
+    }
+}
+
+/// Whether Postgres on 127.0.0.1 accepts connections: it answers a start-up message with a request
+/// to sign in, or with an error of another kind than "the database system is starting up"
+/// (SQLSTATE 57P03, which it also sends while shutting down). Nothing is signed in.
+fn postgres_accepts(port: u16) -> bool {
+    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_secs(2)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    // Protocol 3.0, then the user and the database as name and value, ended by an empty name.
+    let mut message = 196_608u32.to_be_bytes().to_vec();
+    message.extend_from_slice(b"user\0postgres\0database\0postgres\0\0");
+    let length = (message.len() as u32 + 4).to_be_bytes();
+    if stream.write_all(&length).is_err() || stream.write_all(&message).is_err() {
+        return false;
+    }
+    let mut tag = [0u8; 1];
+    if stream.read_exact(&mut tag).is_err() {
+        return false;
+    }
+    match tag[0] {
+        // A request to sign in: the server is up.
+        b'R' => true,
+        b'E' => {
+            let mut size = [0u8; 4];
+            if stream.read_exact(&mut size).is_err() {
+                return false;
+            }
+            let size = (u32::from_be_bytes(size) as usize).clamp(4, 8192) - 4;
+            let mut fields = vec![0u8; size];
+            // The error's fields are a letter and a text each, ended by 0: `C` is the code.
+            stream.read_exact(&mut fields).is_ok()
+                && !fields
+                    .split(|byte| *byte == 0)
+                    .any(|field| field == b"C57P03")
+        }
+        _ => false,
     }
 }
 
@@ -820,8 +854,19 @@ fn log_says(layout: &Layout, name: &str, words: &str) -> bool {
         .is_ok_and(|log| log.contains(words))
 }
 
-/// Asks `check` until it says yes, for at most `limit`.
+/// How often a start asks whether Postgres and the server are up (it was a quarter of a second).
+const POLL: Duration = Duration::from_millis(100);
+
+/// Asks `check` every [`POLL`] until it says yes, for at most `limit`.
 async fn wait_until(limit: Duration, check: impl Fn() -> bool + Send + Sync + 'static) -> bool {
+    wait_every(limit, POLL, check).await
+}
+
+async fn wait_every(
+    limit: Duration,
+    every: Duration,
+    check: impl Fn() -> bool + Send + Sync + 'static,
+) -> bool {
     let check = Arc::new(check);
     let deadline = tokio::time::Instant::now() + limit;
     loop {
@@ -835,7 +880,7 @@ async fn wait_until(limit: Duration, check: impl Fn() -> bool + Send + Sync + 's
         if tokio::time::Instant::now() >= deadline {
             return false;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        tokio::time::sleep(every).await;
     }
 }
 
@@ -1935,6 +1980,101 @@ mod tests {
         let local = Local::new(Arc::new(RealChecks));
         local.start(Layout(root.clone()), options()).await;
         assert_eq!(settled(&local).await, Status::Failed(Failure::Download));
+    }
+}
+
+/// What the start's readiness waits ask, on every system.
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A server on a free port that reads one start-up message (checking it is well formed) and
+    /// answers `reply`, or says nothing when it is empty and closes the connection.
+    fn answering(reply: Vec<u8>) -> u16 {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut size = [0u8; 4];
+                stream.read_exact(&mut size).unwrap();
+                let mut rest = vec![0u8; u32::from_be_bytes(size) as usize - 4];
+                stream.read_exact(&mut rest).unwrap();
+                assert_eq!(rest[..4], 196_608u32.to_be_bytes(), "protocol 3.0");
+                assert!(rest.starts_with(b"\0\x03\0\0user\0"));
+                assert!(rest.ends_with(b"\0\0"));
+                let _ = stream.write_all(&reply);
+            }
+        });
+        port
+    }
+
+    fn error(fields: &str) -> Vec<u8> {
+        let mut message = vec![b'E'];
+        message.extend_from_slice(&(fields.len() as u32 + 5).to_be_bytes());
+        message.extend_from_slice(fields.as_bytes());
+        message.push(0);
+        message
+    }
+
+    #[test]
+    fn postgres_is_ready_when_it_asks_to_sign_in_or_refuses_for_another_reason() {
+        // AuthenticationSASL.
+        let sign_in = [b"R".as_slice(), &8u32.to_be_bytes(), &10u32.to_be_bytes()].concat();
+        assert!(postgres_accepts(answering(sign_in)));
+        // A role that does not exist, or a refusal by pg_hba.conf: it is up.
+        assert!(postgres_accepts(answering(error(
+            "SFATAL\0VFATAL\0C28000\0Mno\0"
+        ))));
+    }
+
+    #[test]
+    fn postgres_is_not_ready_while_it_starts_up_or_when_nothing_answers() {
+        let starting = "SFATAL\0VFATAL\0C57P03\0Mthe database system is starting up\0";
+        assert!(!postgres_accepts(answering(error(starting))));
+        // Listening, but silent: it closes without a word.
+        assert!(!postgres_accepts(answering(Vec::new())));
+        // Not listening at all.
+        let port = {
+            let free = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            free.local_addr().unwrap().port()
+        };
+        assert!(!postgres_accepts(port));
+    }
+
+    #[test]
+    fn the_poll_is_quick() {
+        assert!(POLL <= Duration::from_millis(100));
+    }
+
+    #[tokio::test]
+    async fn a_wait_notices_the_answer_within_its_interval_and_keeps_its_budget() {
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counted = asked.clone();
+        let every = Duration::from_millis(5);
+        // Yes on the fourth ask.
+        assert!(
+            wait_every(Duration::from_secs(5), every, move || {
+                counted.fetch_add(1, Ordering::SeqCst) == 3
+            })
+            .await
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 4);
+        // No at all: it gives up after the budget, and asked more than once on the way.
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counted = asked.clone();
+        let begun = std::time::Instant::now();
+        assert!(
+            !wait_every(Duration::from_millis(60), every, move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+                false
+            })
+            .await
+        );
+        assert!(begun.elapsed() >= Duration::from_millis(60));
+        assert!(asked.load(Ordering::SeqCst) > 2);
     }
 }
 
