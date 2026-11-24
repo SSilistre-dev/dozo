@@ -644,8 +644,9 @@ allow rule covers counts as an action that changes something, as upstream counts
   outside content (pages, files, command output, messages) it never sees, or when the task is not
   the owner's words (`packages/adapters/src/dozo-outside-review.prompt.ts`). In Auto review every
   such command is one more review call, with its cost and wait. A model that passes
-  a command does not stop the run, a routine included; one that asks leaves a card. With no model
-  that would judge it (none set, or only backups without a primary), the command asks.
+  a command does not stop the run, a routine included; one that asks leaves a card. With only
+  backup approval models the backups judge it ("The approval model's backups"); with none set, or
+  when none answers, the command asks.
 - An exact allow rule runs the command in every row but the last; a prefix rule only until the run
   takes in outside content. An always-allow rule for the tool runs it, as upstream does for any
   tool. Block rules refuse in every mode.
@@ -888,6 +889,19 @@ bot under its Memory: Off (the default, no call, job or row), Ask first, or Auto
   menu. A skill draft (taught or suggested) shows in the chat as a card with its steps, Save and
   Delete; one whose typed values still wait for a decision offers only Delete there, and its steps
   are edited on the web. The learned list and its undo are web only for now.
+
+## The approval model's backups
+
+In Auto review an action that would ask goes to the approval model. A member who picked only backup
+approval models, with no primary of their own and none set for the deployment, has those backups
+judge it in their order, for every tool the approval model judges (an email, an app action, a memory
+save after outside content, a command on the bot's computer) alike. Upstream counted the backups
+when it planned the review but then reviewed only with a primary, so such an action went ahead
+unreviewed. Two anchored rules on `packages/adapters/src/run-tool-gate.ts` hold it: the review runs
+when backups are the only models, and an action planned for review goes ahead only on a verdict that
+passes it, so one no model answered (none set, every backup failing or without its connection)
+leaves a card. Ask and Never ask are unchanged, and a card in a run nobody watches waits like any
+other. Each review is a call to the backup's model, with its cost and wait, as a primary's is.
 
 ## After outside content
 
