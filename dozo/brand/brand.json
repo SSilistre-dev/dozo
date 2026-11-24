@@ -391,6 +391,15 @@
   ],
   "anchored": [
     {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "  ) : null;\n  const placeholder =\n    screenError ??",
+      "replace": "  ) : null;\n  const screenWait = useScreenPending(computer, screenUrl, error);\n  const placeholder =\n    screenError ??",
+      "requires": [
+        "apps/mobile/lib/dozo-screen-pending.ts"
+      ],
+      "reason": "computer wait: the preview's wait for the screen link, at the screen's top level"
+    },
+    {
       "file": "packages/adapters/src/computer-lifecycle.ts",
       "find": "} from \"./computer-control.js\";\nimport { toComputerRef }",
       "replace": "} from \"./computer-control.js\";\nimport { announceWhenStarted } from \"./dozo-computer-announce.js\";\nimport { toComputerRef }",
@@ -411,7 +420,7 @@
     {
       "file": "apps/mobile/app/computer.tsx",
       "find": "import { useScreenHeader } from \"../lib/screen-header\";\nimport { useSideInse",
-      "replace": "import { useScreenHeader } from \"../lib/screen-header\";\nimport { screenPending } from \"../lib/dozo-screen-pending\";\nimport { useSideInse",
+      "replace": "import { useScreenHeader } from \"../lib/screen-header\";\nimport { useScreenPending } from \"../lib/dozo-screen-pending\";\nimport { useSideInse",
       "requires": [
         "apps/mobile/lib/dozo-screen-pending.ts"
       ],
@@ -420,16 +429,16 @@
     {
       "file": "apps/mobile/app/computer.tsx",
       "find": "      : previewPlaceholder(computer?.state, booting, name, computer?.mode));",
-      "replace": "      : previewPlaceholder(computer?.state, booting || screenPending(computer?.state, screenUrl, error), name, computer?.mode));",
+      "replace": "      : screenWait.timedOut\n        ? t`Could not connect to the computer screen`\n        : previewPlaceholder(computer?.state, booting || screenWait.pending, name, computer?.mode));",
       "requires": [
         "apps/mobile/lib/dozo-screen-pending.ts"
       ],
-      "reason": "computer wait: a running computer whose screen link has not come yet shows the boot progress, not its bare name"
+      "reason": "computer wait: a running computer with a screen to show whose link has not come yet shows the boot progress, then after 30 seconds the screen's error, never its bare name"
     },
     {
       "file": "apps/mobile/app/computer.tsx",
       "find": "            {bootPending ? <ActivityIndicator",
-      "replace": "            {bootPending || screenPending(computer?.state, screenUrl, error) ? <ActivityIndicator",
+      "replace": "            {bootPending || screenWait.pending ? <ActivityIndicator",
       "requires": [
         "apps/mobile/lib/dozo-screen-pending.ts"
       ],
