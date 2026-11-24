@@ -20,7 +20,7 @@ env >> "${STUB_ENV_LOG:?}"
 for a in "$@"; do
   if [[ "$a" == config ]]; then
     cat >/dev/null
-    grep -E '^[A-Z_]+=' .env
+    LC_ALL=C grep -E '^[A-Z_]+=' .env
     exit 0
   fi
 done
@@ -88,6 +88,27 @@ CLOUDFLARE_TUNNEL_TOKEN=$token_secret run --hostname chat.example.org --local --
 [[ "$(grep -c '^BETTER_AUTH_URL=' "$env_file")" -eq 1 && "$(grep -c '^RAKAZO_HOST=' "$env_file")" -eq 1 ]] || fail "rerun duplicated a key"
 grep -qx 'WEB_ORIGIN=https://chat.example.org' "$env_file" || fail "rerun kept the old origin"
 [[ "$(grep '^POSTGRES_PASSWORD=' "$env_file")" == "$secret_before" ]] || fail "rerun changed a secret"
+
+# Turkish locale: i/I must stay ASCII i/I in the hostname and the token checks, and the installer
+# (whose sed ranges are locale-bound) runs under the C locale.
+tr_locale="$(locale -a 2>/dev/null | grep -Ei -m1 '^tr_TR\.utf-?8$' || true)"
+if [[ -n "$tr_locale" ]]; then
+  token_i="eyJiIiIiSUlpaQ==-Idx_iI"
+  for var in LC_ALL LANG; do
+    new_cwd
+    if [[ $var == LC_ALL ]]; then
+      CLOUDFLARE_TUNNEL_TOKEN=$token_i LC_ALL=$tr_locale run --hostname Idx.Mail-Ipek.Example.COM --local --prepare-only
+    else
+      CLOUDFLARE_TUNNEL_TOKEN=$token_i LANG=$tr_locale run --hostname Idx.Mail-Ipek.Example.COM --local --prepare-only
+    fi
+    [[ $code -eq 0 ]] || fail "$var=$tr_locale: valid token or hostname refused: $out"
+    grep -qxF 'RAKAZO_HOST=idx.mail-ipek.example.com' "$tmp/cwd/.env" || fail "$var=$tr_locale: hostname not plain ASCII lowercase in .env"
+    grep -qxF "CLOUDFLARE_TUNNEL_TOKEN=$token_i" "$tmp/cwd/.env" || fail "$var=$tr_locale: token changed in .env"
+    grep -qxF 'LC_ALL=C' "$tmp/env.log" || fail "$var=$tr_locale: the installer did not run under the C locale"
+  done
+else
+  echo "NOTE: no tr_TR UTF-8 locale on this machine; the Turkish-locale cases were skipped"
+fi
 
 # Full run: the second installer pass starts the stack with the override layered in.
 new_cwd
