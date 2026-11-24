@@ -29,7 +29,13 @@ describePostgres("computers a plan allows (PostgreSQL)", () => {
     const spaceId = `${id}-s`;
     await owner.space.create({ data: { id: spaceId, organizationId: id, name: spaceId } });
     const computer = await owner.computer.create({
-      data: { spaceId, userId, scopeKey: `team:${spaceId}`, homeKey: `home-${spaceId}` },
+      data: {
+        spaceId,
+        userId,
+        kind: "docker",
+        scopeKey: `team:${spaceId}`,
+        homeKey: `home-${spaceId}`,
+      },
     });
     if (tier)
       await owner.billingAccount.create({
