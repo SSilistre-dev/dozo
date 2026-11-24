@@ -784,4 +784,25 @@ describe.skipIf(process.platform === "win32")("the server's runtime", () => {
     await expect(collect(serverRuntime.run(request(), {}))).rejects.toThrow(AGENT_OWN_RUNS_ONLY);
     expect(logged()).toEqual([]);
   });
+
+  it("runs an agent whose mode the setting turned on, with no file", async () => {
+    computer("reply", { enabled: false });
+    const row = { current: false };
+    const prisma = {
+      user: { count: async () => 1 },
+      $queryRaw: async () => (row.current ? [{ provider: CODEX_AGENT_PROVIDER_ID }] : []),
+      run: {
+        findUnique: async () => ({ trigger: "messaging", userId: "ada", sourceMessage: null }),
+      },
+    } as unknown as Parameters<typeof cliModelRuntime>[2]["prisma"];
+    const serverRuntime = cliModelRuntime(
+      { defaultProvider: "openrouter", defaultModel: "m", deploymentModelConfigured: false },
+      model,
+      { prisma, billingEnabled: false },
+    );
+    await expect(collect(serverRuntime.run(request(), {}))).rejects.toThrow(/not turned on/);
+    // With the setting on, the run goes on to ask who started it, as with the file.
+    row.current = true;
+    await expect(collect(serverRuntime.run(request(), {}))).rejects.toThrow(AGENT_OWN_RUNS_ONLY);
+  });
 });

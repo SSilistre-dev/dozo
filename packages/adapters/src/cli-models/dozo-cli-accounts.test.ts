@@ -96,6 +96,10 @@ function deps(
   };
 }
 
+/** The tools that are models: the agents (dozo-agent-modes.test.ts) are listed beside them. */
+const readModelTools = async (...args: Parameters<typeof readCliTools>) =>
+  (await readCliTools(...args)).filter((tool) => tool.mode === "model");
+
 const HOME_CONNECTION = {
   connections: [{ provider: PROVIDER, secretId: "s-home" }],
   secrets: { "s-home": HOME_REF },
@@ -111,11 +115,11 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
   });
 
   it("lists nothing on a hosted server, a billing one, a shared one, or to anyone else", async () => {
-    expect(await readCliTools(deps(), "ada")).toEqual([]);
+    expect(await readModelTools(deps(), "ada")).toEqual([]);
     computer("reply");
-    expect(await readCliTools(deps({ billing: true }), "ada")).toEqual([]);
-    expect(await readCliTools(deps({ people: 2 }), "ada")).toEqual([]);
-    expect(await readCliTools(deps(), "stranger")).toEqual([]);
+    expect(await readModelTools(deps({ billing: true }), "ada")).toEqual([]);
+    expect(await readModelTools(deps({ people: 2 }), "ada")).toEqual([]);
+    expect(await readModelTools(deps(), "stranger")).toEqual([]);
     await expect(cliHomeConnection(deps(), "stranger", PROVIDER)).rejects.toMatchObject({
       kind: "NOT_FOUND",
     });
@@ -123,7 +127,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
 
   it("says the tool is not installed", async () => {
     computer(null);
-    expect(await readCliTools(deps(), "ada")).toEqual([
+    expect(await readModelTools(deps(), "ada")).toEqual([
       {
         provider: PROVIDER,
         name: claudeCodeDriver.name,
@@ -138,7 +142,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
 
   it("reads whether the person is signed in and already connected", async () => {
     computer("reply");
-    expect(await readCliTools(deps(HOME_CONNECTION), "ada")).toEqual([
+    expect(await readModelTools(deps(HOME_CONNECTION), "ada")).toEqual([
       {
         provider: PROVIDER,
         name: claudeCodeDriver.name,
@@ -157,7 +161,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
       ],
       secrets: { "s-key": "sk-not-an-account", unreadable: "" },
     });
-    expect(await readCliTools(other, "ada")).toMatchObject([{ signedIn: false, connected: false }]);
+    expect(await readModelTools(other, "ada")).toMatchObject([{ signedIn: false, connected: false }]);
   });
 
   it("connects the person's own sign-in with the tool's name and a catalog model", async () => {
@@ -188,7 +192,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
       connections: [{ provider: PROVIDER, secretId: "s-used" }],
       secrets: { "s-used": cliAccountRef({ kind: "added", id: used.id }) },
     });
-    expect(await readCliTools(server, "ada")).toMatchObject([{ connected: false, canAdd: true }]);
+    expect(await readModelTools(server, "ada")).toMatchObject([{ connected: false, canAdd: true }]);
     expect(await accountHomeIds(PROVIDER)).toEqual([used.id]);
     expect(tool.signOuts()).toEqual([unused.path]);
   });
@@ -206,10 +210,10 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
       }),
     ).toEqual({ status: "waiting" });
     // A sign-in in progress keeps its home, whatever reads the tools meanwhile.
-    expect(await readCliTools(deps(), "ada")).toMatchObject([{ login: { status: "waiting" } }]);
+    expect(await readModelTools(deps(), "ada")).toMatchObject([{ login: { status: "waiting" } }]);
     const [id] = await accountHomeIds(PROVIDER);
     await vi.waitFor(() =>
-      expect(readCliTools(deps(), "ada")).resolves.toMatchObject([
+      expect(readModelTools(deps(), "ada")).resolves.toMatchObject([
         { login: { url: expect.stringMatching(/^https:\/\/claude\.ai\//) } },
       ]),
     );
@@ -235,7 +239,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
         ids.map((home) => [home.id, cliAccountRef({ kind: "added", id: home.id })]),
       ),
     });
-    expect(await readCliTools(full, "ada")).toMatchObject([{ canAdd: false }]);
+    expect(await readModelTools(full, "ada")).toMatchObject([{ canAdd: false }]);
     const handlers = { save: vi.fn(), changed: vi.fn() };
     await expect(startCliAccountLogin(full, "ada", PROVIDER, handlers)).rejects.toMatchObject({
       code: "cli_account_unavailable",

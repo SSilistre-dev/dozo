@@ -27,6 +27,7 @@ function table(initial: string[] = []) {
       return 1;
     }),
     user: { count: async () => 1 },
+    deploymentSettings: { findUnique: async () => null },
     userModelCredential: { findMany: async () => [], count: async () => 0 },
     secret: { findFirst: async () => null },
   };
