@@ -265,6 +265,31 @@ describe("the app's phone device", () => {
     });
   });
 
+  it("reads reminders and writes through the calendar module, unavailable in a build without it", async () => {
+    const deps = device.appPhoneDeviceDeps();
+    for (const kind of ["reminders", "calendar-write", "reminders-write"] as const) {
+      expect(deps[kind].available()).toBe(false);
+      expect(await deps[kind].permission()).toBe("unavailable");
+      expect(await deps[kind].request()).toBe("unavailable");
+    }
+    await expect(deps.reminders.read({ includeDone: false, limit: 50 })).rejects.toMatchObject({
+      code: "reminders-unavailable",
+    });
+    const start = Date.now() + 60 * 60 * 1000;
+    const event = {
+      title: "A",
+      start: new Date(start).toISOString(),
+      end: new Date(start + 60 * 60 * 1000).toISOString(),
+      allDay: false,
+    };
+    await expect(deps["calendar-write"].read(event)).rejects.toMatchObject({
+      code: "calendar-write-unavailable",
+    });
+    await expect(deps["reminders-write"].read({ title: "A" })).rejects.toMatchObject({
+      code: "reminders-write-unavailable",
+    });
+  });
+
   it("is one device for the whole app, started by the layout", async () => {
     expect(device.phoneDevice()).toBe(device.phoneDevice());
     app.token = "";
@@ -275,6 +300,9 @@ describe("the app's phone device", () => {
       calendar: false,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     stop();
   });

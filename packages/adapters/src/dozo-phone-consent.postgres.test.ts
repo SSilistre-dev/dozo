@@ -5,9 +5,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { recordDeviceCapabilities } from "./dozo-device-capabilities.js";
 import { phoneGate } from "./dozo-phone.js";
 import {
+  PHONE_CALENDAR_CREATE_TOOL,
   PHONE_CALENDAR_READ_TOOL,
   PHONE_CONTACTS_SEARCH_TOOL,
   PHONE_LOCATION_TOOL,
+  PHONE_REMINDERS_READ_TOOL,
 } from "./dozo-phone.tool-definition.js";
 import {
   createUserDeviceToken,
@@ -138,6 +140,7 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
       runId,
       thread: owner.thread,
       state: {},
+      secrets: [],
       trust: { receivedOutsideMessage: async () => false },
     } as unknown as RunContext;
     return runAsTenant(owner, () => phoneGate(ctx, false, tool, args));
@@ -264,5 +267,95 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
     const left = await system.$queryRaw<{ count: number }[]>`
       SELECT count(*)::int AS count FROM dozo_device_capability_since WHERE "deviceId" = ${phone.id}`;
     expect(left[0]?.count).toBe(0);
+  });
+  /** The owner's phone, paired an hour ago and connected, declaring `capabilities`. */
+  async function connectedPhone(
+    owner: Owner,
+    capabilities: Parameters<typeof recordDeviceCapabilities>[2],
+  ) {
+    const phone = await system.userDevice.create({
+      data: {
+        userId: owner.userId,
+        name: "Phone",
+        platform: "ios",
+        tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+        createdAt: PAIRED,
+      },
+    });
+    await system.userDeviceConnection.create({
+      data: { deviceId: phone.id, connectionId: randomUUID(), address: "http://api-1" },
+    });
+    await recordDeviceCapabilities(prisma, phone.id, capabilities);
+    const devices = new UserDevices({ prisma, forwardSecret: userDeviceForwardSecret("test") });
+    return { phone, devices };
+  }
+
+  it("asks for reminders again once their switch was turned off and on, in this time zone too", async () => {
+    const owner = await ownRun();
+    const { phone, devices } = await connectedPhone(owner, ["reminders", "calendar"]);
+    const turnedOn = (await devices.connectedPhone(owner.userId, "reminders"))!.onSince;
+    expect(turnedOn.getTime()).toBeGreaterThan(PAIRED.getTime());
+    expect(Math.abs(turnedOn.getTime() - Date.now())).toBeLessThan(60_000);
+    const args = { include_done: false };
+    const first = await owner.newRun();
+    expect(await gate(owner, first.id, { ...args }, PHONE_REMINDERS_READ_TOOL, devices)).toBe(
+      "ask",
+    );
+    await effect(owner, first.id, "approved", { include_done: false }, PHONE_REMINDERS_READ_TOOL);
+    expect(await gate(owner, first.id, { ...args }, PHONE_REMINDERS_READ_TOOL, devices)).toBe(
+      "allow",
+    );
+    // A completed read since the switch went on: the bot's later reads go without a card.
+    const read = new Date(turnedOn.getTime() + 1);
+    await effect(owner, first.id, "completed", { ...args }, PHONE_REMINDERS_READ_TOOL, read);
+    const later = await owner.newRun();
+    expect(await gate(owner, later.id, { list: "Home" }, PHONE_REMINDERS_READ_TOOL, devices)).toBe(
+      "allow",
+    );
+    // A calendar read is no consent to reminders.
+    const other = await ownRun();
+    const { devices: hers } = await connectedPhone(other, ["reminders", "calendar"]);
+    const hersRun = await other.newRun();
+    await effect(other, hersRun.id, "completed", { ...RANGE }, PHONE_CALENDAR_READ_TOOL);
+    expect(await gate(other, hersRun.id, { ...args }, PHONE_REMINDERS_READ_TOOL, hers)).toBe("ask");
+    await vi.waitUntil(() => Date.now() > read.getTime() + 5);
+    await recordDeviceCapabilities(prisma, phone.id, ["calendar"]);
+    expect(await devices.connectedPhone(owner.userId, "reminders")).toBeNull();
+    await recordDeviceCapabilities(prisma, phone.id, ["calendar", "reminders"]);
+    const again = await owner.newRun();
+    expect(await gate(owner, again.id, { list: "Home" }, PHONE_REMINDERS_READ_TOOL, devices)).toBe(
+      "ask",
+    );
+  });
+
+  it("asks every write: a completed one is no consent, only the call's own card", async () => {
+    const owner = await ownRun();
+    const { devices } = await connectedPhone(owner, ["calendar-write"]);
+    const start = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.parse(start) + 60 * 60 * 1000).toISOString();
+    const event = {
+      title: "Lunch",
+      start,
+      end,
+      recurrence: { frequency: "weekly", interval: 1, count: 4 },
+    };
+    const earlier = await owner.newRun();
+    await effect(owner, earlier.id, "completed", event, PHONE_CALENDAR_CREATE_TOOL);
+    const run = await owner.newRun();
+    expect(await gate(owner, run.id, { ...event }, PHONE_CALENDAR_CREATE_TOOL, devices)).toBe(
+      "ask",
+    );
+    await effect(owner, run.id, "approved", event, PHONE_CALENDAR_CREATE_TOOL);
+    // The same keys in another order, nested ones too.
+    const reordered = {
+      recurrence: { count: 4, interval: 1, frequency: "weekly" },
+      end,
+      start,
+      title: "Lunch",
+    };
+    expect(await gate(owner, run.id, reordered, PHONE_CALENDAR_CREATE_TOOL, devices)).toBe("allow");
+    expect(
+      await gate(owner, run.id, { ...event, title: "Dinner" }, PHONE_CALENDAR_CREATE_TOOL, devices),
+    ).toBe("ask");
   });
 });

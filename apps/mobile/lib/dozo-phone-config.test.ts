@@ -37,9 +37,17 @@ function introspect(): Introspected {
   return JSON.parse(out) as Introspected;
 }
 
-it("asks for contacts and the location while in use only, with the app's own words", () => {
+it("asks for the calendar, reminders, contacts and the location while in use only, with the app's own words", () => {
   const config = introspect();
   const plist = config.ios.infoPlist;
+  for (const key of ["NSCalendarsFullAccessUsageDescription", "NSCalendarsUsageDescription"]) {
+    expect(plist[key], key).toBe(
+      "Bots you allow can read your calendar and add events when you ask them.",
+    );
+  }
+  for (const key of ["NSRemindersFullAccessUsageDescription", "NSRemindersUsageDescription"]) {
+    expect(plist[key], key).toBe("Bots you allow can read and add reminders when you ask them.");
+  }
   expect(plist.NSContactsUsageDescription).toBe(
     "Bots you allow can look up a contact when you ask them.",
   );
@@ -47,6 +55,7 @@ it("asks for contacts and the location while in use only, with the app's own wor
     "Bots you allow can see where you are when you ask them.",
   );
   for (const key of [
+    "NSCalendarsWriteOnlyAccessUsageDescription",
     "NSLocationAlwaysAndWhenInUseUsageDescription",
     "NSLocationAlwaysUsageDescription",
     "NSLocationUsageDescription",
@@ -64,6 +73,8 @@ it("asks for contacts and the location while in use only, with the app's own wor
   const removed = uses.filter(([, node]) => node === "remove").map(([name]) => name);
   expect(used).toEqual(
     expect.arrayContaining([
+      "android.permission.READ_CALENDAR",
+      "android.permission.WRITE_CALENDAR",
       "android.permission.READ_CONTACTS",
       "android.permission.ACCESS_COARSE_LOCATION",
       "android.permission.ACCESS_FINE_LOCATION",

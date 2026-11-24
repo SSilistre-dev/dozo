@@ -18,10 +18,25 @@ export const DEVICE_CAPABILITIES = [
   "calendar",
   "contacts",
   "location",
+  "reminders",
+  "calendar-write",
+  "reminders-write",
 ] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
-/** What a phone may offer: nothing a computer does, whatever it declares. */
-const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar", "contacts", "location"];
+/**
+ * What a phone may offer: nothing a computer does, whatever it declares. Reading and writing are
+ * switches of their own: a phone that reads the calendar adds nothing to it unless it says so.
+ */
+const PHONE_CAPABILITIES: readonly DeviceCapability[] = [
+  "calendar",
+  "contacts",
+  "location",
+  "reminders",
+  "calendar-write",
+  "reminders-write",
+];
+/** Capabilities only an iPhone has: Android has no system reminders store, whatever it declares. */
+const IOS_ONLY_CAPABILITIES: readonly DeviceCapability[] = ["reminders", "reminders-write"];
 const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = ["shell", "screen", "browser"];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
@@ -113,7 +128,10 @@ export async function readDeviceCapabilities(
   const phone = isPhonePlatform(platform);
   if (!declared) return phone ? [] : ["shell"];
   const allowed = phone ? PHONE_CAPABILITIES : COMPUTER_CAPABILITIES;
-  return allowed.filter((value) => declared.includes(value));
+  return allowed.filter(
+    (value) =>
+      declared.includes(value) && (platform === "ios" || !IOS_ONLY_CAPABILITIES.includes(value)),
+  );
 }
 
 /**
