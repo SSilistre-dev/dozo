@@ -13,9 +13,11 @@
 lock_id=""
 
 # The host side. $1 take|release, $2 lock path, $3 run id, $4 label, $5 stale limit in seconds.
-# take: exit 0 taken (also when this id already holds it: a reply lost to a dropped connection
-# is retried), 3 held (prints "<seconds held> <label>", or "unreadable -" when the target is not
-# "<id>:<label>:<digits>"; such a lock is never broken), 4 could not tell.
+# It exits 0 whenever it ran and prints its answer as the first word on stdout, so a non-zero
+# status means only that ssh or the shell failed (a status through `remote` also trips the ERR trap
+# of deploy.sh). take: `taken` (also when this id already holds it: a reply lost to a dropped
+# connection is retried), `held <seconds> <label>`, `unreadable` (the target is not
+# "<id>:<label>:<digits>"; such a lock is never broken), `error`. release: `released`, `notowner`.
 # A stale lock is broken under a second link, "<path>.break", that only one run can hold: the
 # lock is re-read under it and removed only if it is still the same stale value.
 lock_host_script() {
@@ -25,24 +27,24 @@ now=$(date +%s)
 brk="$path.break"
 case $mode in
   take)
-    mkdir -p "$(dirname "$path")" || exit 4
+    mkdir -p "$(dirname "$path")" || { echo error; exit 0; }
     for _ in 1 2 3 4 5; do
-      ln -s "$id:$label:$now" "$path" 2>/dev/null && exit 0
+      ln -s "$id:$label:$now" "$path" 2>/dev/null && { echo taken; exit 0; }
       cur=$(readlink "$path" 2>/dev/null) || continue
-      case $cur in "$id":*) exit 0 ;; esac
+      case $cur in "$id":*) echo taken; exit 0 ;; esac
       ts=${cur##*:} held=${cur%:*} hlabel=${held#*:}
-      case $ts in '' | *[!0-9]*) printf 'unreadable -\n'; exit 3 ;; esac
-      case $held in *:*) ;; *) printf 'unreadable -\n'; exit 3 ;; esac
+      case $ts in '' | *[!0-9]*) echo unreadable; exit 0 ;; esac
+      case $held in *:*) ;; *) echo unreadable; exit 0 ;; esac
       age=$((now - ts))
-      [ "$age" -gt "$stale" ] || { printf '%s %s\n' "$age" "$hlabel"; exit 3; }
+      [ "$age" -gt "$stale" ] || { echo "held $age $hlabel"; exit 0; }
       if ! ln -s "$id:$now" "$brk" 2>/dev/null; then
         # Someone else is breaking. A break link left behind for over a minute is removed.
         b=$(readlink "$brk" 2>/dev/null) || continue
         bts=${b##*:}
         case $bts in '' | *[!0-9]*) bts=0 ;; esac
         [ $((now - bts)) -gt 60 ] && rm -f "$brk"
-        printf '%s %s\n' "$age" "$hlabel"
-        exit 3
+        echo "held $age $hlabel"
+        exit 0
       fi
       if [ "$(readlink "$path" 2>/dev/null)" = "$cur" ]; then
         printf '[deploy] breaking a lock held for %ss by %s\n' "$age" "$hlabel" >&2
@@ -50,11 +52,11 @@ case $mode in
       fi
       rm -f "$brk"
     done
-    exit 4
+    echo error
     ;;
   release)
-    cur=$(readlink "$path" 2>/dev/null) || exit 0
-    case $cur in "$id":*) rm -f "$path" ;; esac
+    cur=$(readlink "$path" 2>/dev/null) || { echo released; exit 0; }
+    case $cur in "$id":*) rm -f "$path"; echo released ;; *) echo notowner ;; esac
     ;;
 esac
 HOST
@@ -68,25 +70,28 @@ lock_path() { printf '%s/.deploy.lock' "$remote_dir"; }
 # finds itself holding on the retry.
 lock_out=""
 lock_call() {
-  local try rc script
+  local try rc=255 script had_e=""
   script=$(lock_host_script)
+  # No ERR trap inside: a failing ssh is expected here, retried and reported by the caller.
+  case $- in *E*) had_e=1; set +E ;; esac
   for try in 1 2 3 4; do
     rc=0
     lock_out=$(remote bash -s -- "$1" "$(lock_path)" "$lock_id" "$2" "$3" <<<"$script") || rc=$?
-    [ "$rc" -eq 255 ] || return "$rc"
+    [ "$rc" -eq 255 ] || break
     if [ "$try" -lt 4 ]; then
       sleep "${DOZO_DEPLOY_LOCK_POLL:-5}" &
       wait $! || true
     fi
   done
-  return 255
+  [ -z "$had_e" ] || set -E
+  return "$rc"
 }
 
 # lock_take <label>: wait up to DOZO_DEPLOY_LOCK_WAIT seconds (default 1800, 0 = fail at once) for
 # the host's lock, one short ssh per poll (DOZO_DEPLOY_LOCK_POLL, default 5). A lock older than
 # DOZO_DEPLOY_LOCK_STALE seconds (default 7200) is broken. A bad value exits 64 before any ssh.
 lock_take() {
-  local label wait stale start rc age what name announced=""
+  local label wait stale start rc age holder state what name announced=""
   wait=${DOZO_DEPLOY_LOCK_WAIT:-1800} stale=${DOZO_DEPLOY_LOCK_STALE:-7200}
   for name in WAIT STALE; do
     case $name in WAIT) what=$wait ;; *) what=$stale ;; esac
@@ -104,17 +109,17 @@ lock_take() {
   while :; do
     rc=0
     lock_call take "$label" "$stale" || rc=$?
-    case $rc in
-      0) return 0 ;;
-      3) ;;
-      *) die "could not take the deploy lock on the host (ssh or shell failed)" ;;
+    [ "$rc" -eq 0 ] || die "could not take the deploy lock on the host (ssh or shell failed)"
+    state=${lock_out%% *}
+    case $state in
+      taken) return 0 ;;
+      held)
+        age=${lock_out#held } holder=${age#* } age=${age%% *}
+        what="a deploy is running on the host ($holder, started ${age}s ago)" ;;
+      unreadable)
+        what="the lock on the host cannot be read; if no deploy is running, remove it: ssh <host> rm $(lock_path)" ;;
+      *) die "could not take the deploy lock on the host (unexpected answer)" ;;
     esac
-    age=${lock_out%% *}
-    if [ "$age" = unreadable ]; then
-      what="the lock on the host cannot be read; if no deploy is running, remove it: ssh <host> rm $(lock_path)"
-    else
-      what="a deploy is running on the host (${lock_out#* }, started ${age}s ago)"
-    fi
     if [ "$(($(date +%s) - start))" -ge "$wait" ]; then
       lock_id=""
       die "$what; waited ${wait}s. Try again when it ends, or set DOZO_DEPLOY_LOCK_WAIT"
