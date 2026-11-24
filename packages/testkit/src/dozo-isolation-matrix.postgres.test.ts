@@ -9,7 +9,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { findCanaries, ISOLATION_LOGINS, readAnswer } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import { DESIGNED_SHARING, ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
+import {
+  DESIGNED_SHARING,
+  DESIGNED_SHARING_SOMETIMES,
+  ISOLATION_EXEMPTIONS,
+} from "./dozo-isolation-exemptions.js";
 import type { Procedure } from "./dozo-isolation-inputs.test-support.js";
 import {
   contractProcedures,
@@ -779,5 +783,26 @@ describeWithDatabase("the designed sharing table", () => {
       kinds.filter((kind) => !designedSeen.get(path)?.has(kind)).map((kind) => `${path}: ${kind}`),
     );
     expect(unseen, "designed sharing pairs no call showed (stale entries)").toEqual([]);
+  });
+
+  it("says for every pair seen only some of the time when it is shown and when it is not", () => {
+    const entries = Object.entries(DESIGNED_SHARING_SOMETIMES).flatMap(([path, list]) =>
+      list.flatMap((entry) => entry.kinds.map((kind) => ({ path, kind, entry }))),
+    );
+    expect(entries.length).toBeGreaterThan(0);
+    const bare = entries
+      .filter(({ entry }) => !entry.shownWhen.trim() || !entry.hiddenWhen.trim())
+      .map(({ path, kind }) => `${path}: ${kind}`);
+    expect(bare, "pairs with no shownWhen or hiddenWhen").toEqual([]);
+    const twice = entries
+      .filter(({ path, kind }, index) =>
+        entries.some((other, at) => at < index && other.path === path && other.kind === kind),
+      )
+      .map(({ path, kind }) => `${path}: ${kind}`);
+    expect(twice, "pairs listed twice").toEqual([]);
+    const required = entries
+      .filter(({ path, kind }) => DESIGNED_SHARING[path]?.includes(kind))
+      .map(({ path, kind }) => `${path}: ${kind}`);
+    expect(required, "pairs in both the required and the sometimes table").toEqual([]);
   });
 });

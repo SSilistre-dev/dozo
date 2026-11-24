@@ -229,21 +229,109 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * Pairs a member or guest sees only when the sweep's own earlier calls happen to have left the
- * thing where the procedure shows it (a run the sweep started, a computer it booted), which a
- * concurrent sweep does not order. Allowed as the table above is, but not required to be seen.
+ * Why a pair is seen only some of the time: under which condition the member or guest is shown
+ * the canary through the procedure, and under which not, each naming the code that makes it so.
  */
-export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly string[]>> = {
-  "bots/update": ["routineprompt"],
-  "computer/boot": ["bot"],
-  // The name of the bot busy on the computer: there only while a run, boot or recording holds it.
-  "computer/status": ["bot"],
-  "export/bot": ["artifact"],
-  "runs/list": ["artifact", "bot", "draftskill", "group", "routineprompt", "waitbot"],
-  // The chat's current or just-ended run names its routine: only while a run the sweep started
-  // with the routine (threads/sendWithRoutines) is current. Members see it in routines/list too.
-  "threads/get": ["routine"],
+export type SometimesShared = {
+  kinds: readonly string[];
+  shownWhen: string;
+  hiddenWhen: string;
 };
+
+/**
+ * Pairs a member or guest sees only when the world the sweep leaves behind happens to hold the
+ * thing the procedure shows at the moment of the call: the sweep's own runs (started by calls of
+ * C and D, still running when another call reads) and the order they land in are not ordered by
+ * the concurrent sweep. Allowed as the table above is, but not required to be seen; each entry
+ * says when it is shown and when it is not, and a pair with no such condition belongs in the
+ * table above (always shown) or nowhere (never shown).
+ */
+export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly SometimesShared[]>> = {
+  "bots/update": [
+    {
+      kinds: ["routineprompt"],
+      shownWhen:
+        "The answer is the bot's roster row, whose `preview` is the newest visible text message of the bot's chat (`botThreadPreviews`, packages/db/src/bot-previews.ts, read by `repos.listBots` in the `bots.update` handler, apps/api/src/routes/bots.ts). It carries the routine's prompt when that message is the bot's reply to a routine run, which the scripted runtime writes as `on it ... i handled: <prompt>` (`inferScript`, packages/adapters/src/scripted-runtime.ts): early in the sweep, while a routine run started before this call (the world is shared with the file's earlier tests) is replying.",
+      hiddenWhen:
+        "A newer visible message is the chat's preview: the reply to another run (the draft skill's test run, `skills/testRun`) or a message a send of the sweep wrote, or no routine run has replied yet.",
+    },
+  ],
+  "computer/boot": [
+    {
+      kinds: ["bot"],
+      shownWhen:
+        "The computer is already running (`state === running` with a `providerRef`), so `computer.boot` skips the lease and answers `computerStatus` (apps/api/src/routes/computer.ts, apps/api/src/computer-control.ts), and a run of the bot holds the computer at that moment, so `resolveComputerWork` (apps/api/src/computer-status.ts) names the bot as busy.",
+      hiddenWhen:
+        'No run of the bot holds the computer yet or any more (the answer has `busyBotName: null`), or the computer is not in the running state: the full path then needs the lease through `acquireBootLease`, which a live run\'s lease refuses (409 "busy"), or boots it and releases the lease before answering.',
+    },
+  ],
+  "computer/status": [
+    {
+      kinds: ["bot"],
+      shownWhen:
+        "`busyBotName` is the bot's name while a run of the bot is active (`ACTIVE_RUN_STATUSES`) and holds the bot's computer lease, or a boot, reset or update holds one with no run (`resolveComputerWork`, apps/api/src/computer-status.ts): the runs C and D's sends, routine and skill test runs started are executing.",
+      hiddenWhen:
+        "Nothing holds the lease at the read: the first caller's status comes before the runs it started have taken the computer, or the runs have ended (their lease is released a moment after, and a lease of an ended run is not work). The recording the seed leaves holds no execution lease (`takeComputerControl` takes a control lease only).",
+    },
+  ],
+  "export/bot": [
+    {
+      kinds: ["artifact"],
+      shownWhen:
+        "The bot's home file `notes/last-task.md` holds the prompt of the last run that reached its second turn, and that run is the group send with the artifact (prompt `User attached file \"<name>\"`, `buildSendPrompt`, apps/api/src/thread-target.ts); `export.bot` lists the home's files (`exportHome`, apps/api/src/routes/content.ts). The generic scripted turn writes the file (`inferScript`, packages/adapters/src/scripted-runtime.ts).",
+      hiddenWhen:
+        "A later run of the bot that takes the generic scripted turn (a routine test run, another send) wrote its own prompt over `notes/last-task.md`, or the group send's run had not reached its second turn at the read. The artifact's name is in no message of the bot's own chat: the sends that name it there answer 409 in the sweep, and the group send goes to the group's chat.",
+    },
+  ],
+  // The sweep asks for the `active` filter only (the contract's enum names it first and the input
+  // generator takes the first entry), so `listSpaceRuns` (apps/api/src/runs.ts) lists the runs of
+  // the Space in `ACTIVE_RUN_STATUSES` that are not background ones, each with the bot's name, the
+  // group's name and the task's prompt. The seed's own runs are finished, so every entry below
+  // needs a run the sweep started to be queued, leased or running at the read.
+  "runs/list": [
+    {
+      kinds: ["bot"],
+      shownWhen:
+        "Any run of the bot is in flight at the read (a send, a routine or a draft skill test run started by C's or D's earlier calls): `botName` is on every listed run.",
+      hiddenWhen:
+        "Every run the sweep started has ended or none is created yet: completed runs are not listed, so the answer is an empty list (D's call, late in the sweep, usually finds it so).",
+    },
+    {
+      kinds: ["draftskill"],
+      shownWhen:
+        "The draft skill's test run (`skills/testRun`, trigger `skill`, prompt `Run taught skill: <goal> ...`, taught-skills.ts `testRun`) is in flight: its task prompt is the promptSnippet.",
+      hiddenWhen:
+        "That run has not been created yet (`skills/testRun` comes late in the contract's order) or has ended.",
+    },
+    {
+      kinds: ["routineprompt"],
+      shownWhen:
+        "A routine test run (`routines/testRun`, `threads/sendWithRoutines`, `createRoutineTestRun` in apps/api/src/routines.ts) is in flight: its task prompt is the routine's prompt.",
+      hiddenWhen:
+        "No routine run is queued, leased or running at the read: it has ended or none began.",
+    },
+    {
+      kinds: ["group", "artifact"],
+      shownWhen:
+        'The group send with the artifact (`threads/send` with `groupId` and `artifactIds`) is in flight: its run\'s thread has a group (`groupName`) and its task prompt is `User attached file "<name>"` (`buildSendPrompt`, apps/api/src/thread-target.ts).',
+      hiddenWhen:
+        "That run has ended or has not begun. The sends that name the artifact in a bot's own chat answer 409 in the sweep, so no other run carries the artifact's name.",
+    },
+  ],
+  "threads/get": [
+    {
+      kinds: ["routine"],
+      shownWhen:
+        "The chat's active run was started from the routine (`routines/testRun` or `threads/sendWithRoutines`, trigger `routine`): `routineName` is read with the active runs only (`include: { routine: { select: { name: true } } }`, apps/api/src/thread-snapshot.ts) while the run is queued, leased, running or waiting.",
+      hiddenWhen:
+        "The run has ended or none was started yet: the failed or finished run a chat shows is read without the routine (`busyOrFailed` has no include), so the name is not in the answer. Members see the routine's name in `routines/list` as well.",
+    },
+  ],
+};
+
+/** Whether the table allows a member or guest to see the canary of `kind` through `path` some of the time. */
+export const sharedSometimes = (path: string, kind: string) =>
+  DESIGNED_SHARING_SOMETIMES[path]?.some((entry) => entry.kinds.includes(kind)) ?? false;
 
 export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
   {

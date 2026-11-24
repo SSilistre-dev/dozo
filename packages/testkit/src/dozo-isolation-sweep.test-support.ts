@@ -11,9 +11,9 @@ import { confirmIdentity, findCanaries, readAnswer } from "./dozo-isolation.test
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
 import {
   DESIGNED_SHARING,
-  DESIGNED_SHARING_SOMETIMES,
   ISOLATION_EXEMPTIONS,
   NEVER_SHARED_KINDS,
+  sharedSometimes,
 } from "./dozo-isolation-exemptions.js";
 import type { Procedure, Resolve } from "./dozo-isolation-inputs.test-support.js";
 import { generateInputs, mixedVariants, withOwn } from "./dozo-isolation-inputs.test-support.js";
@@ -303,7 +303,7 @@ export function failures(outcomes: Outcome[]): string[] {
           out.push(`${where} showed ${kind}, which no member may see (${value})`);
         else if (
           !DESIGNED_SHARING[outcome.path]?.includes(kind) &&
-          !DESIGNED_SHARING_SOMETIMES[outcome.path]?.includes(kind)
+          !sharedSometimes(outcome.path, kind)
         )
           out.push(`${where} showed ${kind}, not in the designed sharing table (${value})`);
       }
