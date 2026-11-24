@@ -36,7 +36,8 @@ export function DozoLearningSetting({
         label={t`Learn from chats`}
         choices={[
           { key: "off", label: t`Off` },
-          { key: "ask", label: t`Ask first` },
+          // The catalog's existing string, under its explicit id.
+          { key: "ask", label: t({ id: "Ask first", message: "Ask first" }) },
           { key: "auto", label: t`Auto` },
         ]}
         value={mode.pending && mode.input ? mode.input : learning.mode}

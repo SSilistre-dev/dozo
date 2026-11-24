@@ -21,8 +21,10 @@ const api = vi.hoisted(() => ({
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
-    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-      strings.flatMap((part, index) => [part, values[index] ?? ""]).join(""),
+    t: (strings: TemplateStringsArray | { message: string }, ...values: unknown[]) =>
+      "message" in strings
+        ? strings.message
+        : strings.flatMap((part, index) => [part, values[index] ?? ""]).join(""),
   }),
 }));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
