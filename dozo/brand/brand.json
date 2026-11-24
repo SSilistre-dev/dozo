@@ -5631,6 +5631,133 @@
       "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), the reads of the user's phone: its calendar (phoneCalendarRead), one person in its contacts (phoneContactsSearch), its location once (phoneLocation) and its reminders (phoneRemindersRead), and its two writes, each creating one event (phoneCalendarCreate) or reminder (phoneReminderCreate) and never changing or deleting one"
     },
     {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "import { generateSecretValue } from \"./secret-generator.js\";\nimport { persistPreparedSecret } from \"./secret-persistence.js\";\n",
+      "replace": "import { generateSecretValue } from \"./secret-generator.js\";\nimport {\n  deviceLoginFill,\n  deviceLoginOf,\n  rejectDeviceLoginReveal,\n} from \"./dozo-device-login.js\";\nimport { persistPreparedSecret } from \"./secret-persistence.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: the import of the rules below"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "    if (type === \"contact\") return { contact: decodeContactSecret(plaintext) };\n    const { fields, otp } = decodeLoginSecret(plaintext);\n",
+      "replace": "    if (type === \"contact\") return { contact: decodeContactSecret(plaintext) };\n    // A login linked to a computer's password manager stores no username to preview.\n    if (deviceLoginOf(plaintext)) return undefined;\n    const { fields, otp } = decodeLoginSecret(plaintext);\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: a list shows a linked login like any login, without a username preview, and without a warning for a value that is not fields"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "      const { fields, otp } = decodeLoginSecret(await openForRedaction(prisma, secretStore, row));\n",
+      "replace": "      const sealed = await openForRedaction(prisma, secretStore, row);\n      // A login linked to a computer's password manager holds no value to hide.\n      if (deviceLoginOf(sealed)) continue;\n      const { fields, otp } = decodeLoginSecret(sealed);\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: a linked login has no password to hide in every run, and is not logged as unreadable"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "  const type = BotSecretAuth.safeParse(row.auth).data?.type;\n  if (type === \"login\") return decodeLoginSecret(plaintext);\n",
+      "replace": "  const type = BotSecretAuth.safeParse(row.auth).data?.type;\n  rejectDeviceLoginReveal(plaintext);\n  if (type === \"login\") return decodeLoginSecret(plaintext);\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: the owner's reveal of a linked login is refused with a sentence, not a decode failure"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "  code?: true;\n}): Promise<\n",
+      "replace": "  code?: true;\n  /** The user's own connected computer: the user's browser passes it, and it alone fills a login linked to it. */\n  deviceId?: string;\n}): Promise<\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: a fill names the computer it is for, so only that computer fills a login linked to it and the hosted computer is refused"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "      codeEnds?: number;\n    }\n  | { error: string }\n",
+      "replace": "      codeEnds?: number;\n      /** A login linked to a computer's password manager: what that computer fills, never a value. */\n      deviceLogin?: { handle: string; field: \"username\" | \"password\" | \"code\" };\n    }\n  | { error: string }\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: the answer for a linked login names the handle and the field instead of a value"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "  const { fields, otp } =\n    runLogin ?? decodeLoginSecret(await openVaultValue(input.prisma, input.secretStore, row!));\n",
+      "replace": "  const sealed = runLogin ? undefined : await openVaultValue(input.prisma, input.secretStore, row!);\n  // After the site and the approval above, so a linked login asks first when its policy says so.\n  const device = deviceLoginFill({\n    sealed,\n    deviceId: input.deviceId,\n    field: input.field,\n    code: Boolean(input.code),\n    origin,\n    sites: [destination.origin, ...(row?.alsoOn ?? [])],\n    used: row ? { id: row.id, name: row.name, spaceId: row.spaceId, kind: \"login\" } : undefined,\n  });\n  if (device) return device;\n  const { fields, otp } = runLogin ?? decodeLoginSecret(sealed!);\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: a login linked to a computer is answered with its handle for that computer's browser, refused with one sentence everywhere else (the hosted computer, another computer), and the user's browser fills nothing else"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "  pageBrowserClearedRequest,\n  pageBrowserRequest,\n",
+      "replace": "  pageBrowserClearedRequest,\n  pageBrowserFillLoginRequest,\n  pageBrowserRequest,\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-browser-protocol.ts"
+      ],
+      "reason": "password manager link: the import of the request below"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n",
+      "replace": "  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  pageBrowserFillLoginRequest,\n  phoneCalendarReadRequest,\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-browser-protocol.ts"
+      ],
+      "reason": "password manager link: the device protocol carries one fill of a login from the computer's password manager into the bot's own browser (pageBrowserFillLogin): the node, the approved site, the link's handle and the field, never a value"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "import { readBoundedBody } from \"./http-body.js\";\n\nconst FORWARD_BODY_MAX_BYTES = 13 * 1024 * 1024;\n",
+      "replace": "import { readBoundedBody } from \"./http-body.js\";\nimport { mountDeviceLoginRoutes } from \"./dozo-device-logins.js\";\nimport type { SecretStore } from \"@rakazo/adapter-kit\";\n\nconst FORWARD_BODY_MAX_BYTES = 13 * 1024 * 1024;\n",
+      "requires": [
+        "apps/api/src/dozo-device-logins.ts"
+      ],
+      "reason": "password manager link: the imports of the rules below"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "  forwardSecret: string;\n  session:",
+      "replace": "  forwardSecret: string;\n  /** The vault's secret store, for the routes of logins linked to a computer (dozo-device-logins.ts). */\n  secrets?: SecretStore;\n  session:",
+      "requires": [
+        "apps/api/src/dozo-device-logins.ts"
+      ],
+      "reason": "password manager link: the device routes need the secret store the vault seals its items with"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "    return c.body(null, 204);\n  });\n\n  app.delete(`${USER_DEVICE_PATH}/:deviceId`, async (c) => {\n",
+      "replace": "    return c.body(null, 204);\n  });\n\n  if (deps.secrets) mountDeviceLoginRoutes(app, { prisma, hub: deps.hub, secrets: deps.secrets });\n\n  app.delete(`${USER_DEVICE_PATH}/:deviceId`, async (c) => {\n",
+      "requires": [
+        "apps/api/src/dozo-device-logins.ts"
+      ],
+      "reason": "password manager link: the routes a computer uses, with its own token, to link a login from its password manager (POST) and remove one (DELETE), mounted beside removing itself; a computer's links go when it is revoked, by a trigger of the database"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "      forwardSecret: userDeviceSecret,\n      session: async (request) => {\n",
+      "replace": "      forwardSecret: userDeviceSecret,\n      secrets,\n      session: async (request) => {\n",
+      "requires": [
+        "apps/api/src/dozo-device-logins.ts"
+      ],
+      "reason": "password manager link: the device routes get the secret store the vault seals its items with"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./user-device-protocol.js\";\nexport { listVaultItemUses } from \"./vault-activity.js\";\n",
+      "replace": "export * from \"./user-device-protocol.js\";\nexport * from \"./dozo-device-login.js\";\nexport * from \"./dozo-device-login-store.js\";\nexport { listVaultItemUses } from \"./vault-activity.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts",
+        "packages/adapters/src/dozo-device-login-store.ts"
+      ],
+      "reason": "password manager link: the routes of a computer's linked logins (apps/api) read the link and its store"
+    },
+    {
       "file": "packages/adapters/src/browser-conformance.test.ts",
       "find": "    await assertBrowserConformance(provider);\n  });\n\n  it(\"returns computer_act fallback when the page tool cannot operate\", async () => {\n",
       "replace": "    await assertBrowserConformance(provider);\n  });\n\n  it(\"holds for the browser on the user's computer (offline)\", async () => {\n    const device = new DeviceBrowserProvider(fakeDeviceBrowser(seededDevicePages));\n    expect(device.describe().id).toBe(\"device\");\n    await assertBrowserConformance(device);\n  });\n\n  it(\"returns computer_act fallback when the page tool cannot operate\", async () => {\n",

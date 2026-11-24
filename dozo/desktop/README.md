@@ -496,6 +496,43 @@ into it.
   picture, a script's request, a form, a redirect or a rebound name, a tab moved off the web or
   closed, the profile, no TCP port, ending with a killed app and with a deleted bot.
 
+## Password manager
+
+A switch in the Dozo menu and in Settings, off until chosen (`password_manager=true` in the
+settings file). Turning it on asks first, and only works where the person's password manager
+program is installed at a fixed path (`src/password_manager.rs`; macOS and Linux, none on Windows).
+The capability `passwords` is declared to the server only while it is on and the program is found
+(the connection is made again when the switch changes).
+
+- Links: Settings lists "Logins" while it is on. "Link a login…" lists the program's logins (title
+  and site only; https sites only), the person picks one, this app makes a random handle, tells the
+  server (`POST /api/devices/self/dozo-logins`, with the device token) and keeps
+  `password-logins.json` in the config folder (handle, the program's own ids, title, site, the sites
+  approved). "Remove" deletes the link here and then on the server (`DELETE`, one try).
+  Turning the switch off deletes the file, forgets every approved site and deletes each handle on
+  the server (one try each; a handle the server keeps is inert, as this computer no longer knows it
+  and the server drops them when the pairing ends).
+- Filling: the server sends `pageBrowserFillLogin` (node, site, handle, which value), only for a
+  bot's own browser here. In order (`src/browser_fill.rs`): the switch and the link; the site is the
+  link's own or one approved; the node's own frame (found by asking the browser for the node in each
+  frame's own world, so a script of a frame cannot answer for it) has that site as its address; the
+  field is of the right kind; the first fill on a site asks the person ("Fill your … login on …?",
+  Allow or Cancel, the sign-in dialog's pattern; Allow is remembered for that link and site); the
+  program is run (10 s, 64 KiB, fixed argument list, cleared environment, no shell; its stderr is
+  read to tell "not signed in" from "failed" and then dropped); the value is written by one
+  `Runtime.callFunctionOn` in that frame's world, as an argument and never in the function's text,
+  which checks the site and the field kind again. The answer is `{ filled: true }` or one code:
+  `passwords-off`, `-unlinked`, `-origin`, `-field`, `-denied`, `-locked`, `-failed`.
+- The value is held in memory only, overwritten when this app is done with its buffers, and added
+  to the browser's list of values that are scrubbed from every later answer (as they are and as
+  JSON writes them; names too) until that browser ends. `Page.createIsolatedWorld`,
+  `DOM.resolveNode` and `Runtime.callFunctionOn` are used by this app only: they are not in `ALLOWED`.
+- Honest limits: a screenshot can show what a page displays (a password field masks it); copies of
+  the value inside the message handed to the browser, and in the JSON the program printed, are not
+  overwritten; the program's own approval window lasts as long as the program says (its session);
+  anything running as this user can run the program too. Not measured against a real browser or a
+  real program yet (the tests use a fake of each); macOS and Windows were not built.
+
 ## The server on this computer
 
 "Use the server on this computer" makes the app install and run a Dozo server for this user alone,

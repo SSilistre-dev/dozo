@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   BrowserActRequest,
@@ -13,6 +14,7 @@ import type {
 import { abortableDelay, pollUntil } from "@rakazo/core";
 import { hostSite } from "@rakazo/core/egress";
 import { bestEffort } from "@rakazo/logging";
+import type { DeviceFillField } from "./dozo-device-login.js";
 
 /**
  * The bot's own browser on the user's computer, driven from here: the desktop app passes each
@@ -26,6 +28,15 @@ export interface DeviceBrowserEvent {
   method: string;
   params?: Record<string, unknown>;
 }
+/** What the browser asks the computer to fill from its password manager (`pageBrowserFillLogin`). */
+export interface DeviceFill {
+  ref: number;
+  origin: string;
+  handle: string;
+  field: DeviceFillField;
+}
+/** Answers what the computer said; throws its error code when it refused. */
+export type DeviceFillSend = (fill: DeviceFill) => Promise<unknown>;
 export type DeviceBrowserSend = (command: {
   method: string;
   params?: Record<string, unknown>;
@@ -72,8 +83,23 @@ const POLL_MS = 200;
 const SETTLE_MS = 300;
 export const MOVED_SITE =
   "The page moved to another site, so the rest was not done. Check the page and ask again.";
+/** What the computer's password manager fill answered, in words for the bot: one sentence each. */
+const DEVICE_FILL_ERRORS: Record<string, string> = {
+  "passwords-off": "The password manager is turned off in the desktop app.",
+  "passwords-unlinked": "This login is no longer linked in the desktop app. Link it there again.",
+  "passwords-origin": "The page is not on the site this login is for, so nothing was filled.",
+  "passwords-field": "This login cannot be typed into that field.",
+  "passwords-denied": "The user did not allow this login to be filled on this site.",
+  "passwords-locked":
+    "The password manager is locked or did not approve. Ask the user to unlock it, then try again.",
+  "passwords-failed": "The password manager could not give this login.",
+};
+/** Anything else it said is not quoted, since it could carry what the page or the manager showed. */
+export const DEVICE_FILL_FAILED = "The user's computer could not fill this login.";
 export const UNSUPPORTED_STEP =
   "This step is not available in the bot's browser on the user's computer yet.";
+
+const DEVICE_FILL_KEY = "dozo-device-fill:";
 
 const text = (value: unknown) =>
   (typeof value === "string" ? value : value == null ? "" : String(value))
@@ -176,8 +202,24 @@ export class DeviceBrowserProvider implements BrowserProvider {
   expectedSite: string | undefined;
   private dialog: string | undefined;
   private notes: string[] = [];
+  /** The login fills this run's tools planned, by the key their step carries in place of a value. */
+  private readonly fills = new Map<string, { handle: string; field: DeviceFillField }>();
 
-  constructor(private readonly sendCommand: DeviceBrowserSend) {}
+  constructor(
+    private readonly sendCommand: DeviceBrowserSend,
+    private readonly sendFill?: DeviceFillSend,
+  ) {}
+
+  /**
+   * A step's text for a login the computer's password manager fills: a key of this browser's own,
+   * used once, that stands for the handle and the field. The step carries it where a value would
+   * go, so the model's call and the result hold nothing a page could echo.
+   */
+  planFill(fill: { handle: string; field: DeviceFillField }): string {
+    const key = `${DEVICE_FILL_KEY}${randomUUID()}`;
+    this.fills.set(key, fill);
+    return key;
+  }
 
   describe() {
     return {
@@ -334,6 +376,20 @@ export class DeviceBrowserProvider implements BrowserProvider {
         if (!URL.canParse(url) || new URL(url).origin !== step.origin)
           return stop("The page is not on the site this text is for.", false);
       }
+      if (step.kind === "fill" && step.text.startsWith(DEVICE_FILL_KEY)) {
+        // A key this browser gave and has not used: the login is filled on the computer itself.
+        const planned = this.fills.get(step.text);
+        this.fills.delete(step.text);
+        if (!planned || !this.sendFill || !step.origin) return stop(UNSUPPORTED_STEP, false);
+        const failed = await this.fillOnComputer(
+          { ref: node, origin: step.origin, ...planned },
+          context.signal,
+        );
+        if (failed) return stop(failed.error, failed.uncertain);
+        touched = true;
+        completed += 1;
+        continue;
+      }
       let at: { x: number; y: number };
       try {
         at = await this.center(node);
@@ -371,6 +427,24 @@ export class DeviceBrowserProvider implements BrowserProvider {
     await delay(SETTLE_MS, context.signal);
     const page = await this.page();
     return { ok: true, completed, ...page, ...this.pageNotice() };
+  }
+
+  /** Asks the computer to fill; undefined when it did, else why not, in words for the bot. */
+  private async fillOnComputer(
+    fill: DeviceFill,
+    signal: AbortSignal,
+  ): Promise<{ error: string; uncertain: boolean } | undefined> {
+    try {
+      const answer = await this.sendFill!(fill);
+      if (isRecord(answer) && answer.filled === true) return undefined;
+    } catch (error) {
+      signal.throwIfAborted();
+      const code = error instanceof Error ? error.message : "";
+      const known = Object.hasOwn(DEVICE_FILL_ERRORS, code) ? DEVICE_FILL_ERRORS[code] : undefined;
+      if (known) return { error: known, uncertain: false };
+    }
+    // The computer's own words are not quoted, and what it did is not known.
+    return { error: DEVICE_FILL_FAILED, uncertain: true };
   }
 
   private async key(key: string, code: number) {

@@ -539,6 +539,9 @@ struct Running {
     attach: tokio::sync::Mutex<()>,
     /// The bot's page, once attached.
     target: Mutex<Option<String>>,
+    /// Values written into its pages from the person's password manager (`browser_fill.rs`),
+    /// scrubbed from every answer until this browser ends.
+    hidden: Mutex<Vec<String>>,
     #[cfg(unix)]
     child: Mutex<Option<tokio::process::Child>>,
 }
@@ -1157,6 +1160,20 @@ impl Browsers {
     /// answers with the result and the page events since the last answer. Only going to a website
     /// works while the page shows anything else.
     pub async fn handle(&self, key: &str, command: &Value) -> Result<Value, String> {
+        let answer = self.handle_command(key, command).await;
+        let Some(running) = self.current(key) else {
+            return answer;
+        };
+        match answer {
+            Ok(mut value) => {
+                running.scrub(&mut value);
+                Ok(value)
+            }
+            Err(error) => Err(running.scrub_text(&error)),
+        }
+    }
+
+    async fn handle_command(&self, key: &str, command: &Value) -> Result<Value, String> {
         let (method, params) = allowed(command, self.local)?;
         if let Some(site) = self.signing_site(key) {
             return Err(signing_message(&site));
@@ -1364,6 +1381,7 @@ impl Browsers {
             pipe,
             attach: tokio::sync::Mutex::default(),
             target: Mutex::default(),
+            hidden: Mutex::default(),
             child: Mutex::new(Some(child)),
         };
         if let Err(error) = harden(&running.pipe).await {
@@ -1716,6 +1734,10 @@ async fn launch(
 #[path = "browser_e2e.rs"]
 mod e2e;
 
+#[path = "browser_fill.rs"]
+mod fill;
+pub use fill::Fill;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1987,7 +2009,10 @@ mod tests {
 
     /// A browser stand-in on the other end of an in-memory pipe: answers each command with
     /// `answer`, after sending `before` events.
-    fn fake(answer: impl Fn(&Value) -> Value + Send + 'static, before: Vec<Value>) -> Arc<Pipe> {
+    pub(super) fn fake(
+        answer: impl Fn(&Value) -> Value + Send + 'static,
+        before: Vec<Value>,
+    ) -> Arc<Pipe> {
         let (ours, theirs): (DuplexStream, DuplexStream) = duplex(1 << 20);
         let (ours_read, ours_write) = tokio::io::split(ours);
         let (mut theirs_read, mut theirs_write) = tokio::io::split(theirs);

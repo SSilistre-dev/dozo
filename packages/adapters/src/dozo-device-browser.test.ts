@@ -1,6 +1,7 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import {
+  DEVICE_FILL_FAILED,
   DeviceBrowserProvider,
   MOVED_SITE,
   readAccessibilityTree,
@@ -401,5 +402,185 @@ describe("readAccessibilityTree", () => {
     expect(refNode("e42")).toBe(42);
     for (const ref of ["42", "e", "e-1", "e1.5", undefined, "e1234567890123"])
       expect(refNode(ref)).toBeUndefined();
+  });
+});
+
+describe("a login the computer's password manager fills", () => {
+  const HANDLE = "AbCdEfGhIjKlMnOpQrStUv";
+  const SITE = "https://example.test";
+  type Fill = { ref: number; origin: string; handle: string; field: string };
+
+  function linked(answer: (request: Fill) => Promise<unknown> = async () => ({ filled: true })) {
+    const device = fakeDeviceBrowser(seededDevicePages);
+    const sent: Fill[] = [];
+    const provider = new DeviceBrowserProvider(device, async (request) => {
+      sent.push(request);
+      return answer(request);
+    });
+    return { device, provider, sent };
+  }
+  const step = (text: string, extra: Record<string, unknown> = {}) => ({
+    kind: "fill" as const,
+    ref: "e11",
+    text,
+    origin: SITE,
+    field: "password" as const,
+    ...extra,
+  });
+
+  it("asks the computer to fill the node and sends no value, no click and no key", async () => {
+    const { provider, device, sent } = linked();
+    await provider.navigate(computer, { url: FORM }, context());
+    const before = device.commands.length;
+    const key = provider.planFill({ handle: HANDLE, field: "username" });
+    const done = await provider.act(
+      computer,
+      { actions: [step(key), { kind: "click", ref: "e12" }] },
+      context(),
+    );
+    expect(done).toMatchObject({ ok: true, completed: 2, url: FORM });
+    expect(sent).toEqual([{ ref: 11, origin: SITE, handle: HANDLE, field: "username" }]);
+    // The step's own field is not what the computer is told: the login's is.
+    expect(JSON.stringify(sent)).not.toContain(key);
+    expect(device.value(11)).toBeUndefined();
+    const methods = device.commands.slice(before).map((command) => command.method);
+    expect(methods).not.toContain("Input.insertText");
+    expect(methods.filter((method) => method === "Input.dispatchMouseEvent")).toHaveLength(3);
+  });
+
+  it("uses a key once, and types nothing for one it never gave", async () => {
+    const { provider, device, sent } = linked();
+    await provider.navigate(computer, { url: FORM }, context());
+    const key = provider.planFill({ handle: HANDLE, field: "password" });
+    await provider.act(computer, { actions: [step(key)] }, context());
+    const before = device.commands.length;
+    for (const text of [key, `${key.slice(0, key.indexOf(":") + 1)}made-up`]) {
+      const refused = await provider.act(computer, { actions: [step(text)] }, context());
+      expect(refused).toMatchObject({
+        ok: false,
+        completed: 0,
+        uncertain: false,
+        error: UNSUPPORTED_STEP,
+      });
+    }
+    expect(sent).toHaveLength(1);
+    expect(device.commands.slice(before).map((command) => command.method)).not.toContain(
+      "Input.insertText",
+    );
+  });
+
+  it("is not available to a browser with no computer behind it, or a step with no site", async () => {
+    const bare = setup();
+    await bare.provider.navigate(computer, { url: FORM }, context());
+    const key = bare.provider.planFill({ handle: HANDLE, field: "password" });
+    expect((await bare.provider.act(computer, { actions: [step(key)] }, context())).error).toBe(
+      UNSUPPORTED_STEP,
+    );
+    const { provider, sent } = linked();
+    await provider.navigate(computer, { url: FORM }, context());
+    const other = provider.planFill({ handle: HANDLE, field: "password" });
+    const open = await provider.act(
+      computer,
+      { actions: [{ ...step(other), origin: undefined }] },
+      context(),
+    );
+    expect(open.error).toBe(UNSUPPORTED_STEP);
+    expect(sent).toEqual([]);
+  });
+
+  it("asks nothing of the computer while the page is on another site than the one approved", async () => {
+    const { provider, sent } = linked();
+    await provider.navigate(computer, { url: FORM }, context());
+    const key = provider.planFill({ handle: HANDLE, field: "password" });
+    const refused = await provider.act(
+      computer,
+      { actions: [step(key, { origin: "https://other.test" })] },
+      context(),
+    );
+    expect(refused).toMatchObject({
+      ok: false,
+      uncertain: false,
+      error: "The page is not on the site this text is for.",
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it.each([
+    ["passwords-off", "The password manager is turned off in the desktop app."],
+    [
+      "passwords-unlinked",
+      "This login is no longer linked in the desktop app. Link it there again.",
+    ],
+    ["passwords-origin", "The page is not on the site this login is for, so nothing was filled."],
+    ["passwords-field", "This login cannot be typed into that field."],
+    ["passwords-denied", "The user did not allow this login to be filled on this site."],
+    [
+      "passwords-locked",
+      "The password manager is locked or did not approve. Ask the user to unlock it, then try again.",
+    ],
+    ["passwords-failed", "The password manager could not give this login."],
+  ])("says %s in one sentence, nothing was typed", async (code, sentence) => {
+    const { provider } = linked(async () => {
+      throw new Error(code);
+    });
+    await provider.navigate(computer, { url: FORM }, context());
+    const key = provider.planFill({ handle: HANDLE, field: "password" });
+    expect(await provider.act(computer, { actions: [step(key)] }, context())).toMatchObject({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: sentence,
+    });
+  });
+
+  it("never quotes what else the computer said, and is unsure what it did", async () => {
+    const { provider } = linked(async () => {
+      throw new Error("NOT_HERE: page text with a hunter2");
+    });
+    const proto = linked(async () => {
+      throw new Error("constructor");
+    });
+    await proto.provider.navigate(computer, { url: FORM }, context());
+    const protoKey = proto.provider.planFill({ handle: HANDLE, field: "password" });
+    expect(
+      (await proto.provider.act(computer, { actions: [step(protoKey)] }, context())).error,
+    ).toBe(DEVICE_FILL_FAILED);
+    await provider.navigate(computer, { url: FORM }, context());
+    const key = provider.planFill({ handle: HANDLE, field: "password" });
+    const result = await provider.act(computer, { actions: [step(key)] }, context());
+    expect(result).toMatchObject({ ok: false, uncertain: true, error: DEVICE_FILL_FAILED });
+    expect(JSON.stringify(result)).not.toContain("hunter2");
+    const odd = linked(async () => {
+      throw "not an error object";
+    });
+    await odd.provider.navigate(computer, { url: FORM }, context());
+    const again = odd.provider.planFill({ handle: HANDLE, field: "password" });
+    expect((await odd.provider.act(computer, { actions: [step(again)] }, context())).error).toBe(
+      DEVICE_FILL_FAILED,
+    );
+  });
+
+  it("is unsure too when the computer answers anything but that it filled", async () => {
+    const { provider } = linked(async () => ({ filled: false }));
+    await provider.navigate(computer, { url: FORM }, context());
+    const key = provider.planFill({ handle: HANDLE, field: "password" });
+    expect(await provider.act(computer, { actions: [step(key)] }, context())).toMatchObject({
+      ok: false,
+      uncertain: true,
+      error: DEVICE_FILL_FAILED,
+    });
+  });
+
+  it("stops when the call was cancelled, rather than reporting a failed fill", async () => {
+    const controller = new AbortController();
+    const { provider } = linked(async () => {
+      controller.abort();
+      throw new Error("aborted");
+    });
+    await provider.navigate(computer, { url: FORM }, context());
+    const key = provider.planFill({ handle: HANDLE, field: "password" });
+    await expect(
+      provider.act(computer, { actions: [step(key)] }, { ...context(), signal: controller.signal }),
+    ).rejects.toThrow();
   });
 });
