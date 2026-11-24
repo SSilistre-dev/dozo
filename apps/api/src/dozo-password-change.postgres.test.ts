@@ -9,12 +9,19 @@ import {
   notifyRealtime,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { sessionCookieHeader } from "../../../packages/testkit/src/index.js";
 import type { AppHandles } from "./app.js";
 import { createApp } from "./app.js";
 
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
 const webOrigin = "http://127.0.0.1:5173";
+
+/** The session cookies a response sets, as the next request sends them back. */
+function sessionCookieHeader(response: Response) {
+  return response.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";")[0])
+    .join("; ");
+}
 
 /**
  * A password change signs out every other session whether or not the client asks: the auth

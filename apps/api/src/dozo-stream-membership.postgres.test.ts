@@ -154,12 +154,13 @@ describePostgres("a stream after its caller stops being allowed (PostgreSQL)", (
     const follow = which();
     const { spaceId, botId, thread, member } = await sharedSpace();
     const stream = await follow(member, { botId, cursor: -1 });
-    // Close to running out, then extended, as the auth library refreshes a session in use.
-    const oldEnd = Date.now() + 2_000;
-    await expiresIn(stream, oldEnd - Date.now());
     const first = `first-${randomUUID()}`;
     await botSays(spaceId, thread.id, botId, first);
     await vi.waitFor(() => expect(stream.text).toContain(first), { timeout: 5_000 });
+    // Close to running out, then extended, as the auth library refreshes a session in use. The
+    // first message is in before this: delivered under the short end, it would race that end.
+    const oldEnd = Date.now() + 2_000;
+    await expiresIn(stream, oldEnd - Date.now());
     await expiresIn(stream, 60 * 60_000);
 
     // Past the old end, so only the extension lets the next message through.

@@ -96,7 +96,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "botSections/list": ["section"],
   "computer/downloadFile": ["file"],
   "computer/readFile": ["file"],
-  "computer/status": ["bot"],
   "computer/updates": ["bot"],
   "dozoAccessTokens/create": ["bot"],
   "dozoChatExport/markdown": [
@@ -238,8 +237,13 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
 export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly string[]>> = {
   "bots/update": ["routineprompt"],
   "computer/boot": ["bot"],
+  // The name of the bot busy on the computer: there only while a run, boot or recording holds it.
+  "computer/status": ["bot"],
   "export/bot": ["artifact"],
   "runs/list": ["artifact", "bot", "draftskill", "group", "routineprompt", "waitbot"],
+  // The chat's current or just-ended run names its routine: only while a run the sweep started
+  // with the routine (threads/sendWithRoutines) is current. Members see it in routines/list too.
+  "threads/get": ["routine"],
 };
 
 export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
