@@ -18,7 +18,7 @@ import { ACP_AGENTS } from "./acp/dozo-acp-catalog.js";
 import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
 import { codexAgentDriver } from "./codex/dozo-codex-agent.js";
 import type { AgentDriver } from "./dozo-agent.js";
-import { AGENT_OWN_MODEL, enabledAgentProviders } from "./dozo-agent.js";
+import { AGENT_OWN_MODEL } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, CliTurn } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -40,12 +40,13 @@ export const AGENT_DRIVERS: readonly AgentDriver[] = [
   ...ACP_AGENTS.map((entry) => acpAgentDriver(entry)),
 ];
 
-/** The agents turned on for this server (dozo-agent.ts): only those are listed or run. */
-export function enabledAgentDrivers(): AgentDriver[] {
-  // Process groups and the bridge's socket are Unix only, as the desktop app's own server is.
-  if (process.platform === "win32") return [];
-  const enabled = enabledAgentProviders();
-  return AGENT_DRIVERS.filter((driver) => enabled.has(driver.provider));
+/**
+ * The agents this computer can offer: all of them on the person's own computer (settings show each,
+ * connecting turns its mode on: dozo-agent-modes.ts), none on Windows, whose process groups and
+ * bridge socket are Unix only, as the desktop app's own server is.
+ */
+export function availableAgentDrivers(): readonly AgentDriver[] {
+  return process.platform === "win32" ? [] : AGENT_DRIVERS;
 }
 
 export const AGENT_CATALOG_ERROR = "An agent's turn runs in agent mode, not as a model.";
@@ -186,7 +187,7 @@ export function registerLocalCliProviders(
   if (!localCliHost()) return models;
   for (const driver of CLI_MODEL_DRIVERS)
     models.setProvider(cliModelProvider(driver, models, accessCheck));
-  for (const driver of enabledAgentDrivers())
+  for (const driver of availableAgentDrivers())
     models.setProvider(agentCatalogProvider(driver, models));
   return models;
 }

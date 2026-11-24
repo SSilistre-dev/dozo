@@ -120,6 +120,35 @@ describe("tools on this computer", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("offers an agent that is not installed only its maker's page, in a new tab", async () => {
+    api.list.mockResolvedValue({
+      tools: [
+        tool({
+          mode: "agent",
+          found: false,
+          signedIn: null,
+          downloadUrl: "https://tool.example/download",
+        }),
+      ],
+    });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(container.querySelector("a")).not.toBeNull());
+    const link = container.querySelector("a");
+    expect(link?.textContent).toBe("Download");
+    expect(link?.getAttribute("href")).toBe("https://tool.example/download");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noreferrer noopener");
+    // Nothing to connect while it is missing: Dozo never installs it.
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("offers an installed agent to connect, with no link to get it", async () => {
+    api.list.mockResolvedValue({ tools: [tool({ mode: "agent", signedIn: null })] });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(button("Connect")).toBeDefined());
+    expect(container.querySelector("a")).toBeNull();
+  });
+
   it("says a tool is not signed in instead of offering it", async () => {
     api.list.mockResolvedValue({ tools: [tool({ signedIn: false })] });
     await render(<DozoCliAccounts />);
