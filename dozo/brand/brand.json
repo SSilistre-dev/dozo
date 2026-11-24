@@ -5613,22 +5613,33 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport {\n  phoneCalendarCreateRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n  phoneReminderCreateRequest,\n  phoneRemindersReadRequest,\n} from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport {\n  AGENT_TURN_DEADLINE_MS,\n  agentStopRequest,\n  agentToolResultRequest,\n  agentTurnRequest,\n} from \"./dozo-agent-device-protocol.js\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport {\n  phoneCalendarCreateRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n  phoneReminderCreateRequest,\n  phoneRemindersReadRequest,\n} from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
       "requires": [
+        "packages/adapters/src/dozo-agent-device-protocol.ts",
         "packages/adapters/src/dozo-page-browser-protocol.ts",
         "packages/adapters/src/dozo-phone-protocol.ts"
       ],
-      "reason": "user's browser and phone: the imports of the requests below"
+      "reason": "user's browser, phone and agent mode on the user's computer: the imports of the requests and the agent turn's deadline below"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "export function hostComputerDeadlineMs(request: HostComputerRequest) {\n  if (request.method === \"execute\")\n",
+      "replace": "export function hostComputerDeadlineMs(request: HostComputerRequest) {\n  if (request.method === \"agentTurn\") return AGENT_TURN_DEADLINE_MS;\n  if (request.method === \"execute\")\n",
+      "requires": [
+        "packages/adapters/src/dozo-agent-device-protocol.ts"
+      ],
+      "reason": "agent mode on the user's computer: a whole agent turn streams over one request, so it gets the turn's own deadline instead of the ten minutes of a computer request"
     },
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
-      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n  phoneRemindersReadRequest,\n  phoneCalendarCreateRequest,\n  phoneReminderCreateRequest,\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n  phoneRemindersReadRequest,\n  phoneCalendarCreateRequest,\n  phoneReminderCreateRequest,\n  agentTurnRequest,\n  agentToolResultRequest,\n  agentStopRequest,\n]);\n",
       "requires": [
+        "packages/adapters/src/dozo-agent-device-protocol.ts",
         "packages/adapters/src/dozo-page-browser-protocol.ts",
         "packages/adapters/src/dozo-phone-protocol.ts"
       ],
-      "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), the reads of the user's phone: its calendar (phoneCalendarRead), one person in its contacts (phoneContactsSearch), its location once (phoneLocation) and its reminders (phoneRemindersRead), and its two writes, each creating one event (phoneCalendarCreate) or reminder (phoneReminderCreate) and never changing or deleting one"
+      "reason": "user's browser, phone and agent mode: the device protocol carries an agent turn the desktop app runs on the user's computer, the bot tool results it waits on and its stop (agentTurn, agentToolResult, agentStop: dozo-agent-device-protocol.ts), and one DevTools command for the bot's own browser on the user's computer (pageBrowser), the reads of the user's phone: its calendar (phoneCalendarRead), one person in its contacts (phoneContactsSearch), its location once (phoneLocation) and its reminders (phoneRemindersRead), and its two writes, each creating one event (phoneCalendarCreate) or reminder (phoneReminderCreate) and never changing or deleting one"
     },
     {
       "file": "packages/adapters/src/browser-conformance.test.ts",
