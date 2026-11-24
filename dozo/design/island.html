@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dozo - Island</title><link rel="stylesheet" href="dozo.css"><script src="dozo.js"></script><style>
+/* The island: a small status surface on macOS, hanging from the menu bar around the notch. It is
+   always the dark surface, in either theme, as the notch beside it is black. */
+.desk{position:relative;width:1440px;height:900px;background:var(--bg)}
+.bar{position:absolute;left:0;right:0;top:0;height:38px;background:color-mix(in srgb,var(--side) 82%,transparent);display:flex;align-items:center;padding:0 18px;gap:20px;font-size:13px;color:var(--muted)}
+.bar b{color:var(--text);font-weight:500}.bar .r{margin-left:auto;display:flex;gap:18px}
+.stage{position:absolute;top:0;width:360px;height:150px}
+.notch{position:absolute;left:50%;top:0;width:190px;height:38px;margin-left:-95px;background:#000;border-radius:0 0 14px 14px}
+.island{position:absolute;left:50%;top:38px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:40px;padding:0 16px 0 10px;border-radius:0 0 22px 22px;background:#000;color:#ededed;font-size:13.5px;white-space:nowrap}
+.island .bot{width:26px;height:26px}.island .bot .b{fill:#ededed}.island .bot .l{stroke:#ededed}
+.island .dots{display:flex;gap:4px}.island .dots i{width:5px;height:5px;border-radius:50%;background:#a3a3a3;animation:blink 1.2s ease-in-out infinite}
+.island .dots i:nth-child(2){animation-delay:.2s}.island .dots i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+.island .ok{color:var(--green)}
+.island .pill{height:26px;padding:0 12px;font-size:13px;background:var(--accent);color:var(--on-accent)}
+.tag{position:absolute;top:160px;width:360px;text-align:center;font-size:13px;color:var(--quiet)}
+.note{position:absolute;left:0;right:0;top:300px;margin:0 auto;width:560px;font-size:14.5px;color:var(--muted)}
+.note p+p{margin-top:12px}
+</style></head><body><div class="desk">
+<div class="bar"><b>Dozo</b><span>File</span><span>Edit</span><span>View</span><span class="r"><span>Wi-Fi</span><span>Tue 9:41</span></span></div>
+<div class="stage" style="left:0"><div class="notch"></div><div class="island" data-state="working"><span class="bot" data-bot="sora" data-state="working"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span><span class="dots" aria-label="Working"><i></i><i></i><i></i></span></div></div>
+<div class="tag" style="left:0">Working</div>
+<div class="stage" style="left:540px"><div class="notch"></div><div class="island" data-state="waiting"><span class="bot" data-bot="sora" data-state="waiting"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span><span class="dot wait"></span><button class="pill">Review</button></div></div>
+<div class="tag" style="left:540px">Waiting for approval</div>
+<div class="stage" style="left:1080px"><div class="notch"></div><div class="island" data-state="done"><span class="bot" data-bot="sora" data-state="idle"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span><svg class="ok" viewBox="0 0 16 16" aria-label="Done"><path d="M3.5 8.5 7 12l5.5-7"/></svg></div></div>
+<div class="tag" style="left:1080px">Done, then it folds away</div>
+<div class="note"><p>macOS only, off until switched on in Settings. It appears while a bot is working or waits for an approval and Dozo is not the front app, and folds into the notch when the work is done or Dozo comes forward. Clicking it brings the chat forward; the approval itself is given in the chat, never from the island.</p></div>
+</div></body></html>

@@ -22,6 +22,8 @@ and open a page. The pages are fixed at 1440x900.
 - `apps-v2.html`: the Integrations window over chat-v2 ("Connect apps" opens it); app marks are
   initials and the app names are placeholders
 - `computer.html`: the bot's computer view
+- `island.html`: proposal for a small macOS status surface at the notch (working, waiting for
+  approval, done); not in the app
 - `logos.html`: logo and wordmark studies
 - add `?theme=light` to any page for the light theme (dark is the default)
 - the v2 pages also take `?theme=system|sumi|yoru|hoji|washi|matcha|kasumi` (six proposed named
