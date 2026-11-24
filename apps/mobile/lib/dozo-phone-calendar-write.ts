@@ -133,6 +133,14 @@ function when(event: PhoneEventWrite): Pick<EventDetails, "startDate" | "endDate
   };
 }
 
+/** The last day of a repeating all-day event, on the same day basis as its start. */
+function allDayUntil(until: string): Date {
+  const [year, month, day] = dayOf(until);
+  return Platform.OS === "android"
+    ? new Date(Date.UTC(year, month, day))
+    : new Date(year, month, day);
+}
+
 function details(event: PhoneEventWrite): EventDetails {
   const { recurrence } = event;
   const until = recurrence?.until;
@@ -148,9 +156,7 @@ function details(event: PhoneEventWrite): EventDetails {
             frequency: recurrence.frequency,
             interval: recurrence.interval,
             ...(recurrence.count !== undefined ? { occurrence: recurrence.count } : {}),
-            ...(until
-              ? { endDate: event.allDay ? new Date(...dayOf(until)) : new Date(until) }
-              : {}),
+            ...(until ? { endDate: event.allDay ? allDayUntil(until) : new Date(until) } : {}),
           },
         }
       : {}),

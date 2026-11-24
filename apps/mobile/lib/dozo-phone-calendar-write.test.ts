@@ -246,6 +246,48 @@ describe("an all-day event", () => {
   );
 });
 
+describe("an all-day event that repeats until a day", () => {
+  const daily = {
+    title: "Holiday",
+    start: "2026-03-01",
+    end: "2026-03-02",
+    allDay: true,
+    recurrence: { frequency: "daily", interval: 1, until: "2026-03-01" },
+  };
+  const MARCH = Date.parse("2026-02-27T12:00:00.000Z");
+  const zone = process.env.TZ;
+  afterEach(() => {
+    process.env.TZ = zone;
+  });
+  const rule = (calls: unknown) =>
+    (calls as Array<[{ recurrenceRule: { endDate: Date } }]>)[0]![0].recurrenceRule.endDate;
+
+  it.each(["Europe/Istanbul", "Asia/Tokyo", "America/Los_Angeles"])(
+    "ends on Android on the day its start is on, at midnight UTC, in %s",
+    async (where) => {
+      process.env.TZ = where;
+      native.platform.OS = "android";
+      native.write = { check: native.androidCheck, request: native.androidRequest };
+      const primary = native.target("Personal", { isPrimary: true });
+      native.calendar.getCalendars.mockResolvedValue([primary]);
+      await write.createCalendarEvent(daily, MARCH);
+      expect(rule(primary.createEvent.mock.calls)).toEqual(new Date("2026-03-01T00:00:00.000Z"));
+    },
+  );
+
+  it.each(["Europe/Istanbul", "Asia/Tokyo", "America/Los_Angeles"])(
+    "ends on iOS at the phone's own midnight of that day in %s",
+    async (where) => {
+      process.env.TZ = where;
+      await write.createCalendarEvent(daily, MARCH);
+      const end = rule(native.defaultCalendar.createEvent.mock.calls);
+      expect([end.getFullYear(), end.getMonth() + 1, end.getDate(), end.getHours()]).toEqual([
+        2026, 3, 1, 0,
+      ]);
+    },
+  );
+});
+
 describe("adding an event to the phone's calendar", () => {
   it("creates it in the default calendar with only the given fields, and answers its name", async () => {
     const value = await write.createCalendarEvent(

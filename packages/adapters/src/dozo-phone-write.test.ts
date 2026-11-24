@@ -37,7 +37,9 @@ import {
   phoneReminderCreateRequest,
   phoneReminderCreateValue,
 } from "./dozo-phone-protocol.js";
+import { UserDeviceOfflineError } from "./user-device-gateway.js";
 
+const DROPPED = "Your computer disconnected. Check the result before retrying.";
 const EVENT_TOOL = PHONE_CALENDAR_CREATE_TOOL;
 const REMINDER_TOOL = PHONE_REMINDER_CREATE_TOOL;
 const TITLE = "Dentist with Dr. Example";
@@ -224,14 +226,11 @@ describe("a write that fails", () => {
     ["calendar-write-permission", "turn on Add to calendar in the app's Phone settings"],
     ["calendar-write-unavailable", "could not add the event"],
     ["calendar-write-invalid", "could not add the event as given"],
-    ["calendar-off", "could not add the event"],
   ])("maps the phone's %s to one sentence, logging only its kind", async (code, says) => {
     const run = setup({ answer: failing(new Error(code)) });
     const { result } = await write(run);
     expect((result as { error: string }).error).toContain(says);
-    expect(logged).toEqual([
-      ["warn", "phone calendar write failed", { kind: code === "calendar-off" ? "other" : code }],
-    ]);
+    expect(logged).toEqual([["warn", "phone calendar write failed", { kind: code }]]);
   });
 
   it("says it may have been written when the phone did not answer in time", async () => {
@@ -254,6 +253,28 @@ describe("a write that fails", () => {
       error:
         "The user's phone did not answer in time, so it may have been added. Ask the user before trying again.",
     });
+  });
+
+  it.each([
+    ["the connection dropped after the request went out", new Error(DROPPED)],
+    ["a forwarded request failed after it was handed off", new UserDeviceOfflineError()],
+    ["the phone answered with no code it knows", new Error("calendar-off")],
+  ])("says it may have been written when %s", async (_why, error) => {
+    const run = setup({ answer: failing(error) });
+    expect(((await write(run)).result as { error: string }).error).toContain(
+      "so it may have been added. Ask the user before trying again.",
+    );
+    const reminder = phoneSetup({ tool: REMINDER_TOOL, answer: failing(error) });
+    expect(
+      ((await write(reminder, { ...REMINDER }, REMINDER_TOOL)).result as { error: string }).error,
+    ).toContain("so it may have been added");
+  });
+
+  it("still says the phone is not connected when the write never left", async () => {
+    const run = setup({ phone: false });
+    const { result } = await write(run);
+    expect((result as { error: string }).error).toContain("is not connected");
+    expect(run.requests).toEqual([]);
   });
 
   it("says it may have been written when the answer cannot be read", async () => {
@@ -316,6 +337,35 @@ describe("a write's approval", () => {
       { id: "w2", runId: "run-1", kind: REMINDER_TOOL, status: "completed" },
     );
     expect((await write(room)).result).toEqual({ created: true, calendar: "Home" });
+  });
+
+  it("counts a write still running or of unknown outcome as made, but not the asking call's own", async () => {
+    for (const status of ["executing", "uncertain"]) {
+      const run = setup();
+      run.effects.push(
+        { id: "w1", runId: "run-1", kind: EVENT_TOOL, status: "completed" },
+        { id: "w2", runId: "run-1", kind: REMINDER_TOOL, status },
+        { id: "w3", runId: "run-1", kind: EVENT_TOOL, status },
+      );
+      expect(await phoneGate(run.ctx, false, EVENT_TOOL, { ...EVENT })).toBe("allow");
+      expect(await phoneRead(run.ctx, call(EVENT_TOOL, { ...EVENT }).call)).toEqual({
+        error: "A run may write to the user's phone at most 3 times. Ask the user to add the rest.",
+      });
+    }
+    // Two earlier writes, then the call itself starts executing: that is three, and it still runs.
+    const room = setup();
+    room.effects.push(
+      { id: "w1", runId: "run-1", kind: EVENT_TOOL, status: "completed" },
+      { id: "w2", runId: "run-1", kind: EVENT_TOOL, status: "uncertain" },
+      { id: "card", runId: "run-1", kind: EVENT_TOOL, status: "approved", request: EVENT },
+    );
+    const args = { ...EVENT };
+    expect(await phoneGate(room.ctx, false, EVENT_TOOL, args)).toBe("allow");
+    room.effects.push({ id: "effect-1", runId: "run-1", kind: EVENT_TOOL, status: "executing" });
+    expect(await phoneRead(room.ctx, call(EVENT_TOOL, args).call)).toEqual({
+      created: true,
+      calendar: "Home",
+    });
   });
 
   it("is refused in a token's run, and a call its card did not see", async () => {
@@ -675,6 +725,16 @@ describe("the write samples the phone checks too", () => {
 
   it.each(REMINDER_SAMPLES)("a reminder: %s, accepted %s", (_name, item, ok) => {
     expect("error" in reminderCreateInput(item)).toBe(!ok);
+  });
+});
+
+describe("a repeat with no interval", () => {
+  it.each([null, undefined])("repeats every 1 when interval is %s", (interval) => {
+    const input = calendarCreateInput(
+      { ...EVENT, recurrence: { frequency: "daily", count: 3, interval } },
+      Date.now(),
+    );
+    expect(input).toHaveProperty("item.recurrence", { frequency: "daily", interval: 1, count: 3 });
   });
 });
 

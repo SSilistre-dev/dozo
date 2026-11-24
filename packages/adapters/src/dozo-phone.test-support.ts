@@ -76,11 +76,13 @@ export function setup(options: {
     ),
   };
   type Clause = {
+    id?: { not: string };
     runId?: string;
     status?: string | { in: string[] };
     request?: { equals: unknown };
   };
   const holds = (effect: PhoneEffect, clause: Clause) =>
+    (!clause.id || effect.id !== clause.id.not) &&
     (!clause.runId || effect.runId === clause.runId) &&
     (!clause.request || JSON.stringify(effect.request) === JSON.stringify(clause.request.equals)) &&
     (clause.status === undefined ||

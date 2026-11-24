@@ -465,12 +465,26 @@ const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();
 /** Writes whose card asks after the run read outside content, by their arguments. */
 const askedTainted = new WeakSet<Record<string, unknown>>();
 
-/** Whether this run made as many calls of this tool (or its kinds) as one run may. */
-async function readsInRun(ctx: RunContext, name: string, tool: PhoneTool): Promise<boolean> {
+/**
+ * Whether this run made as many calls of this tool (or its kinds) as one run may. `own` is the
+ * effect of the call asking, which is no earlier call.
+ */
+async function readsInRun(
+  ctx: RunContext,
+  name: string,
+  tool: PhoneTool,
+  own?: string,
+): Promise<boolean> {
   if (!tool.perRun) return false;
   const { kinds } = tool.perRun;
   const reads = await ctx.deps.prisma.externalEffect.count({
-    where: { runId: ctx.runId, kind: kinds ? { in: [...kinds] } : name, status: "completed" },
+    where: {
+      runId: ctx.runId,
+      kind: kinds ? { in: [...kinds] } : name,
+      ...(own ? { id: { not: own } } : {}),
+      // A write still running, or one whose outcome is not known, may have made its item.
+      status: { in: tool.write ? ["completed", "executing", "uncertain"] : ["completed"] },
+    },
   });
   return reads >= tool.perRun.reads;
 }
@@ -600,9 +614,11 @@ function failure(
   if (deadline.aborted)
     return { kind: "timeout", error: tool.write ? unsure("did not answer in time") : TIMEOUT };
   const text = error instanceof Error ? error.message : "";
-  // Another process holding no socket for it says so in words.
+  // Another process holding no socket for it says so in words. A write that already went out may
+  // have been made before the link dropped: only a call that never left (no route, `phoneRead`) is
+  // known to have written nothing.
   if (error instanceof UserDeviceOfflineError || text === USER_DEVICE_OFFLINE_MESSAGE)
-    return { kind: "offline", error: OFFLINE };
+    return { kind: "offline", error: tool.write ? unsure("lost its connection") : OFFLINE };
   const { capability, setting, cannot } = tool;
   if (text === `${capability}-off` || text === `${capability}-permission`)
     return {
@@ -611,7 +627,12 @@ function failure(
     };
   const extra = tool.errors?.[text];
   if (extra) return { kind: text, error: extra };
-  return { kind: text === `${capability}-unavailable` ? text : "other", error: cannot };
+  if (text === `${capability}-unavailable`) return { kind: text, error: cannot };
+  // An answer of no code the phone knows (a dropped socket included) says nothing of a write.
+  return {
+    kind: "other",
+    error: tool.write ? unsure("failed in a way that is not known") : cannot,
+  };
 }
 
 /**
@@ -624,7 +645,7 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
   if (await runCameByToken(ctx)) return refuse(ctx, call, TOKEN_RUN, "token");
   const plan = planCall(tool, call.args, ctx.secrets);
   if ("error" in plan) return refuse(ctx, call, plan.error, "input");
-  if (tool.perRun && (await readsInRun(ctx, call.name, tool)))
+  if (tool.perRun && (await readsInRun(ctx, call.name, tool, call.applied?.effect.id)))
     return refuse(ctx, call, tool.perRun.refusal, "limit");
   const route = await phoneRoute(ctx, tool.capability);
   if (!route) return refuse(ctx, call, OFFLINE, "offline");

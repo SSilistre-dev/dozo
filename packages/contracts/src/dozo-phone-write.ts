@@ -58,9 +58,9 @@ const TIME_EXAMPLE = "ISO 8601 times with an offset, such as 2026-03-02T09:00:00
 
 /** The time given, when it is ISO 8601 with an offset. */
 export function isoWithOffset(value: unknown): string | undefined {
-  return typeof value === "string" &&
-    ISO_WITH_OFFSET.test(value) &&
-    !Number.isNaN(Date.parse(value))
+  if (typeof value !== "string" || !ISO_WITH_OFFSET.test(value)) return undefined;
+  const hour = Number(value.slice(11, 13));
+  return dateOnly(value.slice(0, 10)) && hour <= 23 && !Number.isNaN(Date.parse(value))
     ? value
     : undefined;
 }
@@ -176,6 +176,8 @@ function checkRecurrence(
   const until = value.until === undefined ? undefined : read(value.until);
   if (value.until !== undefined && (!until || Date.parse(until) < Date.parse(start)))
     return { error: "recurrence until must be written as start is, and not before it." };
+  if (until && Date.parse(until) - Date.parse(start) > PHONE_WRITE_LIMITS.startDaysAhead * DAY_MS)
+    return { error: "recurrence until can be at most two years after start." };
   if ((count === undefined) === (until === undefined))
     return { error: "recurrence needs count or until, not both, so that it ends." };
   return {

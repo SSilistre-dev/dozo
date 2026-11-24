@@ -145,7 +145,7 @@ export function calendarCreateInput(
   const { recurrence } = args;
   const repeats =
     recurrence && typeof recurrence === "object" && !Array.isArray(recurrence)
-      ? given({ interval: 1, ...(recurrence as Record<string, unknown>) })
+      ? { interval: 1, ...given(recurrence as Record<string, unknown>) }
       : recurrence;
   const checked = checkPhoneEvent(
     given({

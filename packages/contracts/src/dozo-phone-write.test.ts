@@ -74,6 +74,24 @@ describe("an event a write may create", () => {
   });
 });
 
+describe("how long an event may repeat", () => {
+  const repeating = (until: string) => ({
+    ...TIMED,
+    recurrence: { frequency: "daily", interval: 1, until },
+  });
+  const daysAfter = (days: number) =>
+    new Date(Date.parse(TIMED.start) + days * 86_400_000).toISOString();
+
+  it("ends at most two years after its start", () => {
+    expect(
+      checkPhoneEvent(repeating(daysAfter(PHONE_WRITE_LIMITS.startDaysAhead)), NOW),
+    ).toHaveProperty("value");
+    expect(
+      error(checkPhoneEvent(repeating(daysAfter(PHONE_WRITE_LIMITS.startDaysAhead + 1)), NOW)),
+    ).toContain("two years");
+  });
+});
+
 describe("a reminder a write may create", () => {
   it("is kept field for field, and says why it is refused", () => {
     const full = { title: "Buy milk", due: TIMED.start, notes: "Oat", list: "Shopping" };
@@ -93,6 +111,11 @@ describe("times and dates", () => {
     expect(isoWithOffset("2026-03-01T09:00+01:00")).toBe("2026-03-01T09:00+01:00");
     expect(isoWithOffset("2026-03-01T09:00")).toBeUndefined();
     expect(isoWithOffset(5)).toBeUndefined();
+    expect(isoWithOffset("2026-02-30T10:00:00Z")).toBeUndefined();
+    expect(isoWithOffset("2026-03-01T24:00:00Z")).toBeUndefined();
+    expect(isoWithOffset("2026-03-01T24:00+01:00")).toBeUndefined();
+    expect(isoWithOffset("2026-03-01T23:59:59Z")).toBe("2026-03-01T23:59:59Z");
+    expect(isoWithOffset("2028-02-29T00:00Z")).toBe("2028-02-29T00:00Z");
     expect(dateOnly("2028-02-29")).toBe("2028-02-29");
     expect(dateOnly("2026-02-29")).toBeUndefined();
     expect(dateOnly("2026-13-01")).toBeUndefined();
