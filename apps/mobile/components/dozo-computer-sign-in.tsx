@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppForeground } from "../lib/app-foreground";
-import { isRelayGone, relayApprovalCodeOf, subscribeRelayGone } from "../lib/dozo-relay-fetch";
+import { isRelayGone, relayApprovalCodeOf, subscribeRelayState } from "../lib/dozo-relay-fetch";
 import type { ComputerSignIn } from "../lib/dozo-relay-sign-in";
 import { askComputerForSignIn } from "../lib/dozo-relay-sign-in";
 import { useMobileTokens } from "../lib/native";
@@ -23,7 +23,7 @@ export function DozoComputerSignIn({ apiBase }: { apiBase: string }) {
   const tokens = useMobileTokens();
   const router = useRouter();
   const foreground = useAppForeground();
-  const gone = useSyncExternalStore(subscribeRelayGone, () => isRelayGone(apiBase));
+  const gone = useSyncExternalStore(subscribeRelayState, () => isRelayGone(apiBase));
   const [answer, setAnswer] = useState<ComputerSignIn | null>(null);
   const [code, setCode] = useState<string | null>(null);
 

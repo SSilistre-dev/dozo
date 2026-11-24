@@ -4,8 +4,7 @@
 //! a fill works is `password_links.rs` and `browser_fill.rs`; this file only asks the person and
 //! tells the server.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tauri::{
@@ -17,6 +16,7 @@ use tokio::sync::oneshot;
 use crate::device::Access;
 use crate::password_links::{FillPrompt, HttpRegistry, Passwords, Registry};
 use crate::password_manager::Fut;
+use crate::question_slot::Slot;
 use crate::words::text;
 
 pub const MENU_ID: &str = "password-manager";
@@ -29,103 +29,47 @@ pub struct DialogFill(pub AppHandle);
 
 const FILL_WINDOW: &str = "fill";
 
-/// The question on screen: what the window shows, and where its answer goes.
+/// The question on screen (title and site); the logic is the one `agent_ui.rs` shares
+/// (`question_slot.rs`).
 #[derive(Default)]
-pub struct FillQuestion {
-    open: Mutex<Option<Open>>,
-    count: AtomicU64,
-    /// A destroy asked for by `retire_window` has not been seen yet.
-    retired: AtomicBool,
-}
-
-struct Open {
-    id: u64,
-    title: String,
-    origin: String,
-    answer: oneshot::Sender<bool>,
-}
+pub struct FillQuestion(Slot<(String, String)>);
 
 impl FillQuestion {
-    /// Puts a question up, in place of any other (which counts as Cancel). Answers its id and
-    /// where its answer comes from.
     fn put(&self, title: &str, origin: &str) -> (u64, oneshot::Receiver<bool>) {
-        let (answer, answered) = oneshot::channel();
-        // Ids start at 1: a window with nothing shown answers with 0, which is never open.
-        let id = self.count.fetch_add(1, Ordering::SeqCst) + 1;
-        let open = Open {
-            id,
-            title: title.to_owned(),
-            origin: origin.to_owned(),
-            answer,
-        };
-        *self.open.lock().unwrap() = Some(open);
-        (id, answered)
+        self.0.put((title.to_owned(), origin.to_owned()))
     }
 
     fn words(&self) -> Option<(u64, String, String)> {
-        let open = self.open.lock().unwrap();
-        open.as_ref()
-            .map(|open| (open.id, open.title.clone(), open.origin.clone()))
+        self.0
+            .open()
+            .map(|(id, (title, origin))| (id, title, origin))
     }
 
-    /// The person's answer to question `id`, true when it was the one open. A window that shows an
-    /// earlier question (it was cancelled and another opened before the window reloaded) answers
-    /// nothing: Allow there must never approve a question the person has not seen. Only the first
-    /// answer counts.
     fn answer(&self, id: u64, allow: bool) -> bool {
-        let mut open = self.open.lock().unwrap();
-        if open.as_ref().is_some_and(|open| open.id == id) {
-            let _ = open.take().unwrap().answer.send(allow);
-            return true;
-        }
-        false
+        self.0.answer(id, allow)
     }
 
-    /// The window was destroyed: Cancel for the question open, unless this was the destroy
-    /// `retire_window` asked for, which is for a question that already ended and must not take
-    /// the next one with it.
     fn window_gone(&self) {
-        let mut open = self.open.lock().unwrap();
-        if self.retired.swap(false, Ordering::SeqCst) {
-            return;
-        }
-        if let Some(open) = open.take() {
-            let _ = open.answer.send(false);
-        }
+        self.0.window_gone();
     }
 
-    /// The window of an ended question is about to be destroyed; false (keep it) when another
-    /// question is open by now, which the window shows next.
     fn retire_window(&self) -> bool {
-        let open = self.open.lock().unwrap();
-        if open.is_some() {
-            return false;
-        }
-        self.retired.store(true, Ordering::SeqCst);
-        true
+        self.0.retire_window()
     }
 
-    /// A new window is open: no destroy is waiting for an old one.
     fn window_opened(&self) {
-        let _open = self.open.lock().unwrap();
-        self.retired.store(false, Ordering::SeqCst);
+        self.0.window_opened();
     }
 
-    /// The question `id` is over; true when it was the one on screen (its window should close).
     fn end(&self, id: u64) -> bool {
-        let mut open = self.open.lock().unwrap();
-        if open.as_ref().is_some_and(|open| open.id == id) {
-            *open = None;
-            return true;
-        }
-        false
+        self.0.end(id)
     }
 }
 
 /// Passes the window's answer on to whoever asked, until nobody waits for it any more (the
 /// receiver was dropped: the request was cancelled or timed out). A window that goes without an
 /// answer is Cancel.
-async fn relay(mut asked: oneshot::Sender<bool>, page: oneshot::Receiver<bool>) {
+pub(crate) async fn relay(mut asked: oneshot::Sender<bool>, page: oneshot::Receiver<bool>) {
     tokio::select! {
         () = asked.closed() => {}
         allow = page => {

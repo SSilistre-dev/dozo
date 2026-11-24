@@ -5,6 +5,7 @@
 
 #[cfg(unix)]
 mod agent_bridge;
+mod agent_ui;
 mod alerts;
 mod background;
 mod backup;
@@ -31,6 +32,7 @@ mod password_manager;
 mod passwords_ui;
 mod phone;
 mod prefs;
+mod question_slot;
 mod server;
 mod settings;
 mod stack;
@@ -873,6 +875,7 @@ fn main() {
         .manage(update::Pending::default())
         .manage(prefs::Changes::default())
         .manage(passwords_ui::FillQuestion::default())
+        .manage(agent_ui::AgentQuestion::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -899,7 +902,9 @@ fn main() {
             page_bridge::desktop_set,
             page_bridge::desktop_open,
             page_bridge::confirm_question,
-            page_bridge::confirm_answer
+            page_bridge::confirm_answer,
+            agent_ui::agent_question,
+            agent_ui::agent_answer
         ])
         .menu(menu)
         .on_menu_event(|app, event| run(app, event.id().as_ref()))

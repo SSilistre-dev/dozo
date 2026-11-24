@@ -122,16 +122,25 @@ const connections = new Map<string, RelayConnection>();
 let restored: Promise<void> | null = null;
 /** Computers that removed this phone, until it pairs again. */
 const gone = new Set<string>();
-const goneListeners = new Set<() => void>();
+const listeners = new Set<() => void>();
+const changed = () => {
+  for (const listener of [...listeners]) listener();
+};
 
 export function isRelayGone(origin: string) {
   return gone.has(origin);
 }
 
-export function subscribeRelayGone(listener: () => void) {
-  goneListeners.add(listener);
+/** True while the relay says the computer behind `origin` is not connected to it. */
+export function isRelayComputerOffline(origin: string) {
+  return connections.get(origin)?.computerPresent === false;
+}
+
+/** Called when a computer removed this phone, or connected to the relay or left it. */
+export function subscribeRelayState(listener: () => void) {
+  listeners.add(listener);
   return () => {
-    goneListeners.delete(listener);
+    listeners.delete(listener);
   };
 }
 
@@ -159,11 +168,12 @@ export function adoptRelayConnection(
   connection.onGone = () => {
     forgetRelayConnection(connection.origin);
     gone.add(connection.origin);
-    for (const listener of [...goneListeners]) listener();
+    changed();
     void store.load().then((stored) => {
       if (stored?.channel === connection.channel) return store.clear();
     });
   };
+  connection.onPresence = changed;
   gone.delete(connection.origin);
   connections.set(connection.origin, connection);
 }

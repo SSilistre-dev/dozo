@@ -350,6 +350,17 @@ mod fake {
                             }
                             end(&fake, "end_turn");
                         }
+                        "permission-flood" => {
+                            for id in 801..=806 {
+                                fake.send(
+                                    json!({ "id": id, "method": "session/request_permission",
+                                    "params": { "sessionId": "s-1", "toolCall": tool.clone(),
+                                        "options": all.clone() } }),
+                                );
+                            }
+                            fake.until_cancelled();
+                            end(&fake, "cancelled");
+                        }
                         "write-newline-path" => {
                             let answer = fake.call(
                                 "fs/write_text_file",
@@ -471,7 +482,6 @@ mod fake {
 struct TestApprovals {
     answers: Mutex<VecDeque<Option<bool>>>,
     asked: Mutex<Vec<String>>,
-    ended: Mutex<Vec<String>>,
     held: Mutex<Vec<oneshot::Sender<bool>>>,
     /// Runs while the question is open, before it is answered.
     before: Mutex<Option<Box<dyn Fn() + Send>>>,
@@ -482,7 +492,6 @@ impl TestApprovals {
         Arc::new(Self {
             answers: Mutex::new(answers.iter().copied().collect()),
             asked: Mutex::default(),
-            ended: Mutex::default(),
             held: Mutex::default(),
             before: Mutex::default(),
         })
@@ -506,9 +515,6 @@ impl Approvals for TestApprovals {
             _ => self.held.lock().unwrap().push(send),
         }
         receive
-    }
-    fn ended(&self, text: &str) {
-        self.ended.lock().unwrap().push(text.to_owned());
     }
 }
 
@@ -752,12 +758,25 @@ async fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
+/// Whether the process ended: on Linux also a zombie, which /proc shows; elsewhere (macOS has no
+/// /proc) when signal 0 finds no such process.
 fn gone(pid: u64) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
-        Ok(stat) => stat
-            .rsplit_once(')')
-            .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z')),
+    #[cfg(target_os = "linux")]
+    {
+        match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Err(_) => true,
+            Ok(stat) => stat
+                .rsplit_once(')')
+                .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z')),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let Ok(pid) = libc::pid_t::try_from(pid) else {
+            return true;
+        };
+        // SAFETY: signal 0 only asks whether the process exists; nothing is sent.
+        unsafe { libc::kill(pid, 0) != 0 }
     }
 }
 
@@ -1150,7 +1169,6 @@ async fn an_unanswered_permission_is_refused_after_the_wait_and_told_so() {
         bench.logged("outcome").unwrap(),
         json!({ "outcome": "selected", "optionId": "no" })
     );
-    assert_eq!(bench.approvals.ended.lock().unwrap().len(), 1);
     // A late answer does nothing.
     let held = bench.approvals.held.lock().unwrap().pop().unwrap();
     assert!(held.send(true).is_err());
@@ -1708,8 +1726,6 @@ async fn a_cancelled_turn_answers_the_waiting_permission_cancelled_and_the_sessi
     );
     assert!(bench.logged("cancel").is_some());
     assert_eq!(bench.runner.agents().live(), 1);
-    // The question that was cancelled is closed on the person's screen too.
-    assert_eq!(bench.approvals.ended.lock().unwrap().len(), 1);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1949,18 +1965,6 @@ fn no_key_is_made_when_the_system_has_no_randomness() {
         true
     });
     assert_eq!(key.as_deref(), Some("01ff"));
-}
-
-#[test]
-fn the_ended_notice_has_both_languages() {
-    assert_eq!(
-        ended_text(false),
-        "A question ended without your answer, so it was refused. Allow or Cancel on it no longer does anything."
-    );
-    assert_eq!(
-        ended_text(true),
-        "Bir soru yanıtınız olmadan bitti, bu yüzden reddedildi. Üzerindeki İzin Ver ya da İptal artık bir şey yapmaz."
-    );
 }
 
 #[test]
@@ -2207,5 +2211,90 @@ async fn a_bot_folder_that_is_a_link_out_of_the_app_data_starts_nothing() {
         assert_eq!(kinds(&answered), ["failed"], "{case}: {answered:?}");
         assert!(bench.log().is_empty(), "{case}: no agent was started");
         assert_eq!(bench.runner.agents().live(), 0);
+        // Nothing was made on the far side of the link.
+        assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0, "{case}");
+    }
+}
+
+#[test]
+fn invisible_and_format_characters_are_not_shown() {
+    let mut bad: Vec<char> = Vec::new();
+    for range in [
+        0xAD..=0xAD,
+        0x61C..=0x61C,
+        0x180E..=0x180E,
+        0x200B..=0x200F,
+        0x202A..=0x202E,
+        0x2060..=0x2064,
+        0x2066..=0x206F,
+        0xFEFF..=0xFEFF,
+        0xFFF9..=0xFFFB,
+        0xE0000..=0xE007F,
+        0x115F..=0x115F,
+        0x1160..=0x1160,
+        0x3164..=0x3164,
+        0xFFA0..=0xFFA0,
+        0x2800..=0x2800,
+    ] {
+        bad.extend(range.filter_map(char::from_u32));
+    }
+    for character in bad {
+        let text = format!("a{character}b");
+        assert!(unsafe_char(character), "U+{:04X}", character as u32);
+        assert!(
+            pieces(&text, json!({})).is_none(),
+            "title U+{:04X}",
+            character as u32
+        );
+        assert!(
+            dialog_text("h", None, std::slice::from_ref(&text), None).is_none(),
+            "path U+{:04X}",
+            character as u32
+        );
+    }
+    // Ordinary text of other scripts stays.
+    assert!(pieces("Çalıştır ünï 日本語 😀", json!({ "command": "ls" })).is_some());
+}
+
+#[test]
+fn a_long_run_of_blanks_is_not_shown() {
+    let run = |count: usize, blank: char| format!("a{}b", blank.to_string().repeat(count));
+    for blank in [
+        ' ', '\u{A0}', '\u{1680}', '\u{2003}', '\u{202F}', '\u{205F}', '\u{3000}',
+    ] {
+        assert!(pieces(&run(4, blank), json!({})).is_some(), "{blank:?} x4");
+        assert!(pieces(&run(5, blank), json!({})).is_none(), "{blank:?} x5");
+    }
+    // Different blanks together count as one run.
+    assert!(pieces("a  \u{A0}\u{3000} b", json!({})).is_none());
+    // Spread out, they are fine; in a path or a command too.
+    assert!(pieces("a  b  c  d", json!({})).is_some());
+    assert!(dialog_text("h", None, &[format!("/w/{}x", " ".repeat(5))], None).is_none());
+    assert!(pieces("t", json!({ "command": format!("ls{}-l", " ".repeat(5)) })).is_none());
+}
+
+#[tokio::test]
+async fn busy_questions_count_toward_the_refusals_of_a_turn() {
+    let bench = bench("permission-flood", &[None]);
+    let answered = frames(&bench.runner, turn("run-1", "go")).await;
+    assert_eq!(
+        failed_message(&answered),
+        "Antigravity asked too many questions that were refused, so the turn was stopped."
+    );
+    assert_eq!(bench.approvals.asked().len(), 1);
+    assert_eq!(bench.runner.agents().live(), 0);
+}
+
+#[test]
+fn every_answer_but_a_yes_counts_as_a_refusal() {
+    assert!(!counts_as_refusal(&Decision::Allow));
+    for decision in [
+        Decision::Deny,
+        Decision::Expired,
+        Decision::Cancelled,
+        Decision::Busy,
+        Decision::Refused,
+    ] {
+        assert!(counts_as_refusal(&decision));
     }
 }

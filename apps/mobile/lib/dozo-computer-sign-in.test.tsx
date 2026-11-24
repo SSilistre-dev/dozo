@@ -37,7 +37,7 @@ vi.mock("../components/native-action-button", () => ({
 vi.mock("../lib/dozo-relay-fetch", () => ({
   isRelayGone: (origin: string) => gone.origins.has(origin),
   relayApprovalCodeOf: app.code,
-  subscribeRelayGone: (listener: () => void) => {
+  subscribeRelayState: (listener: () => void) => {
     gone.listener = listener;
     return () => undefined;
   },

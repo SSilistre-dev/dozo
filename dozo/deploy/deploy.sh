@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Deploys the committed tree (HEAD) to a host that a Dokploy panel manages: stage, brand, build
-# the images on the host, hand the panel the merged compose file and the image tag, wait for the
-# panel's deployment, then check health. Settings, first-time setup and rollback:
-# dozo/deploy/README.md. Exits 2 on any failure and 64 on a usage error.
+# the images here and send them to the host (or build them on the host), hand the panel the merged
+# compose file and the image tag, wait for the panel's deployment, then check health. Settings,
+# first-time setup and rollback: dozo/deploy/README.md. Exits 2 on any failure and 64 on a usage error.
 set -Eeuo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -11,6 +11,8 @@ repo=$(cd "$here/../.." && pwd)
 . "$here/deploy-lock.sh"
 # shellcheck source=SCRIPTDIR/deploy-build-limit.sh
 . "$here/deploy-build-limit.sh"
+# shellcheck source=SCRIPTDIR/deploy-ship.sh
+. "$here/deploy-ship.sh"
 
 say() { printf '[deploy] %s\n' "$*"; }
 die() {
@@ -22,7 +24,7 @@ trap 'die "line $LINENO: $BASH_COMMAND"' ERR
 usage() {
   cat >&2 <<'EOF'
 Usage: dozo/deploy/deploy.sh [deploy | rollback <tag> | owner | site]
-  deploy          stage HEAD, brand, build on the host, deploy, check health (default)
+  deploy          stage HEAD, brand, build the images, deploy, check health (default)
   rollback <tag>  run a tag whose images are still on the host
   owner           create the owner's account (asks for email and password)
   site            publish dozo/landing (HEAD) as its own static service
@@ -48,8 +50,8 @@ conf=${DOZO_DEPLOY_CONF:-$HOME/.config/dozo/deploy.conf}
 for name in DOZO_DEPLOY_SSH DOZO_DEPLOY_DOMAIN DOKPLOY_URL DOKPLOY_COMPOSE_ID; do
   [ -n "${!name:-}" ] || die "$name is not set in $conf"
 done
-# A bad build limit setting stops the run here, before any ssh.
-[ "$action" != deploy ] || build_limit_validate
+# A bad build setting stops the run here, before any ssh.
+[ "$action" != deploy ] || { ship_validate; build_limit_validate; }
 remote_dir=${DOZO_DEPLOY_DIR:-/opt/dozo}
 timeout=${DOZO_DEPLOY_TIMEOUT:-900}
 if [ -z "${DOKPLOY_API_KEY:-}" ]; then
@@ -263,8 +265,9 @@ if [ "$action" = owner ]; then
   exit 0
 fi
 
-# Everything below changes the host: one run at a time, released by `finish` on any exit.
-lock_take "$action-$(git -C "$repo" rev-parse --short HEAD)"
+# Everything below changes the host: one run at a time, released by `finish` on any exit. A deploy
+# takes it after staging and any build here, which change nothing on the host.
+[ "$action" = deploy ] || lock_take "$action-$(git -C "$repo" rev-parse --short HEAD)"
 
 if [ "$action" = rollback ]; then
   tag=$2
@@ -350,17 +353,31 @@ env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
 # Nothing may be built by the panel or published on the host.
 ! grep -qE '^ +(build|ports):' "$merged" || die "the merged compose file still builds or publishes a port"
 
-say "copy the branded tree to the host"
-remote mkdir -p "$remote_dir/src" "$remote_dir/theme"
-rsync -az --delete "$stage/src/" "$DOZO_DEPLOY_SSH:$remote_dir/src/"
-rsync -az "$stage/theme.json" "$DOZO_DEPLOY_SSH:$remote_dir/theme/"
+# Built here before the lock is taken, so a long build does not hold the host.
+[ "$ship_mode" = host ] || ship_build "$tag"
+lock_take "deploy-${tag:0:9}"
+# What the panel runs now, read under the lock: an older commit never goes over a newer one.
+running=$(compose_json | jq -r '.env // ""' | sed -n 's/^DOZO_IMAGE_TAG=//p') ||
+  die "could not read the running release from the panel (nothing was replaced)"
+ship_order_check "$running" "$tag"
+
+if [ "$ship_mode" = host ]; then
+  say "copy the branded tree to the host"
+  remote mkdir -p "$remote_dir/src" "$remote_dir/theme"
+  rsync -az --delete "$stage/src/" "$DOZO_DEPLOY_SSH:$remote_dir/src/"
+  rsync -az "$stage/theme.json" "$DOZO_DEPLOY_SSH:$remote_dir/theme/"
+fi
 # The host's timers (backup, health check) run this copy; moved into place so a run in progress
 # keeps reading the old file.
 git -C "$repo" show "$tag:dozo/deploy/host-jobs.sh" | remote \
   "cat >$remote_dir/host-jobs.sh.new && chmod 700 $remote_dir/host-jobs.sh.new && mv $remote_dir/host-jobs.sh.new $remote_dir/host-jobs.sh"
 
-say "build the images on the host"
-build_images "$remote_dir" "$tag"
+if [ "$ship_mode" = host ]; then
+  say "build the images on the host"
+  build_images "$remote_dir" "$tag"
+else
+  ship_send "$tag"
+fi
 
 run_tag "$tag" "$merged"
 

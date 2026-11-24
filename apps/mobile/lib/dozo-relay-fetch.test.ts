@@ -22,7 +22,7 @@ import {
   relayDeps,
   relayPairingStore,
   resetRelayConnections,
-  subscribeRelayGone,
+  subscribeRelayState,
   upgradeStatus,
 } from "./dozo-relay-fetch";
 
@@ -259,10 +259,11 @@ describe("installRelayFetch", () => {
     keepOnlyRelayConnection(connection.origin);
     expect((await target.fetch(`${connection.origin}/rpc/health`)).ok).toBe(true);
     const listener = vi.fn();
-    const unsubscribe = subscribeRelayGone(listener);
+    const unsubscribe = subscribeRelayState(listener);
     connection.onGone?.();
     unsubscribe();
-    expect(listener).toHaveBeenCalledOnce();
+    // Once for the removal; the closed socket also says the computer's presence is unknown.
+    expect(listener).toHaveBeenCalled();
     expect(isRelayGone(connection.origin)).toBe(true);
     await vi.waitFor(() => expect(store.cleared).toBe(true));
     await expect(target.fetch(`${connection.origin}/rpc/health`)).rejects.toBeInstanceOf(

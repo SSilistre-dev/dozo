@@ -67,6 +67,9 @@ packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSe
 packages/adapters/src/dozo-command-gate.ts	module	const hostedMatches = new WeakMap<	request	keyed by a tool-call object's identity; holds that call's own rule match, read for the run's member
 packages/adapters/src/dozo-command-gate.ts	module	const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);	global-safe	constant tool names, never written
 packages/adapters/src/dozo-command-gate.ts	module	const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);	global-safe	constant action kinds, never written
+packages/adapters/src/dozo-screen-run.ts	module	const offered = new WeakSet<Record<string, unknown>>();	request	keyed by one tool call's argument object, set and read in that call's gate and card; weak, so it goes with the call
+packages/adapters/src/dozo-screen-run.ts	module	const granted = new WeakMap<RunState, Promise<boolean>>();	run	keyed by one attempt's run state; holds whether that run's own member allowed screen input for it, read from that run's messages only; weak, so it goes with the attempt
+packages/adapters/src/dozo-screen-run.ts	module	const pending = new WeakSet<Record<string, unknown>>();	request	keyed by one tool call's argument object, set when its mode is chosen and read when its plan is; weak, so it goes with the call
 packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const large: string[] = [];	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const visited = new Set<string>();	local	per-call local, dies with the call
@@ -170,6 +173,8 @@ packages/core/src/dozo-relay-host.ts	fn runRelayHost	const loops = new Map<strin
 packages/core/src/dozo-relay-host.ts	fn runRelayHost	let hostKey: RelayKeyPair | null = null;	device	this machine's relay loops by channel and its own host key; the channels are this server's own paired devices
 packages/core/src/dozo-relay-host.ts	fn runRelayHost	let syncing = Promise.resolve();	global-safe	promise chain ordering channel syncs; holds no data
 packages/core/src/dozo-relay-host.ts	class ChannelLoop	private readonly approvalWaiters = new Set<() => void>();	device	waiters of one paired channel loop
+packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn accept	let established = false;	local	per-call local of one session, dies with it
+packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn accept	let ended = false;	local	per-call local of one session, dies with it
 packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn connectOnce	let socket: RelayWebSocket;	local	per-call local, dies with the call
 packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn firstRecord	let seen = false;	local	per-call local, dies with the call
 packages/core/src/dozo-relay-mux.ts	module	const NULL_BODY_STATUSES = /* @__PURE__ */ new Set([204, 205, 304]);	global-safe	constant set of fixed words, never changed after load
