@@ -20,13 +20,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../components/settings-group";
-import type { FeedbackImage } from "../../lib/dozo-feedback";
-import {
-  mobileDiagnostics,
-  pickFeedbackImages,
-  reportLine,
-  useFeedbackStatus,
-} from "../../lib/dozo-feedback";
+import { mobileDiagnostics, reportLine, useFeedbackStatus } from "../../lib/dozo-feedback";
+import type { FeedbackImage } from "../../lib/dozo-feedback-images";
+import { pickFeedbackImages } from "../../lib/dozo-feedback-images";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSave } from "../../lib/query";
 import { useScreenHeader } from "../../lib/screen-header";

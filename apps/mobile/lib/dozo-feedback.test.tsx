@@ -163,7 +163,8 @@ vi.mock("../components/settings-group", () => ({
 }));
 
 import DozoFeedback from "../app/(settings)/dozo-feedback";
-import { mobileDiagnostics, pickFeedbackImages } from "./dozo-feedback";
+import { mobileDiagnostics } from "./dozo-feedback";
+import { pickFeedbackImages } from "./dozo-feedback-images";
 import { queryClient } from "./query";
 
 let answers: Record<string, unknown>;
