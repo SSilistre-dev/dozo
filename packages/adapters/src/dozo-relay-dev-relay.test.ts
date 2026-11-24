@@ -145,7 +145,8 @@ describe("dev relay", () => {
       headers: { authorization: "Bearer app" },
     });
     expect(removed.status).toBe(204);
-    await closed;
+    // 4001, as the protocol says: the phone tells a deleted channel from a dropped socket by it.
+    expect((await closed)[0]).toBe(4001);
     expect(await open(channel, "host", "host").ready).toBe(404);
   });
 

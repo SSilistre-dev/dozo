@@ -100,7 +100,7 @@ vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn(
 vi.mock("./dozo-relay-fetch", () => ({
   isRelayGone: () => false,
   relayApprovalCodeOf: async () => null,
-  subscribeRelayGone: () => () => {},
+  subscribeRelayState: () => () => {},
 }));
 vi.mock("./dozo-relay-sign-in", () => ({
   askComputerForSignIn: async () => "sign-in-on-computer",

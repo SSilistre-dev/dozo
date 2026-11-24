@@ -10,7 +10,7 @@ import { useSave, useSpaceQueries } from "../lib/query";
 
 /**
  * The admin page's plans section, at `/admin/plans`: each plan's prices and machine as the server
- * has them, its members, and the two quotas an admin may change without a deploy. Prices are read
+ * has them, its members, and the quotas an admin may change without a deploy. Prices are read
  * only. The admin page around it checks who may see it.
  */
 export function DozoAdminPlans() {
@@ -47,7 +47,12 @@ export function DozoAdminPlans() {
       {plans.data.plans.map((plan) => (
         // Keyed by what is saved, so a save or another admin's change resets the fields.
         <Plan
-          key={[plan.tier, plan.sharedSpaceMb.value, plan.computerHours.value].join(":")}
+          key={[
+            plan.tier,
+            plan.sharedSpaceMb.value,
+            plan.computerHours.value,
+            plan.computers.value,
+          ].join(":")}
           plan={plan}
           pending={change.pending}
           onSave={(input) => change.run(input)}
@@ -100,6 +105,9 @@ function Plan({
   const [hours, setHours] = useState(
     plan.computerHours.set ? String(plan.computerHours.value) : "",
   );
+  const [computers, setComputers] = useState(
+    plan.computers.set ? String(plan.computers.value) : "",
+  );
   // Empty follows the plan's terms.
   const quota = (text: string) => (text.trim() === "" ? null : Number(text));
   const stored = (value: DozoAdminPlanRow["sharedSpaceMb"]) => (value.set ? value.value : null);
@@ -109,6 +117,9 @@ function Plan({
     ...(quota(space) !== stored(plan.sharedSpaceMb) ? { sharedSpaceMb: quota(space) } : {}),
     ...(plan.computerHoursEditable && quota(hours) !== stored(plan.computerHours)
       ? { computerHours: quota(hours) }
+      : {}),
+    ...(plan.computers.terms !== null && quota(computers) !== stored(plan.computers)
+      ? { computers: quota(computers) }
       : {}),
   };
   const dirty = Object.keys(input).length > 1;
@@ -207,6 +218,28 @@ function Plan({
           <Landing
             quota={plan.computerHours}
             unit={<Trans>{plan.computerHours.terms} hours</Trans>}
+          />
+        </>
+      ) : null}
+      {plan.computers.terms !== null ? (
+        <>
+          <Row label={<Trans>Computers per person</Trans>}>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              className="w-28"
+              aria-label={t`Computers per person for ${plan.name}`}
+              placeholder={String(plan.computers.terms)}
+              value={computers}
+              disabled={pending}
+              onChange={(event) => setComputers(event.target.value)}
+            />
+          </Row>
+          <Landing
+            quota={plan.computers}
+            unit={<Plural value={plan.computers.terms} one="# computer" other="# computers" />}
           />
         </>
       ) : null}

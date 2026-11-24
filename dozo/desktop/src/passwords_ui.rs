@@ -4,8 +4,7 @@
 //! a fill works is `password_links.rs` and `browser_fill.rs`; this file only asks the person and
 //! tells the server.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tauri::{
@@ -17,6 +16,7 @@ use tokio::sync::oneshot;
 use crate::device::Access;
 use crate::password_links::{FillPrompt, HttpRegistry, Passwords, Registry};
 use crate::password_manager::Fut;
+use crate::question_slot::Slot;
 use crate::words::text;
 
 pub const MENU_ID: &str = "password-manager";
@@ -29,64 +29,47 @@ pub struct DialogFill(pub AppHandle);
 
 const FILL_WINDOW: &str = "fill";
 
-/// The question on screen: what the window shows, and where its answer goes.
+/// The question on screen (title and site); the logic is the one `agent_ui.rs` shares
+/// (`question_slot.rs`).
 #[derive(Default)]
-pub struct FillQuestion {
-    open: Mutex<Option<Open>>,
-    count: AtomicU64,
-}
-
-struct Open {
-    id: u64,
-    title: String,
-    origin: String,
-    answer: oneshot::Sender<bool>,
-}
+pub struct FillQuestion(Slot<(String, String)>);
 
 impl FillQuestion {
-    /// Puts a question up, in place of any other (which counts as Cancel). Answers its id and
-    /// where its answer comes from.
     fn put(&self, title: &str, origin: &str) -> (u64, oneshot::Receiver<bool>) {
-        let (answer, answered) = oneshot::channel();
-        let id = self.count.fetch_add(1, Ordering::SeqCst);
-        let open = Open {
-            id,
-            title: title.to_owned(),
-            origin: origin.to_owned(),
-            answer,
-        };
-        *self.open.lock().unwrap() = Some(open);
-        (id, answered)
+        self.0.put((title.to_owned(), origin.to_owned()))
     }
 
-    fn words(&self) -> Option<(String, String)> {
-        let open = self.open.lock().unwrap();
-        open.as_ref()
-            .map(|open| (open.title.clone(), open.origin.clone()))
+    fn words(&self) -> Option<(u64, String, String)> {
+        self.0
+            .open()
+            .map(|(id, (title, origin))| (id, title, origin))
     }
 
-    /// The person's answer, or Cancel when the window is gone. Only the first one counts.
-    fn answer(&self, allow: bool) {
-        if let Some(open) = self.open.lock().unwrap().take() {
-            let _ = open.answer.send(allow);
-        }
+    fn answer(&self, id: u64, allow: bool) -> bool {
+        self.0.answer(id, allow)
     }
 
-    /// The question `id` is over; true when it was the one on screen (its window should close).
+    fn window_gone(&self) {
+        self.0.window_gone();
+    }
+
+    fn retire_window(&self) -> bool {
+        self.0.retire_window()
+    }
+
+    fn window_opened(&self) {
+        self.0.window_opened();
+    }
+
     fn end(&self, id: u64) -> bool {
-        let mut open = self.open.lock().unwrap();
-        if open.as_ref().is_some_and(|open| open.id == id) {
-            *open = None;
-            return true;
-        }
-        false
+        self.0.end(id)
     }
 }
 
 /// Passes the window's answer on to whoever asked, until nobody waits for it any more (the
 /// receiver was dropped: the request was cancelled or timed out). A window that goes without an
 /// answer is Cancel.
-async fn relay(mut asked: oneshot::Sender<bool>, page: oneshot::Receiver<bool>) {
+pub(crate) async fn relay(mut asked: oneshot::Sender<bool>, page: oneshot::Receiver<bool>) {
     tokio::select! {
         () = asked.closed() => {}
         allow = page => {
@@ -108,6 +91,9 @@ impl FillPrompt for DialogFill {
                 let _ = app.run_on_main_thread({
                     let app = app.clone();
                     move || {
+                        if !app.state::<FillQuestion>().retire_window() {
+                            return;
+                        }
                         if let Some(window) = app.get_webview_window(FILL_WINDOW) {
                             let _ = window.destroy();
                         }
@@ -141,13 +127,14 @@ fn show_question(app: &AppHandle) {
         .build();
     match built {
         Ok(window) => {
+            app.state::<FillQuestion>().window_opened();
             #[cfg(not(target_os = "macos"))]
             let _ = window.remove_menu();
             let app = app.clone();
             // Closing the window without answering is Cancel.
             window.on_window_event(move |event| {
                 if let WindowEvent::Destroyed = event {
-                    app.state::<FillQuestion>().answer(false);
+                    app.state::<FillQuestion>().window_gone();
                 }
             });
             let _ = window.set_focus();
@@ -155,7 +142,7 @@ fn show_question(app: &AppHandle) {
         // No window: the question cannot be answered, which is Cancel.
         Err(error) => {
             eprintln!("dozo: could not open the question: {error}");
-            app.state::<FillQuestion>().answer(false);
+            app.state::<FillQuestion>().window_gone();
         }
     }
 }
@@ -163,8 +150,9 @@ fn show_question(app: &AppHandle) {
 /// What the question's window shows. Every word comes from the app, in the system's language.
 #[tauri::command]
 pub fn fill_question(question: State<'_, FillQuestion>) -> Option<Value> {
-    let (title, origin) = question.words()?;
+    let (id, title, origin) = question.words()?;
     Some(json!({
+        "id": id,
         "lang": if crate::words::turkish() { "tr" } else { "en" },
         "question": text("Fill your {title} login on {origin}?")
             .replace("{title}", &title)
@@ -174,10 +162,11 @@ pub fn fill_question(question: State<'_, FillQuestion>) -> Option<Value> {
     }))
 }
 
-/// The person's answer; the window closes with it.
+/// The person's answer to the question `id` the window showed; the window closes with it. An
+/// answer to a question that is no longer the open one is ignored.
 #[tauri::command]
-pub fn fill_answer(window: WebviewWindow, question: State<'_, FillQuestion>, allow: bool) {
-    question.answer(allow);
+pub fn fill_answer(window: WebviewWindow, question: State<'_, FillQuestion>, id: u64, allow: bool) {
+    question.answer(id, allow);
     let _ = window.close();
 }
 
@@ -364,20 +353,30 @@ mod tests {
         assert!(script.contains("Escape"));
     }
 
+    #[test]
+    fn the_window_answers_for_the_question_it_shows() {
+        let script = include_str!("../ui/fill.js");
+        assert!(script.contains("id: shown?.id ?? 0"));
+        let question = FillQuestion::default();
+        let (_, _page) = question.put("Bank", "https://bank.example.com");
+        assert!(!question.answer(0, true));
+        assert!(question.words().is_some());
+    }
+
     #[tokio::test]
     async fn the_windows_answer_reaches_whoever_asked() {
         for allow in [true, false] {
             let question = FillQuestion::default();
             let (asked, answered) = oneshot::channel();
-            let (_, page) = question.put("Bank", "https://bank.example.com");
+            let (id, page) = question.put("Bank", "https://bank.example.com");
             let relaying = tokio::spawn(relay(asked, page));
             assert_eq!(
                 question.words(),
-                Some(("Bank".to_owned(), "https://bank.example.com".to_owned()))
+                Some((id, "Bank".to_owned(), "https://bank.example.com".to_owned()))
             );
-            question.answer(allow);
+            assert!(question.answer(id, allow));
             // A second answer changes nothing.
-            question.answer(!allow);
+            assert!(!question.answer(id, !allow));
             assert_eq!(
                 tokio::time::timeout(FIVE, answered).await.unwrap(),
                 Ok(allow)
@@ -417,5 +416,49 @@ mod tests {
         let (current, _page) = question.put("Shop", "https://shop.example.com");
         assert!(question.end(current));
         assert_eq!(question.words(), None);
+    }
+
+    #[test]
+    fn an_answer_for_a_question_that_is_no_longer_open_does_nothing() {
+        let question = FillQuestion::default();
+        let (first, _gone) = question.put("Bank", "https://bank.example.com");
+        let (second, mut answered) = question.put("Shop", "https://shop.example.com");
+        // The window still shows the first question: its Allow must not approve the second.
+        assert!(!question.answer(first, true));
+        assert_eq!(
+            answered.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        );
+        assert!(question.words().is_some());
+        assert!(question.answer(second, true));
+        assert_eq!(answered.try_recv(), Ok(true));
+    }
+
+    #[test]
+    fn a_window_retired_for_an_ended_question_never_cancels_the_next() {
+        let question = FillQuestion::default();
+        let (first, _page) = question.put("Bank", "https://bank.example.com");
+        assert!(question.end(first));
+        assert!(question.retire_window());
+        // The next question arrives before the old window's destroy event does.
+        let (_, mut answered) = question.put("Shop", "https://shop.example.com");
+        question.window_gone();
+        assert_eq!(
+            answered.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        );
+        assert!(question.words().is_some());
+        // A window the person closes is still Cancel.
+        question.window_gone();
+        assert_eq!(answered.try_recv(), Ok(false));
+    }
+
+    #[test]
+    fn a_question_that_arrived_before_the_retiring_keeps_its_window() {
+        let question = FillQuestion::default();
+        let (first, _page) = question.put("Bank", "https://bank.example.com");
+        assert!(question.end(first));
+        question.put("Shop", "https://shop.example.com");
+        assert!(!question.retire_window());
     }
 }

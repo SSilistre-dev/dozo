@@ -126,7 +126,7 @@ function CreateToken({
   onCreated: (token: string) => void;
 }) {
   const { t } = useLingui();
-  const bots = useQuery(rpcQuery("bots/list"), queryClient).data;
+  const bots = useQuery(rpcQuery("dozoAccessTokens/ownBots"), queryClient).data;
   const [name, setName] = useState("");
   const [botId, setBotId] = useState("");
   const [lasting, setLasting] = useState(false);

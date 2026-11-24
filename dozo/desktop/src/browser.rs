@@ -379,7 +379,9 @@ struct Pipe {
     events: Mutex<VecDeque<Value>>,
     /// While a password or code this app filled is on the page: the loader id of the document it
     /// was filled into (empty when not known). No picture of the page is given until the page's
-    /// top frame commits another document (`Running::pictures_refused`).
+    /// top frame commits another document (`Running::pictures_refused`). Kept per browser, not per
+    /// tab: when the page session is lost the hold stays, and the first document of the new blank
+    /// tab that replaces it lifts it (the old tab cannot be returned to).
     filled: Mutex<Option<String>>,
 }
 

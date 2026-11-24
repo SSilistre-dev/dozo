@@ -26,6 +26,18 @@ export async function dozoTokenBotIds(
   return new Set(bots.map((bot) => bot.id));
 }
 
+/** The bots a token can be made for, by name: the member's own, as `dozoTokenBotIds` counts them. */
+export function dozoTokenOwnBots(
+  prisma: PrismaClient,
+  actor: Actor,
+): Promise<{ id: string; name: string }[]> {
+  return prisma.bot.findMany({
+    where: ownBots(actor),
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 /** Whether the token reaches `botId`; a bot it does not reach and one that does not exist look alike. */
 export async function dozoTokenReachesBot(
   prisma: PrismaClient,

@@ -216,6 +216,8 @@ for kv in DOZO_DEPLOY_BUILD_LIMIT=maybe DOZO_DEPLOY_BUILD_MEMORY_HIGH=lots DOZO_
   case $out in *"${kv%%=*}"*) ;; *) bad "$kv: the message does not name the setting: $out" ;; esac
 done
 if grep -q 'docker build' "$DEPLOY"; then bad "deploy.sh still runs docker build itself"; fi
-grep -q '^build_images ' "$DEPLOY" || bad "deploy.sh does not build through build_images"
+# Building on the host (DOZO_DEPLOY_BUILD=host) goes through build_images, inside that branch.
+grep -A2 '^if \[ "\$ship_mode" = host \]; then$' "$DEPLOY" | grep -q '^  build_images "\$remote_dir" "\$tag"$' ||
+  bad "deploy.sh does not build on the host through build_images"
 
 exit "$FAILED"

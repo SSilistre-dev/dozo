@@ -23,6 +23,8 @@ fn main() {
         "logins_remove",
         "fill_question",
         "fill_answer",
+        "agent_question",
+        "agent_answer",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands))
         .expect("tauri-build failed");

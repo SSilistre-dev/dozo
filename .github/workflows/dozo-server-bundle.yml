@@ -164,6 +164,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             dozo/desktop
+            packages/adapters/src/dozo-agent-device-fixtures
             dozo/server-bundle
             dozo/brand/assets
             package.json
@@ -236,6 +237,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             dozo/desktop
+            packages/adapters/src/dozo-agent-device-fixtures
             dozo/server-bundle
             dozo/brand/assets
             dozo/deps
