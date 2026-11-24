@@ -39,6 +39,8 @@ export interface PlanLimits {
   /** Undefined without a limit, as on a build whose plans carry none. */
   sharedSpaceBytes: number | undefined;
   computerAllowanceCents: number;
+  /** Computers one person may have in use, or undefined where the plan counts none (Free, unbranded). */
+  computers?: number | undefined;
 }
 export type PlanLimitsByTier = Record<ByokTier, PlanLimits>;
 
@@ -46,8 +48,10 @@ const UNSET: PlanQuota = { sharedSpaceMb: null, computerHours: null };
 
 /** The plan's terms in code, before any admin quota. */
 export function codePlanLimits(tier: ByokTier): PlanLimits {
-  const terms: { computerAllowanceCents: number; sharedSpaceBytes?: number } = BYOK_TIERS[tier];
+  const terms: { computerAllowanceCents: number; sharedSpaceBytes?: number; computers?: number } =
+    BYOK_TIERS[tier];
   return {
+    computers: terms.computers ? terms.computers : undefined,
     sharedSpaceBytes: terms.sharedSpaceBytes,
     computerAllowanceCents: terms.computerAllowanceCents,
   };
@@ -73,6 +77,7 @@ export function computerHoursCents(hours: number): number {
 function limitsOf(tier: ByokTier, quota: PlanQuota): PlanLimits {
   const code = codePlanLimits(tier);
   return {
+    computers: code.computers,
     sharedSpaceBytes:
       quota.sharedSpaceMb === null ? code.sharedSpaceBytes : quota.sharedSpaceMb * MB,
     // A plan without a computer (Free) never gets hours, whatever the table holds.
