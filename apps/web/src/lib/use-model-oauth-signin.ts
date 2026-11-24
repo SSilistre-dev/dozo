@@ -6,6 +6,15 @@ import { waitForModelOAuth } from "./model-auth";
 import { useSpaceRpc } from "./space-rpc";
 import { errorText } from "./user-error";
 
+type OAuthPhase = "idle" | "waiting" | "connecting";
+
+/** A submit that ended without ending the attempt goes back to waiting for a code. */
+const leaveConnecting = (phase: OAuthPhase): OAuthPhase =>
+  phase === "connecting" ? "waiting" : phase;
+
+/** How often to check a pasted code's exchange: it normally finishes within a second or two. */
+const CODE_EXCHANGE_POLL_MS = 1000;
+
 export type ModelOAuthSignInBegin = {
   provider: string;
   /** The connection to sign in again; null adds another. */
@@ -33,7 +42,9 @@ export function useModelOAuthSignIn(options: {
   const { onFinished, onError, onClearError } = options;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPending, setOauthPending] = useState(false);
+  const [oauthPhase, setOauthPhase] = useState<OAuthPhase>("idle");
+  const oauthPending = oauthPhase !== "idle";
+  const oauthSubmitting = oauthPhase === "connecting";
   const [popupBlocked, setPopupBlocked] = useState(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
@@ -55,20 +66,25 @@ export function useModelOAuthSignIn(options: {
   function cancelOAuthAttempt(resetState = true) {
     releaseOAuthCapture();
     oauthCodeSubmittingRef.current = false;
+    setOauthPhase(leaveConnecting);
     const loginId = oauthLoginIdRef.current;
     oauthLoginIdRef.current = null;
     cancelModelOAuthAttempt(oauthAbortRef, () => {
       if (resetState) {
         setOauth(null);
-        setOauthPending(false);
+        setOauthPhase("idle");
         setPopupBlocked(false);
       }
     });
     if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
   }
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal, rpc);
+  async function finishSubscriptionSignIn(
+    loginId: string,
+    controller: AbortController,
+    pollIntervalMs?: number,
+  ) {
+    await waitForModelOAuth(loginId, controller.signal, rpc, pollIntervalMs);
     if (controller.signal.aborted) return;
     const saved = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
     if (controller.signal.aborted) return;
@@ -92,6 +108,7 @@ export function useModelOAuthSignIn(options: {
     const code = (captured ?? pasteCode).trim();
     if (!controller || !code) return;
     oauthCodeSubmittingRef.current = true;
+    setOauthPhase("connecting");
     setPasteCode("");
     onClearErrorRef.current?.();
     let submitted = false;
@@ -102,7 +119,8 @@ export function useModelOAuthSignIn(options: {
         { signal: controller.signal },
       );
       submitted = true;
-      await finishSubscriptionSignIn(attempt.loginId, controller);
+      // The server exchanges the code in the background; check often until it is done.
+      await finishSubscriptionSignIn(attempt.loginId, controller, CODE_EXCHANGE_POLL_MS);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
@@ -119,18 +137,19 @@ export function useModelOAuthSignIn(options: {
       // its submitting guard or the newer desktop callback is dropped.
       if (oauthAbortRef.current === controller) {
         oauthCodeSubmittingRef.current = false;
+        setOauthPhase(leaveConnecting);
       }
       if (!retryable) {
         // Only drop this attempt's listener — a newer sign-in may already own the ref.
         releaseOAuthCapture(capture);
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPhase("idle"));
       }
     }
   }
 
   async function startSubscriptionSignIn(begin: ModelOAuthSignInBegin) {
     onClearErrorRef.current?.();
-    setOauthPending(true);
+    setOauthPhase("waiting");
     setPopupBlocked(false);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
@@ -204,7 +223,7 @@ export function useModelOAuthSignIn(options: {
     } finally {
       if (!waitingForCode) {
         if (oauthAbortRef.current === controller) releaseOAuthCapture();
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPhase("idle"));
       }
     }
   }
@@ -216,6 +235,7 @@ export function useModelOAuthSignIn(options: {
     pasteCode,
     setPasteCode,
     oauthPending,
+    oauthSubmitting,
     popupBlocked,
     cancelOAuthAttempt,
     startSubscriptionSignIn,

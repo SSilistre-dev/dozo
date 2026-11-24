@@ -33,6 +33,23 @@ describe("waitForModelOAuth", () => {
     expect(completeOAuth).toHaveBeenCalledTimes(1);
   });
 
+  it("checks again after the interval it was given", async () => {
+    vi.useFakeTimers();
+    try {
+      completeOAuth.mockResolvedValueOnce({ status: "pending" });
+      completeOAuth.mockResolvedValueOnce({ status: "ready" });
+      const waiting = waitForModelOAuth("login-id", undefined, undefined, 1000);
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(completeOAuth).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(waiting).resolves.toMatchObject({ status: "ready" });
+      expect(completeOAuth).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("polls through the client that began the sign-in", async () => {
     const bound = vi.fn().mockResolvedValue({ status: "ready" });
     const client = { models: { completeOAuth: bound } } as unknown as Parameters<

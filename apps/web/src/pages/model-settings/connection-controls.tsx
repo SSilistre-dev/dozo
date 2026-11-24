@@ -2,6 +2,7 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Shimmer } from "../../components/ai/primitives";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -31,6 +32,7 @@ export function ConnectionControls({
   isOpenAiCompatible,
   oauth,
   oauthPending,
+  oauthSubmitting,
   pasteCode,
   pending,
   popupBlocked,
@@ -71,6 +73,7 @@ export function ConnectionControls({
   | "isOpenAiCompatible"
   | "oauth"
   | "oauthPending"
+  | "oauthSubmitting"
   | "pasteCode"
   | "pending"
   | "popupBlocked"
@@ -126,6 +129,7 @@ export function ConnectionControls({
                   <div className="mt-3 flex items-center gap-2">
                     <Input
                       value={pasteCode}
+                      disabled={oauthSubmitting}
                       onChange={(e) => setPasteCode(e.target.value)}
                       aria-label={t`Authorization code`}
                       autoComplete="off"
@@ -136,18 +140,24 @@ export function ConnectionControls({
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={!pasteCode.trim()}
+                      disabled={oauthSubmitting || !pasteCode.trim()}
                       onClick={() => void submitOAuthCode()}
                     >
                       <Trans>Submit</Trans>
                     </Button>
                   </div>
                   <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the link expires in about # minute."
-                      other="Waiting for sign-in — the link expires in about # minutes."
-                    />
+                    {oauthSubmitting ? (
+                      <Shimmer>
+                        <Trans>Connecting…</Trans>
+                      </Shimmer>
+                    ) : (
+                      <Plural
+                        value={Math.ceil(oauth.expiresInSeconds / 60)}
+                        one="Waiting for sign-in — the link expires in about # minute."
+                        other="Waiting for sign-in — the link expires in about # minutes."
+                      />
+                    )}
                   </p>
                 </>
               ) : (

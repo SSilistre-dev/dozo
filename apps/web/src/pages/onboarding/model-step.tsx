@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
+import { Shimmer } from "../../components/ai/primitives";
 import { FoundModelPicker } from "../../components/FoundModelPicker";
 import {
   ModelPreflightFeedback,
@@ -372,6 +373,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     copyOAuthCode,
     oauth,
     oauthPending,
+    oauthSubmitting,
     pasteCode,
     popupBlocked,
     setPasteCode,
@@ -402,21 +404,31 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
               <div className="mt-3 flex items-center gap-2">
                 <Input
                   value={pasteCode}
+                  disabled={oauthSubmitting}
                   onChange={(e) => setPasteCode(e.target.value)}
                   aria-label={t`Authorization code`}
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <Button disabled={!pasteCode.trim()} onClick={() => void submitOAuthCode()}>
+                <Button
+                  disabled={oauthSubmitting || !pasteCode.trim()}
+                  onClick={() => void submitOAuthCode()}
+                >
                   <Trans>Submit</Trans>
                 </Button>
               </div>
               <p className="mt-2 text-body text-muted-foreground">
-                <Plural
-                  value={Math.ceil(oauth.expiresInSeconds / 60)}
-                  one="Waiting for sign-in — the link expires in about # minute."
-                  other="Waiting for sign-in — the link expires in about # minutes."
-                />
+                {oauthSubmitting ? (
+                  <Shimmer>
+                    <Trans>Connecting…</Trans>
+                  </Shimmer>
+                ) : (
+                  <Plural
+                    value={Math.ceil(oauth.expiresInSeconds / 60)}
+                    one="Waiting for sign-in — the link expires in about # minute."
+                    other="Waiting for sign-in — the link expires in about # minutes."
+                  />
+                )}
               </p>
             </>
           ) : (
