@@ -55,7 +55,7 @@ function replayPress(target: HTMLElement, press: Press) {
  * `DRAG_PX` screen pixels, the recording's own line between a click and a drag) and is then
  * handed to upstream's listeners as if it had just happened; a press that stays put is sent once,
  * at the release, as a `click` at the spot it began, which is how the recording reads it anyway.
- * The ring shows at the press, before anything is sent, so the click is seen to land at once.
+ * The ring shows at the press, before anything is sent, so the click is seen to land at once; a press that turns into a drag takes it away again.
  * Returns the ring to draw, or `null`.
  */
 export function useTeachClick(
@@ -111,6 +111,8 @@ export function useTeachClick(
       const at = screenPoint(event, from);
       if (Math.hypot(at.x - held.x, at.y - held.y) >= DRAG_PX) {
         press.current = null;
+        // A drag, not a click: no ring.
+        setRing(null);
         replayPress(from, held);
         return;
       }

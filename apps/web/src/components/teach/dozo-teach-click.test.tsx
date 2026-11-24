@@ -241,3 +241,14 @@ it("lets go of the pointer it captured when the press ends, and ignores a releas
   expect(release).toHaveBeenCalledOnce();
   await vi.waitFor(() => expect(computerInput).toHaveBeenCalledOnce());
 });
+
+it("shows no ring for a press that becomes a drag, and hides the ring from assistive technology", async () => {
+  const { container, overlay } = await mount();
+  await pointer(overlay, "pointerdown", 100, 50);
+  expect(
+    container.querySelector('[data-testid="teach-click-ring"]')?.getAttribute("aria-hidden"),
+  ).toBe("true");
+  await pointer(overlay, "pointermove", 200, 150);
+  expect(container.querySelector('[data-testid="teach-click-ring"]')).toBeNull();
+  await pointer(overlay, "pointerup", 200, 150);
+});

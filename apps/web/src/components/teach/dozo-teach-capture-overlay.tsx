@@ -82,6 +82,7 @@ export function TeachCaptureOverlay(props: ComponentProps<typeof UpstreamTeachCa
         <span
           key={ring.id}
           data-testid="teach-click-ring"
+          aria-hidden="true"
           className="dozo-teach-ring"
           style={{ left: ring.left, top: ring.top }}
         />
