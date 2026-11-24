@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEVICE_HANDLE } from "./dozo-device-login.js";
 
 /**
  * One DevTools command for the bot's own browser on the user's computer. The desktop app passes
@@ -39,4 +40,28 @@ export const pageBrowserClearedRequest = z.object({
   runId: z.string().min(1).max(256).optional(),
   method: z.literal("pageBrowserCleared"),
   forgotten: z.literal(true).optional(),
+});
+
+/** An https origin as a URL gives it: no path, no query, no default port. */
+function isHttpsOrigin(value: string): boolean {
+  return (
+    URL.canParse(value) && new URL(value).protocol === "https:" && new URL(value).origin === value
+  );
+}
+
+/**
+ * Fill one field of a page in the bot's own browser from the password manager on the computer: the
+ * app checks the site and the field itself, reads the value there with the user's approval and
+ * writes it straight into the page. The value never travels, in either direction; this names the
+ * node (its backend node id), the site the user approved and the link's handle. Answers
+ * `{ filled: true }`, or an error code (`passwords-*`) that dozo-device-browser.ts words.
+ */
+export const pageBrowserFillLoginRequest = z.object({
+  botId: z.string().min(1).max(256),
+  runId: z.string().min(1).max(256).optional(),
+  method: z.literal("pageBrowserFillLogin"),
+  ref: z.number().int().min(0).max(2_147_483_647),
+  origin: z.string().max(300).refine(isHttpsOrigin),
+  handle: z.string().regex(DEVICE_HANDLE),
+  field: z.enum(["username", "password", "code"]),
 });

@@ -2,7 +2,7 @@
 //! English, and Turkish when the system's language is Turkish. The other windows are English only.
 
 /// English, and its Turkish.
-const TURKISH: [(&str, &str); 36] = [
+const TURKISH: [(&str, &str); 50] = [
     ("Settings…", "Ayarlar…"),
     ("Settings", "Ayarlar"),
     ("Change Server…", "Sunucuyu Değiştir…"),
@@ -43,6 +43,32 @@ const TURKISH: [(&str, &str); 36] = [
     ("Zoom", "Büyüt"),
     ("Toggle Full Screen", "Tam Ekran"),
     ("Close Window", "Pencereyi Kapat"),
+    ("Password Manager", "Parola Yöneticisi"),
+    (
+        "Fill your {title} login on {origin}?",
+        "{origin} sitesinde {title} girişiniz doldurulsun mu?",
+    ),
+    ("Allow", "İzin Ver"),
+    ("Cancel", "İptal"),
+    ("Turn On", "Aç"),
+    (
+        "Use your password manager?",
+        "Parola yöneticisi kullanılsın mı?",
+    ),
+    (
+        "Bots can fill the logins you link in their own browser on this computer. Passwords are read here when needed and typed only into the site they belong to; the bot gets no picture of a page while a filled password is on it.",
+        "Botlar, bağladığınız girişleri bu bilgisayardaki kendi tarayıcılarında doldurabilir. Parolalar gerektiğinde burada okunur ve yalnız ait oldukları siteye yazılır; doldurulmuş bir parola sayfadayken bot o sayfanın görüntüsünü almaz.",
+    ),
+    (
+        "No supported password manager was found on this computer.",
+        "Bu bilgisayarda desteklenen bir parola yöneticisi bulunamadı.",
+    ),
+    ("Logins", "Girişler"),
+    ("Link a login…", "Giriş Bağla…"),
+    ("Remove", "Kaldır"),
+    ("No logins found.", "Giriş bulunamadı."),
+    ("Could not read your logins.", "Girişler okunamadı."),
+    ("Could not link this login.", "Bu giriş bağlanamadı."),
 ];
 
 /// Whether the system's language is Turkish.

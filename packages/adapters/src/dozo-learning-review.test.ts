@@ -61,6 +61,9 @@ const store = vi.hoisted(() => ({
   loaded: [] as unknown[],
 }));
 
+// A suggested skill: dozo-learning-review-skill.test.ts.
+vi.mock("./dozo-learning-skill.js", () => ({ knownSkillNames: async () => [] }));
+
 vi.mock("./bot-secrets.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./bot-secrets.js")>()),
   loadCommandVariables: async () => ({
@@ -129,6 +132,7 @@ vi.mock("./dozo-learning-store.js", () => ({
       )
       .reverse()
       .map((change) => ({ id: change.id, after: change.after })),
+  rejectedLearningSkills: async () => [],
   rejectedLearningLines: async () =>
     store.changes
       .filter((change) => change.after !== null && (change.undoneAt || change.ownerEdited))
@@ -404,7 +408,10 @@ function setup(options: {
     paymentWallet: {} as never,
     resolveModel,
     resolveConnectedModel,
-    events: { publishRosterChange: vi.fn(async () => undefined) },
+    events: {
+      publishRosterChange: vi.fn(async () => undefined),
+      notify: vi.fn(async () => undefined),
+    },
   } satisfies LearningReviewDeps;
   return { deps, notes, model, db, resolveModel, resolveConnectedModel };
 }
@@ -1133,6 +1140,7 @@ describe("dozoLearningReviewJob", () => {
       secretStore: run.deps.secretStore,
       paymentWallet: null,
       executor: run.deps,
+      events: run.deps.events,
     });
 
   it("reviews as the bot's owner, and skips a bot that is gone", async () => {
@@ -1153,6 +1161,7 @@ describe("dozoLearningReviewJob", () => {
       secretStore: run.deps.secretStore,
       paymentWallet: null,
       executor: run.deps,
+      events: run.deps.events,
     });
     await expect(noMemory({ botId: BOT.id })).rejects.toThrow("memory store");
     expect(run.model.requests).toEqual([]);

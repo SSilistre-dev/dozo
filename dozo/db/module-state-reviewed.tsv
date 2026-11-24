@@ -71,6 +71,7 @@ packages/adapters/src/dozo-device-browser.ts	module	const INTERACTIVE = new Set(
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const byId = new Map(nodes.map((node) => [node.nodeId, node]));	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const parents = new Map<string, string>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	let line: string | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private readonly fills = new Map<string, { handle: string; field: DeviceFillField }>();	run	planned password-manager fills (handle and field, never a value) of the browser provider kept per run context in a WeakMap
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private notes: string[] = [];	run	notes of the browser provider kept per run context in a WeakMap
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn loaded	let looks = 0;	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn act	let completed = 0;	local	per-call local, dies with the call
@@ -80,6 +81,7 @@ packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	let lines = lin
 packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	const refused = new Set([...rejected].map(learningNoteKey));	local	per-call working values of one learning change for one bot; die with the call
 packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	let change = found;	local	per-call working values of one learning change for one bot; die with the call
 packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	const tag = newWriteTag();	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-apply.ts	module	const skillLine = dozoLearningLine(LEARNING_SKILL_LINE_MAX_CHARS);	global-safe	schema of one line of a suggested skill; holds no data
 packages/adapters/src/dozo-learning-recall.ts	module	const recalledStates = new WeakSet<RunState>();	run	marks a run's own state object by identity; flag only
 packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let answer: string | null = null;	local	per-call answer and count of one review model call; die with the call
 packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let counted = false;	local	per-call answer and count of one review model call; die with the call

@@ -21,6 +21,9 @@ mod frames;
 mod frames;
 #[cfg(target_os = "linux")]
 mod microphone_gtk;
+mod password_links;
+mod password_manager;
+mod passwords_ui;
 mod phone;
 mod prefs;
 mod server;
@@ -373,7 +376,7 @@ fn run(app: &AppHandle, id: &str) {
             reveal(app);
         }
         "reload" => reload(window),
-        OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID | talk::MENU_ID => flip(app, id),
+        OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID | talk::MENU_ID | passwords_ui::MENU_ID => flip(app, id),
         device::MENU_ID => device::clicked(app),
         phone::MENU_ID => phone::open(app),
         backup::BACK_UP_ID => backup::open(app, "backup"),
@@ -466,6 +469,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &switch(app, talk::MENU_ID, talk::LABEL)?,
+                    &switch(app, passwords_ui::MENU_ID, passwords_ui::LABEL)?,
                     &separator()?,
                     &PredefinedMenuItem::services(app, words::standard("Services"))?,
                     &separator()?,
@@ -541,6 +545,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                 &switch(app, talk::MENU_ID, talk::LABEL)?,
+                &switch(app, passwords_ui::MENU_ID, passwords_ui::LABEL)?,
                 &PredefinedMenuItem::separator(app)?,
                 // Ends the app whatever the window does, and does not depend on the menu
                 // toolkit's own handling of a quit item.
@@ -592,6 +597,7 @@ fn show_switches(app: &AppHandle, settings: &Settings) {
         (OPEN_AT_LOGIN_ID, settings.open_at_login),
         (KEEP_RUNNING_ID, settings.keep_running),
         (talk::MENU_ID, settings.push_to_talk),
+        (passwords_ui::MENU_ID, settings.password_manager),
     ] {
         if let Some(item) = switch_item(app, id) {
             let _ = item.set_checked(on);
@@ -635,9 +641,20 @@ fn flip(app: &AppHandle, id: &str) {
         };
         let _ = item.set_checked(on);
         config.lock().unwrap().push_to_talk = on;
+    } else if id == passwords_ui::MENU_ID {
+        // Saved once the person has answered its question (`set_password_manager`).
+        return passwords_ui::flipped(app, wanted);
     } else {
         config.lock().unwrap().keep_running = wanted;
     }
+    if let Err(error) = persist(app) {
+        eprintln!("dozo: could not save the choice: {error}");
+    }
+}
+
+/// The password manager switch, as the person left it: kept in the settings file.
+fn set_password_manager(app: &AppHandle, on: bool) {
+    app.state::<Config>().0.lock().unwrap().password_manager = on;
     if let Err(error) = persist(app) {
         eprintln!("dozo: could not save the choice: {error}");
     }
@@ -833,6 +850,7 @@ fn main() {
         )
         .manage(update::Pending::default())
         .manage(prefs::Changes::default())
+        .manage(passwords_ui::FillQuestion::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -849,7 +867,12 @@ fn main() {
             backup::restore,
             backup::reset_password,
             prefs::prefs_list,
-            prefs::prefs_pick
+            prefs::prefs_pick,
+            passwords_ui::logins_candidates,
+            passwords_ui::logins_link,
+            passwords_ui::logins_remove,
+            passwords_ui::fill_question,
+            passwords_ui::fill_answer
         ])
         .menu(menu)
         .on_menu_event(|app, event| run(app, event.id().as_ref()))
@@ -887,6 +910,7 @@ fn main() {
             backup::follow(app.clone());
             start_local_if_chosen(&app);
             app.manage(device::Access::new(&app)?);
+            passwords_ui::start(&app, settings.password_manager);
             browser_clear::sync(&app);
             device::select(&app, chosen(&app));
             #[cfg(not(target_os = "macos"))]

@@ -16,8 +16,12 @@ import type { ByokTier, ByokTierTerms } from "./billing.js";
  * shows, and what holds until an admin sets another value on the admin plans page
  * (`packages/db/src/dozo-plan-quotas.ts`). Upstream's tiers carry no shared space, so an unbranded
  * build has no limit.
+ *
+ * `computers` is how many computers one person may have in use across their Spaces: Premium's one
+ * is the Team Computer its bots share, with no computer of a bot's own. Free has none to count
+ * (it has no hosted computer), so its limit is whatever the site sets.
  */
-type DozoTerms = Partial<ByokTierTerms> & { sharedSpaceBytes: number };
+type DozoTerms = Partial<ByokTierTerms> & { sharedSpaceBytes: number; computers: number };
 const MB = 1024 * 1024;
 const free = {
   name: "Free",
@@ -25,9 +29,18 @@ const free = {
   annualPriceCents: null,
   computerAllowanceCents: 0,
   sharedSpaceBytes: 500 * MB,
+  computers: 0,
 } satisfies DozoTerms;
-const premium = { name: "Premium", sharedSpaceBytes: 2 * 1024 * MB } satisfies DozoTerms;
-const premiumPlus = { name: "Premium Plus", sharedSpaceBytes: 5 * 1024 * MB } satisfies DozoTerms;
+const premium = {
+  name: "Premium",
+  sharedSpaceBytes: 2 * 1024 * MB,
+  computers: 1,
+} satisfies DozoTerms;
+const premiumPlus = {
+  name: "Premium Plus",
+  sharedSpaceBytes: 5 * 1024 * MB,
+  computers: 3,
+} satisfies DozoTerms;
 
 /** Rewrites upstream's tiers in place, before anything reads them. */
 export function applyDozoPlans(tiers: Record<ByokTier, ByokTierTerms>): void {

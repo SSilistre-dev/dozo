@@ -80,11 +80,13 @@ describe("reading the quotas", () => {
       ]).client,
     );
     expect(limits.pro).toEqual({
+      computers: 1,
       sharedSpaceBytes: 100 * MB,
       computerAllowanceCents: computerHoursCents(7),
     });
     expect(sandboxAllowanceHours(limits.pro.computerAllowanceCents)).toBe(7);
     expect(limits.max).toEqual({
+      computers: 3,
       sharedSpaceBytes: 5 * 1024 * MB,
       computerAllowanceCents: BYOK_TIERS.max.computerAllowanceCents,
     });
