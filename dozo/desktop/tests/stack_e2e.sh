@@ -75,15 +75,20 @@ printf 'root:x:0:0::/root:/bin/sh\ndozo:x:%s:%s::/tmp:/bin/sh\n' "$(id -u)" "$(i
 ROOT="$(cd "$HERE/../.." && pwd)"
 SHARED="$HERE/target/e2e-shared"
 rm -rf "$SHARED" && mkdir -p "$SHARED" && chmod 777 "$SHARED"
+# This checkout's working copy in the unit gate's volume (one per staged tree: dozo/docker/unit-tree.sh).
+# shellcheck source=SCRIPTDIR/../../docker/unit-tree.sh
+. "$ROOT/dozo/docker/unit-tree.sh"
+STAGE_DIR="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"; case "$STAGE_DIR" in /*) ;; *) STAGE_DIR="$PWD/${STAGE_DIR#./}" ;; esac
+tree=$(unit_tree_dir "$STAGE_DIR/src"); WS="/d/${tree#/cache/}"
 overlay=()
 for file in "$ROOT"/packages/{core,contracts,adapters}/src/dozo-relay*.ts; do
   case "$file" in *.test.ts) continue ;; esac
-  overlay+=(-v "$file:/d/w/${file#"$ROOT"/}:ro")
+  overlay+=(-v "$file:$WS/${file#"$ROOT"/}:ro")
 done
 docker run -d --name "$NAME-phone" --cpus 1 --memory 1g -u "$(id -u):$(id -g)" -e HOME=/tmp \
-  -e DOZO_WORKSPACE=/d/w -v dozo-qa-deps:/d:ro "${overlay[@]}" -v "$HERE/tests:/tests:ro" \
+  -e DOZO_WORKSPACE="$WS" -v dozo-qa-deps:/d:ro "${overlay[@]}" -v "$HERE/tests:/tests:ro" \
   -v "$SHARED:/shared" "${DOZO_NODE_IMAGE:-node:24.22-slim}" \
-  sh -c 'node /tests/fake_issuer.mjs 8788 & exec /d/w/node_modules/.bin/tsx /tests/relay_phone.mts /shared' \
+  sh -c 'node /tests/fake_issuer.mjs 8788 & exec "$DOZO_WORKSPACE"/node_modules/.bin/tsx /tests/relay_phone.mts /shared' \
   > /dev/null || verdict FAIL
 # The steps themselves are tests/stack_e2e_native.sh, as CI runs them without Docker.
 docker run --rm --name "$NAME" --network "container:$NAME-phone" --cpus 3 --memory 6g -e CARGO_BUILD_JOBS=3 -u "$(id -u):$(id -g)" \

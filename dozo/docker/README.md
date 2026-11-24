@@ -189,10 +189,22 @@ Runs every `dozo-*.test.ts(x)` under `apps/`, `packages/` and `infra/` of the br
 test files than the committed tree has (counted with `git ls-tree` on `DOZO_STAGE_REF` or `HEAD`,
 never a fixed number) fails, so a deleted test is noticed; commit the deletion when it is meant. A
 committed tree with none fails too. The coverage provider is installed inside the
-container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm store, corepack, one
-`node_modules`, reinstalled in place when the lockfile changes); a cold run installs everything, an
-unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the
-host. The database client (`packages/db/src/generated`) is generated in the volume before every
+container only. Dependencies live in the Docker volume `dozo-qa-deps`: the pnpm store and corepack
+(`/cache/store`, `/cache/corepack`) are shared by every checkout on the machine, and each staged tree
+gets its own working copy with its own `node_modules` in `/cache/trees/<12 hex of sha256 of the
+tree's absolute path>` (`unit-tree.sh`; reinstalled in place when the lockfile changes). Two
+checkouts can run the unit step at once and each tests its own files; before this, both synced into
+one fixed directory, so a run could lose its coverage files or pass on the other branch's sources.
+A copy costs about 0.5 GB on top of the one store (about 3 GB), because `node_modules` hard-links
+into the store (same volume); a cold run installs everything, an unchanged lockfile skips that.
+`docker volume rm dozo-qa-deps` starts cold. Nothing is written to the host.
+
+Cleaning up (nothing here removes anything for you; other sessions may be using the volume): the
+directory `/cache/w` is what older versions used and nothing reads it now, and a checkout that is
+gone leaves its `/cache/trees/<key>` behind. List what is there with
+`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim du -sh /cache/trees/* /cache/w`, then remove a
+directory you know is dead with
+`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim rm -rf /cache/w` (or `/cache/trees/<key>`). The database client (`packages/db/src/generated`) is generated in the volume before every
 run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api`, `apps/web`, `apps/mobile`, `packages/adapters`, `packages/core`, `packages/contracts`, `packages/db`, `packages/chat-ui` and `packages/ui-web` on the branded tree, one after the other (each timed in the log; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. A failing run prints each file under the floor with its number.
 
 ### checks
@@ -316,7 +328,14 @@ e2e variables are in `dozo/e2e/README.md`; the sync ones in `dozo/SYNC.md`.
   Compose containers are `dozo-<service>-1` (the e2e suite finds the api one by its compose labels).
 - Images: `dozo-<service>` for the app images. The sandbox image stays `rakazo/computer:local`: its
   name is hard-coded upstream and the leak gate allows it as an identifier shape.
-- Volumes: `dozo-qa-deps` (unit dependencies), `dozo-e2e-npm` (e2e),
+- Shared state, by step (a fixed name is shared only where concurrent use is safe): `olc`, `brand`,
+  `checks` and the Postgres and upstream test runs work in the container's own filesystem and in
+  per-checkout stage output, so they run side by side. `unit` shares the pnpm store and corepack and
+  keeps a working copy per tree (above). `make olcum` has one working copy in `dozo-olcum-deps`, so
+  it waits on `/tmp/dozo-olcum.lock`. `build`, `budget`, `up` and `smoke` use the one local stack
+  (project `dozo`, its ports and the `dozo-*` images, `budget` reading the image `build` made): run
+  them under `flock /tmp/dozo-yigin.lock`. `e2e` has its own per-user lock.
+- Volumes: `dozo-qa-deps` (unit dependencies: shared store, one working copy per tree), `dozo-e2e-npm` (e2e),
   `dozo-upstream-tests-store` (the upstream tests' pnpm store), `dozo-postgres-tests-store` (the
   Postgres tests' pnpm store; that run's network and containers are `dozo-pgt-<pid>[-db|-node]` and
   go when it ends), and the project's `dozo_*`
