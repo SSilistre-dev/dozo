@@ -9576,6 +9576,114 @@
       "reason": "bot chats: the import of the rule below"
     },
     {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "import { getActiveTeachingSession, settleCallRequest, wakeRun } from \"@rakazo/adapters\";\nimport type { Actor } from \"@rakazo/contracts\";\n",
+      "replace": "import { getActiveTeachingSession, settleCallRequest, wakeRun } from \"@rakazo/adapters\";\nimport {\n  dozoAssertOwnCallNonce,\n  dozoNotCallRecipient,\n  dozoSettleOwnCall,\n} from \"../dozo-call-recipient.js\";\nimport type { Actor } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: the import of the seven rules below"
+    },
+    {
+      "file": "packages/db/src/repos.ts",
+      "find": "                threadId: { in: threadIds },\n",
+      "replace": "                // Dozo: a bot's call rings only the person whose chat it is, not every member.\n                threadId: {\n                  in: bots.flatMap((bot) =>\n                    bot.thread?.userId === actor.userId ? [bot.thread.id] : [],\n                  ),\n                },\n",
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so the bot list shows it ringing to that person only; other members of a shared Space saw the ring and an Answer that cannot work"
+    },
+    {
+      "file": "packages/db/src/repos.test.ts",
+      "find": "  thread: { id: \"thread-1\", reads: [{ unread: false }], messages: [], runs: [] },\n",
+      "replace": "  thread: {\n    id: \"thread-1\",\n    userId: \"user-1\",\n    reads: [{ unread: false }],\n    messages: [],\n    runs: [],\n  },\n",
+      "reason": "upstream test fixture: the fixture bot's chat is the test actor's own, as a bot's chat is its owner's, and the fork rings only that person (call recipient rule in repos.ts)"
+    },
+    {
+      "file": "apps/api/src/router.test.ts",
+      "find": "          thread: { spaceId: \"space-1\" },\n",
+      "replace": "          thread: { spaceId: \"space-1\", userId: \"user-1\" },\n",
+      "reason": "upstream test fixture: the bot's call card in these tests sits in the caller's own chat, as every bot call does, and the fork reads whose chat that is before it settles the call (dozo-call-recipient.ts)"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const answered = await settleCallRequest(deps, {\n",
+      "replace": "        const answered = await dozoSettleOwnCall(deps, context.actor, {\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person answers it; anyone else in the Space gets the answer an unknown call gets and the call keeps ringing"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const declined = await settleCallRequest(deps, {\n",
+      "replace": "        const declined = await dozoSettleOwnCall(deps, context.actor, {\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person declines it; anyone else in the Space gets the answer an unknown call gets and the call keeps ringing"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const { botId, threadId } = target;\n        // The bot's own call: its card keeps how long the user stayed on.\n",
+      "replace": "        const { botId, threadId } = target;\n        // Dozo: only the person a bot's call rang ends it; anyone else gets an unknown call's answer.\n        if (await dozoNotCallRecipient(deps.prisma, context.actor, threadId, input.callId))\n          return { ok: true as const };\n        // The bot's own call: its card keeps how long the user stayed on.\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person ends it; for anyone else the card, the hang-up note and the follow-up turn stay untouched and the answer is the one an unknown call gets"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "    const target = await resolveThreadTarget(deps.prisma, actor, input);\n    // A bot with its own runnable model needs no main model, and stopping work needs none.\n",
+      "replace": "    const target = await resolveThreadTarget(deps.prisma, actor, input);\n    // Dozo: a call's nonce adds to that call's conversation, so only its person sends one.\n    await dozoAssertOwnCallNonce(deps.prisma, actor, target.threadId, input.clientNonce);\n    // A bot with its own runnable model needs no main model, and stopping work needs none.\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call nonce: a message whose nonce names a call joins that call's conversation (its transcript card, its spoken replies and the after-call turn), so only the person on the call may send one; anyone else in the Space gets the not-found answer. Covers send and sendWithRoutines"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "      followUp: authed.threads.followUp.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n        if (target.kind === \"bot\") {\n",
+      "replace": "      followUp: authed.threads.followUp.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n        // Dozo: only the person on a call adds to its conversation.\n        await dozoAssertOwnCallNonce(\n          deps.prisma,\n          context.actor,\n          target.threadId,\n          input.clientNonce,\n        );\n        if (target.kind === \"bot\") {\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call nonce: followUp takes a call's nonce too and writes it on a message, so the same check as send applies"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "      answer: authed.threads.answer.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n        const answered = await deps.events\n",
+      "replace": "      answer: authed.threads.answer.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n        // Dozo: only the person on a call adds to its conversation.\n        await dozoAssertOwnCallNonce(\n          deps.prisma,\n          context.actor,\n          target.threadId,\n          input.clientNonce,\n        );\n        const answered = await deps.events\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call nonce: answer takes a call's nonce too and writes it on a message, so the same check as send applies"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "      react: authed.threads.react.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n        // Without a model or while teaching, the reaction is still saved; it just starts no turn.\n",
+      "replace": "      react: authed.threads.react.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n        // Dozo: only the person on a call adds to its conversation.\n        await dozoAssertOwnCallNonce(\n          deps.prisma,\n          context.actor,\n          target.threadId,\n          input.clientNonce,\n        );\n        // Without a model or while teaching, the reaction is still saved; it just starts no turn.\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call nonce: react takes a call's nonce too and writes it on a message, so the same check as send applies"
+    },
+    {
+      "file": "apps/api/src/router.test.ts",
+      "find": "    const enqueue = vi.fn().mockRejectedValue(new Error(\"job broker unavailable\"));\n    const sink = createTestSink();\n    installLogger(createLogger({ service: \"rakazo-api\", sinks: [sink] }));\n    const prisma = {\n      bot: {\n",
+      "replace": "    const enqueue = vi.fn().mockRejectedValue(new Error(\"job broker unavailable\"));\n    const sink = createTestSink();\n    installLogger(createLogger({ service: \"rakazo-api\", sinks: [sink] }));\n    const prisma = {\n      // Nothing else said on this call yet: the caller is the one on it.\n      message: {\n        findUnique: vi.fn().mockResolvedValue(null),\n        findFirst: vi.fn().mockResolvedValue(null),\n      },\n      bot: {\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "upstream test fixture: the spoken answer carries a call's nonce, and the fork first reads who is on that call (dozo-call-recipient.ts); the fake chat holds nothing of the call yet, so the caller is the one on it"
+    },
+    {
+      "file": "apps/api/src/router.test.ts",
+      "find": "      // No bot-placed call behind this one: only the caller's own hang-up runs.\n      message: { findUnique: vi.fn().mockResolvedValue(null) },\n",
+      "replace": "      // No bot-placed call behind this one: only the caller's own hang-up runs.\n      // The call is the caller's own: they spoke on it first.\n      message: {\n        findUnique: vi.fn().mockResolvedValue(null),\n        findFirst: vi.fn().mockResolvedValue({ authorUserId: \"user-1\" }),\n      },\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "upstream test fixture: with no call card, the fork reads who spoke first on the call before it ends it (dozo-call-recipient.ts); in these tests that is the caller, as on any call they started"
+    },
+    {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "import { ArchivedChats } from \"./shell/archived-chats\";\nimport type { ChatMenuState, ChatMenuTarget } from \"./shell/chat-context-menu\";\n",
       "replace": "import { ArchivedChats } from \"./shell/archived-chats\";\nimport { dozoChatPath, dozoChatRpc } from \"./shell/dozo-bot-chats\";\nimport type { ChatMenuState, ChatMenuTarget } from \"./shell/chat-context-menu\";\n",
