@@ -884,7 +884,10 @@ bot under its Memory: Off (the default, no call, job or row), Ask first, or Auto
   <file>] [--judge-connection <model.json> --judge-pricing <file>]`. It writes
   `test-report/evals/dozo-learning-review.json` with the review's and the judge's cost apart. A
   judge that disagrees with a label grades nothing; a judge error is unqualified, never a pass.
-- **Mobile:** see the mobile learning setting and the suggestion card (next pull request).
+- **Mobile:** the owner picks the mode in the bot's settings, under its memory, in a native
+  menu. A skill draft (taught or suggested) shows in the chat as a card with its steps, Save and
+  Delete; one whose typed values still wait for a decision offers only Delete there, and its steps
+  are edited on the web. The learned list and its undo are web only for now.
 
 ## After outside content
 
