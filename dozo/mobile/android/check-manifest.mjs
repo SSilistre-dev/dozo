@@ -6,11 +6,11 @@
  *   node dozo/mobile/android/check-manifest.mjs manifest.txt
  *
  * The input is that dump (a plain AndroidManifest.xml reads the same). The app reads the phone's
- * contacts, calendar and location once while it is open, so its merged manifest must hold neither
- * of the location module's background services (removed by
- * apps/mobile/plugins/dozo-without-location-services.js) nor a permission to write contacts or the
- * calendar or to read the location in the background. Exit 0 when it holds none, 2 with one line
- * per problem.
+ * contacts, calendar and location once while it is open, and adds calendar events the user approves
+ * (WRITE_CALENDAR, asked for only when that switch is turned on), so its merged manifest must hold
+ * neither of the location module's background services (removed by
+ * apps/mobile/plugins/dozo-without-location-services.js) nor a permission to write contacts or to
+ * read the location in the background. Exit 0 when it holds none, 2 with one line per problem.
  */
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,6 @@ export const FORBIDDEN_PERMISSIONS = [
   "android.permission.WRITE_CONTACTS",
   "android.permission.ACCESS_BACKGROUND_LOCATION",
   "android.permission.FOREGROUND_SERVICE_LOCATION",
-  "android.permission.WRITE_CALENDAR",
 ];
 
 /** Every android:name in the dump (`…android:name(0x01010003)="x"`) or in plain XML. */
@@ -68,7 +67,7 @@ if (isMain()) {
     const found = problems(fs.readFileSync(file, "utf8"));
     for (const problem of found) console.error(`[mobile] the APK's manifest holds ${problem}`);
     if (found.length) process.exit(2);
-    console.log("[mobile] the APK's manifest holds no location service or write permission");
+    console.log("[mobile] the APK's manifest holds no location service or forbidden permission");
   } catch (error) {
     console.error(`[mobile] check-manifest: ${error.message}`);
     process.exit(2);

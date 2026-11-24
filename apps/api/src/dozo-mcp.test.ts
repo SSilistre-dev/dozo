@@ -196,6 +196,7 @@ describe("the MCP endpoint's HTTP layer", () => {
     expect(touch).toHaveBeenCalledWith("tok-1");
     const context = connect.mock.calls[0]?.[0] as DozoBotApiContext;
     expect(context.actor).toEqual(actor);
+    expect(context.dozoAccessTokenId).toBe("tok-1");
     await expect(context.stillAuthorized()).resolves.toBe(true);
     authenticate.mockResolvedValueOnce(null);
     await expect(context.stillAuthorized()).resolves.toBe(false);

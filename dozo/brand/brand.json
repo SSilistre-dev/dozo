@@ -5613,7 +5613,7 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport {\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n} from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport {\n  phoneCalendarCreateRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n  phoneReminderCreateRequest,\n  phoneRemindersReadRequest,\n} from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts",
         "packages/adapters/src/dozo-phone-protocol.ts"
@@ -5623,12 +5623,12 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
-      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n  phoneRemindersReadRequest,\n  phoneCalendarCreateRequest,\n  phoneReminderCreateRequest,\n]);\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts",
         "packages/adapters/src/dozo-phone-protocol.ts"
       ],
-      "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), and the reads of the user's phone: its calendar (phoneCalendarRead), one person in its contacts (phoneContactsSearch) and its location once (phoneLocation)"
+      "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), the reads of the user's phone: its calendar (phoneCalendarRead), one person in its contacts (phoneContactsSearch), its location once (phoneLocation) and its reminders (phoneRemindersRead), and its two writes, each creating one event (phoneCalendarCreate) or reminder (phoneReminderCreate) and never changing or deleting one"
     },
     {
       "file": "packages/adapters/src/browser-conformance.test.ts",
@@ -5659,17 +5659,17 @@
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n];\n",
-      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n  phoneCalendarReadTool,\n  phoneContactsSearchTool,\n  phoneLocationTool,\n];\n",
+      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n  phoneCalendarReadTool,\n  phoneContactsSearchTool,\n  phoneLocationTool,\n  phoneRemindersReadTool,\n  phoneCalendarCreateTool,\n  phoneReminderCreateTool,\n];\n",
       "requires": [
         "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts",
         "packages/adapters/src/dozo-phone.tool-definition.ts"
       ],
-      "reason": "user's browser and phone: browser_sign_in and the phone tools (phone_calendar_read, phone_contacts_search, phone_location) among the built-ins, last, so they take no listed place from the others; only a run offered the bot's browser on the user's computer gets the first, and only a run that reaches the user's phone with that capability on gets each phone tool"
+      "reason": "user's browser and phone: browser_sign_in and the phone tools (phone_calendar_read, phone_contacts_search, phone_location, phone_reminders_read, phone_calendar_create, phone_reminder_create) among the built-ins, last, so they take no listed place from the others; only a run offered the bot's browser on the user's computer gets the first, and only a run that reaches the user's phone with that capability on gets each phone tool"
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "import { z } from \"zod\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport {\n  phoneCalendarReadTool,\n  phoneContactsSearchTool,\n  phoneLocationTool,\n} from \"./dozo-phone.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport {\n  phoneCalendarCreateTool,\n  phoneCalendarReadTool,\n  phoneContactsSearchTool,\n  phoneLocationTool,\n  phoneReminderCreateTool,\n  phoneRemindersReadTool,\n} from \"./dozo-phone.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts",
         "packages/adapters/src/dozo-phone.tool-definition.ts"
@@ -5699,13 +5699,14 @@
     {
       "file": "packages/contracts/src/index.ts",
       "find": "export * from \"./terminal.js\";\nexport * from \"./user-devices.js\";\n",
-      "replace": "export * from \"./terminal.js\";\nexport * from \"./dozo-without-links.js\";\nexport * from \"./dozo-approximate-location.js\";\nexport * from \"./dozo-phone-tools.js\";\nexport * from \"./user-devices.js\";\n",
+      "replace": "export * from \"./terminal.js\";\nexport * from \"./dozo-without-links.js\";\nexport * from \"./dozo-approximate-location.js\";\nexport * from \"./dozo-phone-tools.js\";\nexport * from \"./dozo-phone-write.js\";\nexport * from \"./user-devices.js\";\n",
       "requires": [
         "packages/contracts/src/dozo-without-links.ts",
         "packages/contracts/src/dozo-approximate-location.ts",
-        "packages/contracts/src/dozo-phone-tools.ts"
+        "packages/contracts/src/dozo-phone-tools.ts",
+        "packages/contracts/src/dozo-phone-write.ts"
       ],
-      "reason": "phone: what the phone and the server share: the one filter that takes links out of its text, the rounding of an approximate place, and the names of the phone tools (which a reply's kept tool calls also read)"
+      "reason": "phone: what the phone and the server share: the one filter that takes links out of its text, the rounding of an approximate place, the names of the phone tools (which a reply's kept tool calls also read), and the one check of what a write may put on the phone"
     },
     {
       "file": "packages/core/src/events.ts",
@@ -5764,8 +5765,8 @@
     {
       "file": "packages/contracts/src/builtin-tools.ts",
       "find": "  \"user_computer_act\",\n  \"open_path\",\n",
-      "replace": "  \"user_computer_act\",\n  \"phone_calendar_read\",\n  \"phone_contacts_search\",\n  \"phone_location\",\n  \"open_path\",\n",
-      "reason": "phone: the bot reads the calendar on the user's phone (phone_calendar_read), looks one person up in its contacts (phone_contacts_search) and reads its location once (phone_location), built-ins a bot may turn off like the user's computer tools"
+      "replace": "  \"user_computer_act\",\n  \"phone_calendar_read\",\n  \"phone_contacts_search\",\n  \"phone_location\",\n  \"phone_reminders_read\",\n  \"phone_calendar_create\",\n  \"phone_reminder_create\",\n  \"open_path\",\n",
+      "reason": "phone: the bot reads the calendar on the user's phone (phone_calendar_read), looks one person up in its contacts (phone_contacts_search), reads its location once (phone_location) and its reminders (phone_reminders_read), and adds one event (phone_calendar_create) or reminder (phone_reminder_create) there, built-ins a bot may turn off like the user's computer tools"
     },
     {
       "file": "packages/contracts/src/user-devices.ts",
@@ -9144,14 +9145,14 @@
     {
       "file": "apps/mobile/app.json",
       "find": "\"expo-localization\",\n      \"@react-native-vector-icons/ionicons\",",
-      "replace": "\"expo-localization\",\n      [\n        \"expo-calendar\",\n        {\n          \"calendarPermission\": \"Bots you allow can read your calendar when you ask them.\",\n          \"remindersPermission\": false\n        }\n      ],\n      [\n        \"expo-contacts\",\n        {\n          \"contactsPermission\": \"Bots you allow can look up a contact when you ask them.\"\n        }\n      ],\n      [\n        \"expo-location\",\n        {\n          \"locationWhenInUsePermission\": \"Bots you allow can see where you are when you ask them.\",\n          \"locationAlwaysAndWhenInUsePermission\": false,\n          \"locationAlwaysPermission\": false,\n          \"locationFullAccuracyPermission\": false,\n          \"motionUsagePermission\": false,\n          \"isIosBackgroundLocationEnabled\": false,\n          \"isAndroidBackgroundLocationEnabled\": false,\n          \"isAndroidForegroundServiceEnabled\": false\n        }\n      ],\n      \"./plugins/dozo-without-location-services\",\n      \"@react-native-vector-icons/ionicons\",",
-      "reason": "phone calendar, contacts and location: each module's plugin writes its iOS purpose string with the app's own text, and nothing the app never asks for: no reminders, no location in the background or always (no background mode), no temporary full accuracy and no motion; the location module's two background location services are removed from the Android manifest"
+      "replace": "\"expo-localization\",\n      [\n        \"expo-calendar\",\n        {\n          \"calendarPermission\": \"Bots you allow can read your calendar and add events when you ask them.\",\n          \"remindersPermission\": \"Bots you allow can read and add reminders when you ask them.\"\n        }\n      ],\n      [\n        \"expo-contacts\",\n        {\n          \"contactsPermission\": \"Bots you allow can look up a contact when you ask them.\"\n        }\n      ],\n      [\n        \"expo-location\",\n        {\n          \"locationWhenInUsePermission\": \"Bots you allow can see where you are when you ask them.\",\n          \"locationAlwaysAndWhenInUsePermission\": false,\n          \"locationAlwaysPermission\": false,\n          \"locationFullAccuracyPermission\": false,\n          \"motionUsagePermission\": false,\n          \"isIosBackgroundLocationEnabled\": false,\n          \"isAndroidBackgroundLocationEnabled\": false,\n          \"isAndroidForegroundServiceEnabled\": false\n        }\n      ],\n      \"./plugins/dozo-without-location-services\",\n      \"@react-native-vector-icons/ionicons\",",
+      "reason": "phone calendar, reminders, contacts and location: each module's plugin writes its iOS purpose string with the app's own text (calendar and reminders name the events and reminders a bot may add when the user approves), and nothing the app never asks for: no write-only calendar access, no location in the background or always (no background mode), no temporary full accuracy and no motion; the location module's two background location services are removed from the Android manifest"
     },
     {
       "file": "apps/mobile/app.json",
       "find": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"icon\": \"./assets/icon.png\",",
-      "replace": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"blockedPermissions\": [\n        \"android.permission.WRITE_CALENDAR\",\n        \"android.permission.WRITE_CONTACTS\",\n        \"android.permission.ACCESS_BACKGROUND_LOCATION\",\n        \"android.permission.FOREGROUND_SERVICE_LOCATION\"\n      ],\n      \"icon\": \"./assets/icon.png\",",
-      "reason": "phone calendar, contacts and location: the calendar and contacts plugins ask for writing as well, and nothing may add location in the background; bots only read, so Android gets READ_CALENDAR, READ_CONTACTS and the location while the app is in use"
+      "replace": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"blockedPermissions\": [\n        \"android.permission.WRITE_CONTACTS\",\n        \"android.permission.ACCESS_BACKGROUND_LOCATION\",\n        \"android.permission.FOREGROUND_SERVICE_LOCATION\"\n      ],\n      \"icon\": \"./assets/icon.png\",",
+      "reason": "phone calendar, contacts and location: the contacts plugin asks for writing as well, and nothing may add location in the background; Android gets READ_CALENDAR, READ_CONTACTS, the location while the app is in use and WRITE_CALENDAR, which only the Add to calendar switch asks for (an event the user approved)"
     },
     {
       "file": "apps/mobile/app/(settings)/account.tsx",
@@ -9180,7 +9181,10 @@
         "apps/mobile/lib/dozo-phone-device.ts",
         "apps/mobile/lib/dozo-phone-calendar.ts",
         "apps/mobile/lib/dozo-phone-contacts.ts",
-        "apps/mobile/lib/dozo-phone-location.ts"
+        "apps/mobile/lib/dozo-phone-location.ts",
+        "apps/mobile/lib/dozo-phone-reminders.ts",
+        "apps/mobile/lib/dozo-phone-calendar-write.ts",
+        "apps/mobile/lib/dozo-phone-reminders-write.ts"
       ],
       "reason": "phone calendar: the import of the rule below"
     },
@@ -9205,11 +9209,11 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
-      "replace": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Calendar\"\nmsgstr \"Takvim\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Location\"\nmsgstr \"Konum\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"What a bot reads is sent to its AI model.\"\nmsgstr \"Botun okuduğu her şey yapay zekâ modeline gönderilir.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow calendar access in Settings.\"\nmsgstr \"Ayarlar'dan takvim erişimine izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow contacts access in Settings.\"\nmsgstr \"Ayarlar'dan kişilere erişime izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow location access in Settings.\"\nmsgstr \"Ayarlar'dan konuma erişime izin verin.\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
+      "replace": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Calendar\"\nmsgstr \"Takvim\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Location\"\nmsgstr \"Konum\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"What a bot reads is sent to its AI model.\"\nmsgstr \"Botun okuduğu her şey yapay zekâ modeline gönderilir.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow calendar access in Settings.\"\nmsgstr \"Ayarlar'dan takvim erişimine izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow contacts access in Settings.\"\nmsgstr \"Ayarlar'dan kişilere erişime izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow location access in Settings.\"\nmsgstr \"Ayarlar'dan konuma erişime izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Reminders\"\nmsgstr \"Anımsatıcılar\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Add to calendar\"\nmsgstr \"Takvime ekle\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Add reminders\"\nmsgstr \"Anımsatıcı ekle\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow reminders access in Settings.\"\nmsgstr \"Ayarlar'dan anımsatıcılara erişime izin verin.\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
       "requires": [
         "apps/mobile/app/(settings)/dozo-phone.tsx"
       ],
-      "reason": "phone calendar, contacts and location: the Turkish copy of the Phone page's switches, its footer and the alert when the system refuses each (Phone, Contacts, Cancel and Settings are upstream's)"
+      "reason": "phone calendar, reminders, contacts and location: the Turkish copy of the Phone page's switches, its footer and the alert when the system refuses each (Phone, Contacts, Cancel and Settings are upstream's)"
     },
     {
       "file": "apps/mobile/lib/account-screen.test.tsx",
@@ -12405,17 +12409,185 @@
     {
       "file": "apps/api/src/routes/threads.ts",
       "find": "        const events = withHeartbeats(context, (signal) =>\n          deps.events.follow(target.threadId, input.cursor, signal),\n        );\n",
-      "replace": "        const events = withHeartbeats(context, (signal) =>\n          dozoWhileMember(\n            deps.prisma,\n            context.actor,\n            target.threadId,\n            deps.events.follow(target.threadId, input.cursor, signal),\n          ),\n        );\n",
+      "replace": "        const events = withHeartbeats(context, (signal) =>\n          dozoWhileMember(\n            deps.prisma,\n            context,\n            target.threadId,\n            deps.events.follow(target.threadId, input.cursor, signal),\n          ),\n        );\n",
       "requires": [
         "apps/api/src/dozo-stream-membership.ts"
       ],
-      "reason": "chat stream membership: an open chat stream checks the person is still in the Space before it delivers anything newer than its last check, so someone removed from the Space gets nothing written after the removal and the stream ends at once instead of at the next session re-check"
+      "reason": "chat stream membership: an open chat stream checks the person is still in the Space, their account is not deactivated and the session or access token it was opened with still holds before it delivers anything newer than its last check, so someone removed, signed out or deactivated gets nothing written after that and the stream ends at once instead of at the next session re-check"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "} from \"../voice.js\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "replace": "} from \"../voice.js\";\nimport { dozoEnsureStreamCaller } from \"../dozo-stream-membership.js\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "chat alert recipients: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "          else if (next.spaceId === spaceId) yield { type: \"alert\" as const, alert: next };\n",
+      "replace": "          else if (next.spaceId === spaceId) {\n            await dozoEnsureStreamCaller(deps.prisma, context);\n            yield { type: \"alert\" as const, alert: next };\n          }\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "chat alert recipients: recipients are read before an alert is published, so someone removed from the Space, signed out or deactivated in between could still get its preview; the open notification stream checks the person may still read the Space before it passes each alert on, and ends as a signed-out session does when not"
+    },
+    {
+      "file": "apps/api/src/chat-alerts.test.ts",
+      "find": "  createAppRouter({\n    ...deps,\n    env:",
+      "replace": "  createAppRouter({\n    ...deps,\n    // Dozo: a database that answers yes to the stream's check that the reader may still see the Space.\n    prisma: deps.prisma ?? ({ $queryRaw: async () => [{ allowed: true }] } as unknown as RouterDeps[\"prisma\"]),\n    env:",
+      "reason": "upstream test fixture: the notification stream checks before each alert that the reader may still see the Space (chat stream membership), and these tests build the router with no database; the fixture above gains one that answers yes, and a test's own deps still win"
     },
     {
       "file": "apps/api/src/router.test.ts",
       "find": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "replace": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n      // Dozo: the stream's membership check, answering that the person is still in the Space.\n      $queryRaw: vi.fn().mockResolvedValue([{ member: true, seq: null }]),\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "reason": "upstream test fixture: a chat stream checks membership before delivering anything newer than its last check (chat stream membership), and this fake database had no answer for it; it answers that the person is still a member, so the session re-checks the tests are about decide as before"
+    },
+    {
+      "file": "apps/web/src/lib/model-auth.ts",
+      "find": "  client: RpcClient = rpc,\n) {\n  return waitForModelOAuthCompletion(() => client.models.completeOAuth({ loginId }, { signal }), {\n    signal,\n  });",
+      "replace": "  client: RpcClient = rpc,\n  pollIntervalMs?: number,\n) {\n  return waitForModelOAuthCompletion(() => client.models.completeOAuth({ loginId }, { signal }), {\n    signal,\n    pollIntervalMs,\n  });",
+      "reason": "sign-in code: a caller that knows the wait is short can check more often than the default"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "from \"./desktop\";\nimport { waitForModelOAuth }",
+      "replace": "from \"./desktop\";\nimport { CODE_EXCHANGE_POLL_MS, useOAuthPhase } from \"./dozo-oauth-phase\";\nimport { waitForModelOAuth }",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "  const [oauthPending, setOauthPending] = useState(false);\n",
+      "replace": "  const { oauthPending, oauthSubmitting, setOauthPending, setOauthSubmitting } = useOAuthPhase();\n",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: pending and submitting are one phase, so a pasted code can show Connecting"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "    oauthCodeSubmittingRef.current = true;\n    setPasteCode(\"\");",
+      "replace": "    oauthCodeSubmittingRef.current = true;\n    setOauthSubmitting(true);\n    setPasteCode(\"\");",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: the submit starts the Connecting state"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "      if (oauthAbortRef.current === controller) {\n        oauthCodeSubmittingRef.current = false;\n      }",
+      "replace": "      if (oauthAbortRef.current === controller) {\n        oauthCodeSubmittingRef.current = false;\n        setOauthSubmitting(false);\n      }",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: a rejected submit leaves Connecting and the code can be sent again"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "    await waitForModelOAuth(loginId, controller.signal, rpc);",
+      "replace": "    await waitForModelOAuth(\n      loginId,\n      controller.signal,\n      rpc,\n      oauthCodeSubmittingRef.current ? CODE_EXCHANGE_POLL_MS : undefined,\n    );",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: after a code is pasted the exchange takes a second or two, so check every second, not every 5"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "    oauthPending,\n    popupBlocked,\n    cancelOAuthAttempt,\n    startSubscriptionSignIn,",
+      "replace": "    oauthPending,\n    oauthSubmitting,\n    popupBlocked,\n    cancelOAuthAttempt,\n    startSubscriptionSignIn,",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: the screens read whether a code is being exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    oauthPending,\n    popupBlocked,\n    cancelOAuthAttempt,",
+      "replace": "    oauthPending,\n    oauthSubmitting,\n    popupBlocked,\n    cancelOAuthAttempt,",
+      "reason": "sign-in code: read from the sign-in hook, passed on below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    oauthPending,\n    openAiCompatibleReady,",
+      "replace": "    oauthPending,\n    oauthSubmitting,\n    openAiCompatibleReady,",
+      "reason": "sign-in code: the connection controls show Connecting while a code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "import { CompatibleKeyField } from \"./compatible-key-field\";\n\nimport type",
+      "replace": "import { CompatibleKeyField } from \"./compatible-key-field\";\nimport { DozoOAuthConnecting } from \"../../components/dozo-oauth-connecting\";\n\nimport type",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "  oauthPending,\n  pasteCode,",
+      "replace": "  oauthPending,\n  oauthSubmitting,\n  pasteCode,",
+      "reason": "sign-in code: read the Connecting state"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "  | \"oauthPending\"\n  | \"pasteCode\"",
+      "replace": "  | \"oauthPending\"\n  | \"oauthSubmitting\"\n  | \"pasteCode\"",
+      "reason": "sign-in code: the prop type of the rule above"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "                      value={pasteCode}\n                      onChange",
+      "replace": "                      value={pasteCode}\n                      disabled={oauthSubmitting}\n                      onChange",
+      "reason": "sign-in code: the code field is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "disabled={!pasteCode.trim()}",
+      "replace": "disabled={oauthSubmitting || !pasteCode.trim()}",
+      "reason": "sign-in code: Submit is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "                    <Plural\n                      value={Math.ceil(oauth.expiresInSeconds / 60)}\n                      one=\"Waiting for sign-in — the link expires in about # minute.\"\n                      other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                    />",
+      "replace": "                    {oauthSubmitting ? (\n                      <DozoOAuthConnecting />\n                    ) : (\n                      <Plural\n                        value={Math.ceil(oauth.expiresInSeconds / 60)}\n                        one=\"Waiting for sign-in — the link expires in about # minute.\"\n                        other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                      />\n                    )}",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: while the code is exchanged the note says Connecting, not that the link expires"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "} from \"@rakazo/ui-web\";\nimport { Check, Copy }",
+      "replace": "} from \"@rakazo/ui-web\";\nimport { DozoOAuthConnecting } from \"../../components/dozo-oauth-connecting\";\nimport { Check, Copy }",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "                  value={pasteCode}\n                  onChange",
+      "replace": "                  value={pasteCode}\n                  disabled={model.oauthSubmitting}\n                  onChange",
+      "reason": "sign-in code: the code field is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "<Button disabled={!pasteCode.trim()} onClick={() => void submitOAuthCode()}>",
+      "replace": "<Button\n                  disabled={model.oauthSubmitting || !pasteCode.trim()}\n                  onClick={() => void submitOAuthCode()}\n                >",
+      "reason": "sign-in code: Submit is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "                <Plural\n                  value={Math.ceil(oauth.expiresInSeconds / 60)}\n                  one=\"Waiting for sign-in — the link expires in about # minute.\"\n                  other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                />",
+      "replace": "                {model.oauthSubmitting ? (\n                  <DozoOAuthConnecting />\n                ) : (\n                  <Plural\n                    value={Math.ceil(oauth.expiresInSeconds / 60)}\n                    one=\"Waiting for sign-in — the link expires in about # minute.\"\n                    other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                  />\n                )}",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: while the code is exchanged the note says Connecting, not that the link expires"
     }
   ],
   "assets": {

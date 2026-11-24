@@ -61,8 +61,9 @@ OK. In `apps/mobile/app.json` through anchored rules, branded Dozo texts, held b
 `dozo/mobile/check-config.mjs`: camera and photo library (attach images), photo library add (the
 share sheet's Save Image), microphone (calls and dictation, the same text from all three plugins
 that write it), speech recognition (calls and dictation), local network (a server on the user's
-network). No location, contacts, calendar, Bluetooth, tracking or Face ID use in the app's code,
-so `expo-secure-store` is told to write no Face ID string (`faceIDPermission: false`); `build.sh`
+network), and for the phone tools in Settings > Phone: calendar (read and add events), reminders
+(read and add, iPhone only), contacts and location while in use, each asked only when its switch is turned on;
+no background location. No Bluetooth, tracking or Face ID use in the app's code, so `expo-secure-store` is told to write no Face ID string (`faceIDPermission: false`); `build.sh`
 fails if the generated plist still has one. Background modes `voip`, `audio` and
 `remote-notification`: App Review expects incoming calls to use CallKit (the app's native call
 module reports them, `lib/incoming-calls.ts`) and background audio to be a call in progress. Say

@@ -26,6 +26,12 @@ import {
   readCalendar,
   requestCalendarPermission,
 } from "./dozo-phone-calendar";
+import type { PhoneCalendarCreateValue } from "./dozo-phone-calendar-write";
+import {
+  calendarWritePermission,
+  createCalendarEvent,
+  requestCalendarWritePermission,
+} from "./dozo-phone-calendar-write";
 import type { PhoneContactsRequest, PhoneContactsValue } from "./dozo-phone-contacts";
 import {
   contactsAvailable,
@@ -40,6 +46,15 @@ import {
   readLocation,
   requestLocationPermission,
 } from "./dozo-phone-location";
+import type { PhoneRemindersRequest, PhoneRemindersValue } from "./dozo-phone-reminders";
+import {
+  readReminders,
+  remindersAvailable,
+  remindersPermission,
+  requestRemindersPermission,
+} from "./dozo-phone-reminders";
+import type { PhoneReminderCreateValue } from "./dozo-phone-reminders-write";
+import { createReminder } from "./dozo-phone-reminders-write";
 import { isRelayOrigin } from "./dozo-relay-connection";
 import { reportMobileError } from "./monitoring";
 import { serverHeaders } from "./server-headers";
@@ -62,11 +77,25 @@ const RETRY_MAX_MS = 60_000;
 /** A connection that lasted this long starts the backoff over when it drops. */
 const STABLE_MS = 30_000;
 
-/** The kinds of the phone's data a bot may read, in the order the phone declares them. */
-const PHONE_KINDS = ["calendar", "contacts", "location"] as const;
+/** What a bot may do with the phone's data, in the order the phone declares it. */
+const PHONE_KINDS = [
+  "calendar",
+  "contacts",
+  "location",
+  "reminders",
+  "calendar-write",
+  "reminders-write",
+] as const;
 export type PhoneKind = (typeof PHONE_KINDS)[number];
 type Switches = Record<PhoneKind, boolean>;
-const ALL_OFF: Switches = { calendar: false, contacts: false, location: false };
+const ALL_OFF: Switches = {
+  calendar: false,
+  contacts: false,
+  location: false,
+  reminders: false,
+  "calendar-write": false,
+  "reminders-write": false,
+};
 
 type Paired = { deviceId: string; token: string };
 /** What the phone keeps per server and account; each kind is off until switched on here. */
@@ -99,6 +128,10 @@ export type PhoneDeviceDeps = {
   calendar: PhoneReader<PhoneCalendarRequest, PhoneCalendarValue>;
   contacts: PhoneReader<PhoneContactsRequest, PhoneContactsValue>;
   location: PhoneReader<PhoneLocationRequest, PhoneLocationValue>;
+  reminders: PhoneReader<PhoneRemindersRequest, PhoneRemindersValue>;
+  /** A write gets the item as the server sent it, and checks it itself. */
+  "calendar-write": PhoneReader<unknown, PhoneCalendarCreateValue>;
+  "reminders-write": PhoneReader<unknown, PhoneReminderCreateValue>;
   foreground(): boolean;
   /** Calls back when the app's state, server or session changes. */
   watch(listener: () => void): () => void;
@@ -109,7 +142,7 @@ export type PhoneDeviceDeps = {
   report(error: unknown): void;
 };
 
-/** One kind of the phone's data: its native module, the system's permission and its read. */
+/** One kind of the phone's data: its native module, the system's permission and its read (or write). */
 export type PhoneReader<Request, Value> = {
   available(): boolean;
   permission(): Promise<PhonePermission>;
@@ -306,6 +339,30 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
         read: ({ precision }) =>
           deps.location.read({ precision: precision === "precise" ? "precise" : "approximate" }),
       },
+    ],
+    [
+      "phoneRemindersRead",
+      {
+        kind: "reminders",
+        read: ({ list, due, includeDone, limit }) =>
+          deps.reminders.read({
+            ...(typeof list === "string" ? { list } : {}),
+            ...(isRecord(due) && typeof due.from === "string" && typeof due.to === "string"
+              ? { due: { from: due.from, to: due.to } }
+              : {}),
+            includeDone: includeDone === true,
+            limit: typeof limit === "number" ? limit : 50,
+          }),
+      },
+    ],
+    // Create only: there is no method that changes or deletes what is on the phone.
+    [
+      "phoneCalendarCreate",
+      { kind: "calendar-write", read: ({ event }) => deps["calendar-write"].read(event) },
+    ],
+    [
+      "phoneReminderCreate",
+      { kind: "reminders-write", read: ({ reminder }) => deps["reminders-write"].read(reminder) },
     ],
   ]);
 
@@ -626,6 +683,24 @@ export function appPhoneDeviceDeps(): PhoneDeviceDeps {
       permission: locationPermission,
       request: requestLocationPermission,
       read: (request) => readLocation(request, later),
+    },
+    reminders: {
+      available: remindersAvailable,
+      permission: remindersPermission,
+      request: requestRemindersPermission,
+      read: readReminders,
+    },
+    "calendar-write": {
+      available: calendarAvailable,
+      permission: calendarWritePermission,
+      request: requestCalendarWritePermission,
+      read: (event) => createCalendarEvent(event),
+    },
+    "reminders-write": {
+      available: remindersAvailable,
+      permission: remindersPermission,
+      request: requestRemindersPermission,
+      read: createReminder,
     },
     foreground: () => isForegroundState(AppState.currentState),
     watch(listener) {
