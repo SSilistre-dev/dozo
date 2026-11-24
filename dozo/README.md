@@ -592,18 +592,22 @@ one bot does not hold for another. A rule does one of three things
 Upstream never asks before a command on the bot's own computer (`shell` is exempt from approval).
 The fork gates it by default (`dozoHostedCommandHold` in `packages/adapters/src/dozo-command-gate.ts`),
 on the hosted service and on a self-hosted server's bot computers alike. A command that only reads
-runs. Any other command (one that writes, reaches the network, deletes, or cannot be read) that no
+runs, except where upstream already gates every command: in a webhook run Auto review judges it
+and Ask asks, and a run a token's text reached asks. Any other command (one that writes, reaches the network, deletes, or cannot be read) that no
 allow rule covers counts as an action that changes something, as upstream counts other tools:
 
 | Run | Auto review | Ask | Never ask |
 | --- | --- | --- | --- |
 | The member's own chat, also after it read pages, files or command output, and the owner's own routine | approval model; a card when it asks, fails or there is none | card | runs |
-| Started by outside text: a webhook or email, a team chat's channel, an outside message taken in while it ran, a routine someone else last wrote | card | card | runs (as before) |
+| Another bot's message, a spawned bot, a ticket, or any other run the owner did not start | approval model, told the task is not the owner's words | card | runs |
+| Started by outside text: a webhook or email, a team chat's channel, an outside message taken in while it ran, a routine a change trigger fired or someone else last wrote | card | card | runs (as before) |
 | Reached by a token's text | card, reads too | card | card (as before) |
 
-- The approval model sees the command and its folder, and is told when the run already took in
-  outside content (pages, files, command output, messages), which it never sees and which may have
-  chosen the command (`packages/adapters/src/dozo-outside-review.prompt.ts`). A model that passes
+- The approval model sees the command and its folder, is told to ask when a command sends a local
+  file or an environment value over the network unasked, and is told when the run already took in
+  outside content (pages, files, command output, messages) it never sees, or when the task is not
+  the owner's words (`packages/adapters/src/dozo-outside-review.prompt.ts`). In Auto review every
+  such command is one more review call, with its cost and wait. A model that passes
   a command does not stop the run, a routine included; one that asks leaves a card. With no model
   that would judge it (none set, or only backups without a primary), the command asks.
 - An exact allow rule runs the command in every row but the last; a prefix rule only until the run
@@ -612,8 +616,11 @@ allow rule covers counts as an action that changes something, as upstream counts
 - A card in a run nobody watches (a routine, a webhook, a chat app) waits like any other card: the
   member is notified, and the wait ends with the run's other human waits (`STUCK_WORK_EXPIRE_AFTER_MS`,
   a day by default). A background helper's run refuses instead of asking.
-- A routine with no writer on record (`dozo_routine_writers`) is taken as its owner's, since it
-  predates the record. A Space member's own chat is theirs, judged by their rules.
+- Which runs outside text started follows the lasting-write rule's `runStartedFromOutside`, with one
+  departure: that rule counts a routine with no writer on record (`dozo_routine_writers`) as from
+  outside, while the command rule counts it as its owner's, so routines made before the record keep
+  running as they do today; with a writer on record the two agree. A Space member's own chat is
+  theirs, judged by their rules.
 - "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
   computer; per account, table `dozo_command_settings`) now means: a card, never the approval
   model, outside Never ask. An account without the setting gets the default above.

@@ -8950,14 +8950,14 @@
     {
       "file": "packages/adapter-kit/src/types.ts",
       "find": "  memoryWrite?: boolean;\n}\n\nexport interface AutoReviewResult {",
-      "replace": "  memoryWrite?: boolean;\n  /**\n   * The run took in outside content (pages, files, command output, messages) before this action,\n   * which the reviewer does not see and which may have chosen it.\n   */\n  outsideContent?: boolean;\n}\n\nexport interface AutoReviewResult {",
+      "replace": "  memoryWrite?: boolean;\n  /**\n   * The run took in outside content (pages, files, command output, messages) before this action,\n   * which the reviewer does not see and which may have chosen it.\n   */\n  outsideContent?: boolean;\n  /** The run's task is someone else's text (another bot, a ticket), not the owner's words. */\n  taskFromOutside?: boolean;\n}\n\nexport interface AutoReviewResult {",
       "requires": [],
-      "reason": "command rules: the review request's field for a run that took in outside content"
+      "reason": "command rules: the review request's fields for a run that took in outside content, and for a task that is not the owner's words"
     },
     {
       "file": "packages/adapters/src/auto-review.prompt.ts",
       "find": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\n\nconst MAX_TASK_CHARS",
-      "replace": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport { DOZO_OUTSIDE_CONTENT_REVIEW } from \"./dozo-outside-review.prompt.js\";\n\nconst MAX_TASK_CHARS",
+      "replace": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport { dozoShellReviewLines } from \"./dozo-outside-review.prompt.js\";\n\nconst MAX_TASK_CHARS",
       "requires": [
         "packages/adapters/src/dozo-outside-review.prompt.ts"
       ],
@@ -8966,16 +8966,16 @@
     {
       "file": "packages/adapters/src/auto-review.prompt.ts",
       "find": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    \"Reason must be",
-      "replace": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    ...(input.outsideContent ? [DOZO_OUTSIDE_CONTENT_REVIEW] : []),\n    \"Reason must be",
+      "replace": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    ...dozoShellReviewLines(input),\n    \"Reason must be",
       "requires": [
         "packages/adapters/src/dozo-outside-review.prompt.ts"
       ],
-      "reason": "command rules: the reviewer's prompt says when outside content came in before the action"
+      "reason": "command rules: the reviewer's prompt for a command on the bot's computer: data sent out asks, and it says when outside content came in or the task is not the owner's"
     },
     {
       "file": "packages/adapters/src/auto-review.prompt.ts",
       "find": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\">,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: \"Should this bot action run without asking its owner first?\",",
-      "replace": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\" | \"outsideContent\">,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: input.outsideContent\n      ? `Should this bot action run without asking its owner first? ${DOZO_OUTSIDE_CONTENT_REVIEW}`\n      : \"Should this bot action run without asking its owner first?\",",
+      "replace": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\"> & Partial<Pick<AutoReviewRequest, \"toolName\" | \"outsideContent\" | \"taskFromOutside\">>,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: [\"Should this bot action run without asking its owner first?\", ...dozoShellReviewLines({ ...input, toolName: input.toolName ?? \"\" })].join(\" \"),",
       "requires": [
         "packages/adapters/src/dozo-outside-review.prompt.ts"
       ],

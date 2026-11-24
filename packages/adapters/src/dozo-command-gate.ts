@@ -5,9 +5,11 @@ import {
   readOnlyCwd,
   readOnlyPipeline,
   routineWriterIsOwner,
+  runStartedFromOutside,
 } from "@rakazo/core";
 import { readDozoCommandRules, readDozoHostedAsks, readRoutineWriter } from "@rakazo/db";
 import { runCameByToken } from "./dozo-token-run.js";
+import { routineTaskInstructions } from "./routine-watch.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted } from "./run-context.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
@@ -87,24 +89,51 @@ export async function dozoHostedCommandHold(
 /**
  * Whether text from someone other than the run's member started the run or reached it: a webhook
  * or email, a team chat's channel, a message sent with an access token, an outside message taken
- * in while it ran, or a routine whose prompt someone else last wrote (dozo_routine_writers). A
- * routine with no writer on record is taken as its owner's: it predates the record.
+ * in while it ran, or a routine runStartedFromOutside (dozo-lasting-write-approval.ts) counts as
+ * outside: one a change trigger fired, whose prompt ends with what the watch read, or whose prompt
+ * someone else last wrote. Two departures from that rule, so existing bots keep working: a routine
+ * with no writer on record is taken as its owner's (it predates the record), and every other run
+ * the owner did not start (another bot's message, a spawned bot, a ticket) goes to the approval
+ * model, told its task is not the owner's words (dozoHostedReviewFacts), instead of a card.
  */
 export async function dozoRunStartedFromOutside(ctx: RunContext): Promise<boolean> {
   const { run } = ctx;
   if (run.trigger === "webhook" || ctx.source.messagingChannelRun) return true;
   if ((await runCameByToken(ctx)) || (await ctx.trust.receivedOutsideMessage())) return true;
-  if (run.trigger !== "routine" || !run.routineId) return false;
-  const writer = (await readRoutineWriter(ctx.deps.prisma, run.routineId))?.writer;
-  return writer !== undefined && !routineWriterIsOwner(writer);
+  if (run.trigger !== "routine") return false;
+  return runStartedFromOutside(
+    {
+      trigger: run.trigger,
+      ownerStartedRun: false,
+      nonOwnerChatRun: false,
+      watchFired: routineTaskInstructions(ctx.task.prompt) !== ctx.task.prompt,
+      botOwnerRun: true,
+      readHistory: false,
+    },
+    async () => {
+      if (!run.routineId) return true;
+      const writer = (await readRoutineWriter(ctx.deps.prisma, run.routineId))?.writer;
+      return writer === undefined || routineWriterIsOwner(writer);
+    },
+  );
 }
 
-/** What the approval model is told about a command on the bot's computer: whether outside content came in. */
+/**
+ * What the approval model is told about a command on the bot's computer: whether outside content
+ * came in, and whether the run's task is someone else's text rather than the owner's words (a run
+ * the owner did not start, other than their own routine or chat app).
+ */
 export async function dozoHostedReviewFacts(
   ctx: RunContext,
   name: string,
-): Promise<{ outsideContent?: true }> {
-  return name === HOSTED_SHELL_TOOL && (await isRunTainted(ctx)) ? { outsideContent: true } : {};
+): Promise<{ outsideContent?: true; taskFromOutside?: true }> {
+  if (name !== HOSTED_SHELL_TOOL) return {};
+  const { trigger } = ctx.run;
+  const ownersTask = ctx.source.ownerStartedRun || trigger === "routine" || trigger === "messaging";
+  return {
+    ...((await isRunTainted(ctx)) ? { outsideContent: true as const } : {}),
+    ...(ownersTask ? {} : { taskFromOutside: true as const }),
+  };
 }
 
 function hostedMatch(ctx: RunContext, args: Record<string, unknown>) {

@@ -4,18 +4,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   rules: vi.fn(async (): Promise<DozoCommandRuleView[]> => []),
   hostedAsks: vi.fn(async () => false),
+  writer: vi.fn(async (): Promise<{ writer: string; writtenAt: Date } | undefined> => undefined),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   readDozoCommandRules: db.rules,
   readDozoHostedAsks: db.hostedAsks,
+  readRoutineWriter: db.writer,
 }));
 
+import { routineWriterIsOwner, runStartedFromOutside } from "@rakazo/core";
 import {
   dozoBlockedRefusal,
   dozoCommandBlockRefusal,
   dozoHostedCommandGate,
   dozoHostedCommandHold,
+  dozoRunStartedFromOutside,
 } from "./dozo-command-gate.js";
 import type { RunContext } from "./run-context.js";
 
@@ -223,5 +227,41 @@ describe("dozoHostedCommandHold", () => {
     await dozoHostedCommandHold(ctx, "shell", args);
     await dozoHostedCommandGate(ctx, "shell", args, NO_RULE, "judge");
     expect(db.rules).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dozoRunStartedFromOutside for a routine", () => {
+  const routineRun = () =>
+    ({
+      ...context("auto", "user-1", true, "routine"),
+      run: { userId: "user-1", trigger: "routine", routineId: "routine-1" },
+      task: { prompt: "Check the build" },
+    }) as unknown as RunContext;
+
+  it.each([
+    ["owner", false],
+    ["owner_run", false],
+    ["member", true],
+    ["outside_run", true],
+  ])("agrees with the lasting-write rule once %s is on record", async (writer, outside) => {
+    db.writer.mockResolvedValue({ writer, writtenAt: new Date(0) });
+    const canonical = await runStartedFromOutside(
+      {
+        trigger: "routine",
+        ownerStartedRun: false,
+        nonOwnerChatRun: false,
+        watchFired: false,
+        botOwnerRun: true,
+        readHistory: false,
+      },
+      async () => routineWriterIsOwner(writer),
+    );
+    expect(canonical).toBe(outside);
+    expect(await dozoRunStartedFromOutside(routineRun())).toBe(outside);
+  });
+
+  it("takes a routine with no writer on record as its owner's, where the lasting-write rule does not", async () => {
+    db.writer.mockResolvedValue(undefined);
+    expect(await dozoRunStartedFromOutside(routineRun())).toBe(false);
   });
 });
