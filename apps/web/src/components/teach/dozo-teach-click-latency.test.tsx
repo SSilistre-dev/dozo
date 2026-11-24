@@ -2,6 +2,7 @@
 
 import type { TaughtSkill } from "@rakazo/contracts";
 import { act } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
@@ -26,7 +27,14 @@ const skill = {
   recording: { events: [], snapshots: [] },
 } as unknown as TaughtSkill;
 
-afterEach(() => {
+const roots: Root[] = [];
+
+afterEach(async () => {
+  // Each test's tree comes down with it, so the click ring's timer is cleared, not left to fire
+  // after the test and its page are gone.
+  await act(async () => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
   computerInput.mockReset();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -53,7 +61,9 @@ it("lands a click on the computer one round trip sooner than a press and a relea
   const container = document.createElement("div");
   document.body.append(container);
   await act(async () => {
-    createRoot(container).render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
+    const root = createRoot(container);
+    roots.push(root);
+    root.render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
   });
   const overlay = container.querySelector<HTMLElement>('[data-testid="teach-capture-overlay"]');
   if (!overlay) throw new Error("overlay missing");
