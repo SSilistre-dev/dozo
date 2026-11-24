@@ -251,6 +251,13 @@ olc() {
         echo "[olc] dozo command ok (dozo/cli/dozo.test.mjs)"
       else printf '%s\n' "$out"; fail "dozo command (dozo/cli/dozo.test.mjs)"; fi
     else fail "dozo/cli/dozo.test.mjs missing: the dozo command is not tested"; fi
+    # The verdict on a Vitest report (dozo/docker/test-verdict.mjs, used by the Postgres run and the
+    # unit run): a skipped, missing or empty test file turns it red. Offline, about a second.
+    if [ -f dozo/docker/test-verdict.test.mjs ]; then
+      if out=$(drun verdict-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/docker/test-verdict.test.mjs 2>&1); then
+        echo "[olc] test verdict ok (a skipped, missing or empty Postgres test file fails; unit skips only in *.postgres.test.ts)"
+      else printf '%s\n' "$out"; fail "test verdict (dozo/docker/test-verdict.test.mjs)"; fi
+    else fail "dozo/docker/test-verdict.test.mjs missing: the skip gate is not tested"; fi
     # An upstream migration that changes what owns a thread runs before the fork's and can break a
     # bot's extra chats: the guard holds the sync until it is read (dozo/SYNC.md).
     if [ -f dozo/db/threads-owner-guard.test.mjs ]; then
@@ -453,7 +460,7 @@ unit_tests() {
   # pipeline would hold the trap until the run ends) and removes the named container.
   # The quoted script is expanded by the container's shell, not this one (SC2016).
   # shellcheck disable=SC2086,SC2016
-  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$ROOT/dozo/docker/test-verdict.mjs:/verdict.mjs:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p "$WORK" /cache/store; cd "$WORK"
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
@@ -507,12 +514,16 @@ unit_tests() {
       node "$g/module-state-guard.mjs" --root=/guard > /tmp/guard.log 2>&1 || { cat /tmp/guard.log; exit 2; }
       sed "s/^/[unit] /" /tmp/guard.log
       m=${DOZO_COVERAGE_MIN:-90}
-      pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
+      rc=0
+      pnpm exec vitest run "$@" --reporter=default --reporter=json --outputFile.json=/tmp/unit.json --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
         --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
         --coverage.include="infra/**/dozo-*.ts" \
         --coverage.exclude="**/*.test.*" --coverage.exclude="**/*.test-support.*" --coverage.thresholds.perFile \
-        --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
+        --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m" || rc=$?
+      # No database here: a skipped test is expected only in the Postgres files (their own run covers them).
+      node /verdict.mjs unit /tmp/unit.json || rc=2
+      exit $rc' \
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
