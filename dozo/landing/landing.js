@@ -51,7 +51,10 @@ addEventListener("DOMContentLoaded", () => {
             ? "linux"
             : "";
   const build = os && $(`[data-os="${os}"]`);
-  if (build) $$("[data-dl]").forEach((a) => (a.href = build.href));
+  if (build) {
+    $$("[data-dl]").forEach((a) => (a.href = build.href));
+    $$(`[data-os="${os}"]`).forEach((a) => a.classList.add("w"));
+  }
   // logo: eyes glance toward the pointer on hover; one gesture on load and on tap for touch
   $$(".lock").forEach((l) => {
     const eyes = $(".eyes", l),

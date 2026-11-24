@@ -80,7 +80,7 @@ main,header,footer{position:relative;z-index:1}
 h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spacing:-.035em;text-wrap:balance}
 .lede{margin:18px auto 0;max-width:32em;font-size:clamp(16px,1.9vw,19px);color:var(--muted);text-wrap:balance}
 .cta{display:flex;justify-content:center;gap:12px;margin-top:28px;flex-wrap:wrap}
-.oses{display:flex;justify-content:center;margin-top:6px}.oses a{display:inline-flex;align-items:center;height:44px;padding:0 14px;color:var(--muted);text-decoration:none}.oses a:hover{color:var(--text)}
+.oses{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:14px}
 .frame-app{margin:36px auto 0;max-width:1000px;background:var(--side);border:1px solid var(--line);border-radius:28px;padding:4px 56px 32px;text-align:left}
 .ft{height:68px;display:flex;align-items:center}
 .ft h2{font-size:16px;font-weight:500;display:flex;align-items:center;gap:12px}
@@ -138,23 +138,14 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 /* run it yourself (download, self-host) comes first; the hosted plans follow, all three cards alike */
 .run,.plans{margin-top:52px}
 .phead{display:flex;align-items:center;gap:12px 28px;flex-wrap:wrap;position:relative;z-index:1}
-.period{display:flex;align-items:center;gap:4px;padding:4px;border-radius:999px;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line)}
+.period{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
 .period[hidden]{display:none}
+.sw{display:flex;align-items:center;gap:4px;padding:4px;border-radius:999px;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line)}
 .period button{height:36px;padding:0 16px;border-radius:999px;font-size:14px;color:var(--muted)}
 .period button[aria-pressed=true]{background:var(--raise2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
 .period button:hover{color:var(--text)}
-.save{padding:0 12px 0 8px;font-size:13px;color:var(--muted)}
+.save{font-size:14px;color:var(--muted)}
 .tiers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0;position:relative}
-/* the dragon behind the plans: the mark's head on a scaled body, in the mark's red, faint. It lies
-   along the top of the cards and dips behind them; the cards are a little translucent. */
-.scales{position:absolute;right:0;bottom:100%;width:min(990px,100%);transform:translateY(42.9%);opacity:var(--scale-a,.5);pointer-events:none;color:#C8372D}
-:root[data-theme="light"] .scales{--scale-a:.42}
-.scales svg{display:block;overflow:visible}
-.scales .body{stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
-.scales .fin,.scales .ink{fill:currentColor}.scales .spine{stroke:var(--bg);stroke-width:1.5;stroke-linejoin:round}
-.scales .horn,.scales .whisker{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round}.scales .whisker{stroke-width:1.7}
-.scales .visor{fill:var(--bg)}
-.scales .band path{fill:var(--bg);stroke:currentColor;stroke-width:1}
 .tier{display:grid;grid-row:span 5;grid-template-rows:subgrid;row-gap:0;justify-items:start;border-radius:24px;padding:24px;box-shadow:inset 0 0 0 1px var(--line);position:relative;background:color-mix(in srgb,var(--bg) 90%,transparent)}
 .tier h3{font-size:18px;font-weight:500;letter-spacing:-.015em}
 .price{margin-top:14px;color:var(--muted);font-size:14.5px;display:grid}
@@ -169,6 +160,12 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .self h3{font-size:16px;font-weight:500}.self p{flex:1 1 24em;font-size:14.5px;color:var(--muted)}
 .fine{font-size:14.5px;color:var(--muted)}
 .get{display:flex;flex-wrap:wrap;gap:10px}
+/* download buttons: outlined in the muted ink so they read as buttons on any surface; the visitor's own
+   system gets the filled one (landing.js adds .w) */
+.dlb{gap:8px}.dlb:not(.w){background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}.dlb:not(.w):hover{box-shadow:inset 0 0 0 1.5px var(--text)}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.ic.dn{opacity:.7}
+.oses .dlb{padding:0 14px;gap:6px}.oses .ic{width:14px;height:14px}
+.note{flex-basis:100%;font-size:13.5px;color:var(--muted)}
 .strip{background:var(--raise);border-radius:28px;padding:28px 40px}
 .dl{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 40px}.dl p{flex:1 1 20em}.dl .ih{flex-basis:100%}
 
@@ -184,6 +181,11 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
 .fin nav a:hover{color:var(--text)}
 .credit{margin-top:4px;font-size:13px;color:var(--quiet)}
 
+/* light theme: white on near-white needs an edge (existing --draft-line token, 14% ink) */
+:root[data-theme="light"] .pill:not(.w):not(.ok):not(.dlb){box-shadow:inset 0 0 0 1px var(--draft-line)}
+:root[data-theme="light"] :is(.tier,.self,.sw){box-shadow:inset 0 0 0 1px var(--draft-line)}
+:root[data-theme="light"] :is(.strip,.vg){box-shadow:inset 0 0 0 1px var(--line)}
+
 @media (max-width:900px){
  .pair{grid-template-columns:minmax(0,1fr)}
  .strip{padding:28px}
@@ -197,8 +199,9 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
  .hero{padding-top:28px}.crew{gap:8px;margin-bottom:22px}.av.xl{width:44px;height:44px}
  .cta .pill{flex:1 1 140px}
  .frame-app{padding:0 20px 22px;margin-top:36px}
- .ideas,.run,.plans{margin-top:56px}.tiers{grid-template-columns:minmax(0,1fr)}.period{width:100%}.period button{flex:1;height:40px}.close{padding:48px 0 56px}
+ .ideas,.run,.plans{margin-top:56px}.tiers{grid-template-columns:minmax(0,1fr)}.period{width:100%}.sw{flex:1}.period button{flex:1;height:40px}.close{padding:48px 0 56px}
  .vg{padding:18px}.list .li{flex-wrap:wrap;padding:10px 0}.list .li .d{flex-basis:100%;order:3}.li b{flex:1}
+ .get{width:100%}.get .pill{flex:1 1 100%;justify-content:flex-start}.get .dn{margin-left:auto}
  .acts .link{padding:0 8px}.user{margin-bottom:20px}.strip{padding:22px}
  .fin{flex-direction:column;align-items:flex-start;gap:4px}.fin nav{margin-left:-14px}
 }
