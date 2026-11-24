@@ -439,7 +439,7 @@ unit_tests() {
   # pipeline would hold the trap until the run ends) and removes the named container.
   # The quoted script is expanded by the container's shell, not this one (SC2016).
   # shellcheck disable=SC2086,SC2016
-  ( drun unit -v "$src:/src:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p /cache/w /cache/store; cd /cache/w
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
@@ -477,17 +477,32 @@ unit_tests() {
         (cd "$d" && pnpm exec tsc --noEmit -p tsconfig.json) || { echo "[unit] type errors in $d"; exit 1; }
         echo "[unit] types of $d ok ($(( $(date +%s) - t0 ))s)"
       done
+      # Long-lived mutable state in the fork server code, the relay worker and what the brand rules
+      # add to upstream files must be read for its key scope before it merges (one person data must
+      # never reach another). It reads the unbranded working tree mounted at /guard: its reviewed
+      # rows and the anchored rules are in upstream words. It parses with the TypeScript 6 this
+      # lockfile installs for apps/www (the root TypeScript 7 has no JS parser). A missing guard,
+      # test, list or parser is a failure, never a skip; nothing is fetched.
+      g=/guard/dozo/db; ts=/cache/w/apps/www/node_modules/typescript
+      for f in module-state-guard.mjs module-state-guard.test.mjs module-state-reviewed.tsv; do
+        [ -f "$g/$f" ] || { echo "[unit] module state guard FAILED: dozo/db/$f is missing, so server state is not checked"; exit 2; }
+      done
+      [ -f "$ts/lib/typescript.js" ] || { echo "[unit] module state guard FAILED: no typescript in the installed tree (apps/www)"; exit 2; }
+      export DOZO_TYPESCRIPT=$ts
+      node --test "$g/module-state-guard.test.mjs" > /tmp/guard.log 2>&1 || { cat /tmp/guard.log; echo "[unit] module state guard FAILED: its tests"; exit 2; }
+      node "$g/module-state-guard.mjs" --root=/guard > /tmp/guard.log 2>&1 || { cat /tmp/guard.log; exit 2; }
+      sed "s/^/[unit] /" /tmp/guard.log
       m=${DOZO_COVERAGE_MIN:-90}
       pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
         --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
         --coverage.include="infra/**/dozo-*.ts" \
-        --coverage.exclude="**/*.test.*" --coverage.thresholds.perFile \
+        --coverage.exclude="**/*.test.*" --coverage.exclude="**/*.test-support.*" --coverage.thresholds.perFile \
         --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
-  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types, fork tests or coverage"; return 1; fi
+  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types, module state guard, fork tests or coverage"; return 1; fi
 }
 
 # Upstream's repository checks (`pnpm checks`: scripts/checks/*.test.mjs) on the branded staged

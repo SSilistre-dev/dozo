@@ -1,0 +1,221 @@
+# Long-lived mutable state in the fork's server code, each read for its key scope
+# (dozo/db/module-state-guard.mjs). Columns: file, where, line, scope, note. Scope is one of
+# user, space, bot, thread, run, request, token, device, global-safe, local.
+apps/api/src/dozo-admin-billing.ts	fn dozoAdminBillingRoutes	const cache = new Map<	global-safe	admin-only revenue cache by period inside the route factory; every read passes requireAdmin
+apps/api/src/dozo-admin-funnel.ts	fn dozoAdminFunnelRoutes	const cache = new Map<DozoFunnelDays, { until: number; value: Promise<DozoAdminFunnel> }>();	global-safe	admin-only funnel cache by day range inside the route factory; every read passes requireAdmin
+apps/api/src/dozo-admin-members.ts	fn plansOf	const byId = new Map(organizations.map((organization) => [organization.id, organization]));	local	per-call local, dies with the call
+apps/api/src/dozo-billing-lifecycle.ts	module	const SETTLED = new Set(["active", "trialing"]);	global-safe	constant set of fixed words, never changed after load
+apps/api/src/dozo-billing-lifecycle.ts	fn createBillingLifecycle	const sending = new Set<Promise<void>>();	global-safe	in-flight send promises awaited at stop; holds no person data
+apps/api/src/dozo-billing-lifecycle.ts	fn createBillingLifecycle	const runner = deps.queue?.(	global-safe	job runner handle for billing mails; holds no person data
+apps/api/src/dozo-bot-api-stream.ts	module	export const DOZO_SETTLED_RUN_STATUSES: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
+apps/api/src/dozo-bot-api-stream.ts	fn dozoRunStream	let closed = false;	local	per-call local, dies with the call
+apps/api/src/dozo-bot-api.ts	fn mountDozoBotApi	const openStreams = new Map<string, number>();	token	open stream count by token id inside the mount factory; a number, no data
+apps/api/src/dozo-chat-export.ts	fn exportChat	const botNames = new Map<string, string>(	local	per-call local, dies with the call
+apps/api/src/dozo-chat-export.ts	fn exportChat	const pending = new Set<string>();	local	per-call local, dies with the call
+apps/api/src/dozo-chat-markdown.ts	fn chatTimeFormatter	let format: Intl.DateTimeFormat;	local	per-call local, dies with the call
+apps/api/src/dozo-events.ts	module	const remembered = new Set<string>();	user	`kind:userId` keys of firsts already recorded, bounded; only a yes-already-recorded flag, never read back as data
+apps/api/src/dozo-mcp.ts	fn mountDozoMcp	const lockedUntil = new Map<string, number>();	global-safe	refusal lock by client address, bounded; times only
+apps/api/src/dozo-message-revision.ts	module	const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);	global-safe	constant set of fixed words, never changed after load
+apps/api/src/dozo-message-revision.ts	fn reviseInTransaction	let seq = -1;	local	per-call local, dies with the call
+apps/api/src/dozo-queue-plan.ts	fn planQueue	const line: Array<{ run: QueueRun; reason: DozoQueueItem["reason"]; ahead: QueueRun | null }> =	local	per-call local, dies with the call
+apps/api/src/dozo-relay-session.ts	module	const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);	global-safe	constant set of fixed words, never changed after load
+apps/api/src/dozo-site-sessions.ts	fn dozoSiteSessionsRoutes	const repos = createRepos(deps.prisma);	global-safe	route wiring: repository handles over the pool, no data
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileMember	let checkedThrough = Number.NEGATIVE_INFINITY;	request	one open stream's last verified event number, held by that stream's own iterator and dropped with it
+apps/api/src/dozo-taught-skills.ts	fn createTaughtSkillsService	const upstream = createUpstreamTaughtSkillsService(deps);	global-safe	service wiring, no data
+apps/api/src/dozo-teach.ts	fn dozoTeachRoutes	const teach = createDozoTeach({	global-safe	route wiring, no data
+apps/api/src/routes/dozo-computer-switch.ts	fn sweepComputerSwitches	const context = createAdapterContext({ spaceId: "", userId: "" }, botId, "computer.switch");	local	per-call local, dies with the call
+apps/api/src/routes/dozo-computer-switch.ts	fn startComputerSwitchSweep	let running: Promise<void> | undefined;	global-safe	the one running sweep pass promise; holds no data
+dozo/relay/worker/src/channel.ts	class Channel	private attempts = new Window();	device	per-channel Durable Object counters under fixed kinds; numbers only, one object per channel
+dozo/relay/worker/src/channel.ts	class Channel	private failures = new Window();	device	per-channel Durable Object counters under fixed kinds; numbers only, one object per channel
+dozo/relay/worker/src/channel.ts	class Channel	private traffic = new Window();	device	per-channel Durable Object counters under fixed kinds; numbers only, one object per channel
+dozo/relay/worker/src/channel.ts	class Window	private used = new Map<string, number>();	device	counts by a fixed kind word inside one channel's object; numbers only
+dozo/relay/worker/src/tokens.ts	module	const relayCrypto = webRelayCrypto();	global-safe	stateless crypto functions, no data
+packages/adapters/src/cli-models/acp/dozo-acp-agent.ts	module	const TOOL_KINDS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/cli-models/acp/dozo-acp-agent.ts	fn acpSession	let lead = instructions.trim() ? `Instructions:\n${instructions.trim()}\n\n` : "";	local	per-call local, dies with the call
+packages/adapters/src/cli-models/acp/dozo-acp-agent.ts	fn acpSession	const waiting = new Map<string, { id: number | string; params: Record<string, unknown> }>();	run	permission requests of one agent session, answered or cancelled when it ends
+packages/adapters/src/cli-models/acp/dozo-acp-agent.ts	fn answeringRequests	const requests: Started["requests"] = {};	run	requests of one agent process, answered in its own run
+packages/adapters/src/cli-models/codex/dozo-codex-agent.ts	fn codexSession	const waiting = new Map<	run	one agent session's pending requests and turn state, dies with the session
+packages/adapters/src/cli-models/codex/dozo-codex-agent.ts	fn codexSession	let turnId: Promise<string | undefined> = Promise.resolve(undefined);	run	one agent session's pending requests and turn state, dies with the session
+packages/adapters/src/cli-models/codex/dozo-codex-agent.ts	fn codexSession	let resetsAt: number | undefined;	run	one agent session's pending requests and turn state, dies with the session
+packages/adapters/src/cli-models/codex/dozo-codex-agent.ts	fn codexSession	const changedFiles = new Map<string, string[]>();	run	one agent session's pending requests and turn state, dies with the session
+packages/adapters/src/cli-models/dozo-agent-bridge.ts	fn startAgentBridge	let tools: readonly ConnectorTool[] = [];	run	one bridge per live run: its tools, executor, call counter and sockets, closed with the run (key made for that run)
+packages/adapters/src/cli-models/dozo-agent-bridge.ts	fn startAgentBridge	let call: BridgeCall | undefined;	run	one bridge per live run: its tools, executor, call counter and sockets, closed with the run (key made for that run)
+packages/adapters/src/cli-models/dozo-agent-bridge.ts	fn startAgentBridge	let calls = 0;	run	one bridge per live run: its tools, executor, call counter and sockets, closed with the run (key made for that run)
+packages/adapters/src/cli-models/dozo-agent-bridge.ts	fn startAgentBridge	let wasListed = false;	run	one bridge per live run: its tools, executor, call counter and sockets, closed with the run (key made for that run)
+packages/adapters/src/cli-models/dozo-agent-bridge.ts	fn startAgentBridge	const sockets = new Set<Socket>();	run	one bridge per live run: its tools, executor, call counter and sockets, closed with the run (key made for that run)
+packages/adapters/src/cli-models/dozo-agent-bridge.ts	fn startAgentBridge	const server: Server = createServer((socket) => {	run	local bridge server of one run, closed when it ends
+packages/adapters/src/cli-models/dozo-agent-rpc.ts	module	const PASSTHROUGH = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/cli-models/dozo-agent-rpc.ts	class AgentProcess	private pending = new Map<	run	requests of one agent process by id; the process belongs to one live run
+packages/adapters/src/cli-models/dozo-agent-rpc.ts	class AgentProcess	private listeners = new Set<(message: RpcMessage) => void>();	run	listeners of one agent process; the process belongs to one live run
+packages/adapters/src/cli-models/dozo-agent.ts	module	const live = new Map<string, LiveRun>();	run	live agent by runId in this process; run ids are unique per run and every read uses the caller's own runId
+packages/adapters/src/cli-models/dozo-agent.ts	fn runAgent	let paused = false;	local	per-call local, dies with the call
+packages/adapters/src/cli-models/dozo-cli-driver.ts	module	const accountScope = new AsyncLocalStorage<CliTurn>();	run	per-async-context turn account set by withCliAccount; no value outside the turn's own call tree
+packages/adapters/src/cli-models/dozo-cli-login.ts	module	const sessions = new Map<string, Session>();	user	CLI sign-ins keyed by userId+provider; a view is read only with the caller's own userId
+packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	const session: Session = { id: "", status: "waiting" };	user	sign-in in progress, stored in `sessions` under user and tool
+packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let home: Awaited<ReturnType<typeof createAccountHome>>;	user	one person's sign-in session held in sessions by userId+provider; read only with their own userId
+packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let cwd: string;	user	one person's sign-in session held in sessions by userId+provider; read only with their own userId
+packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let output = "";	user	one person's sign-in session held in sessions by userId+provider; read only with their own userId
+packages/adapters/src/cli-models/dozo-cli-providers.ts	fn withAccountErrors	const outer = createAssistantMessageEventStream();	local	per-call local, dies with the call
+packages/adapters/src/cli-models/dozo-cli-runtime.ts	module	const OWN_TRIGGERS = new Set(["user", "resume", "follow_up"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-bot-model-backups.ts	module	let missingTableReported = false;	global-safe	one-time flag that a missing table was logged; holds no person data
+packages/adapters/src/dozo-call-preflight.ts	module	let registryAddresses: Map<string, string | undefined> | undefined;	global-safe	provider id to the model registry's public base address, built once from the built-in catalog; same for everyone
+packages/adapters/src/dozo-command-gate.ts	module	const commandBlocks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
+packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
+packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
+packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const large: string[] = [];	local	per-call local, dies with the call
+packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const visited = new Set<string>();	local	per-call local, dies with the call
+packages/adapters/src/dozo-computer-move.ts	fn largeFiles	let entries = 0;	local	per-call local, dies with the call
+packages/adapters/src/dozo-daily-digest.ts	fn formatDozoDigest	const time = new Intl.DateTimeFormat(options.locale ?? "en", {	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	module	const INTERACTIVE = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const byId = new Map(nodes.map((node) => [node.nodeId, node]));	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const parents = new Map<string, string>();	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	let line: string | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private notes: string[] = [];	run	notes of the browser provider kept per run context in a WeakMap
+packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn loaded	let looks = 0;	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn act	let completed = 0;	local	per-call local, dies with the call
+packages/adapters/src/dozo-job-queue.ts	class DozoJobQueue	this.runner = start({	global-safe	job runner handle; holds no person data
+packages/adapters/src/dozo-lasting-write-run.ts	module	const ROUTINE_WRITE_TOOLS = new Set(["schedule_create", "schedule_update", "create_child_routine"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	let lines = linesOf(content);	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	const refused = new Set([...rejected].map(learningNoteKey));	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	let change = found;	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	const tag = newWriteTag();	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-recall.ts	module	const recalledStates = new WeakSet<RunState>();	run	marks a run's own state object by identity; flag only
+packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let answer: string | null = null;	local	per-call answer and count of one review model call; die with the call
+packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let counted = false;	local	per-call answer and count of one review model call; die with the call
+packages/adapters/src/dozo-learning-turn.ts	module	const READS_BEYOND_THE_TURN = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-local-backup-format.ts	fn sealer	let pending = Buffer.alloc(0);	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup-format.ts	fn sealer	let counter = 0n;	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup-format.ts	fn opener	let header: Buffer | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup-format.ts	fn opener	let key: Buffer | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup-format.ts	fn opener	let pending = Buffer.alloc(0);	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup-format.ts	fn opener	let counter = 0n;	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup-format.ts	class ByteReader	#pending = Buffer.alloc(0);	local	per-call local, dies with the call
+packages/adapters/src/dozo-local-backup.ts	fn restore	let manifest: Manifest | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-model-pool.ts	fn withPoolMembers	const members = new Set(pool.members);	local	per-call local, dies with the call
+packages/adapters/src/dozo-model-pool.ts	module	const runPools = new WeakMap<AgentRunRequest, RunModelPool>();	run	model pool keyed by the run's own request object identity
+packages/adapters/src/dozo-model-pool.ts	module	const runOwners = new WeakMap<	run	owner of one run keyed by that run's own request object identity (run.userId); never read for another request
+packages/adapters/src/dozo-model-pool.ts	module	const movingOut = new WeakSet<object>();	run	marks the run's own state object while it switches model
+packages/adapters/src/dozo-model-pool.ts	module	const passedOver = new WeakMap<object, number>();	run	model index keyed by the run's own state object
+packages/adapters/src/dozo-model-rests.ts	module	const runRests = new WeakMap<object, Promise<ActiveRest[] | undefined>>();	run	model rests read once per run, keyed by the run object identity
+packages/adapters/src/dozo-no-computer.ts	module	export const CLOUD_COMPUTER_TOOL_NAMES: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-no-computer.ts	module	const withheldComputers = new WeakSet<object>();	run	marks run objects by identity; flag only
+packages/adapters/src/dozo-phone.ts	module	const phoneRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
+packages/adapters/src/dozo-phone.ts	module	const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();	run	device consent keyed by the run's own tool-call object identity
+packages/adapters/src/dozo-phone.ts	module	const askedTainted = new WeakSet<Record<string, unknown>>();	run	weak set keyed by the identity of one call's own args object: phoneGate adds it and phoneCard reads it for the same args in the same turn; nothing is keyed by a name or id, and the entry goes with the args
+packages/adapters/src/dozo-phone.ts	module	const askedUnsure = new WeakSet<Record<string, unknown>>();	run	same as askedTainted: a weak set of one call's args object, added by phoneGate and read by phoneCard for the same args, so another run's call never matches
+packages/adapters/src/dozo-plugin-catalog.ts	fn defaultSiteIcon	const resolver = createFaviconResolver();	global-safe	favicon lookup of public site addresses; no person data
+packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let snapshot: Snapshot | null = null;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let images = new Map<string, string>();	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let refreshing: Promise<void> | null = null;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let nextAttemptAt = 0;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	const unreadable = new Map<string, number>();	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
+packages/adapters/src/dozo-quiet-hours.ts	module	const offsetFormats = new Map<string, Intl.DateTimeFormat | null>();	global-safe	Intl formatter cache keyed by time zone name; holds no person data
+packages/adapters/src/dozo-quiet-hours.ts	fn localClock	let step = Number.NaN;	local	per-call local, dies with the call
+packages/adapters/src/dozo-quiet-hours.ts	fn localClock	let offset = 0;	local	per-call local, dies with the call
+packages/adapters/src/dozo-read-outside.ts	module	const readStates = new WeakSet<RunState>();	run	marks a run's own state object by identity; flag only
+packages/adapters/src/dozo-read-outside.ts	module	const HISTORY_TOOLS = new Set(["read_history", "search_history"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-read-outside.ts	module	const historyStates = new WeakSet<RunState>();	run	marks a run's own state object by identity; flag only
+packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const state: DevRelayState = options.state ?? new Map();	device	test relay only (never in the server): sealed frames by channel id
+packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const seen: Uint8Array[] = [];	device	test relay only (never in the server): ciphertext the relay saw
+packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const sockets = new WebSocketServer({ noServer: true, maxPayload: RELAY_MAX_MESSAGE_BYTES });	device	test relay only (never in the server)
+packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const server = createServer((request, response) => {	device	test relay only (never in the server)
+packages/adapters/src/dozo-send-limit.ts	module	const SENDING_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["send_email", "message_agent"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-send-limit.ts	module	const limitAsks = new WeakMap<Record<string, unknown>, number>();	request	count keyed by a tool-call object's identity
+packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn read	const ledger: DozoLedger = {	local	per-call local, dies with the call
+packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn read	const queue = customers.slice(0, DOZO_LEDGER_MAX_CUSTOMERS);	local	per-call local, dies with the call
+packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	let unclassified = 0;	local	per-call local, dies with the call
+packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const creditIntents = new Set(	local	per-call local, dies with the call
+packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const ourIntents = new Set([...creditIntents, ...invoices.filter(isOurs).flatMap(intentsOf)]);	local	per-call local, dies with the call
+packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const entries: DozoLedgerEntry[] = [];	local	per-call local, dies with the call
+packages/adapters/src/dozo-token-run.ts	module	const tokenRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
+packages/adapters/src/dozo-token-run.ts	module	const MAKING_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-token-run.ts	module	const ASKING_READS = new Set(["list_secrets"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-token-run.ts	module	const LIST_ARGS = new Set(["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-user-browser-gate.ts	module	const asks = new WeakMap<Record<string, unknown>, UserBrowserAsk>();	request	ask keyed by a tool-call object's identity
+packages/adapters/src/dozo-user-browser.ts	module	const providers = new WeakMap<RunContext, DeviceBrowserProvider>();	run	browser provider keyed by the run's own context object
+packages/auth/src/dozo-hosted-login.ts	module	const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);	global-safe	constant set of fixed words, never changed after load
+packages/auth/src/dozo-hosted-login.ts	module	const CLOSED_PATHS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/auth/src/dozo-hosted-login.ts	fn issuerKeys	let keys = new Map<string, KeyObject>();	global-safe	the issuer's public signing keys by key id; public data
+packages/auth/src/dozo-hosted-login.ts	fn issuerKeys	let nextReadAt = 0;	global-safe	the issuer's public signing keys by key id; public data
+packages/auth/src/dozo-hosted-login.ts	fn issuerKeys	let reading: Promise<void> | null = null;	global-safe	the issuer's public signing keys by key id; public data
+packages/auth/src/dozo-hosted-login.ts	fn verifierPlugin	hooks: {	global-safe	auth plugin wiring: hooks are functions, no data
+packages/auth/src/dozo-hosted-login.ts	fn verifierPlugin	endpoints: {	global-safe	auth plugin wiring: endpoints are functions, no data
+packages/auth/src/dozo-operator.ts	module	const DOTLESS_ALIASES = new Set([DOTLESS_DOMAIN, "googlemail.com"]);	global-safe	constant set of fixed words, never changed after load
+packages/auth/src/dozo-relay-session.ts	module	const SIGN_OUT_PATHS = new Set(["/sign-out", "/revoke-sessions"]);	global-safe	constant set of fixed words, never changed after load
+packages/auth/src/dozo-relay-session.ts	module	let configuredKey: { key: string | null } | null = null;	global-safe	the server's own relay agent key read once from its environment; same for everyone, never sent out
+packages/auth/src/dozo-relay-session.ts	fn dozoRelaySessions	hooks: {	global-safe	auth plugin wiring: hooks are functions, no data
+packages/contracts/src/dozo-plan-limits.ts	module	const SERVER_CODES = new Set<string>([	global-safe	constant set of fixed words, never changed after load
+packages/contracts/src/dozo-relay.ts	module	const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);	global-safe	constant set of fixed words, never changed after load
+packages/contracts/src/dozo-relay.ts	module	export const RelayKey = Base64Url(32);	global-safe	schema of a public id format
+packages/contracts/src/dozo-relay.ts	module	export const RelayChannelId = Base64Url(16);	global-safe	schema of a public id format
+packages/contracts/src/dozo-without-links.ts	module	const COMMON_TLDS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-command-rule-match.ts	module	const PREFIX_PROGRAMS: ReadonlySet<string> = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-lasting-write-approval.ts	module	const LASTING_WRITE_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-lasting-write-approval.ts	module	const LASTING_TEXT_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-channel.ts	module	const LABEL = utf8(`dozo-relay/${RELAY_PROTOCOL_VERSION}`);	global-safe	constant bytes of a protocol label
+packages/core/src/dozo-relay-channel.ts	fn openAppChannel	const session = new Session(options, "app");	device	one encrypted session per relay channel end, closed with it
+packages/core/src/dozo-relay-channel.ts	fn acceptHostChannel	const session = new Session(options, "host");	device	one encrypted session per relay channel end, closed with it
+packages/core/src/dozo-relay-channel.ts	class Session	private early: Uint8Array[] = [];	device	frames of one channel session
+packages/core/src/dozo-relay-channel.ts	class Session	private pending: Uint8Array[] = [];	device	frames of one channel session
+packages/core/src/dozo-relay-host.ts	fn revokeRelayChannel	let relay: "deleted" | "unreachable" = "deleted";	local	per-call local, dies with the call
+packages/core/src/dozo-relay-host.ts	fn runRelayHost	const loops = new Map<string, ChannelLoop>();	device	this machine's relay loops by channel and its own host key; the channels are this server's own paired devices
+packages/core/src/dozo-relay-host.ts	fn runRelayHost	let hostKey: RelayKeyPair | null = null;	device	this machine's relay loops by channel and its own host key; the channels are this server's own paired devices
+packages/core/src/dozo-relay-host.ts	fn runRelayHost	let syncing = Promise.resolve();	global-safe	promise chain ordering channel syncs; holds no data
+packages/core/src/dozo-relay-host.ts	class ChannelLoop	private readonly approvalWaiters = new Set<() => void>();	device	waiters of one paired channel loop
+packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn connectOnce	let socket: RelayWebSocket;	local	per-call local, dies with the call
+packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn firstRecord	let seen = false;	local	per-call local, dies with the call
+packages/core/src/dozo-relay-mux.ts	module	const NULL_BODY_STATUSES = /* @__PURE__ */ new Set([204, 205, 304]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-mux.ts	module	const HOP_HEADERS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-mux.ts	module	const BODY_HEADERS = /* @__PURE__ */ new Set(["content-encoding", "content-length"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-mux.ts	class Inbox	this.body = new ReadableStream<Uint8Array>(	device	body of one relayed request on one channel
+packages/core/src/dozo-relay-mux.ts	class Mux	protected readonly streams = new Map<number, Stream>();	device	streams by id on one channel's connection
+packages/core/src/dozo-relay-mux.ts	class Mux	private queue: Uint8Array[] = [];	device	frames queued on one channel's connection
+packages/core/src/dozo-relay-mux.ts	fn relayClient	const client = new ClientMux(duplex, web ?? { Request, Response });	device	one client per relay connection
+packages/core/src/dozo-relay-mux.ts	class ClientMux	private readonly waiting = new Map<	device	requests waiting by id on one channel's connection
+packages/core/src/dozo-relay-mux.ts	class ClientMux > fn fetch	const request = new this.web.Request(CLIENT_BASE + path, {	local	per-call local, dies with the call
+packages/core/src/dozo-relay-mux.ts	fn serveRelay	const server = new ServerMux(duplex, options);	device	one server per relay connection
+packages/core/src/dozo-relay-mux.ts	class ServerMux > fn onOpen	const stream: Stream = {	device	one stream of one channel's connection
+packages/core/src/dozo-relay-mux.ts	class ServerMux > fn onOpen	let request: Request;	local	per-call local, dies with the call
+packages/core/src/dozo-relay-ws.ts	class Session	private pending: Uint8Array[] = [];	device	frames of one channel session
+packages/core/src/dozo-relay-ws.ts	fn wsDuplex	let session: Session | null = null;	device	state of one paired device's socket, closed with it
+packages/core/src/dozo-relay-ws.ts	fn wsDuplex	let peerPresent = false;	device	state of one paired device's socket, closed with it
+packages/core/src/dozo-relay-ws.ts	fn wsDuplex	let closed = false;	device	state of one paired device's socket, closed with it
+packages/core/src/dozo-relay-ws.ts	fn wsDuplex	let silence: ReturnType<typeof setTimeout> | undefined;	device	state of one paired device's socket, closed with it
+packages/core/src/dozo-sealed-file.ts	class ByteQueue	#parts: Uint8Array[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn sealStream	const pending = new ByteQueue();	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn sealStream	let header = new Uint8Array(0);	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn sealStream	let key: CryptoKey | undefined;	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn sealStream	let counter = 0n;	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn openStream	const pending = new ByteQueue();	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn openStream	let header: Uint8Array<ArrayBuffer> | undefined;	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn openStream	let key: CryptoKey | undefined;	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	fn openStream	let counter = 0n;	local	per-call local, dies with the call
+packages/core/src/dozo-sealed-file.ts	class LimitedReader	#queue = new ByteQueue();	local	per-call local, dies with the call
+packages/core/src/dozo-shell-command.ts	module	const NOT_FIRST = /* @__PURE__ */ new Set(["=", "@", "%"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const DOUBLE_QUOTED_SPECIAL = /* @__PURE__ */ new Set(["$", "`", "\\", "!"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const READ_ONLY_PROGRAMS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const PRIVATE_COMPONENTS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const GREP_LONG_OPTIONS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-teach-playbook.ts	module	const EDIT_KEYS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-teach-playbook.ts	module	const BLIND_KEYS = /* @__PURE__ */ new Set(["ArrowUp", "ArrowDown"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const steps: string[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const values: TeachTypedValue[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const runs: RunSpan[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const clicks: TeachClick[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	let run: TypedRun | null = null;	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	let drag: {	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn walkRecording	let pending: TeachClick[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn scrubTeachRecordingEvents	const scrubbed: TeachRecordingEvent[] = [];	local	per-call local, dies with the call
+packages/core/src/dozo-teach-playbook.ts	fn scrubTeachRecordingEvents	const indexOf = new Map<number, number>();	local	per-call local, dies with the call
+packages/db/src/dozo-site-settings.ts	fn followSiteChanges	const latch = new ChangeLatch();	local	per-call local, dies with the call
+packages/db/src/dozo-site-settings.ts	fn followSiteChanges	let pending = true;	local	per-call local, dies with the call
+packages/db/src/dozo-teach-values.ts	fn keepTeachValues	const images: TeachClickImage[] = [];	local	per-call local, dies with the call
+packages/i18n/src/dozo-server-text.ts	module	export const SERVER_SENTENCES: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/i18n/src/dozo-server-text.ts	module	export const SERVER_SENTENCE_PREFIXES: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/i18n/src/dozo-server-text.ts	module	export const SIGN_IN_LABELS: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
+apps/api/src/app.ts	fn buildApp	const dozoJobPool =	global-safe	wiring of billing's job pool: a handle, no data
+apps/api/src/app.ts	fn buildApp	const dozoBilling =	global-safe	wiring of billing's mail service: no data
+apps/api/src/account-import.ts	class AccountImporter	this.repos = dozoReportingRepos(createRepos(deps.prisma), deps)	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputer	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
+packages/core/src/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled

@@ -6,7 +6,7 @@
 /** The fork's own files, as dozo/NOTICE lists them (the code-bearing patterns). */
 export const isFork = (file) =>
   file.startsWith("dozo/") ||
-  /^(apps|packages|infra)\/(.+\/)?dozo-[^/]*$/.test(file) ||
+  /^(apps|packages|infra|scripts)\/(.+\/)?dozo-[^/]*$/.test(file) ||
   /^packages\/db\/prisma\/migrations\/[^/]*_dozo_[^/]*\//.test(file);
 
 const RATINGS = ["A", "B", "C", "D", "E"];
