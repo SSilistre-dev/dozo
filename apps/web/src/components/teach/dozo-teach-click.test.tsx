@@ -4,6 +4,7 @@ import type { TaughtSkill } from "@rakazo/contracts";
 import { buildPlaybookFromRecording } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
@@ -23,7 +24,14 @@ const skill = {
   recording: { events: [], snapshots: [] },
 } as unknown as TaughtSkill;
 
-afterEach(() => {
+const roots: Root[] = [];
+
+afterEach(async () => {
+  // Each test's tree comes down with it, so the click ring's timer is cleared, not left to fire
+  // after the test and its page are gone.
+  await act(async () => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
   computerInput.mockReset();
   computerInput.mockImplementation(async () => ({ ok: true }));
   document.body.replaceChildren();
@@ -36,6 +44,7 @@ async function mount() {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  roots.push(root);
   await act(async () => {
     root.render(
       <TeachCaptureOverlay
@@ -224,6 +233,7 @@ it("restarts the ring's time for a second click, and draws none outside a record
   const ring = container.querySelector<HTMLElement>('[data-testid="teach-click-ring"]');
   expect(ring?.style.left).toBe("50px");
   const root = createRoot(document.createElement("div"));
+  roots.push(root);
   await act(async () => {
     root.render(<TeachCaptureOverlay botId="bot-1" skill={null} enabled />);
   });
