@@ -1509,9 +1509,12 @@ mod tests {
                 ),
             )
             .await;
+            // `pwd` prints the real path: on macOS the temp folder is behind a symlink.
             assert_eq!(
                 stdout_of(&home).trim(),
-                dir.join("home/projects").to_string_lossy()
+                std::fs::canonicalize(dir.join("home/projects"))
+                    .unwrap()
+                    .to_string_lossy()
             );
             for cwd in ["/etc", "../../..", "/tmp"] {
                 let refused = frames(&runner, execute(&["pwd"], json!({ "cwd": cwd }))).await;
