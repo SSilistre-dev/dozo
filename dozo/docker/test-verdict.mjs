@@ -5,7 +5,7 @@
 //     The run always has its database, so a skipped test means the run did not reach it (a
 //     `describe.skip` without a database, or a `beforeAll` that failed and skipped the rest).
 //   unit <report.json>   the fork unit run has no database: a skipped test is expected only in a
-//     *.postgres.test.ts file (the Postgres run covers those). Any other skip is a failure.
+//     *.postgres.test.ts file or the relay test (other runs cover those). Any other skip is a failure.
 // Prints one line per problem and a summary; exit 0 clean, 2 not (64 usage). ANSI colour is
 // stripped from the messages so the first error line of a failed file shows.
 import { readFileSync } from "node:fs";
@@ -20,6 +20,9 @@ const firstLines = (text, n = 6) =>
     .filter((line) => line.trim())
     .slice(0, n)
     .join("\n    ");
+// Files that skip in the unit run because another run gives them what they need: every
+// *.postgres.test.ts file (the Postgres run) and the relay test (dozo/desktop/tests/relay_e2e.sh).
+const needsOtherRun = (file) => /\.postgres\.test\.tsx?$|dozo-user-browser\.relay\.test\.ts$/.test(file);
 const isSkipped = (status) => status === "skipped" || status === "pending" || status === "todo";
 
 /** Returns { lines, ok, summary } for a parsed Vitest JSON report. */
@@ -63,16 +66,16 @@ export function verdict(mode, report, { zone = "", expected = [] } = {}) {
     return { lines, ok: lines.length === 0, summary: label };
   }
   for (const { file, test } of tests) {
-    if (isSkipped(test.status) && !/\.postgres\.test\.tsx?$/.test(file))
+    if (isSkipped(test.status) && !needsOtherRun(file))
       lines.push(`unexpected skip: ${where(file)} > ${test.fullName ?? test.title}`);
   }
   const postgresSkips = tests.filter(
-    ({ file, test }) => isSkipped(test.status) && /\.postgres\.test\.tsx?$/.test(file),
+    ({ file, test }) => isSkipped(test.status) && needsOtherRun(file),
   ).length;
   return {
     lines,
     ok: lines.length === 0,
-    summary: `unit: ${passed} passed, ${postgresSkips} skipped in Postgres files (expected), ${skipped - postgresSkips} skipped elsewhere`,
+    summary: `unit: ${passed} passed, ${postgresSkips} skipped in files another run covers (expected), ${skipped - postgresSkips} skipped elsewhere`,
   };
 }
 

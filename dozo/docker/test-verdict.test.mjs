@@ -53,6 +53,8 @@ test("a failed file shows its error without colour codes", () => {
 test("unit: a skip in a Postgres file is expected, any other is not", () => {
   const ok = verdict("unit", { testResults: [file("dozo-a.postgres.test.ts", [t("skipped")]), file("dozo-c.test.ts", [t("passed")])] });
   assert.equal(ok.ok, true);
+  const relay = verdict("unit", { testResults: [file("dozo-user-browser.relay.test.ts", [t("skipped")])] });
+  assert.equal(relay.ok, true);
   const bad = verdict("unit", { testResults: [file("dozo-c.test.ts", [t("skipped", "later")])] });
   assert.equal(bad.ok, false);
   assert.match(bad.lines.join("\n"), /unexpected skip: .*dozo-c\.test\.ts > later/);

@@ -255,7 +255,7 @@ olc() {
     # unit run): a skipped, missing or empty test file turns it red. Offline, about a second.
     if [ -f dozo/docker/test-verdict.test.mjs ]; then
       if out=$(drun verdict-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/docker/test-verdict.test.mjs 2>&1); then
-        echo "[olc] test verdict ok (a skipped, missing or empty Postgres test file fails; unit skips only in *.postgres.test.ts)"
+        echo "[olc] test verdict ok (a skipped, missing or empty Postgres test file fails; unit skips only in files another run covers)"
       else printf '%s\n' "$out"; fail "test verdict (dozo/docker/test-verdict.test.mjs)"; fi
     else fail "dozo/docker/test-verdict.test.mjs missing: the skip gate is not tested"; fi
     # An upstream migration that changes what owns a thread runs before the fork's and can break a
