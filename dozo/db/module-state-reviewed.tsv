@@ -80,6 +80,7 @@ packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	let lines = lin
 packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	const refused = new Set([...rejected].map(learningNoteKey));	local	per-call working values of one learning change for one bot; die with the call
 packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	let change = found;	local	per-call working values of one learning change for one bot; die with the call
 packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	const tag = newWriteTag();	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-apply.ts	module	const skillLine = dozoLearningLine(LEARNING_SKILL_LINE_MAX_CHARS);	global-safe	schema of one line of a suggested skill; holds no data
 packages/adapters/src/dozo-learning-recall.ts	module	const recalledStates = new WeakSet<RunState>();	run	marks a run's own state object by identity; flag only
 packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let answer: string | null = null;	local	per-call answer and count of one review model call; die with the call
 packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let counted = false;	local	per-call answer and count of one review model call; die with the call

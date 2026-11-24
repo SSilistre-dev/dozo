@@ -5,6 +5,7 @@ import {
   parsePlaybook,
   parseRecording,
   recordTeachingKeys,
+  rejectSkillSuggestion,
   sandboxAllowanceUsedUp,
 } from "@rakazo/adapters";
 import type { Actor, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
@@ -369,6 +370,26 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         });
       }
       return saved;
+    },
+
+    /**
+     * Deletes the skill as upstream does. A skill a learning review suggested and the owner
+     * deletes (its card's Delete, or the skills list) is not suggested again; the first of two
+     * deletes records that.
+     */
+    async remove(actor: Actor, skillId: string) {
+      const skill = await deps.prisma.taughtSkill.findFirst({
+        where: { id: skillId, spaceId: actor.spaceId },
+        select: { id: true, botId: true, spaceId: true, name: true, goal: true },
+      });
+      if (!skill) throw new IsolationError();
+      const removed = await upstream.remove(actor, skillId);
+      const { goal, ...suggested } = skill;
+      await rejectSkillSuggestion(deps.prisma, {
+        ...suggested,
+        name: suggested.name || goal.slice(0, 80),
+      });
+      return removed;
     },
 
     /**

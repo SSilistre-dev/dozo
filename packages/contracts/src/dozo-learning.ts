@@ -3,10 +3,11 @@ import * as z from "zod";
 import { Id } from "./ids.js";
 
 /**
- * Whether a bot learns notes from its owner's own direct chat: `off` (the default, also for a bot
- * never set) or `auto`, where each change is made and listed to undo.
+ * Whether a bot learns from its owner's own direct chat: `off` (the default, also for a bot never
+ * set); `ask`, where it only suggests a skill for the owner to save; or `auto`, where it also
+ * writes notes itself, each listed to undo. A skill is never saved without the owner.
  */
-export const DozoLearningMode = /* @__PURE__ */ (() => z.enum(["off", "auto"]))();
+export const DozoLearningMode = /* @__PURE__ */ (() => z.enum(["off", "ask", "auto"]))();
 export type DozoLearningMode = z.infer<typeof DozoLearningMode>;
 
 /** One line a review added, changed or removed in the bot's notes; `undoneAt` once undone. */
@@ -45,18 +46,22 @@ const unsafeChar = (text: string) =>
   });
 
 /**
- * One learned note: a single line that cannot close or open the block the notes are shown in
- * (no angle brackets) nor read as a heading of it (no leading "#").
+ * One learned line of at most `max` characters: a single line that cannot close or open the block
+ * it is shown to a model in (no angle brackets) nor read as a heading of it (no leading "#").
  */
-export const DozoLearningNoteText = /* @__PURE__ */ (() =>
+export const dozoLearningLine = (max: number) =>
   z
     .string()
     .trim()
     .min(1)
-    .max(DOZO_LEARNING_NOTE_MAX_CHARS)
+    .max(max)
     .refine((text) => !unsafeChar(text), "One line, no control or hidden characters.")
     .refine((text) => !/[<>]/.test(text), "No angle brackets.")
-    .refine((text) => !text.startsWith("#"), "No heading."))();
+    .refine((text) => !text.startsWith("#"), "No heading.");
+
+/** One learned note. */
+export const DozoLearningNoteText = /* @__PURE__ */ (() =>
+  dozoLearningLine(DOZO_LEARNING_NOTE_MAX_CHARS))();
 
 /** What a learned note says about the owner. */
 export const DozoLearningNoteKind = /* @__PURE__ */ (() =>

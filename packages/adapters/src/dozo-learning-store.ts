@@ -7,7 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 
 type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw">;
 
-/** What a bot's row holds; a bot without one is `off`. `ask` is a later phase's. */
+/** What a bot's row holds; a bot without one is `off`. */
 export type LearningModeValue = "off" | "auto" | "ask";
 
 /** One recorded owner turn no review has read yet. */
@@ -37,7 +37,7 @@ export async function learningMode(db: Db, botId: string): Promise<LearningModeV
 export async function setLearningMode(
   db: Db,
   bot: { id: string; spaceId: string },
-  mode: "off" | "auto",
+  mode: LearningModeValue,
 ): Promise<void> {
   await db.$executeRaw`
     INSERT INTO dozo_bot_learning ("botId", "spaceId", mode, "updatedAt")
@@ -159,27 +159,85 @@ export async function learnedLines(db: Db, botId: string): Promise<LearnedLine[]
  * not let it be learned again.
  */
 export async function rejectedLearningLines(db: Db, botId: string): Promise<string[]> {
+  return rejected(db, botId, "note");
+}
+
+/** Names of skills a review suggested and the owner dismissed, newest first. */
+export async function rejectedLearningSkills(db: Db, botId: string): Promise<string[]> {
+  return rejected(db, botId, "skill");
+}
+
+async function rejected(db: Db, botId: string, kind: "note" | "skill"): Promise<string[]> {
   const rows = await db.$queryRaw<Array<{ text: string }>>`
-    SELECT text FROM dozo_learning_rejections WHERE "botId" = ${botId}
+    SELECT text FROM dozo_learning_rejections WHERE "botId" = ${botId} AND kind = ${kind}
     ORDER BY "createdAt" DESC, id DESC LIMIT ${CHANGES_KEPT}`;
   return rows.map((row) => row.text);
 }
 
-/** Keeps the lines of these changes as turned down, and forgets the bot's past the newest kept. */
+/**
+ * Keeps these lines as turned down, and forgets the bot's of their kind past the newest kept, so
+ * dismissed skills never push out turned-down notes.
+ */
 async function rejectLines(
   db: Db,
   rows: ReadonlyArray<{ botId: string; spaceId: string; after: string | null }>,
+  kind: "note" | "skill" = "note",
 ): Promise<void> {
   for (const row of rows) {
     if (row.after === null) continue;
     await db.$executeRaw`
-      INSERT INTO dozo_learning_rejections (id, "botId", "spaceId", text, "createdAt")
-      VALUES (${randomUUID()}, ${row.botId}, ${row.spaceId}, ${row.after}, CURRENT_TIMESTAMP)`;
+      INSERT INTO dozo_learning_rejections (id, "botId", "spaceId", text, kind, "createdAt")
+      VALUES (${randomUUID()}, ${row.botId}, ${row.spaceId}, ${row.after}, ${kind},
+        CURRENT_TIMESTAMP)`;
     await db.$executeRaw`
-      DELETE FROM dozo_learning_rejections WHERE "botId" = ${row.botId} AND id NOT IN (
-        SELECT id FROM dozo_learning_rejections WHERE "botId" = ${row.botId}
-        ORDER BY "createdAt" DESC, id DESC LIMIT ${CHANGES_KEPT})`;
+      DELETE FROM dozo_learning_rejections WHERE "botId" = ${row.botId} AND kind = ${kind}
+        AND id NOT IN (
+          SELECT id FROM dozo_learning_rejections WHERE "botId" = ${row.botId} AND kind = ${kind}
+          ORDER BY "createdAt" DESC, id DESC LIMIT ${CHANGES_KEPT})`;
   }
+}
+
+/**
+ * The skill the bot's last review suggested while it is still an unanswered draft (null when
+ * none), locking the bot's learning row (`FOR UPDATE`) in the caller's transaction, so two
+ * reviews never both suggest. Undefined without a row: a bot never set learns nothing.
+ */
+export async function lockSkillSuggestion(
+  db: Db,
+  botId: string,
+): Promise<{ pendingSkillId: string | null } | undefined> {
+  const [row] = await db.$queryRaw<Array<{ pendingSkillId: string | null }>>`
+    SELECT (
+      SELECT s.id FROM taught_skills s WHERE s.id = l."suggestedSkillId" AND s.status = 'draft'
+    ) AS "pendingSkillId"
+    FROM dozo_bot_learning l WHERE l."botId" = ${botId} FOR UPDATE OF l`;
+  return row;
+}
+
+/** Records the skill a review just suggested as the bot's unanswered one. */
+export async function setSkillSuggestion(db: Db, botId: string, skillId: string): Promise<void> {
+  await db.$executeRaw`
+    UPDATE dozo_bot_learning SET "suggestedSkillId" = ${skillId} WHERE "botId" = ${botId}`;
+}
+
+/**
+ * After a skill was deleted: when it was the bot's suggested one, its name is kept as turned down
+ * and the suggestion is over. Only the first of two deletes finds it, so it is kept once.
+ */
+export async function rejectSkillSuggestion(
+  db: Db,
+  skill: { id: string; botId: string; spaceId: string; name: string },
+): Promise<boolean> {
+  const cleared = await db.$executeRaw`
+    UPDATE dozo_bot_learning SET "suggestedSkillId" = NULL
+    WHERE "botId" = ${skill.botId} AND "suggestedSkillId" = ${skill.id}`;
+  if (cleared !== 1) return false;
+  await rejectLines(
+    db,
+    [{ botId: skill.botId, spaceId: skill.spaceId, after: skill.name }],
+    "skill",
+  );
+  return true;
 }
 
 /**
@@ -188,7 +246,9 @@ async function rejectLines(
  */
 export async function markLearningLinesOwnerEdited(db: Db, ids: string[]): Promise<void> {
   if (!ids.length) return;
-  const edited = await db.$queryRaw<Array<{ botId: string; spaceId: string; after: string | null }>>`
+  const edited = await db.$queryRaw<
+    Array<{ botId: string; spaceId: string; after: string | null }>
+  >`
     UPDATE dozo_learning_changes SET "ownerEditedAt" = CURRENT_TIMESTAMP
     WHERE id = ANY(${ids}::text[]) AND "ownerEditedAt" IS NULL
     RETURNING "botId", "spaceId", "after"`;

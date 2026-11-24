@@ -2,6 +2,7 @@
 import { ORPCError } from "@orpc/client";
 import type { DozoLearningChange } from "@rakazo/contracts";
 import { DOZO_LEARNING_CHANGED_CODE } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -44,22 +45,10 @@ vi.mock("@rakazo/ui-web", () => ({
     variant: _variant,
     ...props
   }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
-  Switch: ({
-    checked,
-    onCheckedChange,
-    ...props
-  }: Omit<ComponentProps<"button">, "onChange"> & {
-    checked: boolean;
-    onCheckedChange: (checked: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onCheckedChange(!checked)}
-      {...props}
-    />
+  NativeSelect: ({ size: _size, ...props }: ComponentProps<"select"> & { size?: string }) => (
+    <select {...props} />
   ),
+  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
 }));
 
 import { QueryUserProvider } from "../lib/query";
@@ -99,10 +88,16 @@ async function show(options: { me?: string | null; ownerId?: string | null } = {
 
 async function render() {
   await show();
-  await vi.waitFor(() => expect(toggle()).not.toBeNull());
+  await vi.waitFor(() => expect(picker()).not.toBeNull());
 }
 
-const toggle = () => container.querySelector<HTMLButtonElement>('[role="switch"]');
+const picker = () => container.querySelector<HTMLSelectElement>("select");
+const choose = (mode: string) =>
+  act(async () => {
+    const select = picker()!;
+    select.value = mode;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 const undoButton = (line: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => {
     const ids = button.getAttribute("aria-labelledby")?.split(" ") ?? [];
@@ -127,33 +122,49 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("turns learning on and off through setMode, the switch labelled by its text", async () => {
+it("sets Off, Ask first or Auto through setMode, the picker labelled by its text", async () => {
   api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
   await render();
   expect(api.get).toHaveBeenCalledWith({ botId: "bot-1" }, expect.anything());
-  expect(toggle()?.getAttribute("aria-checked")).toBe("false");
-  expect(toggle()?.closest("label")?.textContent).toBe("Learn from chats");
-  api.setMode.mockResolvedValue({ mode: "auto" });
-  api.get.mockResolvedValue({ mode: "auto", available: true, changes: [] });
-  await act(async () => toggle()!.click());
-  expect(api.setMode).toHaveBeenCalledWith({ botId: "bot-1", mode: "auto" });
-  await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("true"));
-  api.setMode.mockResolvedValue({ mode: "off" });
-  api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
-  await act(async () => toggle()!.click());
-  expect(api.setMode).toHaveBeenLastCalledWith({ botId: "bot-1", mode: "off" });
-  await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("false"));
+  expect(picker()?.value).toBe("off");
+  expect(picker()?.labels?.[0]?.firstChild?.textContent).toBe("Learn from chats");
+  expect([...picker()!.options].map((option) => [option.value, option.textContent])).toEqual([
+    ["off", "Off"],
+    ["ask", "Ask first"],
+    ["auto", "Auto"],
+  ]);
+  for (const mode of ["ask", "auto", "off"]) {
+    api.setMode.mockResolvedValue({ mode });
+    api.get.mockResolvedValue({ mode, available: true, changes: [] });
+    await choose(mode);
+    expect(api.setMode).toHaveBeenLastCalledWith({ botId: "bot-1", mode });
+    await vi.waitFor(() => expect(picker()?.value).toBe(mode));
+  }
 });
 
-it("says why the server refused the switch and shows the mode as it is", async () => {
+it("shows the chosen mode while it saves, and the picker waits", async () => {
+  api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
+  const saving = deferred<unknown>();
+  api.setMode.mockReturnValue(saving.promise);
+  await render();
+  await choose("ask");
+  expect(picker()?.value).toBe("ask");
+  expect(picker()?.disabled).toBe(true);
+  api.get.mockResolvedValue({ mode: "ask", available: true, changes: [] });
+  await act(async () => saving.resolve({ mode: "ask" }));
+  await vi.waitFor(() => expect(picker()?.disabled).toBe(false));
+  expect(picker()?.value).toBe("ask");
+});
+
+it("says why the server refused the mode and shows the mode as it is", async () => {
   api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
   api.setMode.mockRejectedValue(new Error("Only the owner can change this"));
   await render();
-  await act(async () => toggle()!.click());
+  await choose("auto");
   await vi.waitFor(() =>
     expect(api.toastError).toHaveBeenCalledWith("Only the owner can change this"),
   );
-  expect(toggle()?.getAttribute("aria-checked")).toBe("false");
+  await vi.waitFor(() => expect(picker()?.value).toBe("off"));
 });
 
 it("lists nothing while there are no changes, nor once all are undone", async () => {
@@ -163,7 +174,7 @@ it("lists nothing while there are no changes, nor once all are undone", async ()
     changes: [change("c1", { undoneAt: "2026-11-22T11:00:00.000Z" })],
   });
   await render();
-  expect(container.textContent).toBe("Learn from chats");
+  expect(container.textContent).toBe("Learn from chatsOffAsk firstAuto");
   expect(container.querySelector("h3")).toBeNull();
 });
 
@@ -298,7 +309,7 @@ it("offers no switch in a Space with someone else, and still lists what was lear
   });
   await show();
   await vi.waitFor(() => expect(undoButton("Prefers tea")).toBeDefined());
-  expect(toggle()).toBeNull();
+  expect(picker()).toBeNull();
   expect(container.textContent).not.toContain("Learn from chats");
   expect(container.querySelector("h3")?.className).toBe("mb-2");
 });
