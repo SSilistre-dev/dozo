@@ -20,6 +20,9 @@ apps/api/src/dozo-message-revision.ts	fn reviseInTransaction	let seq = -1;	local
 apps/api/src/dozo-queue-plan.ts	fn planQueue	const line: Array<{ run: QueueRun; reason: DozoQueueItem["reason"]; ahead: QueueRun | null }> =	local	per-call local, dies with the call
 apps/api/src/dozo-relay-session.ts	module	const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);	global-safe	constant set of fixed words, never changed after load
 apps/api/src/dozo-site-sessions.ts	fn dozoSiteSessionsRoutes	const repos = createRepos(deps.prisma);	global-safe	route wiring: repository handles over the pool, no data
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let checked: T[] = [];	request	one open stream's frames that passed its last check, held by that stream's own iterator and dropped with it
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let ended: IteratorResult<T> | undefined;	request	one open stream's end, held by that stream's own iterator and dropped with it
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let waiting: Promise<IteratorResult<T>> | undefined;	request	one open stream's next read in flight, held by that stream's own iterator and dropped with it
 apps/api/src/dozo-stream-membership.ts	fn dozoWhileMember	let checkedThrough = Number.NEGATIVE_INFINITY;	request	one open stream's last verified event number, held by that stream's own iterator and dropped with it
 apps/api/src/dozo-taught-skills.ts	fn createTaughtSkillsService	const upstream = createUpstreamTaughtSkillsService(deps);	global-safe	service wiring, no data
 apps/api/src/dozo-teach.ts	fn dozoTeachRoutes	const teach = createDozoTeach({	global-safe	route wiring, no data
@@ -229,3 +232,4 @@ packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<objec
 packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call
+packages/adapters/src/run-tool-gate.ts	fn gateToolCall	let gateDecision: "ask" | "allow" = plan === "ask" || plan === "judge" ? "ask" : "allow";	request	one tool call's decision, set by its own review closure inside the call; nothing outlives the call

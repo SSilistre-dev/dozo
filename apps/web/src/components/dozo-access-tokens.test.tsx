@@ -28,9 +28,7 @@ vi.mock("../lib/query", async (importOriginal) => ({
         key: () => ["access-tokens"],
         queryOptions: () => ({ queryKey: ["access-tokens"], queryFn: () => api.list() }),
       },
-    },
-    bots: {
-      list: { queryOptions: () => ({ queryKey: ["bots"], queryFn: () => api.bots() }) },
+      ownBots: { queryOptions: () => ({ queryKey: ["own-bots"], queryFn: () => api.bots() }) },
     },
   }),
 }));

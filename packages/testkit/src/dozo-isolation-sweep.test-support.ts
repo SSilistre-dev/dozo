@@ -11,12 +11,17 @@ import { confirmIdentity, findCanaries, readAnswer } from "./dozo-isolation.test
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
 import {
   DESIGNED_SHARING,
+  DESIGNED_SHARING_SOMETIMES,
   ISOLATION_EXEMPTIONS,
   NEVER_SHARED_KINDS,
 } from "./dozo-isolation-exemptions.js";
 import type { Procedure, Resolve } from "./dozo-isolation-inputs.test-support.js";
 import { generateInputs, mixedVariants, withOwn } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+
+/** Whether the table allows a member or guest to see the canary of `kind` through `path` some of the time. */
+const sharedSometimes = (path: string, kind: string) =>
+  DESIGNED_SHARING_SOMETIMES[path]?.some((entry) => entry.kinds.includes(kind)) ?? false;
 
 const CONCURRENCY = 8;
 /** Only this answers without a session. */
@@ -300,7 +305,10 @@ export function failures(outcomes: Outcome[]): string[] {
         const kind = kindOf(caller.target, value);
         if (NEVER_SHARED_KINDS.includes(kind))
           out.push(`${where} showed ${kind}, which no member may see (${value})`);
-        else if (!DESIGNED_SHARING[outcome.path]?.includes(kind))
+        else if (
+          !DESIGNED_SHARING[outcome.path]?.includes(kind) &&
+          !sharedSometimes(outcome.path, kind)
+        )
           out.push(`${where} showed ${kind}, not in the designed sharing table (${value})`);
       }
     } else if (outcome.matched.length) out.push(`${where} leaked ${outcome.matched.join(", ")}`);

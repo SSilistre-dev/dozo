@@ -20,6 +20,23 @@ const CHAT_NAME_MAX_LENGTH = 80;
 const botChatsRead = (botId: string) => rpcQuery("dozoChats/list", { botId });
 
 /**
+ * Every open extra chat of the selected Space's bots, in one read: the inbox lists them under their
+ * bots without asking once per bot.
+ */
+const spaceChatsRead = () => rpcQuery("dozoChats/list", {});
+
+/**
+ * The selected Space's open extra chats, oldest first, read once and again on each roster signal,
+ * never on a timer. Undefined until the first answer, and when the server has no such read.
+ */
+export function useDozoSpaceChats(enabled: boolean): DozoBotChat[] | undefined {
+  const read = spaceChatsRead();
+  const chats = useQuery({ ...read, enabled, staleTime: Infinity }, queryClient);
+  useRosterSignals(() => queryClient.invalidateQueries({ queryKey: read.queryKey }), enabled);
+  return chats.data?.chats;
+}
+
+/**
  * The bot's open extra chats, read once and again on each roster signal (a change to a chat or its
  * read state comes on it), never on a timer. Undefined until the first answer.
  */
@@ -73,7 +90,7 @@ export function useDozoNewChat(botId: string, botName: string) {
   const router = useRouter();
   return useSave({
     save: (_: undefined, send) => send("dozoChats/create", { botId, name: newChatName(i18n) }),
-    stale: [botChatsRead(botId).queryKey],
+    stale: [botChatsRead(botId).queryKey, spaceChatsRead().queryKey],
     onSaved: ({ chat }) => router.push(dozoChatRoute(botId, chat.id, botName)),
     onFailed: (error) => Alert.alert(t`Could not update chat`, errorText(error, t`Try again.`)),
   });
@@ -104,7 +121,8 @@ export function useDozoChatMenu(botId: string) {
         return send("dozoChats/rename", { chatId: chat.id, name: change.name });
       return send("dozoChats/archive", { chatId: chat.id, archived: true });
     },
-    stale: [botChatsRead(botId).queryKey],
+    // The inbox lists the chats of every bot in one read, the profile one bot's.
+    stale: [botChatsRead(botId).queryKey, spaceChatsRead().queryKey],
     onFailed: (error) => Alert.alert(t`Could not update chat`, errorText(error, t`Try again.`)),
   });
   const sheet = (title: string, actions: { text: string; onPress: () => void }[]) =>

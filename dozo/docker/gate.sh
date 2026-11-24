@@ -171,37 +171,73 @@ syntax_check() { # $1 = script
   if "$sh" -n "$1"; then echo "[olc] $sh -n $1 ok"; else fail "syntax $1"; fi
 }
 
+# `olc` runs its independent steps side by side (each in a subshell with its output in a file) and
+# prints them in the order they started, so the gate takes as long as its slowest step, not the sum.
+# A step's failures travel back in a file, since a subshell cannot add to FAILS. No check is dropped.
+OLC_STEPS=(syntax compose deploylock buildlimit tunnel nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
+olc_job_end() { # $1 = step name, last line of its subshell: hands its failures to the parent
+  # Written whole to a temporary file and moved into place: a failed write (full disk) leaves no
+  # file, which the parent reports as "did not finish" (red), never as an empty list (green).
+  local f tmp="$OLC_TMP/$1.fails.tmp"
+  { for f in ${FAILS[@]+"${FAILS[@]}"}; do printf '%s\n' "$f"; done; } > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$OLC_TMP/$1.fails" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
+}
+olc_collect() {
+  local n f
+  wait
+  for n in "${OLC_STEPS[@]}"; do
+    [ -f "$OLC_TMP/$n.out" ] || continue   # a step the gate never started (no Node image, no .mjs files)
+    cat "$OLC_TMP/$n.out"
+    if [ -f "$OLC_TMP/$n.fails" ]; then while IFS= read -r f; do [ -z "$f" ] || FAILS+=("$f"); done < "$OLC_TMP/$n.fails"
+    else fail "$n: the step did not finish"; fi
+  done
+  rm -rf "$OLC_TMP"
+}
 olc() {
   local s out f tests report low missing brand_src rc e2e_tests mjs
+  OLC_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dozo-olc-XXXXXX") || { fail "olc: cannot create its scratch directory under ${TMPDIR:-/tmp}"; return 0; }
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs. The macOS app's toolchain
   # and build output (dozo/desktop/.toolchain, target: git-ignored, third-party) are not ours to check,
   # nor are the iOS build's (dozo/mobile/.toolchain, .build).
+  ( FAILS=()
   while IFS= read -r s; do syntax_check "$s"; done \
     < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.sh' -print | sort)
+    olc_job_end syntax) > "$OLC_TMP/syntax.out" 2>&1 &
   # What the production compose layer gives the panel: trusted proxies, the closed plugin form, the
   # origin allowlist and the app's Referrer-Policy, from `docker compose config` (about a second).
+  ( FAILS=()
   if out=$(bash dozo/deploy/compose.deploy.test.sh 2>&1); then echo "[olc] compose layer ok (dozo/deploy/compose.deploy.test.sh)"
   else printf '%s\n' "$out"; fail "compose layer (dozo/deploy/compose.deploy.test.sh)"; fi
+    olc_job_end compose) > "$OLC_TMP/compose.out" 2>&1 &
   # The deploy lock on the host (one deploy at a time): taking, waiting, stale, release, signal,
   # with `remote` pointed at the local shell (no ssh, about 15 seconds).
+  ( FAILS=()
   if out=$(bash dozo/deploy/deploy-lock.test.sh 2>&1); then echo "[olc] deploy lock ok (dozo/deploy/deploy-lock.test.sh)"
   else printf '%s\n' "$out"; fail "deploy lock (dozo/deploy/deploy-lock.test.sh)"; fi
+    olc_job_end deploylock) > "$OLC_TMP/deploylock.out" 2>&1 &
   # The image build's resource limit on the host (slice, read-back, not-limited lines, flag on every
   # build, refused settings), with stub systemctl, docker and id and a temporary cgroup tree.
+  ( FAILS=()
   if out=$(bash dozo/deploy/deploy-build-limit.test.sh 2>&1); then echo "[olc] build limit ok (dozo/deploy/deploy-build-limit.test.sh)"
   else printf '%s\n' "$out"; fail "build limit (dozo/deploy/deploy-build-limit.test.sh)"; fi
+    olc_job_end buildlimit) > "$OLC_TMP/buildlimit.out" 2>&1 &
   # The opt-in Cloudflare Tunnel step of the installer: its refusals, .env writes, no token in any
   # output, and the overlay against upstream's compose file (offline, docker stub, about a second).
+  ( FAILS=()
   if out=$(bash infra/compose/dozo-install-cloudflare.smoke.sh 2>&1); then echo "[olc] tunnel installer step ok (infra/compose/dozo-install-cloudflare.smoke.sh)"
   else printf '%s\n' "$out"; fail "tunnel installer step (infra/compose/dozo-install-cloudflare.smoke.sh)"; fi
+    olc_job_end tunnel) > "$OLC_TMP/tunnel.out" 2>&1 &
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
+    ( FAILS=()
     if printf '%s\0' "${mjs[@]}" | drun node-check -i -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" xargs -0 -n 1 node --check; then
       echo "[olc] node --check ${#mjs[@]} files ok"
     else fail "node --check"; fi
+      olc_job_end nodecheck) > "$OLC_TMP/nodecheck.out" 2>&1 &
+    ( FAILS=()
     tests=$(find dozo/brand -type f -name '*.test.*' -print -quit 2>/dev/null)  # captured: `find | grep -q` can SIGPIPE under pipefail
     if [ -n "$tests" ]; then
       # Quiet on success; on failure the whole output is the reason. Node's thresholds are global, so
@@ -224,69 +260,88 @@ olc() {
         fail "brand unit tests or coverage"
       fi
     else fail "no brand tests under dozo/brand (a check that cannot run is a failure)"; fi
+      olc_job_end brandtests) > "$OLC_TMP/brandtests.out" 2>&1 &
     # The e2e helpers that need no browser (the offline model server, route matching, the coverage
     # verdict): Node's own test runner on every dozo/e2e/*.test.mjs, about a second.
+    ( FAILS=()
     if [ -f dozo/e2e/model-stub.test.mjs ]; then
       e2e_tests=(dozo/e2e/*.test.mjs)
       if out=$(drun e2e-helper-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test "${e2e_tests[@]}" 2>&1); then
         echo "[olc] e2e helper tests ok (${#e2e_tests[@]} files)"
       else printf '%s\n' "$out"; fail "e2e helper tests"; fi
     else fail "dozo/e2e/model-stub.test.mjs missing: the e2e model stub is not tested"; fi
+      olc_job_end e2ehelpers) > "$OLC_TMP/e2ehelpers.out" 2>&1 &
     # The iOS app's config: upstream's app.json after the brand rules must carry the Dozo ids and
     # nothing of upstream's Expo account, EAS project, update channel or domain. No build, no stage.
+    ( FAILS=()
     if [ -f dozo/mobile/check-config.test.mjs ]; then
       if out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs dozo/mobile/android/check-manifest.test.mjs 2>&1); then
         echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel; the Android manifest check)"
       else printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; fi
     else fail "dozo/mobile/check-config.test.mjs missing: the iOS app's config is not checked"; fi
+      olc_job_end mobilecfg) > "$OLC_TMP/mobilecfg.out" 2>&1 &
     # The fork's dependency step (dozo/deps): which lockfiles it accepts, offline with a fake pnpm.
+    ( FAILS=()
     if [ -f dozo/deps/apply.test.mjs ]; then
       if out=$(drun deps-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/deps/apply.test.mjs 2>&1); then
         echo "[olc] fork dependency step ok (upstream's locked versions kept, new packages listed with their integrity)"
       else printf '%s\n' "$out"; fail "fork dependency step (dozo/deps/apply.test.mjs)"; fi
     else fail "dozo/deps/apply.test.mjs missing: the fork's dependency step is not tested"; fi
+      olc_job_end deps) > "$OLC_TMP/deps.out" 2>&1 &
     # The `dozo` command (dozo/cli): offline, against a local HTTP server that stands in for the API.
+    ( FAILS=()
     if [ -f dozo/cli/dozo.test.mjs ]; then
       if out=$(drun cli-test --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/cli/dozo.test.mjs 2>&1); then
         echo "[olc] dozo command ok (dozo/cli/dozo.test.mjs)"
       else printf '%s\n' "$out"; fail "dozo command (dozo/cli/dozo.test.mjs)"; fi
     else fail "dozo/cli/dozo.test.mjs missing: the dozo command is not tested"; fi
+      olc_job_end cli) > "$OLC_TMP/cli.out" 2>&1 &
     # The verdict on a Vitest report (dozo/docker/test-verdict.mjs, used by the Postgres run and the
-    # unit run): a skipped, missing or empty test file turns it red. Offline, about a second.
+    # unit run): a skipped, missing or empty test file turns it red. Offline, about a second. Its own
+    # step, listed in OLC_STEPS: a step missing from that list would lose its failure.
+    ( FAILS=()
     if [ -f dozo/docker/test-verdict.test.mjs ]; then
       if out=$(drun verdict-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/docker/test-verdict.test.mjs 2>&1); then
         echo "[olc] test verdict ok (a skipped, missing or empty Postgres test file fails; unit skips only in files another run covers)"
       else printf '%s\n' "$out"; fail "test verdict (dozo/docker/test-verdict.test.mjs)"; fi
     else fail "dozo/docker/test-verdict.test.mjs missing: the skip gate is not tested"; fi
+      olc_job_end verdict) > "$OLC_TMP/verdict.out" 2>&1 &
     # An upstream migration that changes what owns a thread runs before the fork's and can break a
     # bot's extra chats: the guard holds the sync until it is read (dozo/SYNC.md).
+    ( FAILS=()
     if [ -f dozo/db/threads-owner-guard.test.mjs ]; then
       if out=$(drun threads-owner --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'node --test dozo/db/threads-owner-guard.test.mjs dozo/db/thread-bot-guard.test.mjs >/tmp/t.log 2>&1 || { cat /tmp/t.log; exit 1; }; node dozo/db/threads-owner-guard.mjs --root /r && node dozo/db/thread-bot-guard.mjs --root=/r' 2>&1); then
         printf '%s\n' "$out" | sed 's/^/[olc] /'
       else printf '%s\n' "$out"; fail "threads owner or thread bot guard (dozo/db/*-guard.mjs)"; fi
     else fail "dozo/db/threads-owner-guard.test.mjs missing: upstream changes to thread owners are not checked"; fi
+      olc_job_end threadsowner) > "$OLC_TMP/threadsowner.out" 2>&1 &
     # The server bundle's licence notices and runtime copies (dozo/server-bundle): which licences
     # pass, what the notices hold, and that no manifest points at a runtime it does not carry.
     # Offline: a local HTTP server stands in for the downloads.
+    ( FAILS=()
     if [ -f dozo/server-bundle/notices.test.mjs ] && [ -f dozo/server-bundle/runtimes.test.mjs ]; then
       if out=$(drun server-bundle-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/server-bundle/notices.test.mjs dozo/server-bundle/runtimes.test.mjs 2>&1); then
         echo "[olc] server bundle notices and runtimes ok (licence policy, notices, runtime copies)"
       else printf '%s\n' "$out"; fail "server bundle notices or runtimes (dozo/server-bundle/*.test.mjs)"; fi
     else fail "dozo/server-bundle/notices.test.mjs or runtimes.test.mjs missing: the bundle's notices are not tested"; fi
+      olc_job_end bundle) > "$OLC_TMP/bundle.out" 2>&1 &
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
     # unbranded, so no rule can already be applied (that would be drift hidden by a short replace).
+    ( FAILS=()
     if [ -f dozo/brand/apply.mjs ]; then
       if out=$(drun brand-rules --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --strict --root /r 2>&1); then
         echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')"
       else printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; fi
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
+      olc_job_end rules) > "$OLC_TMP/rules.out" 2>&1 &
     # The leak gate of the brand step, brought forward: the working tree's apps, packages, infra and
     # scripts (where the rules on the server bundle's scripts apply; tracked and untracked, not
     # ignored) are branded in a scratch copy inside one container and
     # scanned, so the old name left in anything users see (a screen, an e-mail template, a locale
     # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds.
+    ( FAILS=()
     if [ -f dozo/brand/check.mjs ]; then
       if out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra scripts \
         | drun brand-leak -i --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'set -e
@@ -296,6 +351,7 @@ olc() {
         echo "[olc] $(printf '%s\n' "$out" | tail -1) (branded copy of the working tree)"
       else printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; fi
     else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
+      olc_job_end leak) > "$OLC_TMP/leak.out" 2>&1 &
   fi
   local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')
@@ -327,7 +383,9 @@ olc() {
   elif [ -z "$bad" ]; then echo "[olc] landing pages: no unfilled [[PLACEHOLDER]]"
   else printf '%s\n' "$bad" | sed 's/^/[olc] unfilled placeholder: /' | head -20
     fail "landing placeholders: $(printf '%s\n' "$bad" | cut -d: -f3 | sort -u | tr '\n' ' ' | sed 's/ $//')"; fi
+  # Its own signal test needs the gate's own process, so it runs here, while the steps above run.
   selftest
+  olc_collect
 }
 
 # Pure shell logic that needs no Docker: wait_gone and the coverage parsers, against fixtures of a Vitest table and
@@ -358,8 +416,8 @@ selftest() {
   # wait_gone keeps the child's own status. An instant failure already reaped before the first wait
   # (the old loop tested `kill -0` first and reported 0); a code above 128; a trapped signal that cuts
   # the first wait short while the child still runs; a success.
-  trap ':' USR1
-  ( sleep 0.1; kill -USR1 $$ ) &
+  local self=${BASHPID:-$$}; trap ':' USR1
+  ( sleep 0.1; kill -USR1 "$self" ) &
   check_wait "interrupted wait" 4 0 'sleep 0.4; exit 4' || ok=0
   trap - USR1
   check_wait "instant failure, reaped before the wait" 3 0.2 'exit 3' || ok=0
@@ -460,9 +518,12 @@ unit_tests() {
   # pipeline would hold the trap until the run ends) and removes the named container.
   # The quoted script is expanded by the container's shell, not this one (SC2016).
   # shellcheck disable=SC2086,SC2016
-  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$ROOT/dozo/docker/test-verdict.mjs:/verdict.mjs:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$ROOT/dozo/docker/test-verdict.mjs:/verdict.mjs:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e TREE_OWNER="$src" -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p "$WORK" /cache/store; cd "$WORK"
+      # Whose tree this is, beside it and not inside it (the sync below removes what the stage lacks):
+      # dozo/docker/unit-trees.sh reads it to tell a tree of a gone checkout from a live one.
+      printf "%s\n" "$TREE_OWNER" > "$WORK.owner"
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
       # Sync incrementally (no rsync in the image): a manifest of path, size and mtime in seconds per
       # file on both sides. Files only in the volume go; files new or different in the stage are
@@ -679,7 +740,7 @@ qa() {
 }
 
 UNIT_OUT=""
-on_exit() { wt_stop; stage_unlock; rm_run_containers; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
+on_exit() { jobs -p | xargs -r kill 2>/dev/null; wt_stop; stage_unlock; rm_run_containers; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
 # Not a gate: no traps, no verdict, no Docker (sync.sh calls it for its fork-health count).
 if [ "${1:-}" = upstream-edits ]; then shift; upstream_edits "$@"; exit $?; fi
 trap 'on_signal 130' INT; trap 'on_signal 143' TERM; trap on_exit EXIT

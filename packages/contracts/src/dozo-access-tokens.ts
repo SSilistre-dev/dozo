@@ -41,6 +41,8 @@ export const dozoAccessTokensContract = /* @__PURE__ */ (() => ({
     .input(DozoAccessTokenCreateInputSchema)
     .output(z.object({ token: z.string(), accessToken: DozoAccessTokenSchema })),
   revoke: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  /** The bots a token can be made for: the ones the member made, the only ones a token reaches. */
+  ownBots: oc.output(z.array(z.object({ id: Id, name: z.string() }))),
   /** Whether a bot is marked by text sent with a token, so its runs ask before acting. */
   botMark: oc.input(z.object({ botId: Id })).output(z.object({ marked: z.boolean() })),
   /**
