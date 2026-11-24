@@ -1429,8 +1429,8 @@
     },
     {
       "file": "apps/web/src/pages/onboarding/model-step.tsx",
-      "find": "import { Check, Copy } from \"lucide-react\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
-      "replace": "import { Check, Copy } from \"lucide-react\";\nimport { DozoKeyLink } from \"./dozo-key-link\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "find": "import { Shimmer } from \"../../components/ai/primitives\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "replace": "import { Shimmer } from \"../../components/ai/primitives\";\nimport { DozoKeyLink } from \"./dozo-key-link\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
       "requires": ["apps/web/src/pages/onboarding/dozo-key-link.tsx"],
       "reason": "the link under the API key field, placed by the next rule"
     },
