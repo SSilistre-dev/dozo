@@ -361,7 +361,7 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
   }
   // A skill joins what the bot follows: in every mode it waits for the owner's Save.
   if (reply?.skill) {
-    await suggestLearnedSkill(deps, bot, reply.skill, [...skills, ...rejectedSkills]);
+    await suggestLearnedSkill(deps, bot, reply.skill);
   }
   // An answer that broke the contract is not asked again for the same turns.
   await consumeLearningTurns(deps.prisma, bot.id, turns);

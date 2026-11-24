@@ -10,10 +10,13 @@ const state = vi.hoisted(() => ({
   suggestion: null as string | null,
   cards: [] as Array<{ skillId: string; status: string; threadId?: string }>,
   catalog: [] as Array<{ name: string }>,
+  rejected: [] as string[],
+  failCard: false,
 }));
 
 vi.mock("./dozo-learning-store.js", () => ({
   lockSkillSuggestion: async () => state.row,
+  rejectedLearningSkills: async () => state.rejected,
   setSkillSuggestion: async (_db: unknown, _bot: string, skillId: string) => {
     state.suggestion = skillId;
   },
@@ -29,6 +32,7 @@ vi.mock("./teaching-session.js", async (importOriginal) => ({
     skill: { id: string; status: string },
     bot: { thread: { id: string } | null },
   ) => {
+    if (state.failCard) throw new Error("database down");
     state.cards.push({ skillId: skill.id, status: skill.status, threadId: bot.thread?.id });
   },
 }));
@@ -71,12 +75,14 @@ beforeEach(() => {
   state.suggestion = null;
   state.cards = [];
   state.catalog = [];
+  state.rejected = [];
+  state.failCard = false;
 });
 
 describe("suggestLearnedSkill", () => {
   it("makes a draft, never a saved skill, and posts teaching's card in the bot's chat", async () => {
     const { db, skills } = prisma();
-    expect(await suggestLearnedSkill(deps(db), BOT, SKILL, [])).toBe(true);
+    expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(true);
     expect(skills).toEqual([
       expect.objectContaining({
         spaceId: BOT.spaceId,
@@ -100,31 +106,56 @@ describe("suggestLearnedSkill", () => {
     expect(state.cards).toEqual([{ skillId: "skill-1", status: "draft", threadId: "chat-1" }]);
   });
 
-  it("suggests nothing named as a skill the bot has or the owner dismissed, in any spacing or case", async () => {
+  it("suggests nothing named, in any spacing or case, as a skill of the bot, of the catalog or dismissed, read under the lock", async () => {
+    for (const [taught, catalog, rejected] of [
+      [[{ id: "s0", name: "  weekly   REPORT ", goal: "g", status: "saved" }], [], []],
+      [[{ id: "s0", name: "", goal: "Weekly Report", status: "draft" }], [], []],
+      [[], [{ name: "Weekly report" }], []],
+      [[], [], ["WEEKLY REPORT"]],
+      // Past the fifty names a review is shown, still checked.
+      [
+        [],
+        [
+          ...Array.from({ length: 60 }, (_, n) => ({ name: `Skill ${n}` })),
+          { name: "weekly report" },
+        ],
+        [],
+      ],
+    ] as const) {
+      state.catalog = [...catalog];
+      state.rejected = [...rejected];
+      const { db, skills } = prisma(taught.map((row) => ({ ...row })));
+      expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(false);
+      expect(skills).toHaveLength(taught.length);
+      expect(state.cards).toEqual([]);
+    }
+  });
+
+  it("keeps the draft when its card cannot be posted, and does not fail the review", async () => {
+    state.failCard = true;
     const { db, skills } = prisma();
-    expect(await suggestLearnedSkill(deps(db), BOT, SKILL, ["  weekly   REPORT "])).toBe(false);
-    expect(skills).toEqual([]);
-    expect(db.$transaction).not.toHaveBeenCalled();
-    expect(state.cards).toEqual([]);
+    expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(true);
+    expect(skills).toHaveLength(1);
+    expect(state.suggestion).toBe("skill-1");
   });
 
   it("while the last suggestion is unanswered, makes none and only posts that one's card again", async () => {
     state.row = { pendingSkillId: "skill-1" };
     const { db, skills } = prisma([{ id: "skill-1", status: "draft", name: "Inbox sweep" }]);
-    expect(await suggestLearnedSkill(deps(db), BOT, SKILL, [])).toBe(false);
+    expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(false);
     expect(skills).toHaveLength(1);
     expect(state.cards).toEqual([{ skillId: "skill-1", status: "draft", threadId: "chat-1" }]);
     // Deleted meanwhile: nothing to post.
     state.cards = [];
     state.row = { pendingSkillId: "gone" };
-    expect(await suggestLearnedSkill(deps(db), BOT, SKILL, [])).toBe(false);
+    expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(false);
     expect(state.cards).toEqual([]);
   });
 
   it("suggests nothing for a bot with no learning row", async () => {
     state.row = undefined;
     const { db, skills } = prisma();
-    expect(await suggestLearnedSkill(deps(db), BOT, SKILL, [])).toBe(false);
+    expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(false);
     expect(skills).toEqual([]);
     expect(state.cards).toEqual([]);
   });
@@ -132,7 +163,7 @@ describe("suggestLearnedSkill", () => {
   it("posts no card for a bot deleted meanwhile", async () => {
     const { db } = prisma();
     db.bot.findUnique.mockResolvedValueOnce(null as never);
-    expect(await suggestLearnedSkill(deps(db), BOT, SKILL, [])).toBe(true);
+    expect(await suggestLearnedSkill(deps(db), BOT, SKILL)).toBe(true);
     expect(state.cards).toEqual([]);
   });
 });
