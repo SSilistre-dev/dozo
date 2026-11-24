@@ -67,6 +67,8 @@ export interface AgentDriver {
   modelSource?: string;
   /** Its maker's terms put the person's account at risk when it is used outside their products. */
   termsRisk?: true;
+  /** The maker's own page to get the agent from: fixed, https, shown when it is not installed. */
+  downloadUrl?: string;
   /** Whether the agent is on the person's PATH. */
   installed(host: LocalCliHost): Promise<boolean>;
   /** Checks, when connecting, that this agent can be driven here; the reason when it cannot. */
@@ -93,8 +95,8 @@ export const AGENT_BRIDGE_PAUSED =
   "Waiting for the person's approval in Dozo. Stop here; you will be told when it is answered.";
 
 /**
- * Agent tools turned on for this server before a real run of the tool has been recorded: one
- * provider id per line in `<data>/dozo-agent-tools` (dozo/README.md). Not in any settings screen.
+ * Agent tools turned on by the file `<data>/dozo-agent-tools`, one provider id per line, which
+ * servers set up before the setting (dozo-agent-modes.ts) still have: a line there stays on.
  */
 export function enabledAgentProviders(env: NodeJS.ProcessEnv = process.env): Set<string> {
   const file = agentDataFolder(env, "dozo-agent-tools");
@@ -210,6 +212,8 @@ export interface AgentRuntimeOptions {
    */
   runAllowed: (runId: string) => Promise<string | undefined>;
   waitLimitMs?: number;
+  /** Whether the agent's mode was turned on in settings (dozo-agent-modes.ts); the file counts too. */
+  enabled?: (provider: string) => Promise<boolean>;
 }
 
 export function withAgentRuntime(
@@ -238,7 +242,9 @@ async function* runAgent(
   options: AgentRuntimeOptions,
 ): AsyncGenerator<AgentRuntimeEvent> {
   const host = localCliHost();
-  if (!host || !enabledAgentProviders().has(driver.provider))
+  const on =
+    enabledAgentProviders().has(driver.provider) || (await options.enabled?.(driver.provider));
+  if (!host || !on)
     throw new Error(`${driver.name} agent mode is not turned on on this server.`);
   const refusal = (await options.accessCheck()) ?? (await options.runAllowed(request.runId));
   if (refusal) throw new Error(refusal);

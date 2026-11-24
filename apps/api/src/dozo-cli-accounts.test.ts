@@ -38,7 +38,18 @@ const TOOL = {
 };
 const CONNECTION = { provider: "tool-a", label: "Tool A", plaintext: "ref", modelId: "m-1" };
 const publishRosterChange = vi.fn(async () => undefined);
-const prisma = { space: { findUnique: async () => null } };
+const executed: string[] = [];
+const existing = { id: null as string | null };
+const prisma = {
+  space: { findUnique: async () => null },
+  userModelCredential: {
+    findFirst: async () => (existing.id ? { id: existing.id } : null),
+  },
+  $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    executed.push(`${strings.join("?")}|${values.join(",")}`);
+    return 1;
+  },
+};
 const secrets = { load: vi.fn() };
 
 function client(userId: string | null) {
@@ -71,6 +82,8 @@ describe("CLI account routes", () => {
     fake.sendCode.mockReset();
     fake.cancel.mockReset().mockResolvedValue(undefined);
     publishRosterChange.mockClear();
+    executed.length = 0;
+    existing.id = null;
   });
 
   it("lists the caller's tools", async () => {
@@ -105,6 +118,33 @@ describe("CLI account routes", () => {
       consent: true,
       termsConsent: true,
     });
+  });
+
+  it("turns an agent's mode on by connecting it, and no other tool's", async () => {
+    await client("ada").connect({ provider: "tool-a" });
+    expect(executed).toEqual([]);
+    fake.persist.mockClear();
+    fake.connection.mockResolvedValue({ ...CONNECTION, provider: "codex-agent" });
+    await client("ada").connect({ provider: "codex-agent", consent: true });
+    expect(executed).toHaveLength(1);
+    expect(executed[0]).toContain("dozo_agent_modes");
+    // The mode belongs to the connection just saved ("cred-1", the persist fake's answer).
+    expect(executed[0]).toMatch(/\|codex-agent,cred-1$/);
+    expect(fake.persist).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes over an agent connection that has no mode, without saving a second one", async () => {
+    fake.connection.mockResolvedValue({ ...CONNECTION, provider: "codex-agent" });
+    existing.id = "cred-old";
+    await client("ada").connect({ provider: "codex-agent", consent: true });
+    expect(fake.persist).not.toHaveBeenCalled();
+    expect(executed[0]).toMatch(/\|codex-agent,cred-old$/);
+  });
+
+  it("leaves the mode off when the connection is refused", async () => {
+    fake.connection.mockRejectedValue(new ClientError("BAD_REQUEST", "Agree first."));
+    await expect(client("ada").connect({ provider: "codex-agent" })).rejects.toThrow();
+    expect(executed).toEqual([]);
   });
 
   it("passes a refusal on and saves nothing", async () => {

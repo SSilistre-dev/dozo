@@ -294,6 +294,7 @@ export const codexAgentDriver: AgentDriver = {
   name: "Codex",
   command: COMMAND,
   modelSource: "openai-codex",
+  downloadUrl: "https://developers.openai.com/codex/cli",
   async installed(host) {
     return !(await codexVersion(host)).missing;
   },

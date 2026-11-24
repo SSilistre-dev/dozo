@@ -501,13 +501,29 @@ support.
 On the local server only (the desktop app runs it and passes `HOST_USER_HOME` and `HOST_USER_PATH`),
 a provider's own agent CLI can run a bot's whole turn as the person: Codex, through its own
 app-server (`packages/adapters/src/cli-models/dozo-agent.ts` and `codex/dozo-codex-agent.ts`). It
-was written against Codex 0.171's protocol schema and has not been run against a real, signed-in
-Codex yet, so it is off until turned on by hand:
+was written against Codex 0.171's protocol schema and the ACP agents against their documented
+protocol, and none has been run end to end against a real, signed-in CLI yet, so treat all of it as
+unverified. Nothing is edited by hand any more:
 
-- **Turn it on:** put `codex-agent` on its own line in `dozo-agent-tools` in the server's data
-  folder (the `data/` next to the server's other files), then restart the app. Remove the line, or
-  the file, to turn it off. No settings screen shows or changes this.
-- **Connecting:** Settings > Models then shows Codex, marked Agent. Connecting asks the person to
+- **Where it shows:** Settings > Models lists Codex, Antigravity and Grok, marked Agent, on every
+  local server except Windows, where no row shows (process groups and the bridge's socket are Unix
+  only). With the CLI on the person's login `PATH` (absolute entries only) the row offers Connect.
+  Without it the row has one link, Download, to the maker's own page, a fixed https address in the
+  agent's descriptor (`downloadUrl`). Dozo never downloads or installs a CLI. The hosted service
+  lists none of this: it has no person's computer, so its answers are unchanged.
+- **Turn it on:** connecting is what turns an agent's mode on. After the person agrees (below) and
+  the agent passes its check, the connection is saved and a row in `dozo_agent_modes` names the
+  agent and that connection (no row is off). It is a setting of the server, written only by its one
+  person's signed-in session (an access token never reaches this call), that holds an agent id and a
+  connection and nothing else: never a path or a command line. If saving the connection goes through
+  and writing the row does not, the agent shows as not connected, and connecting again takes the
+  saved connection over. Nothing restarts: the agents are always in the catalog, and a run reads
+  the setting.
+- **Turn it off:** remove the agent's connection in Settings; its row goes with it (the table's
+  foreign key), and the row in Settings offers Connect again. A line in the file `dozo-agent-tools`
+  in the data folder (one id per line) from before the setting keeps an agent on until the line is
+  removed from the file.
+- **Connecting:** Connecting an agent asks the person to
   agree to what agent mode means and checks, there and then, that Codex is 0.171.x, is signed in,
   and reaches Dozo's tools through the bridge; a failed check says why and saves nothing.
 - **A turn:** one Codex process per run, in an empty folder of the bot's own under
@@ -522,7 +538,7 @@ Codex yet, so it is off until turned on by hand:
   again; a mark in `data/agent-runs/` holds this across processes.
 - **ACP agents:** Antigravity (`antigravity-agent`, run as `agy acp`) and Grok (`grok-agent`, run
   as `grok agent stdio`) are driven over the Agent Client Protocol
-  (`packages/adapters/src/cli-models/acp/`), turned on the same way, one id per line. Dozo offers
+  (`packages/adapters/src/cli-models/acp/`), listed and turned on the same way. Dozo offers
   them no file or terminal methods: they use their own tools and ask through ACP permission
   requests, answered only with the one-time allow or reject option (never an "always" one), and
   every waiting request is answered as cancelled when a turn stops. The connection check reads the
@@ -532,7 +548,10 @@ Codex yet, so it is off until turned on by hand:
   reason to close their account. ACP reports no usage limits: an agent's own error is shown as is.
 - **Not in agent mode:** runs that text sent with an access token reached (until the bot is trusted
   again), and every run the person did not start with their own message in Dozo.
-- **Not yet:** more accounts or the model pool for agents, mobile.
+- **Not yet:** more accounts or the model pool for agents, a way to turn an agent's mode off in the
+  settings screen apart from removing the connection, and mobile: a phone
+  connected to a local server shows no agent rows, because the phone has no screen for the tools on
+  the computer at all.
 
 ## Commands on your own computer
 
