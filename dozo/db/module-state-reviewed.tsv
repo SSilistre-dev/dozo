@@ -217,7 +217,10 @@ packages/i18n/src/dozo-server-text.ts	module	export const SIGN_IN_LABELS: Readon
 apps/api/src/app.ts	fn buildApp	const dozoJobPool =	global-safe	wiring of billing's job pool: a handle, no data
 apps/api/src/app.ts	fn buildApp	const dozoBilling =	global-safe	wiring of billing's mail service: no data
 apps/api/src/account-import.ts	class AccountImporter	this.repos = dozoReportingRepos(createRepos(deps.prisma), deps)	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputer	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let incomplete = false;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let ref = await provision();	local	per-call local, dies with the call
 packages/adapters/src/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
 packages/core/src/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled
 packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<object, number>();	request	count keyed by the identity of one tool call's action list; dies with the call

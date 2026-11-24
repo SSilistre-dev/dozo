@@ -9,6 +9,8 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 // Runs on the branded tree: the wait is laid into upstream's computer controls by brand rules.
 
 vi.mock("@lingui/react/macro", () => ({
@@ -28,14 +30,16 @@ vi.mock("../../components/SubscriptionGate", () => ({
   useBilling: () => ({ status: null, showPlans: () => undefined }),
 }));
 
-import { SCREEN_WAIT_MS, screenAwaited } from "./dozo-screen-wait";
+import { reduceComputerStatus } from "../../lib/thread-events";
+import { BOOT_WAIT_MS, computerWait, SCREEN_WAIT_MS } from "./dozo-screen-wait";
 import type { ComputerState } from "./use-computer";
 import { useComputerControls, useComputerState } from "./use-computer";
 
 const SCREEN = "https://screen.example.test/view?token=placeholder";
-const computerIn = (state: ComputerStatus["state"]) =>
-  ({ botId: "bot-1", state, kind: "browser", mode: "shared" }) as unknown as ComputerStatus;
+const computerIn = (state: ComputerStatus["state"], botId = "bot-1") =>
+  ({ botId, state, kind: "browser", mode: "shared" }) as unknown as ComputerStatus;
 const bot = { id: "bot-1", name: "Fixture" } as never;
+const otherBot = { id: "bot-2", name: "Other" } as never;
 
 let container: HTMLDivElement;
 let root: Root;
@@ -44,6 +48,8 @@ let controls: ReturnType<typeof useComputerControls>;
 let boot: ReturnType<typeof vi.fn>;
 let screenUrl: ReturnType<typeof vi.fn>;
 let mountFrame = false;
+/** What the thread refresh reads for the computer. */
+let threadComputer: ComputerStatus = computerIn("running");
 
 /** The hooks with the window's middle as the overlay draws it: screen, error, progress or name. */
 function Window() {
@@ -61,15 +67,15 @@ function Window() {
     state,
     panel: null,
     active: bot,
-    bots: [bot],
-    botsRef: { current: [bot] },
+    bots: [bot, otherBot],
+    botsRef: { current: [bot, otherBot] },
     activeBotId: { current: "bot-1" },
     activeGroupId: { current: undefined },
     runStatus: undefined,
     sandboxProvider: undefined,
     // As upstream's thread refresh: it commits the computer it read and reads the screen beside.
     refreshThread: vi.fn(async (id: string) => {
-      state.commitComputer(computerIn("running"));
+      state.commitComputer(threadComputer);
       void state.refreshComputerScreen(id).catch(() => null);
       return {} as never;
     }),
@@ -102,14 +108,14 @@ const frame = () => container.querySelector("iframe");
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((element) => element.textContent === name);
 
-async function render(computer: ComputerStatus) {
+async function render(computer: ComputerStatus | null) {
   await act(async () => root.render(<Window />));
   await act(async () => state.commitComputer(computer));
 }
 
-async function wake() {
+async function wake(botId = "bot-1") {
   await act(async () => {
-    void controls.openComputer("bot-1");
+    void controls.openComputer(botId);
     await settle();
   });
 }
@@ -123,6 +129,7 @@ async function wait(ms: number) {
 beforeEach(() => {
   vi.useFakeTimers();
   mountFrame = false;
+  threadComputer = computerIn("running");
   boot = vi.fn(async () => computerIn("running"));
   screenUrl = vi.fn(async () => ({ url: SCREEN }));
   Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
@@ -268,22 +275,119 @@ it("reconnects a screen that drops after connecting, without the error", async (
   expect(controls.computerScreenError).toBeNull();
 });
 
-it("waits only for a running computer's own screen in its open window", () => {
+it("waits for a boot, then only for a running computer's own screen in its open window", () => {
   const base = {
     computerOpen: true,
     state: "running",
     runsOnUserMachine: false,
-    booting: false,
+    bootShown: false,
     embeddedUrl: null,
     screenUrlLoaded: false,
     failed: false,
   };
-  expect(screenAwaited(base)).toBe(true);
-  expect(screenAwaited({ ...base, computerOpen: false })).toBe(false);
-  expect(screenAwaited({ ...base, state: "suspended" })).toBe(false);
-  expect(screenAwaited({ ...base, runsOnUserMachine: true })).toBe(false);
-  expect(screenAwaited({ ...base, booting: true })).toBe(false);
-  expect(screenAwaited({ ...base, embeddedUrl: SCREEN })).toBe(false);
-  expect(screenAwaited({ ...base, screenUrlLoaded: true })).toBe(false);
-  expect(screenAwaited({ ...base, failed: true })).toBe(false);
+  expect(computerWait(base)).toBe("screen");
+  expect(computerWait({ ...base, bootShown: true })).toBe("boot");
+  expect(computerWait({ ...base, bootShown: true, computerOpen: false })).toBe("boot");
+  expect(computerWait({ ...base, bootShown: true, failed: true })).toBeNull();
+  expect(computerWait({ ...base, computerOpen: false })).toBeNull();
+  expect(computerWait({ ...base, state: "suspended" })).toBeNull();
+  expect(computerWait({ ...base, runsOnUserMachine: true })).toBeNull();
+  expect(computerWait({ ...base, embeddedUrl: SCREEN })).toBeNull();
+  expect(computerWait({ ...base, screenUrlLoaded: true })).toBeNull();
+  expect(computerWait({ ...base, failed: true })).toBeNull();
+});
+
+it("ends a wake that never answers in Computer failed to boot with Retry, and not before", async () => {
+  boot.mockImplementation(() => new Promise(() => undefined));
+  // The server took the boot: a read while it is out says booting.
+  threadComputer = computerIn("booting");
+  await render(computerIn("suspended"));
+  await wake();
+  // A wake takes 30 to 40 seconds; that is no failure.
+  await wait(40_000);
+  expect(shown()).toBe("Booting live desktop…");
+  await wait(BOOT_WAIT_MS - 40_000 - 1_000);
+  expect(shown()).toBe("Booting live desktop…");
+  await wait(1_000);
+  expect(shown()).toContain("Computer failed to boot");
+  expect(button("Retry screen")).toBeDefined();
+  // Retry joins the boot still out, reads the computer and waits again from the start.
+  await act(async () => {
+    button("Retry screen")!.click();
+    await settle();
+  });
+  expect(boot).toHaveBeenCalledTimes(1);
+  expect(shown()).toBe("Booting live desktop…");
+  await wait(BOOT_WAIT_MS - 1_000);
+  expect(shown()).toBe("Booting live desktop…");
+});
+
+it("ends a computer stuck booting in Computer failed to boot with Retry", async () => {
+  threadComputer = computerIn("booting");
+  await render(computerIn("booting"));
+  await wake();
+  expect(shown()).toBe("Booting live desktop…");
+  await wait(BOOT_WAIT_MS);
+  expect(shown()).toContain("Computer failed to boot");
+  expect(button("Retry screen")).toBeDefined();
+});
+
+it("shows progress for a wake whose computer is not known yet", async () => {
+  const booted = deferred<ComputerStatus>();
+  boot.mockImplementation(() => booted.promise);
+  await render(null);
+  await wake();
+  expect(shown()).toBe("Booting live desktop…");
+  await act(async () => {
+    booted.resolve(computerIn("running"));
+    await settle();
+  });
+  expect(frame()?.dataset.src).toBe(SCREEN);
+});
+
+it("gives another bot's computer its own wait, never the spent one", async () => {
+  screenUrl.mockImplementation(() => new Promise(() => undefined));
+  await render(computerIn("suspended"));
+  await wake();
+  await wait(SCREEN_WAIT_MS);
+  expect(button("Retry screen")).toBeDefined();
+  // The window stays open on the other bot, whose computer runs without a screen read yet.
+  boot.mockImplementation(() => new Promise(() => undefined));
+  await act(async () =>
+    state.cacheComputerFor("bot-2", { computer: computerIn("running", "bot-2") }),
+  );
+  await wake("bot-2");
+  expect(shown()).toBe("Booting live desktop…");
+});
+
+it("reads the screen when the server says a computer someone else woke is running", async () => {
+  // A run woke it: this window opened on a booting computer and asked for no boot of its own.
+  threadComputer = computerIn("booting");
+  await render(computerIn("booting"));
+  await wake();
+  expect(boot).not.toHaveBeenCalled();
+  expect(shown()).toBe("Booting live desktop…");
+  // The live event, applied as the thread subscription applies it, then its screen read.
+  await act(async () => {
+    state.commitComputer(
+      reduceComputerStatus(state.computerRef.current, {
+        type: "computer.status",
+        botId: "bot-1",
+        payload: { status: "running" },
+      } as never),
+    );
+    void state.refreshComputerScreen("bot-1");
+    await settle();
+  });
+  expect(frame()?.dataset.src).toBe(SCREEN);
+});
+
+it("leaves the panel's running row once the window closes during the wait", async () => {
+  screenUrl.mockImplementation(() => new Promise(() => undefined));
+  await render(computerIn("suspended"));
+  await wake();
+  expect(controls.computerBooting).not.toBeNull();
+  await act(async () => state.setComputerOpen(false));
+  expect(controls.computerBooting).toBeNull();
+  expect(controls.computerScreenError).toBeNull();
 });

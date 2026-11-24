@@ -396,9 +396,72 @@
   ],
   "anchored": [
     {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "  ) : null;\n  const placeholder =\n    screenError ??",
+      "replace": "  ) : null;\n  const screenWait = useScreenPending(computer, screenUrl, error);\n  const placeholder =\n    screenError ??",
+      "requires": [
+        "apps/mobile/lib/dozo-screen-pending.ts"
+      ],
+      "reason": "computer wait: the preview's wait for the screen link, at the screen's top level"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.ts",
+      "find": "} from \"./computer-control.js\";\nimport { toComputerRef }",
+      "replace": "} from \"./computer-control.js\";\nimport { announceWhenStarted } from \"./dozo-computer-announce.js\";\nimport { toComputerRef }",
+      "requires": [
+        "packages/adapters/src/dozo-computer-announce.ts"
+      ],
+      "reason": "computer signal: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.ts",
+      "find": "export async function provisionComputer(\n  deps: {",
+      "replace": "export async function provisionComputer(\n  ...args: Parameters<typeof provisionComputerUnannounced>\n): Promise<ComputerRef> {\n  return announceWhenStarted(args[0], args[1], () => provisionComputerUnannounced(...args));\n}\n\nasync function provisionComputerUnannounced(\n  deps: {",
+      "requires": [
+        "packages/adapters/src/dozo-computer-announce.ts"
+      ],
+      "reason": "computer signal: a start from not running tells the bots' threads it is running, so a window opened while a run or another tab woke it reads its screen"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "import { useScreenHeader } from \"../lib/screen-header\";\nimport { useSideInse",
+      "replace": "import { useScreenHeader } from \"../lib/screen-header\";\nimport { useScreenPending } from \"../lib/dozo-screen-pending\";\nimport { useSideInse",
+      "requires": [
+        "apps/mobile/lib/dozo-screen-pending.ts"
+      ],
+      "reason": "computer wait: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "      : previewPlaceholder(computer?.state, booting, name, computer?.mode));",
+      "replace": "      : screenWait.timedOut\n        ? t`Could not connect to the computer screen`\n        : previewPlaceholder(computer?.state, booting || screenWait.pending, name, computer?.mode));",
+      "requires": [
+        "apps/mobile/lib/dozo-screen-pending.ts"
+      ],
+      "reason": "computer wait: a running computer with a screen to show whose link has not come yet shows the boot progress, then after 30 seconds the screen's error, never its bare name"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "            {bootPending ? <ActivityIndicator",
+      "replace": "            {bootPending || screenWait.pending ? <ActivityIndicator",
+      "requires": [
+        "apps/mobile/lib/dozo-screen-pending.ts"
+      ],
+      "reason": "computer wait: the progress of the rule above has its spinner too"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "          : !booting && computer?.state === \"error\"\n            ? t`Computer failed to boot`",
+      "replace": "          : wait.bootTimedOut || (!booting && computer?.state === \"error\")\n            ? t`Computer failed to boot`",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-screen-wait.ts"
+      ],
+      "reason": "computer wait: a boot that never answers ends as Computer failed to boot, with Retry screen"
+    },
+    {
       "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
       "find": "use-event-listener\";\nimport { errorText }",
-      "replace": "use-event-listener\";\nimport { screenAwaited, useScreenWait } from \"./dozo-screen-wait\";\nimport { errorText }",
+      "replace": "use-event-listener\";\nimport { bootShown, computerWait, useComputerWait } from \"./dozo-screen-wait\";\nimport { errorText }",
       "requires": [
         "apps/web/src/pages/shell/dozo-screen-wait.ts"
       ],
@@ -407,16 +470,16 @@
     {
       "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
       "find": "embeddableScreenUrl(screenUrl);\n  const hideScreenLoadError",
-      "replace": "embeddableScreenUrl(screenUrl);\n  const screenWait = useScreenWait(\n    screenAwaited({\n      computerOpen,\n      state: computer?.state,\n      runsOnUserMachine: runsOnUserMachine(computer),\n      booting,\n      embeddedUrl: embeddedScreenUrl,\n      screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),\n      failed: Boolean(screenLoadError || computerError),\n    }),\n  );\n  const hideScreenLoadError",
+      "replace": "embeddableScreenUrl(screenUrl);\n  const wait = useComputerWait(\n    computerWait({\n      computerOpen,\n      state: computer?.state,\n      runsOnUserMachine: runsOnUserMachine(computer),\n      bootShown: booting || bootShown(state.bootingBotId, computerBot?.id, computer?.state),\n      embeddedUrl: embeddedScreenUrl,\n      screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),\n      failed: Boolean(screenLoadError || computerError),\n    }),\n    computerBot?.id,\n  );\n  const hideScreenLoadError",
       "requires": [
         "apps/web/src/pages/shell/dozo-screen-wait.ts"
       ],
-      "reason": "screen wait: an open running computer whose screen read is still out (or never answered) is a wait, not the computer's bare name"
+      "reason": "computer wait: a boot (also before the computer's status is known) or, in the open window of a running computer, a screen read still out or never answered, is a wait with an end, per bot, never the computer's bare name"
     },
     {
       "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
       "find": "  const screenFailure =\n    Boolean(screenLoadError) ||\n",
-      "replace": "  const screenFailure =\n    screenWait.timedOut ||\n    Boolean(screenLoadError) ||\n",
+      "replace": "  const screenFailure =\n    wait.screenTimedOut ||\n    Boolean(screenLoadError) ||\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-screen-wait.ts"
       ],
@@ -425,16 +488,16 @@
     {
       "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
       "find": "    booting || computer?.state === \"booting\" ? (\n",
-      "replace": "    booting || computer?.state === \"booting\" || screenWait.waiting ? (\n",
+      "replace": "    booting || bootShown(state.bootingBotId, computerBot?.id, computer?.state) || wait.waiting ? (\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-screen-wait.ts"
       ],
-      "reason": "screen wait: while it lasts the window shows the boot progress"
+      "reason": "computer wait: this tab's boot shows progress before the computer's status is known, and so does a screen still on its way"
     },
     {
       "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
       "find": "resetScreenReconnect();\n            if (computer?.state === \"running\") {",
-      "replace": "resetScreenReconnect();\n            screenWait.restart();\n            if (computer?.state === \"running\") {",
+      "replace": "resetScreenReconnect();\n            wait.restart();\n            if (computer?.state === \"running\") {",
       "requires": [
         "apps/web/src/pages/shell/dozo-screen-wait.ts"
       ],

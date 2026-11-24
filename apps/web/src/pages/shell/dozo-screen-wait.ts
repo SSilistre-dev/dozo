@@ -3,48 +3,71 @@ import { useState } from "react";
 
 /** How long an open, running computer may be without its screen before its window says so. */
 export const SCREEN_WAIT_MS = 30_000;
+/**
+ * How long a boot may show progress before it counts as failed. A wake takes about 30 to 40
+ * seconds; this is the two minutes the mobile app already gives a start before it stops waiting.
+ */
+export const BOOT_WAIT_MS = 120_000;
+
+export type ComputerWait = "boot" | "screen" | null;
 
 /**
- * True while the open window of a running computer has no screen and nothing has failed: its
- * screen read is still out, or was never answered. The window shows that as progress, never as
- * the computer's bare name.
+ * What a computer is waiting for, if anything: its boot, or (in its open window, once running)
+ * its screen. Nothing once something has failed; the failure shows instead.
  */
-export function screenAwaited(options: {
+export function computerWait(options: {
   computerOpen: boolean;
   state: string | undefined;
   runsOnUserMachine: boolean;
-  booting: boolean;
+  bootShown: boolean;
   embeddedUrl: string | null;
   screenUrlLoaded: boolean;
   failed: boolean;
-}): boolean {
-  return (
-    options.computerOpen &&
+}): ComputerWait {
+  if (options.failed) return null;
+  if (options.bootShown) return "boot";
+  return options.computerOpen &&
     options.state === "running" &&
     !options.runsOnUserMachine &&
-    !options.booting &&
     !options.embeddedUrl &&
-    !options.screenUrlLoaded &&
-    !options.failed
-  );
+    !options.screenUrlLoaded
+    ? "screen"
+    : null;
 }
 
 /**
- * A wait for the screen that ends: progress while it lasts, then `timedOut`, which the window
- * shows as the screen's error with Retry. A screen that arrives late still shows; `restart` is for
- * that Retry, which waits again from the start.
+ * Whether a boot shows progress: this tab's own boot of the computer's bot (also before its
+ * status is known), or a computer the server says is booting.
  */
-export function useScreenWait(awaited: boolean) {
+export function bootShown(
+  bootingBotId: string | null,
+  botId: string | undefined,
+  state: string | undefined,
+): boolean {
+  return (bootingBotId !== null && bootingBotId === botId) || state === "booting";
+}
+
+/**
+ * A wait that ends: progress while it lasts, then `bootTimedOut` or `screenTimedOut`, which the
+ * window shows as the matching error with Retry. A wait that ends by itself (a late answer) clears
+ * it; so does another bot's computer, which never inherits a spent wait. `restart` is for Retry.
+ */
+export function useComputerWait(wait: ComputerWait, botId: string | undefined) {
   const [attempt, setAttempt] = useState(0);
-  const [timedOut, setTimedOut] = useState(false);
-  if (!awaited && timedOut) setTimedOut(false);
-  useTimeout(() => setTimedOut(true), awaited && !timedOut ? SCREEN_WAIT_MS : null, attempt);
+  const [spent, setSpent] = useState<string | null>(null);
+  const id = wait ? `${botId ?? ""}:${wait}:${attempt}` : null;
+  // Only the wait it belongs to stays spent: a late answer, another bot or Retry starts over.
+  if (spent && spent !== id) setSpent(null);
+  const timedOut = id !== null && spent === id;
+  useTimeout(
+    () => setSpent(id),
+    wait && !timedOut ? (wait === "boot" ? BOOT_WAIT_MS : SCREEN_WAIT_MS) : null,
+    id,
+  );
   return {
-    waiting: awaited && !timedOut,
-    timedOut: awaited && timedOut,
-    restart: () => {
-      setTimedOut(false);
-      setAttempt((current) => current + 1);
-    },
+    waiting: wait === "screen" && !timedOut,
+    bootTimedOut: wait === "boot" && timedOut,
+    screenTimedOut: wait === "screen" && timedOut,
+    restart: () => setAttempt((current) => current + 1),
   };
 }
