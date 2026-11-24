@@ -30,6 +30,15 @@ export const SEALED_ACCOUNT_MAX_BYTES = 4 * 1024 ** 3;
 /** The largest sealed account backup: the zip and room for the header, tags, gzip and entry head. */
 export const SEALED_ACCOUNT_FILE_MAX_BYTES = SEALED_ACCOUNT_MAX_BYTES + 16 * 1024 ** 2;
 
+/**
+ * The shortest password a new backup is sealed with, wherever one is made: Settings > Data, the
+ * local server's backup command and the desktop app's Back Up window (`dozo/desktop/src/backup.rs`
+ * holds the same number; a test there reads it from here). Not the account password's policy.
+ */
+export const SEALED_MIN_PASSWORD_LENGTH = 12;
+/** Backups made before were sealed with 8 or more: opening one still takes that. */
+export const SEALED_OPEN_MIN_PASSWORD_LENGTH = 8;
+
 export type SealedKdf = { logN: number; r: number; p: number };
 /** 128 MiB of memory and well under a second: the strength the file is written with. */
 export const SEALED_DEFAULT_KDF: SealedKdf = { logN: 17, r: 8, p: 1 };

@@ -18,7 +18,7 @@ function problem(form, text) {
 el("backup").addEventListener("submit", async (event) => {
   event.preventDefault();
   const password = el("password").value;
-  if (password.length < 8) return problem("backup", "Use at least 8 characters.");
+  // How long it must be is the app's to say (back_up), from the one shared number.
   if (password !== el("again").value) return problem("backup", "The passwords differ.");
   el("step").textContent = "Backing up…";
   show("working");

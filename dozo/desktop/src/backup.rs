@@ -27,6 +27,9 @@ pub const DIAGNOSTICS_ID: &str = "save-diagnostics";
 const WINDOW: &str = "backup";
 const EXTENSION: &str = "dozobackup";
 const SHORT: &str = "Use at least 8 characters.";
+/// The shortest password a new backup takes: `SEALED_MIN_PASSWORD_LENGTH` in
+/// `packages/core/src/dozo-sealed-file.ts`, which a test below holds this to.
+const MIN_BACKUP_PASSWORD: usize = 12;
 
 /// One backup or restore at a time.
 static BUSY: AtomicBool = AtomicBool::new(false);
@@ -132,8 +135,8 @@ fn tool(app: &AppHandle) -> Result<Tool, String> {
 /// Backs up into a file the person picks; `false` when they cancelled the picker.
 #[tauri::command]
 pub async fn back_up(app: AppHandle, password: String) -> Result<bool, String> {
-    if password.chars().count() < 8 {
-        return Err(SHORT.into());
+    if password.chars().count() < MIN_BACKUP_PASSWORD {
+        return Err(format!("Use at least {MIN_BACKUP_PASSWORD} characters."));
     }
     let _busy = Busy::take()?;
     let tool = tool(&app)?;
@@ -369,5 +372,12 @@ mod tests {
         assert_eq!(date(0), "1970-01-01");
         assert_eq!(date(20_412), "2025-11-20");
         assert_eq!(date(11_016), "2000-02-29");
+    }
+
+    #[test]
+    fn a_new_backup_takes_the_password_length_every_surface_takes() {
+        let shared = include_str!("../../../packages/core/src/dozo-sealed-file.ts");
+        let line = format!("export const SEALED_MIN_PASSWORD_LENGTH = {MIN_BACKUP_PASSWORD};");
+        assert!(shared.contains(&line), "{line}");
     }
 }
