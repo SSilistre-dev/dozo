@@ -656,8 +656,8 @@
 }
 
 /* Teaching: the screen being recorded is the computer's, so the pointer is the ordinary arrow
-   (upstream's overlay sets a crosshair), and a click shows a ring where it landed at once. The
-   ring is the one ink, with a hairline of the page tone so it reads on any screen. */
+   (upstream's overlay sets a crosshair), and a click shows a ring where it landed at once, still
+   (the shell stylesheet holds no animation) and gone after a moment. The ring is the one ink, with a hairline of the page tone so it reads on any screen. */
 [data-testid="teach-capture-overlay"] {
   cursor: default;
 }
@@ -672,21 +672,4 @@
   border-radius: 9999px;
   box-shadow: 0 0 0 1px var(--background);
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .dozo-teach-ring {
-    animation: dozo-teach-ring 450ms var(--dozo-out) forwards;
-  }
-}
-
-@keyframes dozo-teach-ring {
-  from {
-    opacity: 1;
-    transform: scale(0.5);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.3);
-  }
 }
