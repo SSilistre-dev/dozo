@@ -1,7 +1,8 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import type * as DbModule from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { ComputerBusyError } from "./computer-lifecycle.js";
 import { requeueBehindComputerLock } from "./dozo-computer-lock-wait.js";
@@ -117,6 +118,31 @@ describe("a run waiting for its bot's computer", () => {
     w.requeueWrite.resolve();
     await requeueBehindComputerLock(w.deps, w.lock, "waiting", "worker", 3, null, false, true);
     expect(w.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("logs and ignores a failed lock re-read after the requeue committed", async () => {
+    const previous = getLogger();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    try {
+      const w = world();
+      w.requeueWrite.resolve();
+      vi.mocked(w.deps.prisma.computerExecutionLease.findFirst).mockRejectedValueOnce(
+        new Error("connection reset"),
+      );
+      await expect(
+        requeueBehindComputerLock(w.deps, w.lock, "waiting", "worker", 3, null, false, true),
+      ).resolves.toBeUndefined();
+      expect(w.deps.prisma.run.updateMany).toHaveBeenCalled();
+      expect(w.enqueue).not.toHaveBeenCalled();
+      expect(sink.events).toHaveLength(1);
+      expect(sink.events[0]).toMatchObject({
+        level: "warn",
+        message: "best effort failed: computer lock re-read",
+      });
+    } finally {
+      installLogger(previous);
+    }
   });
 
   it("leaves a run with a retry timer to its timer", async () => {

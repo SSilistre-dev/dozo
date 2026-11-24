@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { requeueComputerRun } from "./run-lifecycle.js";
 import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
@@ -31,6 +32,16 @@ export async function requeueBehindComputerLock(
   );
   // Without `untilReleased` the run already has a retry timer.
   if (!untilReleased) return;
+  // The requeue has committed: a failed re-read must not surface as a setup failure of the
+  // run. The recovery sweep remains the backup.
+  await bestEffort("computer lock re-read", wakeIfComputerFree(deps, lock, runId));
+}
+
+async function wakeIfComputerFree(
+  deps: ExecutorDeps,
+  lock: { computerId: string; botId: string },
+  runId: string,
+): Promise<void> {
   const held = await deps.prisma.computerExecutionLease.findFirst({
     where: { ...lock, runId: { not: runId }, expiresAt: { gt: new Date() } },
     select: { id: true },
