@@ -9,9 +9,10 @@ import { ModelRoleChoiceSchema } from "./model-roles.js";
  * bot's runs take the backups of whoever runs them. A row's connection is the saver's; a run by
  * someone else resolves that row on their own connection of the provider.
  */
-export const DozoBotModelBackupsSchema = z.object({
-  backups: modelChoiceListSchema(ModelRoleChoiceSchema),
-});
+export const DozoBotModelBackupsSchema = /* @__PURE__ */ (() =>
+  z.object({
+    backups: modelChoiceListSchema(ModelRoleChoiceSchema),
+  }))();
 export type DozoBotModelBackups = z.infer<typeof DozoBotModelBackupsSchema>;
 
 export const dozoBotModelBackupsContract = /* @__PURE__ */ (() => ({

@@ -80,6 +80,8 @@ describe("the fork's screens that load when first shown", () => {
 
   // The badge and the hidden list come from the same file as the switch, loaded by the time they run.
   const sharesCode = new Set(["DozoLibraryBadge", "DozoHiddenLibrarySkills"]);
+  // These take no props, so none reach the screen.
+  const takesNone = new Set(["DozoCliAccounts", "DozoLibraryBadge", "DozoHiddenLibrarySkills"]);
 
   for (const [name, Screen] of screens) {
     it(`${name} draws nothing while its code is on its way, then the screen with its props`, async () => {
@@ -88,7 +90,9 @@ describe("the fork's screens that load when first shown", () => {
       await act(async () => root.render(createElement(Screen, { id: "a" } as never)));
       if (sharesCode.has(name)) {
         await vi.waitFor(() => expect(host.querySelector(`[data-stub="${name}"]`)).not.toBeNull());
-        expect(host.querySelector(`[data-stub="${name}"]`)?.textContent).toBe('{"id":"a"}');
+        expect(host.querySelector(`[data-stub="${name}"]`)?.textContent).toBe(
+          takesNone.has(name) ? "{}" : '{"id":"a"}',
+        );
         return;
       }
       // Nothing, except the skills section, which keeps its room so what is below it stays put.
@@ -100,7 +104,7 @@ describe("the fork's screens that load when first shown", () => {
       await vi.waitFor(() => expect(host.querySelector(`[data-stub="${name}"]`)).not.toBeNull());
       expect(host.querySelector("[data-dozo-skills-room]")).toBeNull();
       expect(host.querySelector(`[data-stub="${name}"]`)?.textContent).toBe(
-        name === "DozoCliAccounts" ? "{}" : '{"id":"a"}',
+        takesNone.has(name) ? "{}" : '{"id":"a"}',
       );
     });
   }

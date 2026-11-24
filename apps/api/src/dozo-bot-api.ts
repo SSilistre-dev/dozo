@@ -60,6 +60,8 @@ export type DozoBotApiContext = {
   signal: AbortSignal;
   /** Asked again while a stream is open, so a revoked token ends it. */
   stillAuthorized: () => Promise<boolean>;
+  /** The token the call came with, which an open chat stream checks before anything new. */
+  dozoAccessTokenId: string;
 };
 
 export type DozoBotApiDeps = {
@@ -182,6 +184,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
     void bestEffort("bot api token last used", deps.touch(found.tokenId));
     const context = {
       actor: found.actor,
+      dozoAccessTokenId: found.tokenId,
       stillAuthorized: async () =>
         (await deps.authenticate(authorization))?.tokenId === found.tokenId,
     };

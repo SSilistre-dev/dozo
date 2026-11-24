@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Gates: olc (fast, offline once the Node image is local, <30s) and qa (full).
-# Usage: gate.sh olc|qa|unit|checks. Exit 0 pass, 2 any failed gate, 64 usage, 130/143 interrupted.
+# Usage: gate.sh olc|qa|unit|checks|budget. Exit 0 pass, 2 any failed gate, 64 usage, 130/143 interrupted.
 # `upstream-edits <base> [tree]` prints the upstream files that differ from <base> (shared with
 # sync.sh); it is not a gate. What each gate runs and every variable: dozo/docker/README.md.
 # `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
 # `checks` runs upstream's repository checks (scripts/checks) on the branded staged tree.
-# `qa` runs olc, stage, brand, checks, unit, build, up, smoke, down as logged, timed steps (see qa()).
+# `budget` measures the web startup budget on the branded web build in the dozo-web image.
+# `qa` runs olc, stage, brand, checks, unit, build, budget, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail
 # shellcheck source=SCRIPTDIR/lock.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lock.sh"
@@ -468,10 +469,10 @@ unit_tests() {
       rm -rf packages/db/src/generated
       pnpm --filter @rakazo/db generate > /tmp/generate.log 2>&1 || { cat /tmp/generate.log; exit 1; }
       # The branded tree is never type-checked otherwise: the images are bundled, not checked, and
-      # upstream'"'"'s own check runs on the unbranded tree only. It covers the api and the adapters,
-      # where the run, tool and device code of the fork and their tests live; a type error there fails the
-      # step before the tests run. Each is timed in the log.
-      for d in apps/api packages/adapters; do
+      # upstream'"'"'s own check runs on the unbranded tree only. It covers the apps and the
+      # packages the fork changes; a type error there fails the step before the tests run. Each is
+      # timed in the log.
+      for d in apps/api packages/adapters apps/web apps/mobile packages/core packages/contracts packages/db packages/chat-ui packages/ui-web; do
         t0=$(date +%s)
         (cd "$d" && pnpm exec tsc --noEmit -p tsconfig.json) || { echo "[unit] type errors in $d"; exit 1; }
         echo "[unit] types of $d ok ($(( $(date +%s) - t0 ))s)"
@@ -501,7 +502,7 @@ unit_tests() {
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
-  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types of apps/api or packages/adapters, module state guard, fork tests or coverage"; return 1; fi
+  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types, module state guard, fork tests or coverage"; return 1; fi
 }
 
 # Upstream's repository checks (`pnpm checks`: scripts/checks/*.test.mjs) on the branded staged
@@ -526,6 +527,21 @@ repo_checks() {
       echo "[checks] $(grep -E "^ℹ (tests|pass|fail) " /tmp/checks.log | paste -sd " ")"
       exit "$rc"'; then echo "[checks] repository checks ok on the branded tree"
   else fail "checks: repository checks (scripts/checks) on the branded tree"; return 1; fi
+}
+
+# The web startup budget (upstream's scripts/checks/bundle-size.mjs and its budgets file) on the
+# branded web build inside an image built from the staged tree: by default `dozo-web`, which `build`
+# just made; DOZO_BUDGET_IMAGE names another (CI builds the Dockerfile's `build` stage only). The
+# image carries the tree's own check and budgets; only the fork's wrapper (web-budget.mjs, the web
+# bundle alone, exit 2 over the limit) is mounted. It always prints the `web-startup:` line.
+web_budget() {
+  local image="${DOZO_BUDGET_IMAGE:-dozo-web}" created
+  created=$(docker image inspect -f '{{.Created}}' "$image" 2>/dev/null) \
+    || { fail "budget: no image $image; run dozo/docker/build.sh build first"; return 1; }
+  echo "[budget] $image, built $created"
+  if drun budget -v "$ROOT/dozo/docker/web-budget.mjs:/dozo/web-budget.mjs:ro" --entrypoint node "$image" /dozo/web-budget.mjs /app; then
+    echo "[budget] web startup within its budget"
+  else fail "budget: web startup over its budget (scripts/checks/bundle-size.budgets.json) or not measurable"; return 1; fi
 }
 
 # --- qa: logged, timed steps ---
@@ -622,14 +638,14 @@ qa() {
   export DOZO_STOP_TIMEOUT="${DOZO_STOP_TIMEOUT:-60}"
   [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
   # A subset of the steps, or an unbranded build, is not the full gate: the verdict line says so.
-  local all="olc stage brand checks unit build up smoke" steps="${DOZO_QA_STEPS:-olc stage brand checks unit build up smoke}"
+  local all="olc stage brand checks unit build budget up smoke" steps="${DOZO_QA_STEPS:-olc stage brand checks unit build budget up smoke}"
   local listed; read -ra listed <<< "$steps"
   [ "${listed[*]}" = "$all" ] || partial "steps: ${listed[*]}"
   [ "${DOZO_SKIP_BRAND:-}" != 1 ] || partial "brand skipped (DOZO_SKIP_BRAND=1)"
   for st in $steps; do
     if [ "$st" = up ]; then reached_up=1; [ "$was_up" -eq 1 ] || QA_OWNS_STACK=1; fi
     case "$st" in
-      olc|checks|unit) run_step "$st" "$SELF" "$st" ;;
+      olc|checks|unit|budget) run_step "$st" "$SELF" "$st" ;;
       *) run_step "$st" "$b" "$st" ;;
     esac || { fail "$st"; break; }
   done
@@ -647,7 +663,8 @@ case "${1:-}" in
   qa) qa; V=QA ;;
   unit) T0=$(now); unit_tests; V=UNIT ;;
   checks) T0=$(now); repo_checks; V=CHECKS ;;
-  *) echo "usage: $0 olc|qa|unit|checks|upstream-edits <base-commit> [tree-ish]" >&2; exit 64 ;;
+  budget) T0=$(now); web_budget; V=BUDGET ;;
+  *) echo "usage: $0 olc|qa|unit|checks|budget|upstream-edits <base-commit> [tree-ish]" >&2; exit 64 ;;
 esac
 SECS="${QA_SECS:-$(( $(now) - T0 ))}"
 if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS${PARTIAL:+ (partial: $PARTIAL)} in ${SECS}s"

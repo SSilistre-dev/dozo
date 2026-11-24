@@ -109,9 +109,9 @@ project; `down` does not remove them.
 
 ## Gates (gate.sh)
 
-`dozo/docker/gate.sh olc|qa|unit|checks`, and `gate.sh upstream-edits <base> [tree]`, which prints the
+`dozo/docker/gate.sh olc|qa|unit|checks|budget`, and `gate.sh upstream-edits <base> [tree]`, which prints the
 upstream files that differ from commit `<base>` in `[tree]` (default the working tree) and is not a
-gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT|CHECKS: PASS in
+gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT|CHECKS|BUDGET: PASS in
 <s>s`, `... FAIL (<failed steps, comma separated>) in <s>s`, and for a run that is not the full gate
 `QA: PASS (partial: <what was left out>) in <s>s` (a `DOZO_QA_STEPS` subset, `DOZO_SKIP_BRAND=1`, or
 any of `DOZO_STAGE_REF`, `DOZO_UNIT_SRC`, `DOZO_COVERAGE_MIN`, `DOZO_BRAND_COVERAGE_MIN` set).
@@ -193,10 +193,7 @@ container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm stor
 `node_modules`, reinstalled in place when the lockfile changes); a cold run installs everything, an
 unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the
 host. The database client (`packages/db/src/generated`) is generated in the volume before every
-<<<<<<< HEAD
-run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api` on the branded tree (about 30 seconds; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. Then the module state guard (`dozo/db/module-state-guard.mjs`) and its tests run on the unbranded working tree (mounted read-only), parsing with the TypeScript 6 the lockfile installs for `apps/www`: every long-lived mutable state in the fork's server code (`dozo-*` files), the relay worker (`dozo/relay/worker/src`) and what the anchored brand rules add to upstream files there (module-level `let`/`var`, containers, `new X()`, calls and mutated literals, class fields, factory state a closure reaches, `globalThis` writes) must be a row in `dozo/db/module-state-reviewed.tsv` with where it lives (`module`, `class X`, `fn make`) and its key scope. A new row, a hit that moved to another level, a stale row, or a missing guard, test, list or parser fails the step (exit 2); nothing is fetched. A failing run prints each file under the floor with its number.
-=======
-run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api` and `packages/adapters` on the branded tree (each timed in the log; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. A failing run prints each file under the floor with its number.
+run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api`, `apps/web`, `apps/mobile`, `packages/adapters`, `packages/core`, `packages/contracts`, `packages/db`, `packages/chat-ui` and `packages/ui-web` on the branded tree, one after the other (each timed in the log; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. Then the module state guard (`dozo/db/module-state-guard.mjs`) and its tests run on the unbranded working tree (mounted read-only), parsing with the TypeScript 6 the lockfile installs for `apps/www`: every long-lived mutable state in the fork's server code (`dozo-*` files), the relay worker (`dozo/relay/worker/src`) and what the anchored brand rules add to upstream files there (module-level `let`/`var`, containers, `new X()`, calls and mutated literals, class fields, factory state a closure reaches, `globalThis` writes) must be a row in `dozo/db/module-state-reviewed.tsv` with where it lives (`module`, `class X`, `fn make`) and its key scope. A new row, a hit that moved to another level, a stale row, or a missing guard, test, list or parser fails the step (exit 2); nothing is fetched. A failing run prints each file under the floor with its number.
 
 ### checks
 
@@ -204,17 +201,29 @@ Upstream's `pnpm checks` (`scripts/checks/*.test.mjs`) on the branded staged tre
 `node_modules` into a throwaway git repository (all files added, no commit) in `node:24.22-slim`, with
 git installed in the container. That install needs the network, so it runs in `qa` and in the CI job
 `dozo-gate` after `brand`, not in `olc`, which stays offline.
->>>>>>> origin/main
+
+### budget
+
+The web startup budget: upstream's `scripts/checks/bundle-size.mjs` and its limit in
+`scripts/checks/bundle-size.budgets.json` (never raised by the fork), on the branded web build. It
+runs `node` in an image built from the staged tree, `dozo-web` by default (what `build` just made;
+`DOZO_BUDGET_IMAGE` names another), which carries that tree's check, budgets file and
+`apps/web/dist`. Only `dozo/docker/web-budget.mjs` is mounted: it keeps the web bundle (the fork
+builds no desktop main bundle) and always prints one line, `web-startup: 893.7 kB of 900.0 kB`, or
+`web-startup: 924.1 kB of 900.0 kB, over by 24.1 kB` followed by the largest files. Over the limit,
+or a missing image or dist, fails (exit 2); about a second. Standalone, it measures whatever
+`dozo-web` holds: build first. CI (`dozo-gate`) builds the Dockerfile's `build` stage alone from the
+staged tree (`docker build --target build`) and runs the step on that image.
 
 ### qa
 
-`make qa` runs `olc`, `stage`, `brand`, `checks`, `unit`, `build`, `up`, `smoke`, then `down`. The terminal
+`make qa` runs `olc`, `stage`, `brand`, `checks`, `unit`, `build`, `budget`, `up`, `smoke`, then `down`. The terminal
 gets `[qa] >> <step> (timeout <s>s, log <path>)` and `[qa] << <step> ok|FAIL|TIMEOUT <s>s` per step,
 the last 40 log lines of a failed step, and the verdict. The first failing step stops the run. Each
 step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is not part of it.
 
 - Timeout per step: `DOZO_TIMEOUT_<STEP>` seconds (`<STEP>` upper case: `OLC`, `STAGE`, `BRAND`,
-  `CHECKS`, `UNIT`, `BUILD`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
+  `CHECKS`, `UNIT`, `BUILD`, `BUDGET`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
   its limit is killed and fails (exit 124, or 137 once past the limit when the step ignored TERM and was
   killed; both shown as TIMEOUT). `up` itself waits
   `DOZO_UP_TIMEOUT` (default 240).

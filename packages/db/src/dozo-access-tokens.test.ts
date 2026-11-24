@@ -5,6 +5,7 @@ import {
   DOZO_ACCESS_TOKEN_LIMIT,
   DOZO_ACCESS_TOKEN_PREFIX,
   dozoAccessTokenHash,
+  dozoAccessTokenStillValid,
   findDozoAccessToken,
   listDozoAccessTokens,
   looksLikeDozoAccessToken,
@@ -116,6 +117,13 @@ describe("finding a token", () => {
     expect(calls[0]!.values[0]).toBe(dozoAccessTokenHash(token));
     expect(fragment(calls[0]!.values)).toContain("'auth.password.changed'");
     expect(await findDozoAccessToken(fakeDb([]).db, token)).toBeNull();
+  });
+
+  it("asks whether the member's token still holds as finding it does", () => {
+    const condition = dozoAccessTokenStillValid("token-1", member);
+    expect(condition.values.slice(0, 3)).toEqual(["token-1", "user-1", "space-1"]);
+    expect(condition.sql).toContain("'auth.password.changed'");
+    expect(condition.sql).toContain('"expiresAt" IS NULL');
   });
 
   it("tells a token's shape from anything else", () => {

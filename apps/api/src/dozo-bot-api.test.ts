@@ -217,6 +217,7 @@ describe("who may call", () => {
     const hono = app();
     expect((await call(hono, "/bots")).status).toBe(200);
     expect(contexts[0]!.actor).toBe(actor);
+    expect(contexts[0]!.dozoAccessTokenId).toBe(everyBot.tokenId);
     expect(await contexts[0]!.stillAuthorized()).toBe(true);
     authenticate.mockResolvedValue(null);
     expect(await contexts[0]!.stillAuthorized()).toBe(false);
@@ -720,6 +721,7 @@ describe("production wiring", () => {
     );
     const routed = connect({
       actor,
+      dozoAccessTokenId: "token-1",
       signal: new AbortController().signal,
       stillAuthorized: async () => true,
     });
