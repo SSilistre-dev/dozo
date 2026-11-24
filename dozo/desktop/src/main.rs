@@ -31,6 +31,7 @@ mod password_manager;
 mod passwords_ui;
 mod phone;
 mod prefs;
+mod question_slot;
 mod server;
 mod settings;
 mod stack;
