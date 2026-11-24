@@ -409,6 +409,25 @@ Known limits:
   set `DOCKER_HOST` to a `docker:28.4.0-dind` that mounts the work folder at the same path,
   `DOCKER_SOCKET` to its socket and `DOZO_REHEARSAL_BIND=0.0.0.0` with its port 18443 published.
 
+## Deploy lock
+
+`deploy`, `rollback` and `site` take a lock on the host (`$DOZO_DEPLOY_DIR/.deploy.lock`, a symbolic
+link holding a random run id, the action and commit, and the start time), so two machines cannot
+deploy to the same host at once. A second run prints one line and waits for the first, polling
+every few seconds; the lock is freed on any exit, including Ctrl-C and `kill` (not `kill -9`).
+`owner` takes none. A failing ssh call is tried again up to 3 times.
+
+- `DOZO_DEPLOY_LOCK_WAIT`: seconds to wait for a running deploy (default 1800); 0 fails at once.
+- `DOZO_DEPLOY_LOCK_STALE`: seconds after which a lock is taken as left behind and broken
+  (default 7200; keep it above the longest deploy, a build and the panel's waits included).
+
+Both must be whole numbers (else exit 64). A lock whose content cannot be read is never broken:
+the run times out and says so. A run killed with `kill -9` or a lost connection leaves its lock
+until the stale limit; remove it with `ssh <host> rm $DOZO_DEPLOY_DIR/.deploy.lock` when no deploy
+is running. Stale locks are broken under a second link (`.deploy.lock.break`, one holder, a leftover
+older than a minute is removed); the one remaining window is a breaker stalled for over a minute
+or an owner releasing in the instant a stale lock is removed.
+
 ## Roll back
 
 A deploy ends with the tag it replaced. `dozo/deploy/deploy.sh rollback <tag>` points the panel at

@@ -7,6 +7,8 @@ set -Eeuo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
+# shellcheck source=SCRIPTDIR/deploy-lock.sh
+. "$here/deploy-lock.sh"
 
 say() { printf '[deploy] %s\n' "$*"; }
 die() {
@@ -88,6 +90,7 @@ finish() {
     say "the host retires the copies of api and web once those run healthy ($remote_dir/bridge.log)"
   fi
   rm -rf ${stage:+"$stage"} ${probe_dir:+"$probe_dir"}
+  lock_release
 }
 trap finish EXIT
 
@@ -255,6 +258,9 @@ if [ "$action" = owner ]; then
   " || die "the account was not created"
   exit 0
 fi
+
+# Everything below changes the host: one run at a time, released by `finish` on any exit.
+lock_take "$action-$(git -C "$repo" rev-parse --short HEAD)"
 
 if [ "$action" = rollback ]; then
   tag=$2
