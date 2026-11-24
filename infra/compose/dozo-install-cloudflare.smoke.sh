@@ -122,7 +122,8 @@ unset token tunnel_secret_value
 [[ -s "$tmp/env.log" ]] || fail "the installer stub saw no environment"
 ! grep -qF -- "$token_secret" "$tmp/env.log" || fail "the token reached the environment of the installer"
 # umask 077 applies to the .env rewrite only: the second pass creates files with the caller's umask.
-[[ "$(mode "$tmp/cwd/second-pass-file")" == 644 ]] || fail "the installer's second pass ran under umask 077"
+want_mode="$(printf '%o' $((0666 & ~0$(umask))))" # what `: >` creates under this shell's umask
+[[ "$(mode "$tmp/cwd/second-pass-file")" == "$want_mode" ]] || fail "the installer's second pass did not get the caller's umask (want $want_mode)"
 [[ "$(mode "$tmp/cwd/.env")" == 600 ]] || fail ".env is not mode 600 (stub installer)"
 
 # The default install is untouched: the installer without this script writes no tunnel setting.
