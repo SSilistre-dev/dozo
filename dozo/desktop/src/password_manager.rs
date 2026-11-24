@@ -365,6 +365,7 @@ mod tests {
     use super::*;
 
     const ITEM: &str = "abcdefghij0123456789abcdef";
+    #[cfg(unix)]
     const VAULT: &str = "zyxwvutsrq9876543210zyxwvu";
 
     #[test]
