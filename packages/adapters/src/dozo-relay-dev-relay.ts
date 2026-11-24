@@ -76,7 +76,7 @@ export async function startDevRelay(
     }
     const either = same(token, entry.hostVerifier) || same(token, entry.appVerifier);
     if (request.method === "DELETE" && !role && either) {
-      for (const socket of Object.values(entry.sockets)) socket?.close(1000, "channel deleted");
+      for (const socket of Object.values(entry.sockets)) socket?.close(4001, "deleted");
       state.delete(channel);
       return answer(response, 204);
     }

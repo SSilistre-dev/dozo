@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
@@ -10,12 +11,18 @@ import type {
   RelayKeyPair,
   RelayReceiver,
 } from "@rakazo/core";
-import { pairRelayHost, runRelayHost, webRelayCrypto } from "@rakazo/core";
+import { pairRelayHost, revokeRelayChannel, runRelayHost, webRelayCrypto } from "@rakazo/core";
 import type { RelayDeps } from "./dozo-relay-connection";
 import { nobleRelayCrypto } from "./dozo-relay-crypto";
 import { relayWebTypes } from "./dozo-relay-web";
 
-type DevRelay = { url: string; port: number; state: unknown; close(): Promise<void> };
+type DevRelay = {
+  url: string;
+  port: number;
+  state: unknown;
+  seen: Uint8Array[];
+  close(): Promise<void>;
+};
 type Adapters = {
   startDevRelay(options?: { port?: number; state?: unknown }): Promise<DevRelay>;
   connectRelaySocket: RelayConnect;
@@ -53,12 +60,78 @@ export function duplexPair(): { app: RelayDuplex; host: RelayDuplex } {
  * `Request` and `Response`, Node's socket where the phone has React Native's).
  */
 
+/** The session a phone signed in with; the stand-in chat answers no other. */
+export const CHAT_SESSION = "session-token-the-relay-must-not-see";
+
+type ChatMessage = { id: number; text: string; attachments: { name: string; sha256: string }[] };
+
+/**
+ * The chat's core requests as the stand-in serves them: read the chats, send a message with its
+ * attachments inside the JSON body, and a live stream that signals once on every (re)connect and
+ * then on each change, without content, as `notifications.subscribe` does.
+ */
+function chatRoutes() {
+  const messages: ChatMessage[] = [];
+  const signals = new Set<() => void>();
+  const changed = () => {
+    for (const signal of signals) signal();
+  };
+  const json = (response: ServerResponse, value: unknown) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ json: value }));
+  };
+  const add = (text: string, attachments: ChatMessage["attachments"]) => {
+    const message = { id: messages.length + 1, text, attachments };
+    messages.push(message);
+    changed();
+    return message;
+  };
+  return {
+    messages,
+    /** A message the computer adds on its own, as a bot's answer. */
+    reply: (text: string) => add(text, []),
+    listeners: () => signals.size,
+    handle(path: string, request: IncomingMessage, response: ServerResponse) {
+      if (request.headers.authorization !== `Bearer ${CHAT_SESSION}`) {
+        response.statusCode = 401;
+        return response.end();
+      }
+      if (path === "subscribe") {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        const signal = () => response.write('data: {"type":"chats"}\n\n');
+        signals.add(signal);
+        request.on("close", () => signals.delete(signal));
+        return signal();
+      }
+      if (path === "list") return json(response, { messages });
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const { json: body } = JSON.parse(Buffer.concat(chunks).toString()) as {
+          json: { text: string; attachments: { name: string; contentBase64: string }[] };
+        };
+        const attachments = body.attachments.map((file) => ({
+          name: file.name,
+          sha256: createHash("sha256")
+            .update(Buffer.from(file.contentBase64, "base64"))
+            .digest("hex"),
+        }));
+        json(response, add(body.text, attachments));
+      });
+    },
+  };
+}
+
 /** The user's server on loopback: health, an echo, a JSON answer, a slow answer and live events. */
 export async function loopbackServer() {
   const events = new Set<(line: string) => void>();
+  const chat = chatRoutes();
   let healthy = true;
   const server = createServer((request, response) => {
     const url = new URL(String(request.url), "http://localhost");
+    if (url.pathname.startsWith("/rpc/chat/")) {
+      return chat.handle(url.pathname.slice("/rpc/chat/".length), request, response);
+    }
     if (url.pathname === "/rpc/health") {
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ json: { ok: healthy } }));
@@ -101,6 +174,7 @@ export async function loopbackServer() {
   const { port } = server.address() as AddressInfo;
   return {
     origin: `http://127.0.0.1:${port}`,
+    chat,
     /** Listeners on the live event stream right now. */
     listeners: () => events.size,
     emit: (line: string) => {
@@ -166,6 +240,7 @@ export async function relayWorld() {
   const crypto = webRelayCrypto();
   const events: RelayHostEvent[] = [];
   let host: { stop(): Promise<void> } | null = null;
+  const earlier: Uint8Array[] = [];
 
   const world = {
     local,
@@ -174,6 +249,12 @@ export async function relayWorld() {
     get relayUrl() {
       return relay.url;
     },
+    /** Every binary message the relay forwarded, across its restarts. */
+    wire: () => Buffer.concat([...earlier, ...relay.seen]),
+    /** What the relay keeps about its channels. */
+    relayState: relayState as Map<string, Record<string, unknown>>,
+    /** Removes a phone as the computer's Connect Phone window does. */
+    revoke: (channel: string) => revokeRelayChannel({ store, crypto, channel }),
     /** A pairing offer from the computer, as the QR code's link. */
     async offer(now?: () => number) {
       const made = await pairRelayHost({ store, crypto, relay: relay.url, now });
@@ -205,6 +286,7 @@ export async function relayWorld() {
     /** Restarts the relay on the same port and state: every socket drops. */
     async restartRelay() {
       const port = relay.port;
+      earlier.push(...relay.seen);
       await relay.close();
       relay = await startDevRelay({ port, state: relayState });
     },

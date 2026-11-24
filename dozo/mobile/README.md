@@ -305,7 +305,12 @@ pasted. The app needs no camera permission of its own.
 - A request refused on its own (too many open, a head too large) leaves the session in use. A
   session that ended is dropped, and the next request reconnects.
 - When the computer removed the phone, the stored pairing goes, if it is that computer's, and
-  sign-in offers to pair again.
+  sign-in offers to pair again. A phone connected at that moment drops at once, its live stream
+  included: the relay closes its socket with the code for a deleted channel (`4001`), which needs
+  no further request.
+- While the relay says the computer is not connected, the line above the chats says "Your computer
+  is offline. Reconnecting…" as soon as a request has failed, instead of waiting 20 seconds as for
+  a server that does not answer. It goes when the computer connects again.
 - Sign-in with a computer as the server shows no password form: a code someone else showed could
   have paired the phone with their computer, and a password typed then would go to them. Instead,
   the phone asks the computer for its sign-in when the screen shows and when the app comes back to
@@ -337,6 +342,14 @@ What does not cross the relay, because the system loads it rather than JavaScrip
 - A multipart upload or a file read as a `Blob` is refused with a clear error, and so is a React
   Native `Request` whose body only its own fetch can read. The app's attachments travel inside JSON
   and are not affected.
+
+The chat's core flow over the relay is tested with the phone's own connection and `fetch`, a relay
+on a loopback port and the computer's agent, in front of a stand-in for the local server's chat
+requests (`apps/mobile/lib/dozo-relay-core-flow.test.ts`): reading the chats, sending a message
+with a 10 MiB attachment, the live stream's signals (one on every reconnect, then one per change),
+a relay restart, the computer going off and back, removal, two phones, a replayed record, and that
+the relay saw no plaintext and keeps no key. It is not the real API: the real server is reached
+over the relay in the desktop stack e2e and the emulator e2e, which do not send a message.
 
 On the Android emulator (`dozo-mobile-android`, above), the release build pairs end to end: the
 `dozo://pair#…` link with its fragment reaches the pairing screen through expo-router, React
