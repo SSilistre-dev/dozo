@@ -19,6 +19,7 @@ const KEEP_RUNNING: &str = "keep_running=";
 const PUSH_TO_TALK: &str = "push_to_talk=";
 const THIS_COMPUTER: &str = "this_computer=";
 const RELAY: &str = "relay=";
+const PASSWORD_MANAGER: &str = "password_manager=";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Settings {
@@ -33,6 +34,9 @@ pub struct Settings {
     pub this_computer: bool,
     /// The relay phones pair through, when not the build's.
     pub relay: Option<String>,
+    /// Bots may fill the logins linked to the password manager on this computer
+    /// (`password_links.rs`).
+    pub password_manager: bool,
 }
 
 /// Reads the file. The address is checked again: the file may have been edited by hand.
@@ -46,6 +50,8 @@ pub fn parse(text: &str) -> Settings {
             settings.keep_running = value.trim() == "true";
         } else if let Some(value) = line.strip_prefix(PUSH_TO_TALK) {
             settings.push_to_talk = value.trim() == "true";
+        } else if let Some(value) = line.strip_prefix(PASSWORD_MANAGER) {
+            settings.password_manager = value.trim() == "true";
         } else if let Some(value) = line.strip_prefix(RELAY) {
             // https, or http for this computer, as a server address is.
             settings.relay = parse_server(value)
@@ -75,6 +81,9 @@ pub fn render(settings: &Settings) -> String {
     }
     if settings.this_computer {
         text.push_str(&format!("{THIS_COMPUTER}true\n"));
+    }
+    if settings.password_manager {
+        text.push_str(&format!("{PASSWORD_MANAGER}true\n"));
     }
     if let Some(relay) = &settings.relay {
         text.push_str(&format!("{RELAY}{relay}\n"));
@@ -135,6 +144,20 @@ mod tests {
     }
 
     #[test]
+    fn the_password_manager_is_off_until_chosen_and_anything_but_true_is_off() {
+        assert!(!parse("").password_manager);
+        assert!(!parse("password_manager=on\n").password_manager);
+        assert!(!parse("password_manager=false\n").password_manager);
+        assert!(parse("password_manager=true\n").password_manager);
+        let on = Settings {
+            password_manager: true,
+            ..Settings::default()
+        };
+        assert!(render(&on).contains("password_manager=true\n"));
+        assert!(!render(&Settings::default()).contains("password_manager"));
+    }
+
+    #[test]
     fn what_is_written_is_read_back() {
         for (open_at_login, keep_running) in
             [(false, false), (true, false), (false, true), (true, true)]
@@ -148,6 +171,7 @@ mod tests {
                         push_to_talk: this_computer != keep_running,
                         this_computer,
                         relay: this_computer.then(|| "https://relay.example.com".to_owned()),
+                        password_manager: this_computer == open_at_login,
                     };
                     assert_eq!(parse(&render(&settings)), settings);
                 }
@@ -164,6 +188,7 @@ mod tests {
             push_to_talk: true,
             this_computer: true,
             relay: None,
+            password_manager: true,
         };
         assert_eq!(
             render(&settings).lines().next(),

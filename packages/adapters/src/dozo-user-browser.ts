@@ -11,7 +11,12 @@ import {
   redactBrowserResult,
 } from "./browser-tools.js";
 import type { DeviceBrowserEvent } from "./dozo-device-browser.js";
-import { DeviceBrowserProvider } from "./dozo-device-browser.js";
+import {
+  DeviceBrowserProvider,
+  PICTURE_REFUSED_NOTE,
+  PictureRefusedError,
+} from "./dozo-device-browser.js";
+import { deviceFillOptions } from "./dozo-device-fill.js";
 import { filesWithoutComputer } from "./dozo-no-computer.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { Route } from "./dozo-user-browser-gate.js";
@@ -56,21 +61,33 @@ async function lastValue<T>(values: AsyncIterable<T>): Promise<T> {
 function providerFor(ctx: RunContext, route: Route): DeviceBrowserProvider {
   const known = providers.get(ctx);
   if (known) return known;
-  const provider = new DeviceBrowserProvider((command) =>
-    lastValue(
-      route.devices.request<{ result?: unknown; events?: DeviceBrowserEvent[] }>(
-        route.owner,
-        {
-          method: "pageBrowser",
-          botId: ctx.bot.id,
-          botName: ctx.bot.name,
-          runId: ctx.runId,
-          command,
-        },
-        ctx.context.signal,
-        route.deviceId,
+  const provider = new DeviceBrowserProvider(
+    (command) =>
+      lastValue(
+        route.devices.request<{ result?: unknown; events?: DeviceBrowserEvent[] }>(
+          route.owner,
+          {
+            method: "pageBrowser",
+            botId: ctx.bot.id,
+            botName: ctx.bot.name,
+            runId: ctx.runId,
+            command,
+          },
+          ctx.context.signal,
+          route.deviceId,
+        ),
       ),
-    ),
+    // A login linked to the computer's password manager is filled there, from the node, the site and
+    // the handle: no value is sent, and none comes back.
+    (fill) =>
+      lastValue(
+        route.devices.request(
+          route.owner,
+          { method: "pageBrowserFillLogin", botId: ctx.bot.id, runId: ctx.runId, ...fill },
+          ctx.context.signal,
+          route.deviceId,
+        ),
+      ),
   );
   providers.set(ctx, provider);
   return provider;
@@ -130,7 +147,12 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
     kind: "user-device",
     providerRef: route.deviceId,
   };
-  const options = { desktopTools: false };
+  // Only a computer that declared passwords fills a linked login; no other saved login, card or
+  // upload reaches this browser yet.
+  const options = {
+    desktopTools: false,
+    ...(route.passwords ? deviceFillOptions(ctx, call, route.deviceId, provider) : {}),
+  };
   let result: unknown;
   try {
     // The app keeps each bot's browser under the bot's own folder there, which this sets up.
@@ -147,8 +169,7 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
         ? await browserNavigateFromTool(provider, computer, ctx.context, args, options)
         : name === "browser_snapshot"
           ? await browserSnapshotFromTool(provider, computer, ctx.context, args, options)
-          : // No saved login, card or upload reaches this browser yet: those steps are refused.
-            await (async () => {
+          : await (async () => {
               provider.expectedSite = asked.site || undefined;
               return browserActFromTool(provider, computer, ctx.context, args, options);
             })();
@@ -175,15 +196,21 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
     });
   }
   if (first) page.note = [USER_BROWSER_NOTE, page.note].filter(Boolean).join(" ");
+  let image: string | undefined;
+  if (name === "browser_snapshot" && !page.error && ctx.computer.acceptsImages) {
+    image = await bestEffort(
+      "take a picture of the page in the user's browser",
+      provider.screenshot(asked.site).catch((error: unknown) => {
+        // Expected while a filled password is on the page: the model is told, nothing is logged.
+        if (error instanceof PictureRefusedError) {
+          page.note = [page.note, PICTURE_REFUSED_NOTE].filter(Boolean).join(" ");
+          return undefined;
+        }
+        throw errorKindOnly(error);
+      }),
+    );
+  }
   const formatted = browserResultForModel(page);
-  if (name !== "browser_snapshot" || page.error || !ctx.computer.acceptsImages)
-    return call.finish(formatted);
-  const image = await bestEffort(
-    "take a picture of the page in the user's browser",
-    provider.screenshot(asked.site).catch((error: unknown) => {
-      throw errorKindOnly(error);
-    }),
-  );
   return call.finish(image ? withScreenshot(formatted, image) : formatted);
 }
 

@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import {
   DEVICE_CAPABILITIES_HEADER,
+  deviceHasPasswords,
   deviceOffers,
   offerUserBrowser,
   parseDeviceCapabilities,
@@ -118,6 +119,23 @@ describe("parseDeviceCapabilities", () => {
     expect(parseDeviceCapabilities("")).toEqual([]);
     expect(parseDeviceCapabilities(" Shell , teleport,shell")).toEqual(["shell"]);
     expect(parseDeviceCapabilities(["screen", "shell"])).toEqual(["shell", "screen"]);
+  });
+});
+
+describe("the passwords capability", () => {
+  it("is declared by a computer from the hub, and by no phone", () => {
+    expect(parseDeviceCapabilities("shell, passwords")).toEqual(["shell", "passwords"]);
+    const base = { deviceId: "d", name: "Mac" };
+    expect(deviceHasPasswords({ ...base, platform: "darwin", capabilities: ["passwords"] })).toBe(
+      true,
+    );
+    expect(deviceHasPasswords({ ...base, platform: "darwin", capabilities: ["shell"] })).toBe(
+      false,
+    );
+    expect(deviceHasPasswords({ ...base, platform: "darwin" })).toBe(false);
+    expect(deviceHasPasswords({ ...base, platform: "ios", capabilities: ["passwords"] })).toBe(
+      false,
+    );
   });
 });
 

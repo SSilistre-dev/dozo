@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "fill",
+  "description": "The question before a login is first filled on a site (ui/fill.html): what it shows, and the answer. Like the app's other screens it has no `remote` entry.",
+  "windows": ["fill"],
+  "permissions": ["allow-fill-question", "allow-fill-answer"]
+}

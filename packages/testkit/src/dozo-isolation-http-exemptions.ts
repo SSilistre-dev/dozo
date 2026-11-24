@@ -154,6 +154,16 @@ export const ROUTE_DATA: readonly RouteData[] = [
     reason: "removes a paired computer; the devices test holds B to 404 on A's",
   },
   { route: "DELETE /api/devices/self", kind: "write", reason: "a computer removes itself" },
+  {
+    route: "POST /api/devices/self/dozo-logins",
+    kind: "write",
+    reason: "a computer links a login of its own password manager into its owner's account vault; no value",
+  },
+  {
+    route: "DELETE /api/devices/self/dozo-logins/:handle",
+    kind: "write",
+    reason: "a computer removes a login it linked; only its own links",
+  },
   { route: "POST /api/devices/pair", kind: "write", reason: "pairs a computer to the caller" },
   {
     route: "POST /api/devices/self/session",

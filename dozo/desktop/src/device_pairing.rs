@@ -412,7 +412,7 @@ fn read_json(path: &Path, origin: &Url) -> Option<Value> {
     (saved.get("origin")?.as_str()? == origin.as_str()).then_some(saved)
 }
 
-fn client() -> Option<reqwest::Client> {
+pub(crate) fn client() -> Option<reqwest::Client> {
     // The same TLS the update check sets up: ring, under the system's trusted roots.
     let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
