@@ -58,7 +58,8 @@ Closed pre-release state (lifted):
 
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the second hero and closing buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
-- Order: hero, the two ideas, then the run-it-yourself section (`#get`: the "Desktop app." block and
+- Order: hero, the two ideas, "What it does." (`.does`: six short items, each read from the code; a new item needs the
+  same check, and nothing that ships only with a new mobile build), then the run-it-yourself section (`#get`: the "Desktop app." block and
   the self-hosting row), then "Hosted plans.", then the closing buttons. The header has no plans or
   pricing link; the plans are reached by scrolling. The first hero and closing button, "Download",
   links to `#get`; `landing.js` points it straight at the build for the visitor's system (the plain
