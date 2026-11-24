@@ -2,7 +2,7 @@
 //! English, and Turkish when the system's language is Turkish. The other windows are English only.
 
 /// English, and its Turkish.
-const TURKISH: [(&str, &str); 51] = [
+const TURKISH: [(&str, &str); 53] = [
     ("Settings…", "Ayarlar…"),
     ("Settings", "Ayarlar"),
     ("Change Server…", "Sunucuyu Değiştir…"),
@@ -73,6 +73,11 @@ const TURKISH: [(&str, &str); 51] = [
         "{host} asks to turn on “{label}”.",
         "{host}, “{label}” ayarını açmak istiyor.",
     ),
+    (
+        "{host} asks to turn off “{label}”.",
+        "{host}, “{label}” ayarını kapatmak istiyor.",
+    ),
+    ("Turn Off", "Kapat"),
 ];
 
 /// Whether the system's language is Turkish.

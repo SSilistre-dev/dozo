@@ -12,7 +12,9 @@ Push to Talk (src/talk.rs): the shortcut reaches the server's page, brings the w
 shortcut another program holds turns the switch off with a message (needs pulseaudio and
 gstreamer1.0-pulseaudio). A fifth checks the bridge of the server's page (src/page_bridge.rs): what
 it may read and set, that frames have none, that bad requests change nothing, that a sensitive
-switch only asks in the app's own window, which Enter cancels, and that a burst is cut off.
+switch only asks in the app's own window, which Enter cancels, which is not asked again soon and
+which Turn On carries out, that a burst is cut off, and that after Change Server the new server's
+page has the bridge.
 Exit 0 pass, 2 fail.
 """
 
@@ -428,10 +430,12 @@ document.body.onclick = async () => {{
 
 
 def bridge_gate(binary):
-    """The server's page reads the app's switches and sets the harmless ones through its bridge
+    """The server's page reads the app's switches and sets what it may at once through its bridge
     (src/page_bridge.rs); a frame inside it, from another origin or its own, has no bridge; a bad
-    request changes nothing; a sensitive switch only asks, in a window of the app's own that Enter
-    cancels; and a burst of calls is cut off."""
+    request changes nothing; a switch the page may only ask for opens one question in a window of
+    the app's own, which Enter cancels, which is not asked again soon after, and which Turn On
+    carries out; a burst of calls is cut off; and after Change Server the new server's page has the
+    bridge."""
     report = {"a": [], "b": []}
     steps = {"now": "wait"}
 
@@ -461,7 +465,17 @@ try { up = typeof top.dozoDesktop; } catch (error) { up = error.name; }
 fetch('/report?' + new URLSearchParams({ who: '{who}', bridge: typeof window.dozoDesktop,
   internals: typeof window.__TAURI_INTERNALS__, up }));
 </script>"""
-    other = reporting("b", {"/frame": frame.replace("{who}", "other")})
+    # Site B: a frame inside A's page, and later the server the person changes to.
+    other = reporting("b", {
+        "/frame": frame.replace("{who}", "other"),
+        "/": """<script>
+(async () => {
+  const bridge = window.dozoDesktop;
+  const state = bridge ? await bridge.settings(null) : null;
+  fetch('/report?' + new URLSearchParams({ who: 'new-server', state: JSON.stringify(state) }));
+})();
+</script>""",
+    })
     server = reporting("a", {
         "/same": frame.replace("{who}", "same"),
         "/": f"""<body><iframe src="{other}/frame"></iframe><iframe src="/same"></iframe><script>
@@ -476,21 +490,30 @@ const step = async (name) => {{
   const first = await bridge.settings(null);
   report({{ step: 'read', state: JSON.stringify(first) }});
   const answers = [
-    await bridge.set('keepRunning', true),
+    await bridge.set('pushToTalk', true),
     await bridge.set('openAtLogin', 'yes'),
     await bridge.set('relay', true),
-    await bridge.set('KeepRunning', false),
+    await bridge.set('PushToTalk', false),
     await bridge.open('back-up'),
   ];
   report({{ step: 'answers', answers: JSON.stringify(answers) }});
   const second = await bridge.settings(first);
   report({{ step: 'after', state: JSON.stringify(second) }});
-  await bridge.set('passwordManager', true);
-  await bridge.set('passwordManager', true);
+  await bridge.set('keepRunning', true);
+  await bridge.set('keepRunning', true);
   report({{ step: 'asked' }});
+  await step('again');
+  await bridge.set('keepRunning', true);
+  report({{ step: 'asked-again' }});
+  await step('allow');
+  await bridge.set('openAtLogin', true);
+  report({{ step: 'asked-allow' }});
   await step('burst');
   const burst = await Promise.all(Array.from({{ length: 30 }}, () => bridge.settings(null)));
   report({{ step: 'burst', refused: String(burst.filter((answer) => answer === null).length) }});
+  await step('change');
+  await new Promise((go) => setTimeout(go, 1500));
+  await bridge.open('changeServer');
 }})();
 </script></body>""",
     })
@@ -521,7 +544,7 @@ const step = async (name) => {{
         check("it is the app's", got("a", "who", "page")["bridge"] == ["object"])
         until("and reads the switches", lambda: got("a", "step", "read"))
         check("with the version", state("read")["version"].count(".") == 2)
-        check("Keep Running in Background is off", switches("read").get("keepRunning") is False)
+        check("Push to Talk is off", switches("read").get("pushToTalk") is False)
         until("a frame from another origin has loaded", lambda: got("b", "who", "other"))
         other_frame = got("b", "who", "other")
         check(f"and has no bridge and no way to the app ({other_frame})",
@@ -532,21 +555,40 @@ const step = async (name) => {{
         until("the page changed a switch", lambda: got("a", "step", "after"))
         check("every write answers the same nothing",
               json.loads(got("a", "step", "answers")["answers"][0]) == [None] * 5)
-        check("Keep Running in Background is on", switches("after").get("keepRunning") is True)
-        check("and saved", "keep_running=true" in settings.read_text())
+        check("Push to Talk is on at once", switches("after").get("pushToTalk") is True)
+        check("and saved", "push_to_talk=true" in settings.read_text())
         check("a wrong type, an unknown name or another case changed nothing",
               "open_at_login=false" in settings.read_text() and "relay" not in settings.read_text())
-        until("the page asked for the password manager", lambda: got("a", "step", "asked"))
+        until("the page asked for Keep Running in Background", lambda: got("a", "step", "asked"))
         until("the app asks the person in a window of its own", lambda: len(windows()) == 2)
         stays("only one, though the page asked twice", lambda: len(windows()) == 2, seconds=2)
-        check("nothing is turned on before an answer", "password_manager" not in settings.read_text())
+        check("nothing is turned on before an answer", "keep_running=true" not in settings.read_text())
         subprocess.run(["xdotool", "key", "Return"], check=True)
         until("Enter cancels the question", lambda: len(windows()) == 1)
-        stays("and the password manager stays off", lambda: "password_manager" not in settings.read_text())
+        stays("and Keep Running in Background stays off",
+              lambda: "keep_running=true" not in settings.read_text())
+        steps["now"] = "again"
+        until("the page asked again", lambda: got("a", "step", "asked-again"))
+        stays("a switch just refused is not asked about again", lambda: len(windows()) == 1, seconds=12)
+        steps["now"] = "allow"
+        until("the page asked for Open at Login", lambda: got("a", "step", "asked-allow"))
+        until("the app asks", lambda: len(windows()) == 2)
+        time.sleep(1.5)  # Turn On answers only after a moment
+        subprocess.run(["xdotool", "key", "Tab", "space"], check=True)
+        until("Turn On closes the question", lambda: len(windows()) == 1)
+        until("and Open at Login is on and saved", lambda: "open_at_login=true" in settings.read_text())
         steps["now"] = "burst"
         until("the page sent a burst of calls", lambda: got("a", "step", "burst"))
         refused = int(got("a", "step", "burst")["refused"][0])
         check(f"and the app answered only some of them ({30 - refused} of 30)", 15 <= refused < 30)
+        steps["now"] = "change"
+        time.sleep(4)  # the page opens Change Server, whose address field has the focus
+        subprocess.run(["xdotool", "key", "ctrl+a"], check=True)
+        subprocess.run(["xdotool", "type", "--delay", "20", other], check=True)
+        subprocess.run(["xdotool", "key", "Return"], check=True)
+        until("the new server's page has loaded", lambda: got("b", "who", "new-server"), seconds=40)
+        check("and reads through the bridge", got("b", "who", "new-server")["state"] != ["null"])
+        check("the new server is saved", settings.read_text().startswith(other))
     finally:
         if app:
             app.kill()

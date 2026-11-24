@@ -14,10 +14,16 @@
 //!   cannot tell refused from done, and the switches are only ever sent to the chosen server.
 //! - Input is read as plain JSON: a wrong type or a missing field is refused like the rest, never a
 //!   Tauri error that says what was expected.
-//! - Open at Login, Keep Running in Background and Push to Talk change at once. Let Bots Use This
-//!   Computer and the password manager turn off at once (the safe way) and turn on only after the
-//!   person allows it in a window of the app's own (`ui/confirm.html`, [`ask`]), and then through
-//!   the menu's own question. The page never gives an address, a path, a shortcut or any text.
+//! - What a page may change at once ([`asks`]): Push to Talk, on and off (its keys stay fixed, and
+//!   turning it on is held to once in [`TALK_GAP`]), and the safe way of three switches: Open at
+//!   Login, Keep Running in Background and Let Bots Use This Computer turned off. Everything else
+//!   it may only ask for: turning those three on, and the password manager either way (off
+//!   removes every linked login). The app asks in a window of its own (`ui/confirm.html`, [`ask`]):
+//!   one question at a time, none within [`QUESTION_GAP`] of the last, none for a switch the person
+//!   refused in the last [`ASK_AGAIN_AFTER`], and an answer counts only while the server that
+//!   asked is still the chosen one. Allowed, it does what the menu item does, which for the
+//!   computer and for turning the password manager on asks the menu's own question too. The page
+//!   never gives an address, a path, a shortcut or any text.
 //!
 //! The server is chosen while the app runs, and a capability file is fixed when the app is built,
 //! so no file can name it: [`admit`] grants these three commands to one origin, the chosen
@@ -27,8 +33,8 @@
 //! refused here. A frame inside the page never has the bridge: Tauri gives its call key, and the
 //! app its bridge (`SHELL_MARK` in main.rs), to the window's own page only.
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -36,7 +42,7 @@ use tauri::ipc::CapabilityBuilder;
 use tauri::{
     AppHandle, Manager, Url, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 use crate::words::text;
 
@@ -91,11 +97,6 @@ impl Key {
         }
     }
 
-    /// On lets the server do something on this computer: only the person turns it on.
-    fn sensitive(self) -> bool {
-        matches!(self, Key::ThisComputer | Key::PasswordManager)
-    }
-
     fn parse(value: Option<&Value>) -> Option<Key> {
         let name = value?.as_str()?;
         Key::ALL.into_iter().find(|key| key.name() == name)
@@ -112,14 +113,41 @@ enum Plan {
     Ask,
 }
 
+/// Whether a page only asks to set `key` to `wanted`, the person answering. Push to Talk sends
+/// nothing by itself: the page hears the keys only while they are held (`talk::pressed`). Open at
+/// Login and Keep Running in Background on would keep a page running out of sight, and its
+/// origin is let use the microphone (`alerts.rs`). Let Bots Use This Computer on lets the server
+/// run programs here. The password manager on lets bots fill logins, and off removes every link.
+fn asks(key: Key, wanted: bool) -> bool {
+    match key {
+        Key::PushToTalk => false,
+        Key::PasswordManager => true,
+        Key::OpenAtLogin | Key::KeepRunning | Key::ThisComputer => wanted,
+    }
+}
+
 /// `now` is the switch's state, none while the menu does not offer it.
 fn plan(key: Key, now: Option<bool>, wanted: bool) -> Plan {
     match now {
-        Some(now) if now != wanted && wanted && key.sensitive() => Plan::Ask,
-        Some(now) if now != wanted => Plan::Flip,
-        _ => Plan::Nothing,
+        Some(now) if now == wanted => Plan::Nothing,
+        Some(_) if asks(key, wanted) => Plan::Ask,
+        Some(_) => Plan::Flip,
+        None => Plan::Nothing,
     }
 }
+
+/// True, and noted, unless the last time was less than `gap` ago.
+fn once_per(last: &mut Option<Instant>, now: Instant, gap: Duration) -> bool {
+    if last.is_some_and(|at| now.saturating_duration_since(at) < gap) {
+        return false;
+    }
+    *last = Some(now);
+    true
+}
+
+/// How often a page may turn Push to Talk on: a shortcut another program holds is said in a
+/// message each time, which a page must not repeat.
+const TALK_GAP: Duration = Duration::from_secs(30);
 
 /// Whether a call comes from the window's own page, on the chosen server's origin.
 fn caller(window: &str, webview: &str, page: Option<&Url>, server: Option<&Url>) -> bool {
@@ -189,7 +217,7 @@ fn capability(pattern: &str, number: usize) -> CapabilityBuilder {
 
 /// The window's page started loading on the chosen server: its origin may call [`CHANNELS`] from
 /// now on, as far as Tauri is concerned (each command checks again). Once per origin.
-pub fn admit(app: &AppHandle, server: &Url) {
+fn admit(app: &AppHandle, server: &Url) {
     static ADMITTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let Some(pattern) = pattern(server) else {
         return;
@@ -242,22 +270,64 @@ fn state(app: &AppHandle) -> Value {
 
 /// The switches and the version, once they differ from `seen` (what the section shows now): the
 /// page asks again after each answer, and nothing is asked on a timer.
+/// A new page started loading in the window: every read the last page left waiting ends now.
+static PAGES: LazyLock<watch::Sender<u64>> = LazyLock::new(|| watch::Sender::new(0));
+
+/// How many reads may wait at once; one page keeps one.
+const MAX_WAITING: usize = 4;
+static WAITING: AtomicUsize = AtomicUsize::new(0);
+
+/// A place among the reads that wait, given back when the read ends however it ends.
+struct Waiting<'a>(&'a AtomicUsize);
+
+impl<'a> Waiting<'a> {
+    fn take(count: &'a AtomicUsize, max: usize) -> Option<Self> {
+        // Taken first and given back when there was no room: never more than `max` at once.
+        let waiting = Waiting(count);
+        (count.fetch_add(1, Ordering::SeqCst) < max).then_some(waiting)
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// The window's page started loading (any page): reads left waiting end, and when it is the chosen
+/// server's, its origin is admitted ([`admit`]).
+pub fn page_loading(app: &AppHandle, page: &Url) {
+    PAGES.send_modify(|count| *count += 1);
+    if crate::chosen(app).is_some_and(|server| server.origin() == page.origin()) {
+        admit(app, page);
+    }
+}
+
 #[tauri::command]
 pub async fn desktop_settings(app: AppHandle, webview: Webview, seen: Option<Value>) -> Value {
     if !allowed(&app, &webview) {
         return Value::Null;
     }
+    let Some(_waiting) = Waiting::take(&WAITING, MAX_WAITING) else {
+        return Value::Null;
+    };
     let mut changes = crate::prefs::watch(&app);
+    let mut pages = PAGES.subscribe();
+    pages.borrow_and_update();
     loop {
         changes.borrow_and_update();
         let now = state(&app);
-        if seen.as_ref() != Some(&now) || changes.changed().await.is_err() {
+        if seen.as_ref() != Some(&now) {
             // Asked again: the page may have gone elsewhere while this waited.
             return if from_page(&app, &webview) {
                 now
             } else {
                 Value::Null
             };
+        }
+        tokio::select! {
+            changed = changes.changed() => if changed.is_err() { return Value::Null },
+            _ = pages.changed() => return Value::Null,
         }
     }
 }
@@ -285,10 +355,20 @@ pub async fn desktop_set(app: AppHandle, webview: Webview, key: Option<Value>, o
         switch_now(&app, key)
     }) {
         (Plan::Flip, Some(key)) => {
+            static TALK_ON: Mutex<Option<Instant>> = Mutex::new(None);
             let wanted = on.as_ref().and_then(Value::as_bool) == Some(true);
+            if key == Key::PushToTalk
+                && wanted
+                && !once_per(&mut TALK_ON.lock().unwrap(), Instant::now(), TALK_GAP)
+            {
+                return;
+            }
             flip(&app, key, wanted).await;
         }
-        (Plan::Ask, Some(key)) => ask(&app, key),
+        (Plan::Ask, Some(key)) => {
+            let wanted = on.as_ref().and_then(Value::as_bool) == Some(true);
+            ask(&app, key, wanted);
+        }
         _ => {}
     }
 }
@@ -334,40 +414,121 @@ async fn flip(app: &AppHandle, key: Key, wanted: bool) {
 
 /// How long the question waits for an answer before it counts as Cancel.
 const QUESTION_LIMIT: Duration = Duration::from_secs(60);
+/// The least time between two questions, whatever they ask.
+const QUESTION_GAP: Duration = Duration::from_secs(10);
+/// A switch the person refused (Cancel, no answer, or the server changed) is not asked about
+/// again for this long; a request meanwhile is dropped.
+const ASK_AGAIN_AFTER: Duration = Duration::from_secs(5 * 60);
 const QUESTION_WINDOW: &str = "confirm";
 
-/// The question on screen, if any: one at a time, and a request while one is open is dropped.
+/// The question on screen.
 struct Question {
     id: u64,
     key: Key,
+    wanted: bool,
+    /// The chosen server when it was asked: the answer counts only while it still is.
+    origin: Url,
     words: String,
 }
 
-static QUESTION: Mutex<Option<Question>> = Mutex::new(None);
-static QUESTIONS: AtomicU64 = AtomicU64::new(0);
-
-/// Puts the question up; none when one is already open.
-fn put(open: &mut Option<Question>, key: Key, words: String) -> Option<u64> {
-    if open.is_some() {
-        return None;
-    }
-    let id = QUESTIONS.fetch_add(1, Ordering::SeqCst);
-    *open = Some(Question { id, key, words });
-    Some(id)
+/// The question on screen, if any, and what limits the next one.
+struct Questions {
+    open: Option<Question>,
+    last: Option<Instant>,
+    refused: Vec<(Key, Instant)>,
+    count: u64,
 }
 
-/// The page asked to turn a sensitive switch on: the app asks the person in its own window.
-fn ask(app: &AppHandle, key: Key) {
+impl Questions {
+    const fn new() -> Self {
+        Questions {
+            open: None,
+            last: None,
+            refused: Vec::new(),
+            count: 0,
+        }
+    }
+
+    /// Puts a question up; none while one is open, within [`QUESTION_GAP`] of the last, or for a
+    /// switch refused within [`ASK_AGAIN_AFTER`].
+    fn put(
+        &mut self,
+        key: Key,
+        wanted: bool,
+        origin: Url,
+        words: String,
+        now: Instant,
+    ) -> Option<u64> {
+        let recently = |at: Instant, gap: Duration| now.saturating_duration_since(at) < gap;
+        if self.open.is_some()
+            || self.last.is_some_and(|at| recently(at, QUESTION_GAP))
+            || self
+                .refused
+                .iter()
+                .any(|(refused, at)| *refused == key && recently(*at, ASK_AGAIN_AFTER))
+        {
+            return None;
+        }
+        let id = self.count;
+        self.count += 1;
+        self.last = Some(now);
+        self.open = Some(Question {
+            id,
+            key,
+            wanted,
+            origin,
+            words,
+        });
+        Some(id)
+    }
+
+    /// Ends the question on screen (only question `id`, when given) with the person's answer.
+    /// Answers the question and whether the answer is to be carried out: an Allow while the
+    /// server that asked is still `chosen`. Anything else counts as refused.
+    fn end(
+        &mut self,
+        id: Option<u64>,
+        allow: bool,
+        chosen: Option<&Url>,
+        now: Instant,
+    ) -> Option<(Question, bool)> {
+        if id.is_some_and(|id| self.open.as_ref().is_none_or(|open| open.id != id)) {
+            return None;
+        }
+        let open = self.open.take()?;
+        let carried = allow && chosen.is_some_and(|chosen| chosen.origin() == open.origin.origin());
+        if !carried {
+            self.refused
+                .retain(|(_, at)| now.saturating_duration_since(*at) < ASK_AGAIN_AFTER);
+            self.refused.push((open.key, now));
+        }
+        Some((open, carried))
+    }
+}
+
+static QUESTIONS: Mutex<Questions> = Mutex::new(Questions::new());
+
+/// The page asked to set a switch it may not set itself: the app asks the person in its own window.
+fn ask(app: &AppHandle, key: Key, wanted: bool) {
+    let Some(origin) = crate::chosen(app) else {
+        return;
+    };
     let label = crate::switch_item(app, key.menu_id())
         .and_then(|item| item.text().ok())
         .unwrap_or_default();
-    let host = crate::chosen(app)
-        .map(|server| host(&server))
-        .unwrap_or_default();
-    let words = text("{host} asks to turn on “{label}”.")
-        .replace("{host}", &host)
+    let words = if wanted {
+        text("{host} asks to turn on “{label}”.")
+    } else {
+        text("{host} asks to turn off “{label}”.")
+    };
+    let words = words
+        .replace("{host}", &host(&origin))
         .replace("{label}", &label);
-    let Some(id) = put(&mut QUESTION.lock().unwrap(), key, words) else {
+    let asked = QUESTIONS
+        .lock()
+        .unwrap()
+        .put(key, wanted, origin, words, Instant::now());
+    let Some(id) = asked else {
         return;
     };
     let handle = app.clone();
@@ -376,14 +537,7 @@ fn ask(app: &AppHandle, key: Key) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(QUESTION_LIMIT).await;
-        if QUESTION
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|open| open.id == id)
-        {
-            answer(&handle, false);
-        }
+        answer(&handle, Some(id), false);
     });
 }
 
@@ -395,9 +549,15 @@ fn host(server: &Url) -> String {
         .map_or_else(|| name.to_owned(), |port| format!("{name}:{port}"))
 }
 
-/// The person's answer, or Cancel; only the first one counts, and the window closes with it.
-fn answer(app: &AppHandle, allow: bool) {
-    let Some(open) = QUESTION.lock().unwrap().take() else {
+/// The person's answer to the question on screen (question `id` only, when given), or Cancel;
+/// only the first one counts, and the window closes with it.
+fn answer(app: &AppHandle, id: Option<u64>, allow: bool) {
+    let chosen = crate::chosen(app);
+    let ended = QUESTIONS
+        .lock()
+        .unwrap()
+        .end(id, allow, chosen.as_ref(), Instant::now());
+    let Some((open, carried)) = ended else {
         return;
     };
     let handle = app.clone();
@@ -406,9 +566,9 @@ fn answer(app: &AppHandle, allow: bool) {
             let _ = window.destroy();
         }
     });
-    if allow {
+    if carried {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move { flip(&app, open.key, true).await });
+        tauri::async_runtime::spawn(async move { flip(&app, open.key, open.wanted).await });
     }
 }
 
@@ -434,41 +594,49 @@ fn show_question(app: &AppHandle) {
             // Closing the window without answering is Cancel.
             window.on_window_event(move |event| {
                 if let WindowEvent::Destroyed = event {
-                    answer(&app, false);
+                    answer(&app, None, false);
                 }
             });
             let _ = window.set_focus();
         }
         Err(error) => {
             eprintln!("dozo: could not open the question: {error}");
-            answer(app, false);
+            answer(app, None, false);
         }
     }
 }
 
 /// What the question's window shows. Every word comes from the app, in the system's language.
+/// Only that window is answered, whatever the capability says.
 #[tauri::command]
-pub fn confirm_question() -> Option<Value> {
-    let open = QUESTION.lock().unwrap();
-    open.as_ref().map(|open| {
+pub fn confirm_question(webview: Webview) -> Option<Value> {
+    if webview.label() != QUESTION_WINDOW {
+        return None;
+    }
+    let questions = QUESTIONS.lock().unwrap();
+    questions.open.as_ref().map(|open| {
         json!({
             "lang": if crate::words::turkish() { "tr" } else { "en" },
             "question": open.words,
-            "allow": text("Turn On"),
+            "allow": text(if open.wanted { "Turn On" } else { "Turn Off" }),
             "cancel": text("Cancel"),
         })
     })
 }
 
-/// The person's answer in the question's window (`capabilities/confirm.json`).
+/// The person's answer in the question's window (`capabilities/confirm.json`); from any other
+/// window it is nothing.
 #[tauri::command]
 pub fn confirm_answer(window: WebviewWindow, allow: Option<Value>) {
-    answer(window.app_handle(), allow == Some(Value::Bool(true)));
+    if window.label() != QUESTION_WINDOW {
+        return;
+    }
+    answer(window.app_handle(), None, allow == Some(Value::Bool(true)));
 }
 
 /// The app is quitting: an open question goes with it, as Cancel.
 pub fn close(app: &AppHandle) {
-    answer(app, false);
+    answer(app, None, false);
 }
 
 #[cfg(test)]
@@ -662,34 +830,52 @@ mod tests {
     }
 
     #[test]
-    fn a_sensitive_switch_is_never_turned_on_without_the_person() {
-        for key in Key::ALL {
-            // Off is always at once, and nothing happens when it is as asked or not offered.
-            assert_eq!(plan(key, Some(true), false), Plan::Flip, "{key:?}");
-            assert_eq!(plan(key, Some(true), true), Plan::Nothing, "{key:?}");
-            assert_eq!(plan(key, Some(false), false), Plan::Nothing, "{key:?}");
-            assert_eq!(plan(key, None, true), Plan::Nothing, "{key:?}");
-            assert_eq!(plan(key, None, false), Plan::Nothing, "{key:?}");
-            let on = plan(key, Some(false), true);
-            if key.sensitive() {
-                assert_eq!(on, Plan::Ask, "{key:?}");
-            } else {
-                assert_eq!(on, Plan::Flip, "{key:?}");
-            }
+    fn a_page_sets_at_once_only_push_to_talk_and_the_safe_way_of_three_switches() {
+        use Key::*;
+        // (key, wanted) → asks the person?
+        for (key, wanted, asked) in [
+            (PushToTalk, true, false),
+            (PushToTalk, false, false),
+            (OpenAtLogin, false, false),
+            (KeepRunning, false, false),
+            (ThisComputer, false, false),
+            (OpenAtLogin, true, true),
+            (KeepRunning, true, true),
+            (ThisComputer, true, true),
+            (PasswordManager, true, true),
+            // Off removes every linked login.
+            (PasswordManager, false, true),
+        ] {
+            assert_eq!(asks(key, wanted), asked, "{key:?} {wanted}");
+            let expected = if asked { Plan::Ask } else { Plan::Flip };
+            assert_eq!(
+                plan(key, Some(!wanted), wanted),
+                expected,
+                "{key:?} {wanted}"
+            );
+            // Nothing happens when it is as asked already or not offered.
+            assert_eq!(plan(key, Some(wanted), wanted), Plan::Nothing, "{key:?}");
+            assert_eq!(plan(key, None, wanted), Plan::Nothing, "{key:?}");
         }
-        assert!(Key::ThisComputer.sensitive() && Key::PasswordManager.sensitive());
-        assert!(!Key::OpenAtLogin.sensitive());
-        assert!(!Key::KeepRunning.sensitive() && !Key::PushToTalk.sensitive());
+    }
+
+    #[test]
+    fn turning_push_to_talk_on_is_held_to_once_in_its_gap() {
+        let start = Instant::now();
+        let mut last = None;
+        assert!(once_per(&mut last, start, TALK_GAP));
+        assert!(!once_per(&mut last, start + TALK_GAP / 2, TALK_GAP));
+        assert!(once_per(&mut last, start + TALK_GAP, TALK_GAP));
     }
 
     #[test]
     fn a_refused_call_does_nothing_and_bad_input_is_refused_alike() {
         let off = |_: Key| Some(false);
         let on = json!(true);
-        let key = json!("openAtLogin");
+        let key = json!("pushToTalk");
         assert_eq!(
             request(true, Some(&key), Some(&on), off),
-            (Plan::Flip, Some(Key::OpenAtLogin))
+            (Plan::Flip, Some(Key::PushToTalk))
         );
         assert_eq!(
             request(false, Some(&key), Some(&on), off),
@@ -740,15 +926,148 @@ mod tests {
         assert_eq!(host(&url("http://[::1]:5173/")), "[::1]:5173");
     }
 
+    fn server() -> Url {
+        url("https://dozo.example.com/")
+    }
+
     #[test]
-    fn one_question_at_a_time() {
-        let mut open = None;
-        let first = put(&mut open, Key::ThisComputer, "first".into());
+    fn one_question_at_a_time_and_none_soon_after_the_last() {
+        let start = Instant::now();
+        let mut questions = Questions::new();
+        let first = questions.put(Key::ThisComputer, true, server(), "first".into(), start);
         assert!(first.is_some());
-        assert_eq!(put(&mut open, Key::PasswordManager, "second".into()), None);
-        let shown = open.as_ref().unwrap();
-        assert_eq!((shown.id, shown.key), (first.unwrap(), Key::ThisComputer));
+        let shown = questions.open.as_ref().unwrap();
+        assert_eq!(
+            (shown.id, shown.key, shown.wanted),
+            (first.unwrap(), Key::ThisComputer, true)
+        );
         assert_eq!(shown.words, "first");
+        // Another while it is open is dropped.
+        assert_eq!(
+            questions.put(Key::KeepRunning, true, server(), "second".into(), start),
+            None
+        );
+        // Turn On: carried out, and nothing holds that switch back.
+        let (allowed, carried) = questions.end(None, true, Some(&server()), start).unwrap();
+        assert!(carried);
+        assert_eq!((allowed.key, allowed.wanted), (Key::ThisComputer, true));
+        assert!(questions.open.is_none());
+        // Within the gap of the last question, nothing is asked, whatever it is.
+        let soon = start + QUESTION_GAP / 2;
+        assert_eq!(
+            questions.put(Key::KeepRunning, true, server(), "x".into(), soon),
+            None
+        );
+        let later = start + QUESTION_GAP;
+        assert!(
+            questions
+                .put(Key::ThisComputer, true, server(), "x".into(), later)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_refused_switch_is_not_asked_about_again_for_a_while() {
+        let start = Instant::now();
+        for refuse in ["cancel", "no answer", "window closed"] {
+            let mut questions = Questions::new();
+            let id = questions
+                .put(Key::PasswordManager, false, server(), "q".into(), start)
+                .unwrap();
+            let ended = match refuse {
+                "no answer" => questions.end(Some(id), false, Some(&server()), start),
+                _ => questions.end(None, false, Some(&server()), start),
+            };
+            assert!(!ended.unwrap().1, "{refuse}");
+            let after = |gap: Duration| start + QUESTION_GAP + gap;
+            // The same switch, either way, is dropped; another switch may be asked.
+            for wanted in [false, true] {
+                let again = questions.put(
+                    Key::PasswordManager,
+                    wanted,
+                    server(),
+                    "q".into(),
+                    after(Duration::ZERO),
+                );
+                assert_eq!(again, None, "{refuse}");
+            }
+            let other = questions.put(
+                Key::KeepRunning,
+                true,
+                server(),
+                "q".into(),
+                after(Duration::ZERO),
+            );
+            assert!(other.is_some(), "{refuse}");
+            questions.end(None, true, Some(&server()), after(Duration::ZERO));
+            let later = start + ASK_AGAIN_AFTER + QUESTION_GAP;
+            assert!(
+                questions
+                    .put(Key::PasswordManager, true, server(), "q".into(), later)
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn a_late_timeout_never_ends_a_later_question() {
+        let start = Instant::now();
+        let mut questions = Questions::new();
+        let first = questions
+            .put(Key::KeepRunning, true, server(), "a".into(), start)
+            .unwrap();
+        questions.end(None, true, Some(&server()), start);
+        let later = start + QUESTION_GAP;
+        questions
+            .put(Key::OpenAtLogin, true, server(), "b".into(), later)
+            .unwrap();
+        assert!(
+            questions
+                .end(Some(first), false, Some(&server()), later)
+                .is_none()
+        );
+        assert_eq!(questions.open.as_ref().unwrap().key, Key::OpenAtLogin);
+    }
+
+    #[test]
+    fn an_answer_after_the_server_changed_counts_as_cancel() {
+        let start = Instant::now();
+        let mut questions = Questions::new();
+        questions
+            .put(Key::ThisComputer, true, server(), "q".into(), start)
+            .unwrap();
+        let other = url("https://other.example.com/");
+        let (question, carried) = questions.end(None, true, Some(&other), start).unwrap();
+        assert!(!carried);
+        assert_eq!(question.key, Key::ThisComputer);
+        // No server chosen at all: Cancel too, and it holds that switch back like one.
+        let later = start + ASK_AGAIN_AFTER + QUESTION_GAP;
+        questions
+            .put(Key::KeepRunning, true, server(), "q".into(), later)
+            .unwrap();
+        assert!(!questions.end(None, true, None, later).unwrap().1);
+        // The same server at another address on it (path) is the same origin.
+        let much_later = later + ASK_AGAIN_AFTER + QUESTION_GAP;
+        questions
+            .put(Key::OpenAtLogin, true, server(), "q".into(), much_later)
+            .unwrap();
+        let same = url("https://dozo.example.com/space/1");
+        assert!(
+            questions
+                .end(None, true, Some(&same), much_later)
+                .unwrap()
+                .1
+        );
+    }
+
+    #[test]
+    fn only_a_few_reads_wait_at_once_and_each_gives_its_place_back() {
+        let count = AtomicUsize::new(0);
+        let held: Vec<_> = (0..3).map(|_| Waiting::take(&count, 3).unwrap()).collect();
+        assert!(Waiting::take(&count, 3).is_none());
+        drop(held);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert!(Waiting::take(&count, 3).is_some());
     }
 
     #[test]

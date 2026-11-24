@@ -1020,6 +1020,11 @@ fn main() {
                 .on_page_load({
                     let app = app.clone();
                     move |window, load| {
+                        // Any page: reads the last one left waiting end; the chosen server's
+                        // origin is let use the bridge (page_bridge.rs).
+                        if let PageLoadEvent::Started = load.event() {
+                            page_bridge::page_loading(&app, load.url());
+                        }
                         if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
                             alerts::show_unread(&window, 0);
                         }
@@ -1029,10 +1034,7 @@ fn main() {
                         if server == Some(load.url().origin()) {
                             let first = app.state::<start::FirstLoad>();
                             match load.event() {
-                                PageLoadEvent::Started => {
-                                    first.report(start::Load::Committed);
-                                    page_bridge::admit(&app, load.url());
-                                }
+                                PageLoadEvent::Started => first.report(start::Load::Committed),
                                 PageLoadEvent::Finished => {
                                     first.report(start::Load::Finished);
                                     device::wake(&app);
