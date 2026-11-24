@@ -182,6 +182,10 @@ olc() {
   # origin allowlist and the app's Referrer-Policy, from `docker compose config` (about a second).
   if out=$(bash dozo/deploy/compose.deploy.test.sh 2>&1); then echo "[olc] compose layer ok (dozo/deploy/compose.deploy.test.sh)"
   else printf '%s\n' "$out"; fail "compose layer (dozo/deploy/compose.deploy.test.sh)"; fi
+  # The opt-in Cloudflare Tunnel step of the installer: its refusals, .env writes, no token in any
+  # output, and the overlay against upstream's compose file (offline, docker stub, about a second).
+  if out=$(bash infra/compose/dozo-install-cloudflare.smoke.sh 2>&1); then echo "[olc] tunnel installer step ok (infra/compose/dozo-install-cloudflare.smoke.sh)"
+  else printf '%s\n' "$out"; fail "tunnel installer step (infra/compose/dozo-install-cloudflare.smoke.sh)"; fi
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
