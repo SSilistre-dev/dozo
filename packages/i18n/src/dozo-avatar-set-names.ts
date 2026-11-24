@@ -8,5 +8,5 @@ import { i18n } from "@lingui/core";
  */
 export function botAvatarSetName(set: string): string {
   const message = set === "rakazo" ? "Simple" : "Character";
-  return i18n.locale ? i18n._({ id: message, message }) : message;
+  return i18n._({ id: message, message });
 }

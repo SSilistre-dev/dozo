@@ -41,6 +41,15 @@ it("names the two sets for what they are, in English and Turkish", () => {
   expect([botAvatarSetName("organic"), botAvatarSetName("rakazo")]).toEqual(["Karakter", "Sade"]);
 });
 
+it("says the English where no language is active yet", async () => {
+  vi.resetModules();
+  const fresh = await import("@rakazo/i18n/run-error");
+  expect([fresh.botAvatarSetName("organic"), fresh.botAvatarSetName("rakazo")]).toEqual([
+    "Character",
+    "Simple",
+  ]);
+});
+
 it("keeps the stored values: only the names changed", () => {
   expect(BotAvatarSetSchema.options).toEqual(["organic", "rakazo"]);
   expect(resolveBotAvatarSet("organic")).toBe("organic");
