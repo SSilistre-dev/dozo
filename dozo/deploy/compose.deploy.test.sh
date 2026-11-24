@@ -30,6 +30,14 @@ set_=$(config TRUSTED_PROXIES=dokploy-traefik DOZO_ORIGIN_SOURCE_RANGE=198.51.10
 [ "$(envv "$base" api TRUSTED_PROXIES)" = "" ] || bad "TRUSTED_PROXIES unset: want empty, got '$(envv "$base" api TRUSTED_PROXIES)'"
 [ "$(envv "$set_" api TRUSTED_PROXIES)" = "dokploy-traefik" ] || bad "TRUSTED_PROXIES does not reach the api"
 
+# The api's database pool is larger than upstream's 4 and reaches only the api (the worker keeps its
+# own default). With 2 api processes and 2 workers at a deploy, each holding its pool + 3 (api) or
+# 11 (worker) connections, Postgres' 97 usable stay clear: the value must keep 20+ spare.
+[ "$(envv "$base" api DB_POOL_MAX)" = "16" ] || bad "DB_POOL_MAX: want 16 on the api by default, got '$(envv "$base" api DB_POOL_MAX)'"
+[ "$(envv "$(config DOZO_API_DB_POOL_MAX=12)" api DB_POOL_MAX)" = "12" ] || bad "DOZO_API_DB_POOL_MAX does not reach the api"
+[ "$(envv "$base" worker DB_POOL_MAX)" = "<unset>" ] || bad "DB_POOL_MAX reaches the worker: '$(envv "$base" worker DB_POOL_MAX)'"
+[ $((2 * ($(envv "$base" api DB_POOL_MAX) + 3) + 2 * 11 + 2)) -le 77 ] || bad "DB_POOL_MAX leaves under 20 of Postgres' 97 connections spare at a deploy"
+
 # Plugin submissions are closed in the api unless the panel opens them.
 [ "$(envv "$base" api DOZO_PLUGIN_SUBMISSIONS)" = "closed" ] || bad "DOZO_PLUGIN_SUBMISSIONS: want closed by default, got '$(envv "$base" api DOZO_PLUGIN_SUBMISSIONS)'"
 [ "$(envv "$set_" api DOZO_PLUGIN_SUBMISSIONS)" = "open" ] || bad "DOZO_PLUGIN_SUBMISSIONS does not reach the api"
