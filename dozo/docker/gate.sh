@@ -174,17 +174,28 @@ syntax_check() { # $1 = script
 # `olc` runs its independent steps side by side (each in a subshell with its output in a file) and
 # prints them in the order they started, so the gate takes as long as its slowest step, not the sum.
 # A step's failures travel back in a file, since a subshell cannot add to FAILS. No check is dropped.
-OLC_STEPS=(syntax compose deploylock buildlimit tunnel nodecheck brandtests e2ehelpers mobilecfg deps cli threadsowner bundle rules leak)
+OLC_STEPS=(syntax compose deploylock buildlimit tunnel nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
+OLC_NODE_STEPS=(nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
 olc_job_end() { # $1 = step name, last line of its subshell: hands its failures to the parent
-  local f; : > "$OLC_TMP/$1.fails"
-  for f in ${FAILS[@]+"${FAILS[@]}"}; do printf '%s\n' "$f" >> "$OLC_TMP/$1.fails"; done
+  # Written whole to a temporary file and moved into place: a failed write (full disk) leaves no
+  # file, which the parent reports as "did not finish" (red), never as an empty list (green).
+  local f tmp="$OLC_TMP/$1.fails.tmp"
+  { for f in ${FAILS[@]+"${FAILS[@]}"}; do printf '%s\n' "$f"; done; } > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$OLC_TMP/$1.fails" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
 }
 olc_collect() {
   local n f
   wait
   for n in "${OLC_STEPS[@]}"; do
-    [ -f "$OLC_TMP/$n.out" ] || continue   # a step the gate never started (no Node image, no .mjs files)
-    cat "$OLC_TMP/$n.out"
+    # Every step leaves its failures file (empty = passed). Without one: a step with no output file
+    # never started, which is allowed only for the Node steps when the main shell already failed
+    # for lack of an image or files (OLC_UNSTARTED_OK); anywhere else a step that did not run
+    # (its output file could not be created) must not pass by being absent.
+    if [ ! -f "$OLC_TMP/$n.fails" ] && [ ! -f "$OLC_TMP/$n.out" ]; then
+      case " ${OLC_NODE_STEPS[*]} " in *" $n "*) [ "${OLC_UNSTARTED_OK:-0}" = 1 ] && continue ;; esac
+      fail "$n: the step did not start"; continue
+    fi
+    cat "$OLC_TMP/$n.out" 2>/dev/null
     if [ -f "$OLC_TMP/$n.fails" ]; then while IFS= read -r f; do [ -z "$f" ] || FAILS+=("$f"); done < "$OLC_TMP/$n.fails"
     else fail "$n: the step did not finish"; fi
   done
@@ -192,7 +203,7 @@ olc_collect() {
 }
 olc() {
   local s out f tests report low missing brand_src rc e2e_tests mjs
-  OLC_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dozo-olc-XXXXXX")
+  OLC_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dozo-olc-XXXXXX") || { fail "olc: cannot create its scratch directory under ${TMPDIR:-/tmp}"; return 0; }
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs. The macOS app's toolchain
@@ -227,7 +238,8 @@ olc() {
   else printf '%s\n' "$out"; fail "tunnel installer step (infra/compose/dozo-install-cloudflare.smoke.sh)"; fi
     olc_job_end tunnel) > "$OLC_TMP/tunnel.out" 2>&1 &
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
-  if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
+  OLC_UNSTARTED_OK=0   # 1 once the main shell has failed instead of starting the Node steps
+  if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"; OLC_UNSTARTED_OK=1
   elif node_image; then
     ( FAILS=()
     if printf '%s\0' "${mjs[@]}" | drun node-check -i -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" xargs -0 -n 1 node --check; then
@@ -293,6 +305,16 @@ olc() {
       else printf '%s\n' "$out"; fail "dozo command (dozo/cli/dozo.test.mjs)"; fi
     else fail "dozo/cli/dozo.test.mjs missing: the dozo command is not tested"; fi
       olc_job_end cli) > "$OLC_TMP/cli.out" 2>&1 &
+    # The verdict on a Vitest report (dozo/docker/test-verdict.mjs, used by the Postgres run and the
+    # unit run): a skipped, missing or empty test file turns it red. Offline, about a second. Its own
+    # step, listed in OLC_STEPS: a step missing from that list would lose its failure.
+    ( FAILS=()
+    if [ -f dozo/docker/test-verdict.test.mjs ]; then
+      if out=$(drun verdict-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/docker/test-verdict.test.mjs 2>&1); then
+        echo "[olc] test verdict ok (a skipped, missing or empty Postgres test file fails; unit skips only in files another run covers)"
+      else printf '%s\n' "$out"; fail "test verdict (dozo/docker/test-verdict.test.mjs)"; fi
+    else fail "dozo/docker/test-verdict.test.mjs missing: the skip gate is not tested"; fi
+      olc_job_end verdict) > "$OLC_TMP/verdict.out" 2>&1 &
     # An upstream migration that changes what owns a thread runs before the fork's and can break a
     # bot's extra chats: the guard holds the sync until it is read (dozo/SYNC.md).
     ( FAILS=()
@@ -339,6 +361,7 @@ olc() {
       else printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; fi
     else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
       olc_job_end leak) > "$OLC_TMP/leak.out" 2>&1 &
+  else OLC_UNSTARTED_OK=1   # node_image has already failed
   fi
   local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')
@@ -505,7 +528,7 @@ unit_tests() {
   # pipeline would hold the trap until the run ends) and removes the named container.
   # The quoted script is expanded by the container's shell, not this one (SC2016).
   # shellcheck disable=SC2086,SC2016
-  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e TREE_OWNER="$src" -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$ROOT/dozo/docker/test-verdict.mjs:/verdict.mjs:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e TREE_OWNER="$src" -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p "$WORK" /cache/store; cd "$WORK"
       # Whose tree this is, beside it and not inside it (the sync below removes what the stage lacks):
@@ -562,12 +585,16 @@ unit_tests() {
       node "$g/module-state-guard.mjs" --root=/guard > /tmp/guard.log 2>&1 || { cat /tmp/guard.log; exit 2; }
       sed "s/^/[unit] /" /tmp/guard.log
       m=${DOZO_COVERAGE_MIN:-90}
-      pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
+      rc=0
+      pnpm exec vitest run "$@" --reporter=default --reporter=json --outputFile.json=/tmp/unit.json --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
         --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
         --coverage.include="infra/**/dozo-*.ts" \
         --coverage.exclude="**/*.test.*" --coverage.exclude="**/*.test-support.*" --coverage.thresholds.perFile \
-        --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
+        --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m" || rc=$?
+      # No database here: a skipped test is expected only in the Postgres files (their own run covers them).
+      node /verdict.mjs unit /tmp/unit.json || rc=2
+      exit $rc' \
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
