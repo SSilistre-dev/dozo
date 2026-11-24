@@ -438,7 +438,11 @@ OpenAPI in `dozo/api/openapi.yaml`): list bots, send a message and follow the re
 server-sent events, read the chat, export it. Each call carries a personal access token made under
 Settings > General > Security > Access tokens (`apps/web/src/components/dozo-access-tokens.tsx`).
 
-A token belongs to one member in one Space and can be limited to one bot. Only its SHA-256 and last
+A token belongs to one member in one Space and reaches only the bots that member made there, or
+the one bot it is limited to, as the MCP endpoint does (`apps/api/src/dozo-token-bots.ts`, one rule
+for both). Another member's bot in a shared Space is left out of the list and answered as missing,
+the same 404 as a bot that does not exist, though the app lets the member talk to it; a token is
+not made for one. Only its SHA-256 and last
 four characters are stored (`dozo_access_tokens`); it is shown once. Making one asks the person to
 confirm it is them (as revealing a secret does) and mails the account's address when a mail
 provider is set. It lasts 90 days unless made to never expire, and every token stops when the
@@ -832,7 +836,7 @@ Outside MCP clients (code editors, other agents) reach a person's own bots over 
 Tools: `list_bots` and `send_message`, which waits up to 45 seconds for the reply and returns at
 once when the bot asks a question or needs an approval (that is answered in the app); each bot's
 chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the chat export. A
-token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
+token reaches only the bots its owner made in its Space, or its one bot, by the Bot API's rule. The server keeps no
 session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
 a newer client falls back to those. A token's requests and an account's messages count against the
 Bot API's budgets (a token's share and the account's total of messages), shared by every instance; an address that presents 20 refused tokens in a minute

@@ -39,10 +39,12 @@ paths:
   /api/v1/dozo/bots:
     get:
       operationId: listBots
-      summary: The bots the token can reach
+      summary: Your own bots the token can reach
       responses:
         "200":
-          description: Bots in the token's Space, or the one bot it is limited to.
+          description: >-
+            The bots you made in the token's Space, or the one bot it is limited to. Another
+            member's bot in a shared Space is not listed, and every call naming it is 404.
           content:
             application/json:
               schema:
