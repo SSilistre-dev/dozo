@@ -17,6 +17,7 @@ import { vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
 export type IsolationApp = {
   request: (input: string, init?: RequestInit) => Response | Promise<Response>;
@@ -146,10 +147,13 @@ export interface IsolationWorld {
 
 /**
  * Letters only: a name of mixed case with digits reads as an opaque token, and the product
- * shows such a bot or group name blank, which would hide the canary from the scan.
+ * shows such a bot or group name blank, which would hide the canary from the scan. No vowel and
+ * no "c" either: a message is the scripted runtime's script, and a canary that happened to spell
+ * one of its words ("crm", "login") would start a turn that waits for an answer.
  */
+const RAND_LETTERS = "bdfghjklmnpqrstvwxz";
 export const rand = () =>
-  Array.from(randomBytes(10), (byte) => String.fromCharCode(97 + (byte % 26))).join("");
+  Array.from(randomBytes(10), (byte) => RAND_LETTERS[byte % RAND_LETTERS.length]).join("");
 
 export function canary(prefix: string, kind: string) {
   return `ISO-${prefix}-${kind}-${rand()}`;
@@ -353,7 +357,7 @@ export async function person(
   } satisfies Person;
 }
 
-/** Sends as `cookie` and waits until the bot's run for it has ended. */
+/** Sends as `cookie` and waits until the bot's run for it is over (see `waitUntilBotIdle`). */
 export async function sendAndWait(
   world: { app: IsolationApp; handles: IsolationHandles },
   cookie: string,
@@ -362,6 +366,26 @@ export async function sendAndWait(
   spaceId: string,
 ) {
   await rpc(world, cookie, "threads/send", { ...target, text }, spaceId);
+  await waitUntilBotIdle(world, cookie, target, spaceId);
+}
+
+const ENDED_RUN = ["completed", "failed", "cancelled"];
+
+/**
+ * Waits until the chat's run has ended and has let go of the bot's computer. A run reads as ended
+ * before its attempt releases the computer, so a message sent in between starts a run that finds
+ * the computer held and waits for the release to start it; one that checks just before the release
+ * and settles just after it is never started, and stays queued until a recovery sweep finds it. The
+ * next send waits for the release, so its run never meets the last one's hold.
+ */
+export async function waitUntilBotIdle(
+  world: { app: IsolationApp; handles: IsolationHandles },
+  cookie: string,
+  target: Record<string, string>,
+  spaceId: string,
+) {
+  const db = asSystem(world.handles.prisma);
+  const botId = target.botId ?? target.chatBotId;
   await vi.waitFor(
     async () => {
       const snap = await rpc<{ run?: { status: string } | null }>(
@@ -371,8 +395,16 @@ export async function sendAndWait(
         target,
         spaceId,
       );
-      if (snap.run && !["completed", "failed", "cancelled"].includes(snap.run.status))
-        throw new Error("the run did not end");
+      if (snap.run && !ENDED_RUN.includes(snap.run.status))
+        throw new Error(`the run did not end (${snap.run.status})`);
+      const held = await db.computerExecutionLease.findMany({
+        where: { botId, expiresAt: { gt: new Date() } },
+        select: { runId: true },
+      });
+      const endedHolder = await db.run.count({
+        where: { id: { in: held.map((lease) => lease.runId) }, status: { in: ENDED_RUN } },
+      });
+      if (endedHolder) throw new Error("the ended run still holds the bot's computer");
     },
     { timeout: 30_000, interval: 100 },
   );
