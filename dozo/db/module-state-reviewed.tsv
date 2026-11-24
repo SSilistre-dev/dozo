@@ -220,3 +220,7 @@ apps/api/src/account-import.ts	class AccountImporter	this.repos = dozoReportingR
 packages/adapters/src/computer-lifecycle.ts	fn provisionComputer	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
 packages/adapters/src/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
 packages/core/src/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled
+packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<object, number>();	request	count keyed by the identity of one tool call's action list; dies with the call
+packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
+packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
+packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call

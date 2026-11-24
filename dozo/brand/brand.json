@@ -12679,6 +12679,132 @@
         "apps/web/src/components/dozo-oauth-connecting.tsx"
       ],
       "reason": "sign-in code: while the code is exchanged the note says Connecting, not that the link expires"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "export interface BrowserPurchaseCheckResult {\n  purchase: (BrowserPurchase & { steps: number[] }) | null;\n}",
+      "replace": "export interface BrowserPurchaseCheckResult {\n  purchase: (BrowserPurchase & { steps: number[] }) | null;\n  /** How many of the clicks submit a form, when the computer's page browser says. */\n  submits?: number;\n}",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the page browser's purchase check also says how many of the clicks submit a form"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  purchase?: unknown;\n};",
+      "replace": "  purchase?: unknown;\n  /** A purchase check: how many of the clicks submit a form. */\n  submits?: unknown;\n};",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the same answer, as the computer sends it"
+    },
+    {
+      "file": "packages/adapters/src/computer-browser.ts",
+      "find": "    if (!found) return { purchase: null };\n    return {\n      purchase: {\n",
+      "replace": "    const submits =\n      typeof live.submits === \"number\" && live.submits > 0 ? { submits: live.submits } : {};\n    if (!found) return { purchase: null, ...submits };\n    return {\n      ...submits,\n      purchase: {\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the form submits the computer's page browser found among a call's clicks pass on with its purchase check"
+    },
+    {
+      "file": "packages/adapters/src/purchase-gate.ts",
+      "find": "import { getLogger } from \"@rakazo/logging\";\nimport type { FleetCardSummary }",
+      "replace": "import { getLogger } from \"@rakazo/logging\";\nimport { dozoNotePageSubmits } from \"./dozo-page-submit.js\";\nimport type { FleetCardSummary }",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/purchase-gate.ts",
+      "find": "    ({ purchase: found } = await browser.purchaseCheck(\n      computer,\n      { ...probe, signal: ctx.context.signal },\n      ctx.context,\n    ));\n",
+      "replace": "    const answer = await browser.purchaseCheck(\n      computer,\n      { ...probe, signal: ctx.context.signal },\n      ctx.context,\n    );\n    found = answer.purchase;\n    // Kept for the daily send limit, which counts the clicks that submit a form before they run.\n    dozoNotePageSubmits(name, args, answer.submits);\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the check that runs before a page call also tells how many of its clicks submit a form; the limit gate reads it"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": ", await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args))\n",
+      "replace": ", await dozoSendLimitGate(ctx, { name, args, viaConnector: false, connectorChanges: 0, approved: nextApprovedTool === name || Boolean(approvedEffectKey) }, await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args)))\n",
+      "requires": [
+        "packages/adapters/src/dozo-send-limit.ts"
+      ],
+      "reason": "daily sends: a form submit made in the bot's own browser on the user's computer is counted like one on the bot's computer; the user's browser is approved by its own gate, which this follows"
+    },
+    {
+      "file": "infra/sandboxes/computer/rakazo-page-browser",
+      "find": "    },\n    // A click or key whose spot is not known: the page shows a card form or a payment frame, or a control\n",
+      "replace": "    },\n    // Whether a click at a spot of this page (in viewport coordinates) presses a control that submits a form\n    // which is not a search; `inFrame` when the spot is inside a frame, whose own page must be asked.\n    submitAt(x, y) {\n      if (!(x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight)) return { offscreen: true };\n      const hit = elementAtPoint(x, y);\n      if (hit && FRAMES.includes(hit.tagName.toLowerCase())) return { inFrame: true };\n      const control = hit ? pressedControl(hit) : null;\n      const form = control && !control.matches(\":disabled\") ? submittedForm(control) : null;\n      if (!form) return { submit: false };\n      const method = (control.getAttribute(\"formmethod\") || form.getAttribute(\"method\") || \"get\").toLowerCase();\n      const search = Boolean(form.closest(\"[role=search]\") || form.querySelector(\"input[type=search]\"));\n      return { submit: method !== \"dialog\" && (method !== \"get\" || !search) };\n    },\n    // The submit check ends here.\n    // A click or key whose spot is not known: the page shows a card form or a payment frame, or a control\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: whether a click presses a submit of a form that is not a search, in the page"
+    },
+    {
+      "file": "infra/sandboxes/computer/rakazo-page-browser",
+      "find": "            return dict(UNREADABLE_PURCHASE)\n\n    def desktop(self, args: dict[str, Any]) -> dict[str, Any] | None:\n",
+      "replace": "            return dict(UNREADABLE_PURCHASE)\n\n    def submit(self, box: dict[str, Any] | None, scrolled: bool) -> int:\n        \"\"\"1 when a click at the middle of a control's box in the viewport submits a form that is not a search.\n        Raises Offscreen for a control out of view the first time. A press that cannot be looked at, a frame or\n        a page that cannot be read, counts as 1: the daily send limit leans to the cautious side.\"\"\"\n        try:\n            x = float(box[\"x\"]) + float(box[\"width\"]) / 2  # type: ignore[index]\n            y = float(box[\"y\"]) + float(box[\"height\"]) / 2  # type: ignore[index]\n            found = self.ask(self.session, None, f\"submitAt({json.dumps(x)}, {json.dumps(y)})\")\n        except Exception:  # noqa: BLE001\n            return 1\n        if not isinstance(found, dict):\n            return 1\n        if found.get(\"offscreen\"):\n            if scrolled:\n                return 1\n            raise Offscreen()\n        return 1 if found.get(\"inFrame\") or found.get(\"submit\") else 0\n\n    def desktop(self, args: dict[str, Any]) -> dict[str, Any] | None:\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the page browser's check of one click, in the top page"
+    },
+    {
+      "file": "infra/sandboxes/computer/rakazo-page-browser",
+      "find": "        return site, None\n\n    def purchase_check(self, args: dict[str, Any]) -> dict[str, Any]:\n",
+      "replace": "        return site, None\n\n    def click_submit(self, ref: str, node: Node) -> int:\n        \"\"\"1 when a click on ref submits a form that is not a search, else 0; 1 too when it cannot be told.\"\"\"\n        try:\n            purchases = self.purchases()\n            purchases.site()\n        except Exception:  # noqa: BLE001\n            return 1\n        if node.frame is not None:\n            return 1\n        for scrolled in (False, True):\n            try:\n                if scrolled:\n                    self.ab.batch([[\"scrollintoview\", f\"@{ref}\"]])\n                (box,) = self.ab.batch([[\"get\", \"box\", f\"@{ref}\"]])\n            except Exception:  # noqa: BLE001\n                box = None\n            try:\n                return purchases.submit(box, scrolled)\n            except Offscreen:\n                continue\n        return 1\n\n    def purchase_check(self, args: dict[str, Any]) -> dict[str, Any]:\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the page browser's check of one click on an element of the snapshot"
+    },
+    {
+      "file": "infra/sandboxes/computer/rakazo-page-browser",
+      "find": "        steps: list[int] = []\n        first: dict[str, Any] | None = None\n        for index, step in enumerate(actions):\n",
+      "replace": "        steps: list[int] = []\n        submits = 0\n        first: dict[str, Any] | None = None\n        for index, step in enumerate(actions):\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the count of clicks that submit a form"
+    },
+    {
+      "file": "infra/sandboxes/computer/rakazo-page-browser",
+      "find": "            site, found = self.click_purchase(step[\"ref\"], node)\n            if found:\n",
+      "replace": "            site, found = self.click_purchase(step[\"ref\"], node)\n            submits += 0 if found else self.click_submit(step[\"ref\"], node)\n            if found:\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: each click that is not a purchase is also asked whether it submits a form"
+    },
+    {
+      "file": "infra/sandboxes/computer/rakazo-page-browser",
+      "find": "\"site\": site, \"purchase\": purchase}",
+      "replace": "\"site\": site, **({\"submits\": submits} if submits else {}), \"purchase\": purchase}",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the answer names how many clicks submit a form, only when some do"
+    },
+    {
+      "file": "infra/sandboxes/computer/test_page_browser.py",
+      "find": "        return box.get(\"pay\")\n\n    def signals(self, enter, deadline=float(\"inf\"), frames=True):\n",
+      "replace": "        return box.get(\"pay\")\n\n    def submit(self, box, scrolled):\n        return box.get(\"submits\", 0)\n\n    def signals(self, enter, deadline=float(\"inf\"), frames=True):\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: the fake of the tab's purchase checks answers the new check of a click (a box says how many submits it is, none by default), so upstream's purchase-check tests still compare what they did"
+    },
+    {
+      "file": "infra/sandboxes/computer/test_page_browser.py",
+      "find": "        self.assertEqual(browser.actions(), [])\n\n    def test_purchase_check_reports_the_page_total_beside_a_button_amount(self):\n",
+      "replace": "        self.assertEqual(browser.actions(), [])\n\n    def test_purchase_check_counts_the_clicks_that_submit_a_form_and_only_those(self):\n        browser = FakeAgentBrowser()\n        browser.boxes[\"e7\"] = {\"ref\": \"e7\", \"x\": 0, \"y\": 0, \"width\": 10, \"height\": 10, \"submits\": 1}\n        browser.boxes[\"e8\"] = {\"ref\": \"e8\", \"x\": 0, \"y\": 0, \"width\": 10, \"height\": 10}\n        clicks = [{\"kind\": \"click\", \"ref\": ref} for ref in (\"e7\", \"e8\", \"e7\", \"e99\")]\n        result = page(browser).purchase_check({\"actions\": clicks})\n        self.assertEqual(result[\"submits\"], 2)\n        self.assertIsNone(result[\"purchase\"])\n        # No submit, no key: an answer that says nothing, as before.\n        self.assertNotIn(\"submits\", page(FakeAgentBrowser()).purchase_check({\"actions\": clicks[1:2]}))\n        # A control inside a frame cannot be looked at: it counts as a submit, the cautious side.\n        framed = page(FakeAgentBrowser())\n        self.assertEqual(framed.click_submit(\"e10\", framed.control(\"e10\")), 1)\n\n    def test_the_tab_judges_a_click_as_a_submit_and_leans_to_one_when_it_cannot_tell(self):\n        purchases = object.__new__(RealPurchases)\n        purchases.session = \"s\"\n        box = {\"x\": 0, \"y\": 0, \"width\": 10, \"height\": 10}\n        for found, expected in (({\"submit\": True}, 1), ({\"submit\": False}, 0), ({\"inFrame\": True}, 1), (\"?\", 1)):\n            with patch.object(purchases, \"ask\", return_value=found):\n                self.assertEqual(purchases.submit(box, False), expected)\n        with patch.object(purchases, \"ask\", return_value={\"offscreen\": True}):\n            with self.assertRaises(helper.Offscreen):\n                purchases.submit(box, False)\n            self.assertEqual(purchases.submit(box, True), 1)\n        with patch.object(purchases, \"ask\", side_effect=RuntimeError(\"gone\")):\n            self.assertEqual(purchases.submit(box, False), 1)\n        self.assertEqual(purchases.submit(None, False), 1)\n\n    def test_purchase_check_reports_the_page_total_beside_a_button_amount(self):\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-submit.ts"
+      ],
+      "reason": "daily sends: tests of the page browser's submit check, which counts clicks that submit a form and leans to one when it cannot tell"
     }
   ],
   "assets": {
