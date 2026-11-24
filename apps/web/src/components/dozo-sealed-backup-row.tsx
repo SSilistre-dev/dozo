@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { dozoLocalDay, MIN_PASSWORD_LENGTH } from "@rakazo/core";
+import { dozoLocalDay } from "@rakazo/core";
+import {
+  SEALED_MIN_PASSWORD_LENGTH,
+  SEALED_OPEN_MIN_PASSWORD_LENGTH,
+} from "@rakazo/core/dozo-sealed-file";
 import {
   Button,
   Dialog,
@@ -278,7 +282,11 @@ function SealDialog({
             <Button
               type="submit"
               data-testid="dozo-backup-submit"
-              disabled={save.pending || password.length < MIN_PASSWORD_LENGTH}
+              disabled={
+                save.pending ||
+                password.length <
+                  (restore ? SEALED_OPEN_MIN_PASSWORD_LENGTH : SEALED_MIN_PASSWORD_LENGTH)
+              }
               aria-busy={save.pending}
             >
               {save.pending ? <Spinner aria-hidden /> : null}
