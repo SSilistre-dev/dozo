@@ -11,7 +11,11 @@ import {
   redactBrowserResult,
 } from "./browser-tools.js";
 import type { DeviceBrowserEvent } from "./dozo-device-browser.js";
-import { DeviceBrowserProvider } from "./dozo-device-browser.js";
+import {
+  DeviceBrowserProvider,
+  PICTURE_REFUSED_NOTE,
+  PictureRefusedError,
+} from "./dozo-device-browser.js";
 import { deviceFillOptions } from "./dozo-device-fill.js";
 import { filesWithoutComputer } from "./dozo-no-computer.js";
 import { runCameByToken } from "./dozo-token-run.js";
@@ -192,15 +196,21 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
     });
   }
   if (first) page.note = [USER_BROWSER_NOTE, page.note].filter(Boolean).join(" ");
+  let image: string | undefined;
+  if (name === "browser_snapshot" && !page.error && ctx.computer.acceptsImages) {
+    image = await bestEffort(
+      "take a picture of the page in the user's browser",
+      provider.screenshot(asked.site).catch((error: unknown) => {
+        // Expected while a filled password is on the page: the model is told, nothing is logged.
+        if (error instanceof PictureRefusedError) {
+          page.note = [page.note, PICTURE_REFUSED_NOTE].filter(Boolean).join(" ");
+          return undefined;
+        }
+        throw errorKindOnly(error);
+      }),
+    );
+  }
   const formatted = browserResultForModel(page);
-  if (name !== "browser_snapshot" || page.error || !ctx.computer.acceptsImages)
-    return call.finish(formatted);
-  const image = await bestEffort(
-    "take a picture of the page in the user's browser",
-    provider.screenshot(asked.site).catch((error: unknown) => {
-      throw errorKindOnly(error);
-    }),
-  );
   return call.finish(image ? withScreenshot(formatted, image) : formatted);
 }
 

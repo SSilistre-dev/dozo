@@ -466,7 +466,15 @@ impl Runner {
                 let Some(fill) = parse_fill(request) else {
                     return reply.error(INVALID).await;
                 };
-                match self.browsers.fill_login(&key, &fill, &self.passwords).await {
+                // A request that ends meanwhile (the server cancelled it, or the connection went)
+                // drops the fill, and with it the question the person is being asked: it closes
+                // and counts as Cancel.
+                let mut cancel = reply.cancel.clone();
+                let filled = tokio::select! {
+                    filled = self.browsers.fill_login(&key, &fill, &self.passwords) => filled,
+                    _ = cancelled(&mut cancel) => return,
+                };
+                match filled {
                     Ok(()) => Ok(json!({ "filled": true })),
                     Err(error) => return reply.error(&error).await,
                 }

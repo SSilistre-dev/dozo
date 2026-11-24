@@ -352,13 +352,24 @@ impl Passwords {
     /// Step 5: the first fill of this link on this site asks the person once; Allow is
     /// remembered. Answers with the error code when they cancel, or nothing can ask.
     pub async fn confirm(&self, handle: &str, origin: &str) -> Result<(), &'static str> {
+        self.confirm_within(handle, origin, PROMPT_TIME).await
+    }
+
+    /// `confirm`, giving up (as Cancel) when the person has not answered within `wait`. Whatever
+    /// ends the wait, the receiver goes, and with it the question on screen.
+    pub async fn confirm_within(
+        &self,
+        handle: &str,
+        origin: &str,
+        wait: Duration,
+    ) -> Result<(), &'static str> {
         let _one = self.asking.lock().await;
         let link = self.allow(handle, origin)?;
         if link.sites.iter().any(|site| site == origin) {
             return Ok(());
         }
         let prompt = self.prompt.get().ok_or("passwords-denied")?;
-        let answered = tokio::time::timeout(PROMPT_TIME, prompt.ask(&link.title, origin)).await;
+        let answered = tokio::time::timeout(wait, prompt.ask(&link.title, origin)).await;
         if !matches!(answered, Ok(Ok(true))) {
             return Err("passwords-denied");
         }

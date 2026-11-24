@@ -377,6 +377,10 @@ struct Pipe {
     /// The bot's page, once attached; cleared when the page goes.
     session: Mutex<Option<String>>,
     events: Mutex<VecDeque<Value>>,
+    /// While a password or code this app filled is on the page: the loader id of the document it
+    /// was filled into (empty when not known). No picture of the page is given until the page's
+    /// top frame commits another document (`Running::pictures_refused`).
+    filled: Mutex<Option<String>>,
 }
 
 impl Pipe {
@@ -391,6 +395,7 @@ impl Pipe {
             open: AtomicBool::new(true),
             session: Mutex::default(),
             events: Mutex::default(),
+            filled: Mutex::default(),
         });
         tokio::spawn(read(Arc::downgrade(&pipe), from_browser));
         pipe
@@ -450,6 +455,18 @@ impl Pipe {
         self.pending.lock().unwrap().clear();
     }
 
+    /// The page's top frame committed a document. When it is not the one a filled value is on (a
+    /// same-document change sends no such event, and a page restored from the back-forward cache
+    /// is the old document), pictures may be taken again.
+    fn top_frame_committed(&self, params: &Value) {
+        let mut filled = self.filled.lock().unwrap();
+        let loader = params["frame"]["loaderId"].as_str();
+        let restored = params["type"] == "BackForwardCacheRestore";
+        if !restored && filled.as_deref().is_some_and(|held| loader != Some(held)) {
+            *filled = None;
+        }
+    }
+
     fn take_events(&self) -> Vec<Value> {
         self.events.lock().unwrap().drain(..).collect()
     }
@@ -475,9 +492,12 @@ impl Pipe {
         if session.is_none() || session != ours.as_deref() || !EVENTS.contains(&method) {
             return;
         }
-        // Only the page's own navigations: a frame inside it is the page's business.
-        if method == "Page.frameNavigated" && message["params"]["frame"].get("parentId").is_some() {
-            return;
+        if method == "Page.frameNavigated" {
+            // Only the page's own navigations: a frame inside it is the page's business.
+            if message["params"]["frame"].get("parentId").is_some() {
+                return;
+            }
+            self.top_frame_committed(&message["params"]);
         }
         drop(ours);
         let mut events = self.events.lock().unwrap();
@@ -541,7 +561,7 @@ struct Running {
     target: Mutex<Option<String>>,
     /// Values written into its pages from the person's password manager (`browser_fill.rs`),
     /// scrubbed from every answer until this browser ends.
-    hidden: Mutex<Vec<String>>,
+    hidden: Mutex<Vec<fill::Held>>,
     #[cfg(unix)]
     child: Mutex<Option<tokio::process::Child>>,
 }
@@ -1210,7 +1230,15 @@ impl Browsers {
         if self.signing_site(key).is_some() {
             return Err(signing_message(&self.signing_site(key).unwrap_or_default()));
         }
+        // No picture while a filled password is on the page: the bot could have made it show.
+        if method == "Page.captureScreenshot" && running.pictures_refused() {
+            return Err(fill::SCREENSHOT.to_owned());
+        }
         let result = running.pipe.call(&method, params, Some(&session)).await;
+        // One filled while the picture was taken would be in it.
+        if method == "Page.captureScreenshot" && running.pictures_refused() {
+            return Err(fill::SCREENSHOT.to_owned());
+        }
         // A sign-in that started while the command ran keeps what it read.
         if let Some(site) = self.signing_site(key) {
             running.pipe.take_events();

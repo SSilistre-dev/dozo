@@ -121,6 +121,28 @@ const MAX_STDERR: usize = 8 * 1024;
 const MAX_LOGINS: usize = 500;
 const MAX_TITLE: usize = 200;
 
+/// The program's process group (Unix), ended with it unless the program ended by itself: on a
+/// timeout, a failure, or when the caller stops waiting. Elsewhere only the program is ended.
+struct Group(Option<u32>);
+
+impl Group {
+    fn end(&self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.0.and_then(|pid| i32::try_from(pid).ok()) {
+            // SAFETY: killpg only sends a signal; the group is the one this call made.
+            unsafe { libc::killpg(pid, libc::SIGKILL) };
+        }
+        #[cfg(not(unix))]
+        let _ = self.0;
+    }
+}
+
+impl Drop for Group {
+    fn drop(&mut self) {
+        self.end();
+    }
+}
+
 pub struct Cli {
     program: PathBuf,
     timeout: Duration,
@@ -175,16 +197,20 @@ impl Cli {
     /// Runs the program with `args` and answers what it printed on stdout, at most `cap` bytes.
     /// Never on a shell, never with more environment than `CLI_ENV`.
     async fn run(&self, args: &[&str], cap: usize) -> Result<Secret, Failure> {
-        let mut child = Command::new(&self.program)
+        let mut command = Command::new(&self.program);
+        command
             .args(args)
             .env_clear()
             .envs(cli_env(std::env::vars_os()))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|_| Failure::Failed)?;
+            .kill_on_drop(true);
+        // Its own process group, so what it starts can be ended with it.
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = command.spawn().map_err(|_| Failure::Failed)?;
+        let mut group = Group(child.id());
         let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take())
         else {
             return Err(Failure::Failed);
@@ -223,16 +249,20 @@ impl Cli {
         let (out, status) = match outcome {
             Ok(Ok(done)) => done,
             Ok(Err(failure)) => {
+                group.end();
                 let _ = child.kill().await;
                 errors.abort();
                 return Err(failure);
             }
             Err(_) => {
+                group.end();
                 let _ = child.kill().await;
                 errors.abort();
                 return Err(Failure::Locked);
             }
         };
+        // It ended by itself: what it left behind is its own business.
+        group.0 = None;
         let kept = errors.await.unwrap_or_else(|_| Secret::new(Vec::new()));
         if status.success() {
             return Ok(out);
@@ -560,6 +590,37 @@ mod tests {
         let read = fake.cli.read(ITEM, VAULT, Part::Password).await;
         assert_eq!(read.unwrap_err(), Failure::Locked);
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    /// Whether the process is running: a process that ended and is not yet reaped is not.
+    #[cfg(target_os = "linux")]
+    fn running(pid: u32) -> bool {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            !stat
+                .rsplit(')')
+                .next()
+                .unwrap_or("")
+                .trim_start()
+                .starts_with('Z')
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_timeout_ends_what_the_program_started_too() {
+        let mut fake = Fake::new(
+            "tree",
+            "sleep 30 &\necho $! > \"$(dirname \"$0\")/child\"\nsleep 30",
+        );
+        fake.cli.timeout = Duration::from_millis(300);
+        let read = fake.cli.read(ITEM, VAULT, Part::Password).await;
+        assert_eq!(read.unwrap_err(), Failure::Locked);
+        let child: u32 = std::fs::read_to_string(fake.dir.join("child"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(!running(child), "the program's child outlived the timeout");
     }
 
     #[cfg(unix)]

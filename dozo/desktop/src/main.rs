@@ -850,6 +850,7 @@ fn main() {
         )
         .manage(update::Pending::default())
         .manage(prefs::Changes::default())
+        .manage(passwords_ui::FillQuestion::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -869,7 +870,9 @@ fn main() {
             prefs::prefs_pick,
             passwords_ui::logins_candidates,
             passwords_ui::logins_link,
-            passwords_ui::logins_remove
+            passwords_ui::logins_remove,
+            passwords_ui::fill_question,
+            passwords_ui::fill_answer
         ])
         .menu(menu)
         .on_menu_event(|app, event| run(app, event.id().as_ref()))

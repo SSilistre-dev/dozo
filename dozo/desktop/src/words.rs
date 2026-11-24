@@ -56,8 +56,8 @@ const TURKISH: [(&str, &str); 50] = [
         "Parola yöneticisi kullanılsın mı?",
     ),
     (
-        "Bots can fill the logins you link in their own browser on this computer. Passwords are read here when needed, typed only into the site they belong to, and never sent to Dozo or shown to the bot.",
-        "Botlar, bağladığınız girişleri bu bilgisayardaki kendi tarayıcılarında doldurabilir. Parolalar gerektiğinde burada okunur, yalnız ait oldukları siteye yazılır; Dozo'ya gönderilmez ve bota gösterilmez.",
+        "Bots can fill the logins you link in their own browser on this computer. Passwords are read here when needed and typed only into the site they belong to; the bot gets no picture of a page while a filled password is on it.",
+        "Botlar, bağladığınız girişleri bu bilgisayardaki kendi tarayıcılarında doldurabilir. Parolalar gerektiğinde burada okunur ve yalnız ait oldukları siteye yazılır; doldurulmuş bir parola sayfadayken bot o sayfanın görüntüsünü almaz.",
     ),
     (
         "No supported password manager was found on this computer.",

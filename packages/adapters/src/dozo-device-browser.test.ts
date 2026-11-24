@@ -4,6 +4,7 @@ import {
   DEVICE_FILL_FAILED,
   DeviceBrowserProvider,
   MOVED_SITE,
+  PictureRefusedError,
   readAccessibilityTree,
   refNode,
   UNSUPPORTED_STEP,
@@ -155,6 +156,14 @@ describe("the browser on the user's computer", () => {
     await provider.navigate(computer, { url: FORM }, context());
     moveOn = "";
     expect(await provider.screenshot("example.test")).toBe("c2NyZWVu");
+  });
+
+  it("says so when the computer refuses a picture of a page it filled a password into", async () => {
+    const provider = new DeviceBrowserProvider(async (command) => {
+      if (command.method === "Page.captureScreenshot") throw new Error("passwords-screenshot");
+      return { result: {} };
+    });
+    await expect(provider.screenshot()).rejects.toBeInstanceOf(PictureRefusedError);
   });
 
   it("takes a screenshot of the visible page", async () => {

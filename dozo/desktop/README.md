@@ -526,23 +526,43 @@ The capability `passwords` is declared to the server only while it is on and the
 - Filling: the server sends `pageBrowserFillLogin` (node, site, handle, which value), only for a
   bot's own browser here. In order (`src/browser_fill.rs`): the switch and the link; the site is the
   link's own or one approved; the node's own frame (found by asking the browser for the node in each
-  frame's own world, so a script of a frame cannot answer for it) has that site as its address; the
-  field is of the right kind; the first fill on a site asks the person ("Fill your … login on …?",
-  Allow or Cancel, the sign-in dialog's pattern; Allow is remembered for that link and site); the
-  program is run (10 s, 64 KiB, fixed argument list, cleared environment, no shell; its stderr is
-  read to tell "not signed in" from "failed" and then dropped); the value is written by one
-  `Runtime.callFunctionOn` in that frame's world, as an argument and never in the function's text,
-  which checks the site and the field kind again. The answer is `{ filled: true }` or one code:
-  `passwords-off`, `-unlinked`, `-origin`, `-field`, `-denied`, `-locked`, `-failed`.
-- The value is held in memory only, overwritten when this app is done with its buffers, and added
-  to the browser's list of values that are scrubbed from every later answer (as they are and as
-  JSON writes them; names too) until that browser ends. `Page.createIsolatedWorld`,
-  `DOM.resolveNode` and `Runtime.callFunctionOn` are used by this app only: they are not in `ALLOWED`.
-- Honest limits: a screenshot can show what a page displays (a password field masks it); copies of
-  the value inside the message handed to the browser, and in the JSON the program printed, are not
-  overwritten; the program's own approval window lasts as long as the program says (its session);
-  anything running as this user can run the program too. Not measured against a real browser or a
-  real program yet (the tests use a fake of each); macOS and Windows were not built.
+  frame's own world, so a script of a frame cannot answer for it) has that site as its address, and
+  its document has that origin (a sandboxed frame, an `about:blank` or `srcdoc` frame and a host
+  written with a trailing dot are refused); the field is of the right kind; the first fill on a
+  site asks the person ("Fill your … login on …?", Allow or Cancel; Allow is remembered for that
+  link and site); the program is run (10 s, 64 KiB, fixed argument list, cleared environment, no
+  shell, its own process group that a timeout ends whole; its stderr is read to tell "not signed in"
+  from "failed" and then dropped); the value is written by one `Runtime.callFunctionOn` in that
+  frame's world, as an argument and never in the function's text, which checks the site and the
+  field kind again. The answer is `{ filled: true }` or one code: `passwords-off`, `-unlinked`,
+  `-origin`, `-field`, `-denied`, `-locked`, `-failed`.
+- The question is a small window of the app's own (`ui/fill.html`, `capabilities/fill.json`), not a
+  system dialog, because it must close when the request it is for ends: when the server cancels
+  the request, or after two minutes, it closes and counts as Cancel, and nothing is approved. Cancel
+  comes first and has the focus, so Enter and Escape cancel; only a click on Allow allows.
+- Scrubbing: a password or code is added to the browser's list of values that are scrubbed from
+  every later answer (as it is, as JSON writes it and as an address carries it, so a navigation
+  event's address is covered; names are left alone) before it is written. A username is never
+  held. The list holds 64 values: the 65th password is not filled. A code is dropped after two
+  minutes, a password stays until the browser ends. A password or code shorter than 4 characters
+  is not filled, since it could not be found in an answer without taking other words with it.
+- Pictures: from a password or code fill until the top frame of the page commits a new document
+  (a change inside the same document, a frame inside the page, or a page restored from the
+  back-forward cache does not count), `Page.captureScreenshot` is refused with `passwords-screenshot`,
+  because the bot could make the page show the password ("show password") and photograph it. The
+  server then tells the model there is no picture and that the text snapshot is complete. The rule
+  is coarse on purpose: it holds the page, not the field.
+- `Page.createIsolatedWorld`, `DOM.resolveNode` and `Runtime.callFunctionOn` are used by this app
+  only: they are not in `ALLOWED`.
+- Honest limits: the page itself can read what was typed into it, as any page can; copies of the
+  value inside the message handed to the browser, and in the JSON the program printed and this
+  app parsed, are not overwritten; the picture rule above is coarse and the text answers are
+  scrubbed, not the page; the program's own approval window lasts as long as the program says (its
+  session); anything running as this user can run the program too. Not measured against a real
+  browser or a real program yet (the tests use a fake of each). macOS is built and passes the
+  desktop stack e2e in CI, but was never tried with a real password manager: how the program
+  authorizes a call from an app with no terminal there is neither documented nor tested. Windows
+  has no program path yet.
 
 ## The server on this computer
 

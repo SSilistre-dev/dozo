@@ -99,6 +99,16 @@ export const DEVICE_FILL_FAILED = "The user's computer could not fill this login
 export const UNSUPPORTED_STEP =
   "This step is not available in the bot's browser on the user's computer yet.";
 
+/** The computer refused a picture of the page (it holds a password it filled). */
+export class PictureRefusedError extends Error {
+  constructor() {
+    super("passwords-screenshot");
+    this.name = "PictureRefusedError";
+  }
+}
+export const PICTURE_REFUSED_NOTE =
+  "No picture of this page while a password the user's computer filled is on it; the text snapshot is complete.";
+
 const DEVICE_FILL_KEY = "dozo-device-fill:";
 
 const text = (value: unknown) =>
@@ -458,10 +468,18 @@ export class DeviceBrowserProvider implements BrowserProvider {
 
   /**
    * The visible page as a JPEG, base64, for a model that can see; none when the page is on
-   * another site than `site` once it was taken.
+   * another site than `site` once it was taken. Throws `PictureRefusedError` while the computer
+   * holds back pictures of a page it filled a password into.
    */
   async screenshot(site?: string): Promise<string | undefined> {
-    const shot = await this.send("Page.captureScreenshot", { format: "jpeg", quality: 60 });
+    let shot: Record<string, unknown>;
+    try {
+      shot = await this.send("Page.captureScreenshot", { format: "jpeg", quality: 60 });
+    } catch (error) {
+      if (error instanceof Error && error.message === "passwords-screenshot")
+        throw new PictureRefusedError();
+      throw error;
+    }
     if (site !== undefined && siteOf((await this.where()).url) !== site) return undefined;
     return typeof shot.data === "string" ? shot.data : undefined;
   }
