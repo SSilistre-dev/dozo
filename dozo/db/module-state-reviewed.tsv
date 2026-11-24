@@ -232,3 +232,4 @@ packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<objec
 packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call
+packages/adapters/src/run-tool-gate.ts	fn gateToolCall	let gateDecision: "ask" | "allow" = plan === "ask" || plan === "judge" ? "ask" : "allow";	request	one tool call's decision, set by its own review closure inside the call; nothing outlives the call

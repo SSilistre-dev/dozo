@@ -9304,12 +9304,15 @@
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
-      "find": "  const checkerConfigured =\n    reviewable &&\n    (Boolean(injectedReview) ||",
-      "replace": "  const checkerConfigured =\n    reviewable &&\n    // A held command needs a model that will judge it; with none (only backups, no primary) it asks.\n    (dozoHostedHold === undefined || Boolean(injectedReview || checker)) &&\n    (Boolean(injectedReview) ||",
-      "requires": [
-        "packages/adapters/src/dozo-command-gate.ts"
-      ],
-      "reason": "command rules: a held command on the bot's computer is judged only by a model the review below actually runs; when none would run (no primary model, backups only), it asks instead of passing unreviewed"
+      "find": "  let gateDecision: \"ask\" | \"allow\" = plan === \"ask\" ? \"ask\" : \"allow\";\n",
+      "replace": "  let gateDecision: \"ask\" | \"allow\" = plan === \"ask\" || plan === \"judge\" ? \"ask\" : \"allow\";\n",
+      "reason": "approval model: a call planned for review goes ahead only on a verdict that passes it, so one no model answered asks (fails closed), for every tool in one place"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  if (applied && plan === \"judge\" && (injectedReview || checker)) {\n",
+      "replace": "  if (applied && plan === \"judge\" && (injectedReview || checker || reviewSettings?.backups.length)) {\n",
+      "reason": "approval model: a member who picked only backup approval models (no primary of their own or the deployment's) has those backups judge the call, in order, as the review below already runs them; the plan counted them, so skipping the review let every such call through unreviewed"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
