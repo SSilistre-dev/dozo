@@ -64,6 +64,24 @@ const attribute = (node: DomNode, name: string): string | undefined => {
 };
 const tag = (node: DomNode) => (node.nodeName ?? "").toUpperCase();
 
+/** Whether a control is one that submits its form when pressed. */
+const submitControl = (node: DomNode) => {
+  if (attribute(node, "disabled") !== undefined) return false;
+  const type = attribute(node, "type")?.toLowerCase();
+  if (tag(node) === "BUTTON") return type !== "button" && type !== "reset";
+  return tag(node) === "INPUT" && (type === "submit" || type === "image");
+};
+const singleLineField = (node: DomNode) =>
+  tag(node) === "INPUT" && SINGLE_LINE_FIELD.has(attribute(node, "type")?.toLowerCase() ?? "");
+
+/**
+ * Whether a step on this element could submit a form, from the element alone: a link, a script's button or
+ * a text area cannot, so the page around them need not be read.
+ */
+export function couldSubmit(node: DomNode, step: Step): boolean {
+  return step.kind === "click" ? submitControl(node) : singleLineField(node);
+}
+
 /** The steps of a call that could send: clicks, and text with a line break. */
 export function sendingSteps(actions: unknown[]): Step[] {
   return actions.flatMap((raw) => {
@@ -133,12 +151,6 @@ export function submitsIn(root: DomNode | undefined, steps: Step[]): number {
     ).toLowerCase();
     return method !== "dialog" && (method !== "get" || !isSearch(form));
   };
-  const submitControl = (node: DomNode) => {
-    if (attribute(node, "disabled") !== undefined) return false;
-    const type = attribute(node, "type")?.toLowerCase();
-    if (tag(node) === "BUTTON") return type !== "button" && type !== "reset";
-    return tag(node) === "INPUT" && (type === "submit" || type === "image");
-  };
   let total = 0;
   for (const step of steps) {
     const backend = refNode(step.ref);
@@ -150,10 +162,7 @@ export function submitsIn(root: DomNode | undefined, steps: Step[]): number {
       total += form && sends(form, node) ? 1 : 0;
     } else {
       // A line break in a one-line field submits its form; in a text area it breaks the line.
-      const form =
-        tag(node) === "INPUT" && SINGLE_LINE_FIELD.has(attribute(node, "type")?.toLowerCase() ?? "")
-          ? formOf(node)
-          : undefined;
+      const form = singleLineField(node) ? formOf(node) : undefined;
       total += form && sends(form) ? 1 : 0;
     }
   }

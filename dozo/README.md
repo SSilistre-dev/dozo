@@ -753,17 +753,24 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
   only runs a script (`type=button`, a link, `role=button`) is not a submit: a page that sends from
   one cannot be told from any other click, and counting every click would stop a bot after the
   number of its clicks. That is this count's limit, as is `computer_act`, which clicks on the screen
-  and is not counted. A press the browser cannot look at counts as a submit (a control in a frame, an
-  element its page no longer holds, a page it cannot read), so a miss errs towards asking.
+  and is not counted. A press the browser cannot look at counts as a submit, so a miss errs towards
+  asking: on the bot's computer a control inside a frame or a page it cannot read (a ref the page
+  no longer holds is skipped, as the click itself would fail); in the user's browser an element it
+  cannot find or a page it cannot read.
   - The bot's computer: its page browser's purchase check, which already runs before each
     `browser_act` with a click, also says how many of the clicks submit (`submits`, in the answer
     only when some do). A computer image from before this does not say, so nothing counts there
     until its image is rebuilt.
-  - The user's own browser: the server reads the page's DOM (`DOM.getDocument`, depth 256, nothing
-    else is sent) before a call that clicks or types a line break, and applies the same rule. A line
-    break typed into a one-line field of such a form is a submit there; the bot's computer types no
-    line breaks into one-line fields, so it has none to count. Frames and shadow trees the desktop
-    does not return count as submits. A page too large to read counts each press.
+  - The user's own browser: before a call that clicks or types a line break, the server asks the
+    desktop about each element alone (`DOM.describeNode`: its tag and attributes), which settles
+    every press that cannot submit (links, plain and script buttons, text areas). Only when a press
+    could submit does it read the page's DOM (`DOM.getDocument`, depth 256) once, to find the
+    form around the control. That DOM crosses to the server, so it can hold page text and
+    attribute values; it is judged in memory and nothing of it is logged, stored, put in an event
+    or the call's arguments (a test holds this). Frames and shadow trees the desktop does not
+    return count as submits, and a page too large to read counts each press that could submit. A
+    line break typed into a one-line field of such a form is a submit there; the bot's computer
+    types no line breaks into one-line fields, so it has none to count.
   - A call approved on its card is not counted, as for any send, so the first action the user's
     browser asks about on a site (its card) is free and later ones count.
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow

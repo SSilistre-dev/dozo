@@ -23,7 +23,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import type { DevicePage } from "./dozo-device-browser.test-support.js";
 import { fakeDeviceBrowser } from "./dozo-device-browser.test-support.js";
-import { dozoNotePageSubmits, submitsIn } from "./dozo-page-submit.js";
+import { couldSubmit, dozoNotePageSubmits, sendingSteps, submitsIn } from "./dozo-page-submit.js";
 import { dozoPageSubmits } from "./dozo-page-submit-gate.js";
 import { dozoSendLimitCard, dozoSendLimitGate, dozoSendLimitHeld } from "./dozo-send-limit.js";
 import { userBrowserGate } from "./dozo-user-browser-gate.js";
@@ -178,6 +178,10 @@ describe("which presses are form submits, in the user's own browser", () => {
   it("asks the page only about presses that could send, and reads nothing else", async () => {
     const { run } = await submits([{ kind: "fill", ref: REF.field, text: "x" }, click(REF.send)]);
     expect(run.requests.filter((method) => method === "DOM.getDocument")).toHaveLength(1);
+    // Presses that cannot submit are settled from their own element: the page is not read for them.
+    const quiet = await submits([click(REF.link), click(REF.menu), click(REF.like)]);
+    expect(quiet.run.requests).not.toContain("DOM.getDocument");
+    expect(quiet.run.requests.filter((method) => method === "DOM.describeNode")).toHaveLength(3);
     // The desktop passes a depth that is a whole number, which -1 is not.
     const read = run.device.commands.find((command) => command.method === "DOM.getDocument");
     expect(Number.isInteger(read?.params?.depth) && Number(read?.params?.depth) > 0).toBe(true);
@@ -196,6 +200,44 @@ describe("which presses are form submits, in the user's own browser", () => {
     expect((await submits([click(REF.link), click(REF.send)], { failing: true })).count).toBe(2);
   });
 
+  it("keeps nothing of what it reads: no log, no event, no argument carries the page", async () => {
+    const canary = "CANARY-private-page-text";
+    const secret: Record<string, DevicePage> = {
+      [PAGE]: {
+        ...pages[PAGE]!,
+        forms: { ...pages[PAGE]!.forms, post: { id: canary, method: "post", "data-note": canary } },
+      },
+    };
+    const device = fakeDeviceBrowser(secret);
+    await device({ method: "Page.navigate", params: { url: PAGE } });
+    const run = userRun();
+    const reached: boolean[] = [];
+    (run.ctx.deps.userDevices as { request: unknown }).request = async function* (
+      _owner: string,
+      request: { command?: never },
+    ) {
+      const answer = await device(request.command as never);
+      reached.push(JSON.stringify(answer).includes(canary));
+      yield answer;
+    };
+    const spies = (["log", "info", "warn", "error", "debug"] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => undefined),
+    );
+    const args = { actions: [click(REF.send)] };
+    const before = JSON.stringify(args);
+    const count = await dozoPageSubmits(run.ctx, "browser_act", args);
+    const logged = spies.flatMap((spy) => spy.mock.calls);
+    for (const spy of spies) spy.mockRestore();
+    expect(count).toBe(1);
+    // The page did reach the server, as it must to be judged...
+    expect(reached).toContain(true);
+    // ...and nothing of it is left: the answer is a number, the call and the run are untouched.
+    expect(logged).toEqual([]);
+    expect(JSON.stringify(args)).toBe(before);
+    expect(JSON.stringify(run.ctx.state)).not.toContain(canary);
+    expect(JSON.stringify(Object.entries(run.ctx))).not.toContain(canary);
+  });
+
   it("counts each press as a submit when the page's answer holds no document", async () => {
     const run = userRun({ empty: true });
     const actions = [click(REF.link), click(REF.send)];
@@ -211,6 +253,37 @@ describe("which presses are form submits, in the user's own browser", () => {
     expect(await dozoPageSubmits(ownerless, "browser_act", { actions })).toBe(1);
   });
 
+  it("reads the steps of a call as the browser tool does, and sparse nodes without failing", () => {
+    expect(
+      sendingSteps([
+        null,
+        { kind: "click" },
+        { kind: "type", text: 5 },
+        { kind: "type", ref: " e5 ", text: "a\n" },
+        { kind: "fill", ref: "e1", text: "a\n" },
+      ]),
+    ).toEqual([
+      { kind: "click", ref: undefined, text: "" },
+      { kind: "type", ref: "e5", text: "a\n" },
+    ]);
+    const bare = { backendNodeId: 3 };
+    const form = {
+      nodeName: "FORM",
+      attributes: ["method"],
+      children: [
+        { backendNodeId: 4, nodeName: "BUTTON", attributes: ["formmethod", "", "id"] },
+        bare,
+      ],
+    };
+    expect(
+      submitsIn({ children: [form] }, [
+        { kind: "click", ref: "e3" },
+        { kind: "click", ref: "e4" },
+      ]),
+    ).toBe(1);
+    expect(couldSubmit(bare, { kind: "click" })).toBe(false);
+  });
+
   it("finds elements inside frames and shadow trees, and no form of an unlinked id", () => {
     const button = { backendNodeId: 5, nodeName: "BUTTON", attributes: ["form", "ghost"] };
     const inner = { backendNodeId: 6, nodeName: "BUTTON" };
@@ -224,6 +297,15 @@ describe("which presses are form submits, in the user's own browser", () => {
     expect(submitsIn(root, [{ kind: "click", ref: "e5" }])).toBe(0);
     expect(submitsIn(root, [{ kind: "click", ref: "e6" }])).toBe(1);
     expect(submitsIn(undefined, [{ kind: "click", ref: "e6" }])).toBe(1);
+    // An element the page's document does not hold (one the desktop did not return) counts.
+    expect(submitsIn(root, [{ kind: "click", ref: "e99" }])).toBe(1);
+    // What the element alone settles.
+    const input = (type: string) => ({ nodeName: "INPUT", attributes: ["type", type] });
+    expect(couldSubmit(input("submit"), { kind: "click" })).toBe(true);
+    expect(couldSubmit({ nodeName: "A" }, { kind: "click" })).toBe(false);
+    expect(couldSubmit(input("text"), { kind: "type", text: "\n" })).toBe(true);
+    expect(couldSubmit(input("checkbox"), { kind: "type", text: "\n" })).toBe(false);
+    expect(couldSubmit({ nodeName: "TEXTAREA" }, { kind: "type", text: "\n" })).toBe(false);
     // A search nested in a landmark, or a form inside one, is still a search.
     const search = {
       nodeName: "DIV",

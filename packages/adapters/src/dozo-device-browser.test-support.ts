@@ -53,6 +53,8 @@ export function fakeDeviceBrowser(pages: Record<string, DevicePage>) {
   const commands: Array<{ method: string; params?: Record<string, unknown> }> = [];
   const page = () => pages[url];
   const node = (id: number) => page()?.nodes[id - FIRST_NODE];
+  const defaultTag = (role: string) =>
+    role === "button" ? "BUTTON" : role === "link" ? "A" : role === "textbox" ? "INPUT" : "DIV";
 
   const answer = (method: string, params: Record<string, unknown>): unknown => {
     switch (method) {
@@ -91,16 +93,19 @@ export function fakeDeviceBrowser(pages: Record<string, DevicePage>) {
             })),
           ],
         };
+      case "DOM.describeNode": {
+        const entry = node(Number(params.backendNodeId));
+        if (!entry) throw new Error("The bot's browser refused DOM.describeNode: no such node");
+        return {
+          node: {
+            backendNodeId: Number(params.backendNodeId),
+            nodeName: entry.tag ?? defaultTag(entry.role),
+            attributes: Object.entries(entry.attrs ?? {}).flat(),
+          },
+        };
+      }
       case "DOM.getDocument": {
         const flat = (attrs: Record<string, string> = {}) => Object.entries(attrs).flat();
-        const defaultTag = (role: string) =>
-          role === "button"
-            ? "BUTTON"
-            : role === "link"
-              ? "A"
-              : role === "textbox"
-                ? "INPUT"
-                : "DIV";
         const entries = (page()?.nodes ?? []).map((entry, index) => ({
           form: entry.form,
           element: {
