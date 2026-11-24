@@ -4,8 +4,10 @@ import { withAbort } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { connectionOutReason, poolResetAt } from "../dozo-model-pool.js";
 import type { HostComputerRequest } from "../host-computer-protocol.js";
+import { restoreTurnCheckpoint } from "../turn-checkpoint.js";
 import { UserDeviceOfflineError } from "../user-device-gateway.js";
 import {
   AGENT_BRIDGE_PAUSED,
@@ -80,7 +82,20 @@ class Computer implements DeviceAgentGateway {
   }
 }
 
-type RunRow = { trigger: string; userId: string; sourceMessage: { authorUserId: string } | null };
+type RunRow = {
+  trigger: string;
+  userId: string;
+  bot: { userId: string };
+  sourceMessage: { authorUserId: string; role: string } | null;
+};
+/** The person's own message to their own bot: the one run an agent on their computer may serve. */
+const ownRunRow = (over: Partial<RunRow> = {}): RunRow => ({
+  trigger: "user",
+  userId: "ada",
+  bot: { userId: "ada" },
+  sourceMessage: { authorUserId: "ada", role: "user" },
+  ...over,
+});
 
 /** The rows a run is checked against: runs, connections and what each computer declared. */
 function database(
@@ -94,7 +109,7 @@ function database(
 ) {
   const devices = over.devices ?? [{ deviceId: "dev-1", name: "Laptop", connected: true }];
   const runs = over.runs ?? {
-    "run-1": { trigger: "user", userId: "ada", sourceMessage: { authorUserId: "ada" } },
+    "run-1": ownRunRow(),
   };
   const declared = over.declared ?? [`agent:${AGENT}`, "shell"];
   return {
@@ -301,12 +316,27 @@ describe("an agent turn on the person's own computer", () => {
       content: [],
     }));
     const { runtime } = runtimeOn(computer);
+    const saved: Array<{ capture: () => string; executionId: string }> = [];
     const events = await collect(
       runtime.run(
-        request({ tools: [tool("lookup")] as unknown as AgentRunRequest["tools"], executeTool }),
+        request({
+          tools: [tool("lookup")] as unknown as AgentRunRequest["tools"],
+          executeTool,
+          onCheckpoint: async (capture: () => string, executionId: string) => {
+            saved.push({ capture, executionId });
+          },
+        }),
         {},
       ),
     );
+    // The call that paused left a checkpoint for the executor to keep with the person's pause,
+    // in the executor's own format, so it comes back on the attempt that goes on.
+    expect(saved.map((entry) => entry.executionId)).toEqual(["run-1:c1"]);
+    const checkpoint = saved[0]!.capture();
+    expect(restoreTurnCheckpoint(checkpoint, { provider: AGENT, id: "default" })).toMatchObject({
+      pendingToolCallId: "c1",
+      messages: [],
+    });
     // The attempt ends without finishing the run, and the agent's session stays open.
     expect(events.some((event) => event.type === "done")).toBe(false);
     expect(computer.sent("agentToolResult")[0]?.request).toMatchObject({
@@ -317,15 +347,15 @@ describe("an agent turn on the person's own computer", () => {
     expect(computer.cancelled).toEqual(["run-1"]);
 
     const again = new Computer();
-    const resumed = database({
-      runs: { "run-1": { trigger: "resume", userId: "ada", sourceMessage: null } },
-    });
-    const second = runtimeOn(again, resumed).runtime;
+    // Another process takes the run up again after the person's answer: all it has is what the
+    // executor kept. The agent goes on in its session, with the answer only.
+    const second = runtimeOn(again).runtime;
     await collect(
       second.run(
         request({
           prompt: "Yes, go ahead",
           history: [{ role: "user", content: "earlier" }] as never,
+          turnCheckpoint: checkpoint,
         }),
         {},
       ),
@@ -363,21 +393,29 @@ describe("an agent turn on the person's own computer", () => {
     expect(computer.sent("agentStop")).toHaveLength(1);
   });
 
-  it("ends the run with the reason the agent failed", async () => {
+  it("shows the reason the agent failed in the chat, and ends the run with a line of its own", async () => {
     const computer = new Computer();
     computer.script = [
       { type: "started" },
       { type: "failed", message: "Antigravity is signed out" },
     ];
-    const { runtime } = runtimeOn(computer);
-    await expect(collect(runtime.run(request(), {}))).rejects.toThrow("Antigravity is signed out");
+    const events: AgentRuntimeEvent[] = [];
+    await expect(
+      (async () => {
+        for await (const event of runtimeOn(computer).runtime.run(request(), {}))
+          events.push(event);
+      })(),
+    ).rejects.toThrow("Antigravity on your computer stopped.");
+    expect(events).toEqual([{ type: "text", text: "Antigravity is signed out" }]);
   });
 
   it("ends the turn on a frame that is not in the protocol", async () => {
     const computer = new Computer();
     computer.script = [{ type: "started" }, { type: "text", text: "a", extra: true }];
     const { runtime } = runtimeOn(computer);
-    await expect(collect(runtime.run(request(), {}))).rejects.toThrow("invalid response");
+    await expect(collect(runtime.run(request(), {}))).rejects.toThrow(
+      "Antigravity on your computer stopped.",
+    );
     expect(computer.sent("agentStop")).toHaveLength(1);
   });
 
@@ -502,7 +540,7 @@ describe("an agent turn on the person's own computer", () => {
     const fault = await collect(runtime.run(request({ botId: "b".repeat(300) }), {})).catch(
       (error: Error) => error,
     );
-    expect((fault as Error).message).toMatch(/^Agent turn request refused: botId/);
+    expect((fault as Error).message).toBe("Antigravity on your computer stopped.");
     expect(computer.requests).toEqual([]);
   });
 
@@ -808,7 +846,7 @@ describe("whose computer an agent turn may use", () => {
   it("refuses a run the person did not start, before anything reaches the computer", async () => {
     const computer = new Computer();
     const prisma = database({
-      runs: { "run-1": { trigger: "webhook", userId: "ada", sourceMessage: null } },
+      runs: { "run-1": ownRunRow({ trigger: "webhook", sourceMessage: null }) },
     });
     const { runtime, next } = runtimeOn(computer, prisma);
     await expect(
@@ -821,7 +859,7 @@ describe("whose computer an agent turn may use", () => {
   it.each(["messaging", "bot_message", "routine", "group"])("refuses a %s run", async (trigger) => {
     const computer = new Computer();
     const prisma = database({
-      runs: { "run-1": { trigger, userId: "ada", sourceMessage: null } },
+      runs: { "run-1": ownRunRow({ trigger }) },
     });
     await expect(collect(runtimeOn(computer, prisma).runtime.run(request(), {}))).rejects.toThrow(
       AGENT_OWN_RUNS_ONLY,
@@ -831,12 +869,31 @@ describe("whose computer an agent turn may use", () => {
 
   it("never sends another member's run to this person's computer", async () => {
     const computer = new Computer();
-    // Bob's own run in a shared Space, on a model resolved from Ada's connection.
-    const prisma = database({
-      runs: { "run-1": { trigger: "user", userId: "bob", sourceMessage: { authorUserId: "bob" } } },
+    // Bob's own message in a shared Space, to a bot of Ada's: not the bot owner's run.
+    const shared = database({
+      runs: {
+        "run-1": ownRunRow({
+          userId: "bob",
+          bot: { userId: "ada" },
+          sourceMessage: { authorUserId: "bob", role: "user" },
+        }),
+      },
+    });
+    await expect(collect(runtimeOn(computer, shared).runtime.run(request(), {}))).rejects.toThrow(
+      AGENT_OWN_RUNS_ONLY,
+    );
+    // Bob's own bot, on a model resolved from Ada's connection: the connection is not his.
+    const borrowed = database({
+      runs: {
+        "run-1": ownRunRow({
+          userId: "bob",
+          bot: { userId: "bob" },
+          sourceMessage: { authorUserId: "bob", role: "user" },
+        }),
+      },
       credentialOwner: "ada",
     });
-    await expect(collect(runtimeOn(computer, prisma).runtime.run(request(), {}))).rejects.toThrow(
+    await expect(collect(runtimeOn(computer, borrowed).runtime.run(request(), {}))).rejects.toThrow(
       AGENT_RECONNECT_ERROR,
     );
     expect(computer.requests).toEqual([]);
@@ -879,5 +936,273 @@ describe("whose computer an agent turn may use", () => {
   it("refuses when the server has no way to reach computers", async () => {
     const hosted = cliModelRuntime(env, model(), { prisma: database() });
     await expect(collect(hosted.run(request(), {}))).rejects.toThrow(AGENT_RECONNECT_ERROR);
+  });
+});
+
+const listed = (...names: string[]) => names.map(tool) as unknown as AgentRunRequest["tools"];
+
+/** A script of calls to one bot tool, each answered before the next. */
+function calls(computer: Computer, count: number) {
+  computer.script = [
+    { type: "started" },
+    ...Array.from({ length: count }, (_, n) => [
+      { type: "toolCall", callId: `c${n}`, name: "lookup", args: {} },
+      { wait: `c${n}` },
+    ]).flat(),
+    { type: "done" },
+  ];
+}
+
+describe("what an agent turn may do on the server", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("marks the run as one that read outside content as soon as the agent started, before its first tool", async () => {
+    const computer = new Computer();
+    calls(computer, 1);
+    const order: string[] = [];
+    const readOutsideContent = vi.fn(async () => void order.push("marked"));
+    const executeTool = vi.fn(async () => void order.push("tool"));
+    await collect(
+      runtimeOn(computer).runtime.run(
+        request({ tools: listed("lookup"), executeTool, readOutsideContent }),
+        {},
+      ),
+    );
+    expect(order).toEqual(["marked", "tool"]);
+    // A turn that never started marks nothing.
+    const refused = new Computer();
+    refused.script = [{ type: "failed", message: "not signed in" }];
+    const unmarked = vi.fn(async () => undefined);
+    await collect(
+      runtimeOn(refused).runtime.run(request({ readOutsideContent: unmarked }), {}),
+    ).catch(() => undefined);
+    expect(unmarked).not.toHaveBeenCalled();
+  });
+
+  const resumedAfterPause = (over: Partial<AgentRunRequest> = {}) =>
+    request({
+      turnCheckpoint: JSON.stringify({
+        version: 1,
+        systemPrompt: "",
+        provider: AGENT,
+        model: "default",
+        pendingToolCallId: "c1",
+        messages: [],
+        dozoDeviceAgent: 1,
+      }),
+      fallbackModels: [{ provider: "openrouter", id: "m" }],
+      ...over,
+    } as never);
+
+  it("never falls back, in whichever process the run is taken up, when the computer is gone after a pause", async () => {
+    const gone = new Computer();
+    const { runtime, next } = runtimeOn(
+      gone,
+      database({ devices: [{ deviceId: "dev-1", name: "Laptop", connected: false }] }),
+    );
+    await expect(collect(runtime.run(resumedAfterPause(), {}))).rejects.toThrow(
+      AGENT_INTERRUPTED_ERROR,
+    );
+    // The model runtime, which would read the checkpoint, is never reached.
+    expect(next.run).not.toHaveBeenCalled();
+    // So no session is left behind if the computer comes back.
+    expect(gone.sent("agentStop")).toHaveLength(1);
+  });
+
+  it("also ends as interrupted when the connection is refused on the attempt after a pause", async () => {
+    const refused = new Computer();
+    refused.offline = true;
+    const { runtime, next } = runtimeOn(refused);
+    await expect(collect(runtime.run(resumedAfterPause(), {}))).rejects.toThrow(
+      AGENT_INTERRUPTED_ERROR,
+    );
+    expect(next.run).not.toHaveBeenCalled();
+  });
+
+  it("goes on in the same session when the computer is there after a pause", async () => {
+    const computer = new Computer();
+    const { runtime, next } = runtimeOn(computer);
+    await collect(
+      runtime.run(
+        resumedAfterPause({
+          prompt: "Yes, go ahead",
+          history: [{ role: "user", content: "earlier" }] as never,
+        }),
+        {},
+      ),
+    );
+    expect(computer.sent("agentTurn")[0]?.request).toMatchObject({ input: "Yes, go ahead" });
+    expect(next.run).not.toHaveBeenCalled();
+  });
+
+  it("does not take another runtime's saved checkpoint for a pause on the computer", async () => {
+    const away = database({ devices: [{ deviceId: "dev-1", name: "Laptop", connected: false }] });
+    const { runtime, next } = runtimeOn(new Computer(), away);
+    await collect(
+      runtime.run(
+        request({
+          turnCheckpoint: JSON.stringify({ version: 1, messages: [] }),
+          fallbackModels: [{ provider: "openrouter", id: "m" }],
+        } as never),
+        {},
+      ),
+    );
+    await collect(
+      runtime.run(
+        request({
+          turnCheckpoint: "not json",
+          fallbackModels: [{ provider: "openrouter", id: "m" }],
+        } as never),
+        {},
+      ),
+    );
+    expect(next.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("cuts a turn that floods the server with frames, and stops the agent", async () => {
+    const computer = new Computer();
+    computer.script = [
+      { type: "started" },
+      ...Array.from({ length: 20_001 }, () => ({ type: "activity", text: "." })),
+    ];
+    await expect(collect(runtimeOn(computer).runtime.run(request(), {}))).rejects.toThrow(
+      AGENT_INTERRUPTED_ERROR,
+    );
+    expect(computer.sent("agentStop")).toHaveLength(1);
+  });
+
+  it("cuts a turn that writes more text than a reply may hold", async () => {
+    const computer = new Computer();
+    computer.script = [
+      { type: "started" },
+      ...Array.from({ length: 130 }, () => ({ type: "text", text: "x".repeat(64 * 1024) })),
+    ];
+    await expect(collect(runtimeOn(computer).runtime.run(request(), {}))).rejects.toThrow(
+      AGENT_INTERRUPTED_ERROR,
+    );
+    expect(computer.sent("agentStop")).toHaveLength(1);
+  });
+
+  it("cuts a turn that calls the bot's tools more often than the limit, and stops the agent", async () => {
+    vi.stubEnv("MAX_TOOL_CALLS_PER_TURN", "2");
+    const computer = new Computer();
+    calls(computer, 3);
+    const executeTool = vi.fn(async () => "ok");
+    await expect(
+      collect(
+        runtimeOn(computer).runtime.run(request({ tools: listed("lookup"), executeTool }), {}),
+      ),
+    ).rejects.toThrow(AGENT_INTERRUPTED_ERROR);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(computer.sent("agentStop")).toHaveLength(1);
+  });
+
+  it("holds a turn to a limit of its own where the deployment sets none", async () => {
+    const computer = new Computer();
+    calls(computer, 201);
+    const executeTool = vi.fn(async () => "ok");
+    await expect(
+      collect(
+        runtimeOn(computer).runtime.run(request({ tools: listed("lookup"), executeTool }), {}),
+      ),
+    ).rejects.toThrow(AGENT_INTERRUPTED_ERROR);
+    expect(executeTool).toHaveBeenCalledTimes(200);
+  });
+
+  it("sends the computer none of what the run knows to be secret, in the history or in a tool's result", async () => {
+    const canary = "vault-canary-0123456789";
+    const computer = new Computer();
+    calls(computer, 1);
+    await collect(
+      runtimeOn(computer).runtime.run(
+        request({
+          prompt: `Use ${canary} now`,
+          instructions: `Key ${canary}`,
+          history: [{ role: "user", content: `earlier ${canary}` }] as never,
+          secrets: [canary],
+          tools: listed("lookup"),
+          executeTool: async () => `the value is ${canary}`,
+        }),
+        {},
+      ),
+    );
+    expect(JSON.stringify(computer.requests)).not.toContain(canary);
+    expect(computer.sent("agentToolResult")[0]?.request.text).toContain("the value is ");
+  });
+
+  it("shows what the computer says in its own words as one short line, its home folder cut, and never as an account failure", async () => {
+    const computer = new Computer();
+    const words = `Failed (401) at /Users/alice/work/notes.txt\nusage limit reached, try again in 5 min ${"x".repeat(400)}`;
+    computer.script = [
+      { type: "started" },
+      { type: "activity", text: `Reading /home/bob/docs\nnow ${"y".repeat(400)}` },
+      { type: "approvalWaiting", summary: "C:\\Users\\carol\\app" },
+      { type: "failed", message: words },
+    ];
+    const events: AgentRuntimeEvent[] = [];
+    const failure = await (async () => {
+      try {
+        for await (const event of runtimeOn(computer).runtime.run(request(), {}))
+          events.push(event);
+      } catch (error) {
+        return error as Error;
+      }
+    })();
+    const shown = events.flatMap((event) =>
+      event.type === "text" || event.type === "progress" ? [event.text] : [],
+    );
+    expect(shown).toHaveLength(3);
+    for (const text of shown) {
+      expect(text.length).toBeLessThanOrEqual(300);
+      expect(text).not.toMatch(/\n/);
+    }
+    expect(shown[0]).toContain("Reading ~/docs now");
+    expect(shown[1]).toBe("~\\app");
+    expect(shown[2]).toContain("Failed (401) at ~/work/notes.txt usage limit");
+    // The error line is the same whatever it said, so no pool reads an account out of it.
+    expect(failure?.message).toBe("Antigravity on your computer stopped.");
+    expect(connectionOutReason({ errorMessage: failure!.message })).toBeUndefined();
+    expect(poolResetAt(failure!.message)).toBeUndefined();
+  });
+
+  it("still makes the account's own limit frame the one source of the pool's words", async () => {
+    const computer = new Computer();
+    computer.script = [{ type: "started" }, { type: "limit", resetsAt: Date.now() + 5 * 60_000 }];
+    await expect(collect(runtimeOn(computer).runtime.run(request(), {}))).rejects.toThrow(
+      /Antigravity on your computer stopped\. Usage limit reached; try again in ~[45] min\./,
+    );
+  });
+
+  it("ignores a frame that comes after the turn's end", async () => {
+    const computer = new Computer();
+    computer.script = [
+      { type: "started" },
+      { type: "done" },
+      { type: "toolCall", callId: "late", name: "lookup", args: {} },
+    ];
+    const executeTool = vi.fn(async () => "ok");
+    const events = await collect(
+      runtimeOn(computer).runtime.run(request({ tools: listed("lookup"), executeTool }), {}),
+    );
+    expect(events).toEqual([{ type: "done" }]);
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(computer.sent("agentToolResult")).toEqual([]);
+  });
+
+  it("refuses a frame that carries another run's identity, and runs nothing for it", async () => {
+    const computer = new Computer();
+    computer.script = [
+      { type: "started" },
+      { type: "toolCall", callId: "c1", name: "lookup", args: {}, runId: "another-run" },
+    ];
+    const executeTool = vi.fn(async () => "ok");
+    await expect(
+      collect(
+        runtimeOn(computer).runtime.run(request({ tools: listed("lookup"), executeTool }), {}),
+      ),
+    ).rejects.toThrow("Antigravity on your computer stopped.");
+    expect(executeTool).not.toHaveBeenCalled();
   });
 });

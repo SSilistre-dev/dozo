@@ -468,6 +468,25 @@ export async function seedExtras(
     });
     ids.loginId = login.id;
   });
+  await step("agent computer", async () => {
+    // A paired computer of the owner's that is connected and runs an agent now, so a connection to
+    // it can be made (and another person's refused).
+    const device = await system.userDevice.create({
+      data: {
+        userId: owner.userId,
+        name: mark("device"),
+        platform: "darwin",
+        tokenHash: `iso-${rand()}`,
+      },
+    });
+    await system.userDeviceConnection.create({
+      data: { deviceId: device.id, connectionId: randomUUID(), address: "http://iso-api" },
+    });
+    await system.$executeRaw`
+      INSERT INTO dozo_device_capabilities ("deviceId", capabilities)
+      VALUES (${device.id}, ARRAY['agent:codex-agent']::text[])`;
+    ids.deviceId = device.id;
+  });
   await step("computer", async () => {
     const bot = await system.bot.findUniqueOrThrow({
       where: { id: botId },

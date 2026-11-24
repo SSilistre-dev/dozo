@@ -59,7 +59,6 @@ packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let home: Aw
 packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let cwd: string;	user	one person's sign-in session held in sessions by userId+provider; read only with their own userId
 packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let output = "";	user	one person's sign-in session held in sessions by userId+provider; read only with their own userId
 packages/adapters/src/cli-models/dozo-cli-providers.ts	fn withAccountErrors	const outer = createAssistantMessageEventStream();	local	per-call local, dies with the call
-packages/adapters/src/cli-models/dozo-cli-runtime.ts	module	const OWN_TRIGGERS = new Set(["user", "resume", "follow_up"]);	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/cli-models/dozo-device-agent.ts	module	const active = new Map<string, () => Promise<void>>();	run	stop of the turn running on a computer, by runId in this process; set and deleted by that run's own attempt, and abort(runId) reads only the caller's own runId
 packages/adapters/src/cli-models/dozo-device-agent.ts	fn turnOnDevice	let stoppedFromOutside = false;	local	per-call local of one attempt, set only by that attempt's own stop, dies with the call
 packages/adapters/src/dozo-bot-model-backups.ts	module	let missingTableReported = false;	global-safe	one-time flag that a missing table was logged; holds no person data

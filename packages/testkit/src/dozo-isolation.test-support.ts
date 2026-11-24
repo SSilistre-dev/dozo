@@ -75,6 +75,7 @@ export type PoolKey =
   | "incomingCallId"
   | "credentialId"
   | "loginId"
+  | "deviceId"
   | "versionId"
   | "computerId"
   | "computerUpdateId"

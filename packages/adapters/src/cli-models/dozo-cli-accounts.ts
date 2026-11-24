@@ -3,12 +3,7 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { defaultCatalogModelId, loadStoredModelSecret } from "../model-selection.js";
-import {
-  agentConnected,
-  agentConnection,
-  agentDriverFor,
-  readAgentTools,
-} from "./dozo-agent-accounts.js";
+import { agentConnected, agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
 import type { CliAccount, CliModelDriver, LocalCliHost } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -291,8 +286,7 @@ export async function cliHomeConnection(
     const host = await usableHost(deps, userId);
     if (!host) throw new ClientError("NOT_FOUND", "This tool cannot be used on this server.");
     // A connection with no mode (saving it was cut short) is taken over, not refused.
-    if ((await agentConnected(deps.prisma, userId, [provider])).has(provider))
-      throw new CliAccountUnavailableError(`${agent.name} is already connected.`);
+    if ((await agentConnected(deps.prisma, userId, [provider])).has(provider)) throw new CliAccountUnavailableError(`${agent.name} is already connected.`);
     return agentConnection(agent, host, {
       agent: options.consent === true,
       terms: options.termsConsent === true,

@@ -244,7 +244,8 @@ async function* runAgent(
   const host = localCliHost();
   const on =
     enabledAgentProviders().has(driver.provider) || (await options.enabled?.(driver.provider));
-  if (!host || !on) throw new Error(`${driver.name} agent mode is not turned on on this server.`);
+  if (!host || !on)
+    throw new Error(`${driver.name} agent mode is not turned on on this server.`);
   const refusal = (await options.accessCheck()) ?? (await options.runAllowed(request.runId));
   if (refusal) throw new Error(refusal);
   // Only a connection made in settings, after the person's agreement and the check, names this.

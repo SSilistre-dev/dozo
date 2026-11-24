@@ -5,6 +5,7 @@ import { dozoBotTokenTainted } from "../dozo-token-marks.js";
 import { createRuntimeModels } from "../pi-runtime-models.js";
 import { withRuntimeModels } from "../pi-runtime-scope.js";
 import type { RunRuntimeEnv } from "../run-runtime.js";
+import { userComputerOwner } from "../run-tools-user-computer.js";
 import { AGENT_OWN_RUNS_ONLY, AGENT_TOKEN_TEXT, withAgentRuntime } from "./dozo-agent.js";
 import { agentModeEnabled } from "./dozo-agent-modes.js";
 import { localCliHost } from "./dozo-cli-driver.js";
@@ -51,12 +52,11 @@ export function cliModelRuntime(
   });
 }
 
-/** How a run the person started in Dozo begins, or goes on after their own answer. */
-const OWN_TRIGGERS = new Set(["user", "resume", "follow_up"]);
-
 /**
  * Whether the person started this run themselves, by a message of their own: never a chat app,
- * another bot, a webhook or a schedule, whose words would reach an agent that reads their files.
+ * another bot, a webhook, a schedule or a group's handoff, whose words would reach an agent that
+ * reads their files. The one rule is the one that decides whose own computer a run may reach
+ * (`userComputerOwner`): the bot's owner, a direct message of theirs, and no run without one.
  */
 export async function ownRun(prisma: PrismaClient, runId: string): Promise<string | undefined> {
   const run = await runAsSystem("check who started an agent run", () =>
@@ -67,14 +67,23 @@ export async function ownRun(prisma: PrismaClient, runId: string): Promise<strin
         userId: true,
         botId: true,
         threadId: true,
-        sourceMessage: { select: { authorUserId: true } },
+        bot: { select: { userId: true } },
+        sourceMessage: { select: { authorUserId: true, role: true } },
       },
     }),
   );
   const own =
     run !== null &&
-    OWN_TRIGGERS.has(run.trigger) &&
-    (!run.sourceMessage || run.sourceMessage.authorUserId === run.userId);
+    run.sourceMessage !== null &&
+    run.sourceMessage.authorUserId === run.userId &&
+    userComputerOwner({
+      trigger: run.trigger,
+      sourceRole: run.sourceMessage.role,
+      // A chat app's run has its own trigger, which the rule above already refuses.
+      messagingChannelRun: false,
+      runUserId: run.userId,
+      botUserId: run.bot.userId,
+    }) !== undefined;
   if (!own) return AGENT_OWN_RUNS_ONLY;
   // Text sent with an access token is not the person's own (dozo-token-marks.ts): an agent reads
   // without asking, so none of it may reach one.

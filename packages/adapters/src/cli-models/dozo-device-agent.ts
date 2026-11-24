@@ -5,10 +5,10 @@ import type {
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
 import type { UserDeviceSummary } from "@rakazo/contracts";
-import { retry, withAbort } from "@rakazo/core";
+import { redactSecrets, retry, withAbort } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { AgentTurnFrame } from "../dozo-agent-device-protocol.js";
 import {
   AGENT_DEVICE_LIMITS,
@@ -19,8 +19,10 @@ import {
 } from "../dozo-agent-device-protocol.js";
 import { deviceAgentIds, readDeviceAgents } from "../dozo-device-capabilities.js";
 import { PHONE_PLATFORMS } from "../dozo-phone-protocol.js";
+import { STALE_AFTER_MS } from "../dozo-user-device-gateway.js";
 import type { HostComputerRequest } from "../host-computer-protocol.js";
 import { defaultCatalogModelId } from "../model-selection.js";
+import { maxToolCallsPerTurn } from "../pi-runtime-tools.js";
 import { UserDeviceOfflineError } from "../user-device-gateway.js";
 import type { UserDeviceGateway } from "../user-device-protocol.js";
 import type { AgentDriver } from "./dozo-agent.js";
@@ -48,6 +50,13 @@ export const DEVICE_TOO_LARGE_ERROR = "This conversation is too large to send to
 /** Shown in the chat when the person did not answer on the computer in time. */
 export const DEVICE_APPROVAL_EXPIRED_TEXT = "Approval was pending on your computer.";
 const STOP_WAIT_MS = 10_000;
+/** What one turn may take from a computer: past these the turn is cut and the agent stopped. */
+const MAX_TURN_FRAMES = 20_000;
+const MAX_TURN_TEXT = 8 * 1024 * 1024;
+/** The turn's calls of the bot's tools, where the deployment sets no fuse of its own. */
+const DEFAULT_MAX_TOOL_CALLS = 200;
+/** What a computer's own words may take in the chat and the error line. */
+const DEVICE_TEXT_LIMIT = 300;
 
 /** What a run needs of the user's devices: the request stream to one of them. */
 export type DeviceAgentGateway = Pick<UserDeviceGateway, "request">;
@@ -67,8 +76,6 @@ const isAgentProvider = (provider: string) => deviceAgentIds().includes(provider
 const driverFor = (provider: string): AgentDriver =>
   AGENT_DRIVERS.find((driver) => driver.provider === provider)!;
 
-/** A connection row whose heartbeat is older lost its holding process (as the gateway counts it). */
-const COMPUTER_STALE_MS = 75_000;
 const PHONES = [...PHONE_PLATFORMS];
 
 /**
@@ -85,7 +92,7 @@ async function pairedComputers(prisma: PrismaClient, userId: string): Promise<Us
         id: true,
         name: true,
         connections: {
-          where: { heartbeatAt: { gt: new Date(Date.now() - COMPUTER_STALE_MS) } },
+          where: { heartbeatAt: { gt: new Date(Date.now() - STALE_AFTER_MS) } },
           select: { deviceId: true },
         },
       },
@@ -99,8 +106,9 @@ async function pairedComputers(prisma: PrismaClient, userId: string): Promise<Us
 }
 
 export type DeviceAgentAccess =
-  | { ok: true; userId: string; trigger: string }
-  | { ok: false; refusal: string; offline?: true };
+  | { ok: true; userId: string }
+  | { ok: false; refusal: string; offline?: undefined }
+  | { ok: false; refusal: string; offline: true; userId: string };
 
 /**
  * Who may run an agent turn on a computer: the run is the person's own (`ownRun`), the connection
@@ -121,7 +129,7 @@ export function deviceAgentAccessCheck(deps: DeviceAgentRunDeps) {
     const run = await runAsSystem("find who runs an agent turn on a computer", () =>
       deps.prisma.run.findUnique({
         where: { id: target.runId },
-        select: { userId: true, trigger: true },
+        select: { userId: true },
       }),
     );
     if (!run) return { ok: false, refusal: AGENT_RECONNECT_ERROR };
@@ -144,8 +152,8 @@ export function deviceAgentAccessCheck(deps: DeviceAgentRunDeps) {
       !computer.connected ||
       !(await readDeviceAgents(deps.prisma, target.deviceId)).includes(target.provider)
     )
-      return { ok: false, refusal: DEVICE_OFFLINE_ERROR, offline: true };
-    return { ok: true, userId: run.userId, trigger: run.trigger };
+      return { ok: false, refusal: DEVICE_OFFLINE_ERROR, offline: true, userId: run.userId };
+    return { ok: true, userId: run.userId };
   };
 }
 
@@ -157,6 +165,8 @@ function boundedResult(text: string): string {
 
 /** The request a turn sends, as the schema reads it: what the computer gets is the parse output. */
 function turnRequest(request: AgentRunRequest, agent: string, resumed: boolean) {
+  // What the run knows to be secret never reaches the computer in the clear, history included.
+  const secrets = request.secrets ?? [];
   const tools = request.executeTool
     ? request.tools.map(({ name, description, inputSchema }) => ({
         name,
@@ -170,8 +180,8 @@ function turnRequest(request: AgentRunRequest, agent: string, resumed: boolean) 
     botId: request.botId,
     agent,
     ...(request.model.id === AGENT_OWN_MODEL ? {} : { model: request.model.id }),
-    instructions: request.instructions,
-    input: resumed ? request.prompt : agentInput(request),
+    instructions: redactSecrets(request.instructions, secrets),
+    input: redactSecrets(resumed ? request.prompt : agentInput(request), secrets),
     // A tool whose name the agent could not call back is left out.
     tools: tools.filter((tool) => /^[A-Za-z0-9_.-]{1,128}$/.test(tool.name)),
   });
@@ -181,9 +191,10 @@ function turnRequest(request: AgentRunRequest, agent: string, resumed: boolean) 
       ["instructions", "input", "tools"].includes(String(issue.path[0])),
     );
     if (size) throw new Error(DEVICE_TOO_LARGE_ERROR);
-    throw new Error(
-      `Agent turn request refused: ${parsed.error.issues.map((issue) => issue.path.join(".")).join(", ")}`,
-    );
+    getLogger().error("agent turn request refused", {
+      fields: parsed.error.issues.map((issue) => issue.path.join(".")),
+    });
+    throw new Error(`${driverFor(agent).name} on your computer stopped.`);
   }
   return parsed.data;
 }
@@ -251,6 +262,33 @@ function backupsAfterAgent(request: AgentRunRequest) {
       };
 }
 
+/**
+ * What the run keeps, saved by the executor with a person's pause, so the attempt that goes on
+ * after their answer knows the agent already ran on the computer, in whichever process it opens.
+ * It is a checkpoint in the executor's own format (so it survives its checks) with nothing in it:
+ * only this runtime reads it, and a run that is resumed never reaches the model runtime.
+ */
+const CHECKPOINT_MARK = 1;
+function pauseCheckpoint(request: AgentRunRequest, callId: string): string {
+  return JSON.stringify({
+    version: 1,
+    systemPrompt: "",
+    provider: request.model.provider,
+    model: request.model.id,
+    pendingToolCallId: callId,
+    messages: [],
+    dozoDeviceAgent: CHECKPOINT_MARK,
+  });
+}
+function pausedBefore(request: AgentRunRequest): boolean {
+  if (!request.turnCheckpoint) return false;
+  try {
+    return JSON.parse(request.turnCheckpoint).dozoDeviceAgent === CHECKPOINT_MARK;
+  } catch {
+    return false;
+  }
+}
+
 async function* runOnDevice(
   next: AgentRuntime,
   deps: DeviceAgentRunDeps,
@@ -266,15 +304,31 @@ async function* runOnDevice(
     connectionId: request.model.connectionId,
   });
   if (!access.ok && !access.offline) throw new Error(access.refusal);
+  const resumed = pausedBefore(request);
   if (!access.ok) {
-    yield* answerOnBackup(next, request, context);
-    return;
+    if (!resumed) {
+      yield* answerOnBackup(next, request, context);
+      return;
+    }
+    // The agent already started in this run: a backup must not take over. If the computer comes
+    // back its session is stopped, so none is left behind.
+    await bestEffort(
+      "stop an agent on a computer",
+      sendShort(
+        deps.userDevices,
+        access.userId,
+        account.deviceId,
+        agentStopRequest.parse({ runId: request.runId, botId: request.botId, method: "agentStop" }),
+        AbortSignal.timeout(STOP_WAIT_MS),
+      ),
+    );
+    throw new Error(AGENT_INTERRUPTED_ERROR);
   }
   const outcome = yield* turnOnDevice(
     deps.userDevices,
     access.userId,
     account.deviceId,
-    access.trigger === "resume",
+    resumed,
     request,
     context?.signal,
   );
@@ -299,6 +353,16 @@ async function* answerOnBackup(
   yield* next.run({ ...request, model, fallbackModels: rest }, context);
 }
 
+/** What a computer says in its own words: one short line, its owner's home folder cut to `~`. */
+function deviceText(text: string): string {
+  const line = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\/Users|\/home)\/[^/\s]+/g, "~")
+    .replace(/[A-Za-z]:\\Users\\[^\\\s]+/g, "~");
+  return line.length > DEVICE_TEXT_LIMIT ? `${line.slice(0, DEVICE_TEXT_LIMIT - 1)}\u2026` : line;
+}
+
 async function* turnOnDevice(
   gateway: DeviceAgentGateway,
   userId: string,
@@ -308,9 +372,12 @@ async function* turnOnDevice(
   signal: AbortSignal | undefined,
 ): AsyncGenerator<AgentRuntimeEvent, "done" | "paused" | "offline"> {
   const driver = driverFor(request.model.provider);
+  const stopped = `${driver.name} on your computer stopped.`;
   const turn = turnRequest(request, request.model.provider, resumed);
   const sent = new Set(turn.tools.map((tool) => tool.name));
   const ids = { runId: request.runId, botId: request.botId };
+  const secrets = request.secrets ?? [];
+  const maxCalls = maxToolCallsPerTurn() || DEFAULT_MAX_TOOL_CALLS;
   const stream = new AbortController();
   const stopSignal = () => AbortSignal.timeout(STOP_WAIT_MS);
   const stop = () =>
@@ -333,6 +400,8 @@ async function* turnOnDevice(
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   let started = false;
+  let frameCount = 0;
+  let textSize = 0;
   const calls = new Set<string>();
   let stopAtEnd = true;
   let anyText = false;
@@ -349,6 +418,8 @@ async function* turnOnDevice(
       } catch (error) {
         if (signal?.aborted || stoppedFromOutside) return "done";
         if (error instanceof UserDeviceOfflineError && !started) {
+          // On the attempt that goes on after a pause the agent already ran: no backup.
+          if (resumed) throw new Error(AGENT_INTERRUPTED_ERROR);
           stopAtEnd = false;
           return "offline";
         }
@@ -359,45 +430,67 @@ async function* turnOnDevice(
         }
         throw error;
       }
+      // Nothing after the turn's end is read: the loop is left at `done`, and the stream closed.
       if (step.done) throw new Error(AGENT_INTERRUPTED_ERROR);
       const parsed = agentTurnFrame.safeParse(step.value);
-      if (!parsed.success) throw new Error("Your computer sent an invalid response");
+      if (!parsed.success) {
+        getLogger().warn("agent turn frame refused", {
+          fields: parsed.error.issues.map((issue) => issue.path.join(".")),
+        });
+        throw new Error(stopped);
+      }
       const frame: AgentTurnFrame = parsed.data;
-      if (frame.type === "started") started = true;
-      else if (frame.type === "text") {
+      frameCount += 1;
+      if (frame.type === "text") textSize += frame.text.length;
+      if (frameCount > MAX_TURN_FRAMES || textSize > MAX_TURN_TEXT)
+        throw new Error(AGENT_INTERRUPTED_ERROR);
+      if (frame.type === "started") {
+        started = true;
+        // The agent reads what it reads, and asks the bot's tools for more: from here on the run
+        // is one that took in outside content, with the protections that go with it.
+        await request.readOutsideContent?.();
+      } else if (frame.type === "text") {
         anyText = true;
         yield { type: "text", text: frame.text };
-      } else if (frame.type === "activity") yield { type: "progress", text: frame.text };
-      else if (frame.type === "approvalWaiting") yield { type: "progress", text: frame.summary };
+      } else if (frame.type === "activity")
+        yield { type: "progress", text: deviceText(frame.text) };
+      else if (frame.type === "approvalWaiting")
+        yield { type: "progress", text: deviceText(frame.summary) };
       else if (frame.type === "approvalExpired") {
         yield { type: "text", text: `${anyText ? "\n\n" : ""}${DEVICE_APPROVAL_EXPIRED_TEXT}` };
         anyText = true;
       } else if (frame.type === "limit")
-        throw new Error(
-          accountError(
-            { name: driver.name },
-            { limit: { resetsAt: frame.resetsAt } },
-            `${driver.name} on your computer stopped.`,
-          ),
-        );
-      else if (frame.type === "failed") throw new Error(frame.message);
-      else if (frame.type === "done") {
+        // The one frame the model pool's account words come from (accountError).
+        throw new Error(accountError(driver, { limit: { resetsAt: frame.resetsAt } }, stopped));
+      else if (frame.type === "failed") {
+        // Its words are the person's to read, never the error line the pool classifies.
+        yield { type: "text", text: `${anyText ? "\n\n" : ""}${deviceText(frame.message)}` };
+        throw new Error(stopped);
+      } else if (frame.type === "done") {
         yield { type: "done" };
         return "done";
       } else {
-        // The agent calls one of the bot's tools: once for each call id, and only a listed one.
+        // The agent calls one of the bot's tools: once for each call id, only a listed one, and
+        // only so many in one turn.
+        if (calls.size >= maxCalls) throw new Error(AGENT_INTERRUPTED_ERROR);
         const repeated = calls.has(frame.callId);
         calls.add(frame.callId);
-        const result =
-          !repeated && sent.has(frame.name) && request.executeTool
-            ? await runTool(request, frame, signal)
-            : {
-                text: repeated
-                  ? "This call was already made."
-                  : `${frame.name} is not one of this bot's tools.`,
-                isError: true,
-                pause: false,
-              };
+        const runs = !repeated && sent.has(frame.name) && request.executeTool;
+        // Saved with the person's pause, if this call makes one (the executor reads it then).
+        if (runs)
+          await request.onCheckpoint?.(
+            () => pauseCheckpoint(request, frame.callId),
+            `${request.runId}:${frame.callId}`,
+          );
+        const result = runs
+          ? await runTool(request, frame, signal)
+          : {
+              text: repeated
+                ? "This call was already made."
+                : `${frame.name} is not one of this bot's tools.`,
+              isError: true,
+              pause: false,
+            };
         try {
           await sendShort(
             gateway,
@@ -407,7 +500,7 @@ async function* turnOnDevice(
               ...ids,
               method: "agentToolResult",
               callId: frame.callId,
-              text: boundedResult(result.text),
+              text: boundedResult(redactSecrets(result.text, secrets)),
               isError: result.isError,
             }),
             stream.signal,

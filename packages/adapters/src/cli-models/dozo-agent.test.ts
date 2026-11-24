@@ -743,25 +743,44 @@ describe("who may start an agent run", () => {
       $queryRaw: async () => [{ sourced: tokenText }],
     }) as unknown as Parameters<typeof ownRun>[0];
 
+  const direct = { authorUserId: "ada", role: "user" };
+  const own = { trigger: "user", userId: "ada", bot: { userId: "ada" }, sourceMessage: direct };
+
   it("refuses a run that text sent with an access token reached", async () => {
-    const run = { trigger: "user", userId: "ada", botId: "b", threadId: "t", sourceMessage: null };
+    const run = { ...own, botId: "b", threadId: "t" };
     expect(await ownRun(prismaWith(run, true), "run-1")).toBe(AGENT_TOKEN_TEXT);
   });
 
   it.each([
-    [{ trigger: "user", userId: "ada", sourceMessage: { authorUserId: "ada" } }, undefined],
-    [{ trigger: "resume", userId: "ada", sourceMessage: null }, undefined],
-    [{ trigger: "follow_up", userId: "ada", sourceMessage: { authorUserId: "ada" } }, undefined],
+    ["the bot's owner's own message", own, undefined],
+    ["the owner's follow-up", { ...own, trigger: "follow_up" }, undefined],
     [
-      { trigger: "user", userId: "ada", sourceMessage: { authorUserId: "bob" } },
+      "a message another member wrote",
+      { ...own, sourceMessage: { authorUserId: "bob", role: "user" } },
       AGENT_OWN_RUNS_ONLY,
     ],
-    [{ trigger: "messaging", userId: "ada", sourceMessage: null }, AGENT_OWN_RUNS_ONLY],
-    [{ trigger: "bot_message", userId: "ada", sourceMessage: null }, AGENT_OWN_RUNS_ONLY],
-    [{ trigger: "webhook", userId: "ada", sourceMessage: null }, AGENT_OWN_RUNS_ONLY],
-    [{ trigger: "routine", userId: "ada", sourceMessage: null }, AGENT_OWN_RUNS_ONLY],
-    [null, AGENT_OWN_RUNS_ONLY],
-  ])("%o", async (run, refusal) => {
+    [
+      "a message that is not a person's",
+      { ...own, sourceMessage: { ...direct, role: "assistant" } },
+      AGENT_OWN_RUNS_ONLY,
+    ],
+    ["a run with no message behind it", { ...own, sourceMessage: null }, AGENT_OWN_RUNS_ONLY],
+    [
+      "a member's run in a bot someone else owns (a shared Space)",
+      { ...own, bot: { userId: "bob" } },
+      AGENT_OWN_RUNS_ONLY,
+    ],
+    [
+      "a resume with no message",
+      { ...own, trigger: "resume", sourceMessage: null },
+      AGENT_OWN_RUNS_ONLY,
+    ],
+    ["a chat app's run", { ...own, trigger: "messaging" }, AGENT_OWN_RUNS_ONLY],
+    ["another bot's message", { ...own, trigger: "bot_message" }, AGENT_OWN_RUNS_ONLY],
+    ["a webhook", { ...own, trigger: "webhook" }, AGENT_OWN_RUNS_ONLY],
+    ["a routine", { ...own, trigger: "routine" }, AGENT_OWN_RUNS_ONLY],
+    ["no run", null, AGENT_OWN_RUNS_ONLY],
+  ])("%s", async (_name, run, refusal) => {
     expect(await ownRun(prismaWith(run), "run-1")).toBe(refusal);
   });
 });

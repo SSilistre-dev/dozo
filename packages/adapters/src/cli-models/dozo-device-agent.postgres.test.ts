@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
+import { dozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb, runAsTenant } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  asSystem,
+  createDb,
+  createThreadEvents,
+  createThreadMessage,
+  runAsTenant,
+} from "@rakazo/db";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { readDeviceAgents, recordDeviceCapabilities } from "../dozo-device-capabilities.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "../dozo-user-device-gateway.js";
+import { handoffToGroupBot } from "../group-handoff.js";
 import { startRunModel } from "../run-model-start.js";
-import { AGENT_RECONNECT_ERROR } from "./dozo-agent.js";
+import { AGENT_OWN_RUNS_ONLY, AGENT_RECONNECT_ERROR, AGENT_TOKEN_TEXT } from "./dozo-agent.js";
+import { cliHomeConnection } from "./dozo-cli-accounts.js";
+import { ownRun } from "./dozo-cli-runtime.js";
 import {
   DEVICE_OFFLINE_ERROR,
   deviceAgentAccessCheck,
@@ -155,13 +165,14 @@ describePostgres("an agent on the person's own computer (PostgreSQL)", () => {
       deviceId,
     });
     await connection(ada, `dozo-cli-account:device:${laptop}`);
-    expect(await check(target(laptop))).toEqual({ ok: true, userId: ada.userId, trigger: "user" });
+    expect(await check(target(laptop))).toEqual({ ok: true, userId: ada.userId });
     // Offline, or not running the agent now: the computer is offline, which a backup may answer.
     for (const id of [off, flagOff])
       expect(await check(target(id))).toEqual({
         ok: false,
         refusal: DEVICE_OFFLINE_ERROR,
         offline: true,
+        userId: ada.userId,
       });
     // Another person's computer and a phone are never this run's.
     for (const id of [bobs, phone])
@@ -193,6 +204,166 @@ describePostgres("an agent on the person's own computer (PostgreSQL)", () => {
       [AGENT, live, "Laptop"],
     ]);
     expect(stale).not.toBe(live);
+  });
+
+  it("connects an agent on the caller's own computer, and refuses another person's", async () => {
+    const ada = await person("Ada");
+    const bob = await person("Bob");
+    const mine = await computer(ada);
+    const hers = await computer(bob);
+    const deps = { prisma: db.prisma, secretStore: { load: async () => "" } };
+    const connect = (who: Person, deviceId: string) =>
+      runAsTenant(who, () => cliHomeConnection(deps, who.userId, AGENT, { deviceId }));
+    expect(await connect(ada, mine)).toMatchObject({
+      provider: AGENT,
+      plaintext: `dozo-cli-account:device:${mine}`,
+    });
+    // Bob's computer, named by Ada: the same answer as a computer that does not exist.
+    await expect(connect(ada, hers)).rejects.toThrow(DEVICE_OFFLINE_ERROR);
+    await expect(connect(ada, randomUUID())).rejects.toThrow(DEVICE_OFFLINE_ERROR);
+  });
+
+  /** A run of the person's bot; `message` is what started it, as the person or as another. */
+  async function started(
+    owner: Person,
+    over: { by?: Person; nonce?: string; role?: "user" | "bot"; trigger?: string } = {},
+  ) {
+    const bot = await system.bot.create({
+      data: { spaceId: owner.spaceId, userId: owner.userId, name: "Chef", color: "slate" },
+    });
+    const thread = await system.thread.create({
+      data: { spaceId: owner.spaceId, userId: owner.userId, botId: bot.id },
+    });
+    const by = over.by ?? owner;
+    const message = await createThreadMessage(system, {
+      threadId: thread.id,
+      role: over.role ?? "user",
+      authorUserId: by.userId,
+      blocks: [{ kind: "text", text: "Remember this" }],
+      ...(over.nonce ? { clientNonce: over.nonce } : {}),
+    });
+    const task = await system.task.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: by.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        prompt: "Work",
+        status: "running",
+      },
+    });
+    return system.run.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: by.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        taskId: task.id,
+        status: "running",
+        trigger: over.trigger ?? "user",
+        sourceMessageId: message.id,
+      },
+    });
+  }
+
+  it("serves the bot owner's own message, and refuses another member's in a shared Space", async () => {
+    const ada = await person("Ada");
+    const bob = await person("Bob");
+    const createdAt = new Date();
+    await system.member.create({
+      data: {
+        id: `m-bob-${bob.userId}`,
+        organizationId: ada.userId,
+        userId: bob.userId,
+        role: "member",
+        createdAt,
+      },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId: ada.spaceId,
+        organizationId: ada.userId,
+        userId: bob.userId,
+        role: "member",
+        createdAt,
+      },
+    });
+    expect(await ownRun(db.prisma, (await started(ada)).id)).toBeUndefined();
+    // Bob's own message to Ada's bot, in the Space they share.
+    expect(await ownRun(db.prisma, (await started(ada, { by: bob })).id)).toBe(AGENT_OWN_RUNS_ONLY);
+    // A run with no message behind it.
+    const bare = await started(ada);
+    await system.run.update({ where: { id: bare.id }, data: { sourceMessageId: null } });
+    expect(await ownRun(db.prisma, bare.id)).toBe(AGENT_OWN_RUNS_ONLY);
+  });
+
+  it("refuses a run that text sent with an access token reached, by the real check", async () => {
+    const ada = await person("Ada");
+    const run = await started(ada, { nonce: dozoTokenNonce(randomUUID()) });
+    expect(await ownRun(db.prisma, run.id)).toBe(AGENT_TOKEN_TEXT);
+  });
+
+  it("refuses the run a group handoff starts for another bot", async () => {
+    const ada = await person("Ada");
+    const chefRun = await started(ada);
+    const scout = await system.bot.create({
+      data: { spaceId: ada.spaceId, userId: ada.userId, name: "Scout", color: "slate" },
+    });
+    await system.thread.create({
+      data: { spaceId: ada.spaceId, userId: ada.userId, botId: scout.id },
+    });
+    const group = await system.chatGroup.create({
+      data: {
+        spaceId: ada.spaceId,
+        userId: ada.userId,
+        name: "Team",
+        members: { create: [{ botId: chefRun.botId }, { botId: scout.id }] },
+        thread: { create: { spaceId: ada.spaceId, userId: ada.userId } },
+      },
+      include: { thread: true },
+    });
+    // The run of the first bot in the group's own chat, as a send there leaves it.
+    const task = await system.task.create({
+      data: {
+        spaceId: ada.spaceId,
+        userId: ada.userId,
+        botId: chefRun.botId,
+        threadId: group.thread!.id,
+        prompt: "Work",
+        status: "running",
+      },
+    });
+    const inGroup = await system.run.create({
+      data: {
+        spaceId: ada.spaceId,
+        userId: ada.userId,
+        botId: chefRun.botId,
+        threadId: group.thread!.id,
+        taskId: task.id,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const handed = await runAsTenant(ada, async () =>
+      handoffToGroupBot(
+        {
+          prisma: db.prisma,
+          events: createThreadEvents(db.prisma),
+          jobs: { enqueue: vi.fn(async () => undefined) },
+        } as never,
+        inGroup,
+        group.id,
+        { bot_id: scout.id, message: "Read my files" },
+      ),
+    );
+    expect(handed).not.toHaveProperty("error");
+    const theirs = await system.run.findFirstOrThrow({
+      where: { botId: scout.id },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(theirs.id).not.toBe(chefRun.id);
+    expect(await ownRun(db.prisma, theirs.id)).toBe(AGENT_OWN_RUNS_ONLY);
   });
 
   it("does not stop a person with no model credits from running an agent on their own computer", async () => {
