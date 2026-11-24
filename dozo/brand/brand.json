@@ -13213,6 +13213,18 @@
         "packages/adapters/src/dozo-page-submit.ts"
       ],
       "reason": "daily sends: tests of the page browser's submit check, which counts clicks that submit a form and leans to one when it cannot tell"
+    },
+    {
+      "file": "packages/db/src/space-members.ts",
+      "find": "import { withTransactionRetry } from \"./transaction-retry.js\";",
+      "replace": "import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from \"./transaction-retry.js\";",
+      "reason": "leaving a Space: the import of the rule below"
+    },
+    {
+      "file": "packages/db/src/space-members.ts",
+      "find": "            events: [...latestSeq].map(([threadId, seq]) => ({ threadId, seq })),\n          };\n        },\n        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },",
+      "replace": "            events: [...latestSeq].map(([threadId, seq]) => ({ threadId, seq })),\n          };\n        },\n        {\n          ...THREAD_LOCK_TRANSACTION_OPTIONS,\n          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,\n        },",
+      "reason": "leaving a Space: the departure cancels the person's runs and writes to their chats, so it locks chat rows other work holds for seconds; it gets the budget the other thread-locking transactions share instead of Prisma's 5 s default, which under load expired it and answered a member's removal with a server error"
     }
   ],
   "assets": {
