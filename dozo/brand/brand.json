@@ -6800,6 +6800,24 @@
       "reason": "waiting work: the claim signalled before the computer turned out to be held, so the run going back in line signals again"
     },
     {
+      "file": "packages/adapters/src/run-attempt.ts",
+      "find": "} from \"./computer-lifecycle.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";",
+      "replace": "} from \"./computer-lifecycle.js\";\nimport { requeueBehindComputerLock } from \"./dozo-computer-lock-wait.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-computer-lock-wait.ts"
+      ],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-attempt.ts",
+      "find": "    await requeueComputerRun(\n      deps,\n      runId,",
+      "replace": "    await requeueBehindComputerLock(\n      deps,\n      { computerId: leaseTarget.computerId, botId: run.botId },\n      runId,",
+      "requires": [
+        "packages/adapters/src/dozo-computer-lock-wait.ts"
+      ],
+      "reason": "waiting work: a run that found its bot's computer held reads the lock again once it is back in line, so a release that landed between its check and its requeue still starts it instead of leaving it to the recovery sweep"
+    },
+    {
       "file": "packages/core/src/thread-snapshot-events.ts",
       "find": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
       "replace": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { dozoRemovedMessageId } from \"./dozo-removed-message.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
