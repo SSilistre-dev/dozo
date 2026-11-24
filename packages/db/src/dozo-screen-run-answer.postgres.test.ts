@@ -29,7 +29,7 @@ describePostgres("Allow for this run (PostgreSQL)", () => {
   }
 
   /** A member's run of their bot waiting on the card for typing on the bot's screen. */
-  async function screenCard() {
+  async function screenCard(offered = true) {
     const userId = await user("Ada");
     const createdAt = new Date();
     await system.organization.create({
@@ -95,7 +95,7 @@ describePostgres("Allow for this run (PostgreSQL)", () => {
       data: {
         spaceId,
         runId: run.id,
-        kind: "computer_act",
+        kind: offered ? "computer_act" : "send_email",
         idempotencyKey: randomUUID(),
         status: "intended",
         request: { actions: [{ kind: "type", text: "Ada" }] },
@@ -110,11 +110,11 @@ describePostgres("Allow for this run (PostgreSQL)", () => {
         {
           kind: "ask",
           approvalEffectId: effect.id,
-          text: "Review before computer_act",
+          text: offered ? "Review before computer_act" : "Review before send_email",
           status: "pending",
           actions: [
             { id: "allow", label: "Allow once" },
-            { id: "allow_run", label: "Allow for this run" },
+            ...(offered ? [{ id: "allow_run", label: "Allow for this run" }] : []),
             { id: "always", label: "Always allow this tool" },
             { id: "deny", label: "Deny" },
           ],
@@ -174,5 +174,11 @@ describePostgres("Allow for this run (PostgreSQL)", () => {
       1,
     );
     expect(await card.answer(card.userId)).toBeFalsy();
+  });
+
+  it("refuses the answer on a card that does not offer it", async () => {
+    const card = await screenCard(false);
+    expect(await card.answer(card.userId)).toBeFalsy();
+    expect(await card.effectStatus()).toBe("intended");
   });
 });

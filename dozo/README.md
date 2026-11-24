@@ -723,7 +723,9 @@ match):
   allows that call, and the rest of the run's input on the screen then goes to the approval model as
   in Auto review: a card again when the model asks, fails or there is none. It is no rule: it is read
   from the run's own answered cards, so it ends with the run (the next message is a new run), and the
-  run's member alone can give it (anyone else's answer is refused, as Always allow is). It never
+  run's member alone can give it (anyone else's answer is refused, as Always allow is). A subagent
+  inside the run gets it too: its screen input is the same run's, for the same member. It is offered
+  only when the gate itself counts a model that would judge the rest. It never
   covers commands, and is not offered in a run outside text started, a token's run, a routine,
   another bot's run or Auto review; Never ask and block rules are unchanged. The user's own computer
   (`user_computer_*`) is not affected: there each screen action keeps its own approval.

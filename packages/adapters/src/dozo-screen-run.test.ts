@@ -15,6 +15,12 @@ const seen = vi.hoisted(() => ({
   messageQueries: [] as unknown[],
   /** The approved effect a replayed call finds, or none. */
   approvedEffect: false,
+  /** Whether a connection serves the deployment's primary approval model. */
+  connected: false,
+}));
+vi.mock("./model-selection.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  findConnectedModelCredential: vi.fn(async () => (seen.connected ? { id: "credential-1" } : null)),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
@@ -93,6 +99,8 @@ function context(
     /** The run's own answered cards. */
     answered?: string;
     rules?: Array<{ effect: string; matchKind: string; matchValue: string }>;
+    /** The approval models set, when there is no injected reviewer (`review: "off"`). */
+    models?: "primary" | "backups";
   } = {},
 ) {
   const run = options.run ?? "own";
@@ -166,7 +174,17 @@ function context(
         enabled: (options.mode ?? "ask") === "auto",
         skipApprovals: options.mode === "never",
       }),
-      loadApprovalModel: async () => ({ primary: null, primarySource: null, backups: [] }),
+      loadApprovalModel: async () => ({
+        primary:
+          options.models === "primary"
+            ? { provider: "main", modelId: "main-1", thinkingLevel: undefined }
+            : null,
+        primarySource: options.models === "primary" ? "deployment" : null,
+        backups:
+          options.models === "backups"
+            ? [{ provider: "backup", modelId: "backup-1", thinkingLevel: undefined }]
+            : [],
+      }),
       loadOwnerWords: async () => "Fill in the form",
       receivedOutsideMessage: async () => run === "message",
       routineNamesNewSite: async () => false,
@@ -232,6 +250,7 @@ beforeEach(() => {
   seen.blocks.length = 0;
   seen.reviews = 0;
   seen.messageQueries.length = 0;
+  seen.connected = false;
 });
 
 describe("typing on the bot's screen in Ask, in the member's own run after outside content", () => {
@@ -338,3 +357,38 @@ describe.each<Run>(["webhook", "channel", "message", "token", "bot_message", "ro
     });
   },
 );
+
+describe("Allow for this run is offered only when a model would judge the rest", () => {
+  it("is not offered for a primary model no connection serves, as the gate counts no model", async () => {
+    expect(await outcome({ read: true, review: "off", models: "primary" })).toMatchObject({
+      result: "card",
+      answers: PLAIN,
+    });
+  });
+
+  it("is offered once a connection serves it, or for backups only", async () => {
+    seen.connected = true;
+    expect(await outcome({ read: true, review: "off", models: "primary" })).toMatchObject({
+      answers: OFFERED,
+    });
+    seen.connected = false;
+    expect(await outcome({ read: true, review: "off", models: "backups" })).toMatchObject({
+      answers: OFFERED,
+    });
+  });
+});
+
+describe("after Allow for this run", () => {
+  it("sends each later call to the model, the same keys twice too", async () => {
+    const ctx = context({ read: true, answered: "allow_run" });
+    await markReadOutsideContent(ctx as never);
+    seen.approvedEffect = false;
+    const enter = () => ({ actions: [{ kind: "key", key: "Return" }] });
+    for (const _ of [1, 2]) {
+      const result = await gateToolCall(ctx as never, request("computer_act", enter()), undefined);
+      expect(result).toHaveProperty("call");
+    }
+    expect(seen.reviews).toBe(2);
+    expect(seen.blocks).toEqual([]);
+  });
+});

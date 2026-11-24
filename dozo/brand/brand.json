@@ -13570,7 +13570,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "\"./dozo-token-run.js\";\nimport { watchFromTool }",
-      "replace": "\"./dozo-token-run.js\";\nimport { dozoScreenRunAsk, dozoScreenRunMode } from \"./dozo-screen-run.js\";\nimport { watchFromTool }",
+      "replace": "\"./dozo-token-run.js\";\nimport { dozoScreenRunAsk, dozoScreenRunChecker, dozoScreenRunMode } from \"./dozo-screen-run.js\";\nimport { watchFromTool }",
       "requires": [
         "packages/adapters/src/dozo-screen-run.ts"
       ],
@@ -13689,6 +13689,15 @@
       "find": "msgstr \"{site} için her zaman izin ver\"\n\n#: apps/mobile/lib/ask-action-label.ts\n#: apps/web/src/components/AskCard.tsx\nmsgid \"Always allow this tool\"",
       "replace": "msgstr \"{site} için her zaman izin ver\"\n\n#: apps/web/src/components/dozo-ask-label.ts\n#: apps/mobile/lib/dozo-ask-label.ts\nmsgid \"Allow for this run\"\nmsgstr \"Bu çalışma boyunca izin ver\"\n\n#: apps/mobile/lib/ask-action-label.ts\n#: apps/web/src/components/AskCard.tsx\nmsgid \"Always allow this tool\"",
       "reason": "screen input for this run: the Turkish label of the new card button"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "          checkerConfigured,\n          newDestination",
+      "replace": "          checkerConfigured: dozoScreenRunChecker(args, checkerConfigured),\n          newDestination",
+      "requires": [
+        "packages/adapters/src/dozo-screen-run.ts"
+      ],
+      "reason": "screen input for this run: such a call not yet allowed for the run asks as in Ask, and its card offers Allow for this run only when the gate's own answer says a model would judge the rest"
     }
   ],
   "assets": {
