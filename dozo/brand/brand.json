@@ -170,6 +170,11 @@
       { "file": "packages/core/src/notification-avatar.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/db/src/bot-avatar-choice.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
+      { "file": "apps/web/src/pages/AccountSettingsOverlay.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
+      { "file": "apps/mobile/app/(settings)/general.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
+      { "file": "apps/mobile/app/bot-settings.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
+      { "file": "packages/i18n/src/dozo-avatar-set-names.ts", "text": "set === \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/contracts/src/bot-email.ts", "text": "\"rakazo\",", "reason": "reserved bot e-mail names: a guard list, not displayed" },
       { "file": "packages/contracts/src/bot-email.ts", "text": "anything rakazo*", "reason": "developer comment on the reserved-name guard below it" },
       { "file": "packages/contracts/src/bot-email.ts", "text": "startsWith(\"rakazo\")", "reason": "reserved bot e-mail names: a guard, not displayed" },
@@ -3130,12 +3135,89 @@
     {
       "file": "packages/i18n/src/run-error.ts",
       "find": "import type { RunErrorTranslator } from \"@rakazo/core\";\n\n/** Static descriptors",
-      "replace": "import type { RunErrorTranslator } from \"@rakazo/core\";\n\nexport * from \"./dozo-plan-limits.js\";\nexport * from \"./dozo-server-text.js\";\n\n/** Static descriptors",
+      "replace": "import type { RunErrorTranslator } from \"@rakazo/core\";\n\nexport * from \"./dozo-plan-limits.js\";\nexport * from \"./dozo-avatar-set-names.js\";\nexport * from \"./dozo-server-text.js\";\n\n/** Static descriptors",
       "requires": [
+        "packages/i18n/src/dozo-avatar-set-names.ts",
         "packages/i18n/src/dozo-plan-limits.ts",
         "packages/i18n/src/dozo-server-text.ts"
       ],
       "reason": "the shared i18n package exports the fork's translated copy, read by web and mobile, through its run-error entry: an entry the package already exports, so the fork's imports stay inside its exports map"
+    },
+    {
+      "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
+      "find": "import { Button } from \"@rakazo/ui-web/components/ui/button\";\nimport { Check, Pencil, Upload, X } from \"lucide-react\";",
+      "replace": "import { Button } from \"@rakazo/ui-web/components/ui/button\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport { Check, Pencil, Upload, X } from \"lucide-react\";",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
+      "find": "<Trans>Original</Trans>",
+      "replace": "{botAvatarSetName(\"organic\")}",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the two sets are called what they are (Character: the six characters; Simple: the plain marks), from the one function the Avatar Studio and the account setting both use"
+    },
+    {
+      "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
+      "find": "<Trans>Rakazo</Trans>",
+      "replace": "{botAvatarSetName(\"rakazo\")}",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the two sets are called what they are (Character: the six characters; Simple: the plain marks), from the one function the Avatar Studio and the account setting both use"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { Trans, useLingui } from \"@lingui/react/macro\";\nimport type {",
+      "replace": "import { Trans, useLingui } from \"@lingui/react/macro\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport type {",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "<Trans>Original</Trans>",
+      "replace": "{botAvatarSetName(\"organic\")}",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the two sets are called what they are (Character: the six characters; Simple: the plain marks), from the one function the Avatar Studio and the account setting both use"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "<Trans>Rakazo</Trans>",
+      "replace": "{botAvatarSetName(\"rakazo\")}",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the two sets are called what they are (Character: the six characters; Simple: the plain marks), from the one function the Avatar Studio and the account setting both use"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "import { APP_LOCALE_LABELS } from \"@rakazo/core\";\nimport * as Notifications",
+      "replace": "import { APP_LOCALE_LABELS } from \"@rakazo/core\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport * as Notifications",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "{ value: \"organic\", label: t`Original` },\n                { value: \"rakazo\", label: t`Rakazo` },",
+      "replace": "{ value: \"organic\", label: botAvatarSetName(\"organic\") },\n                { value: \"rakazo\", label: botAvatarSetName(\"rakazo\") },",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the two sets are called what they are (Character: the six characters; Simple: the plain marks), from the one function the Avatar Studio and the account setting both use"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "} from \"@rakazo/core\";\nimport { typeScale } from \"@rakazo/ui-tokens\";",
+      "replace": "} from \"@rakazo/core\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport { typeScale } from \"@rakazo/ui-tokens\";",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "{ key: \"organic\", label: t`Original` },\n                { key: \"rakazo\", label: t`Rakazo` },",
+      "replace": "{ key: \"organic\", label: botAvatarSetName(\"organic\") },\n                { key: \"rakazo\", label: botAvatarSetName(\"rakazo\") },",
+      "requires": ["packages/i18n/src/dozo-avatar-set-names.ts"],
+      "reason": "bot icon set names: the two sets are called what they are (Character: the six characters; Simple: the plain marks), from the one function the Avatar Studio and the account setting both use"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Orijinal\"\n\n#: apps/mobile/components/reply-line.tsx\n",
+      "replace": "msgstr \"Orijinal\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-avatar-set-names.ts\nmsgid \"Character\"\nmsgstr \"Karakter\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-avatar-set-names.ts\nmsgid \"Simple\"\nmsgstr \"Sade\"\n\n#: apps/mobile/components/reply-line.tsx\n",
+      "reason": "bot icon set names: the Turkish names of the two sets (Karakter, Sade); Original is upstream's"
     },
     {
       "file": "packages/adapters/src/index.ts",
