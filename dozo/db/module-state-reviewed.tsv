@@ -165,6 +165,8 @@ packages/core/src/dozo-relay-host.ts	fn runRelayHost	const loops = new Map<strin
 packages/core/src/dozo-relay-host.ts	fn runRelayHost	let hostKey: RelayKeyPair | null = null;	device	this machine's relay loops by channel and its own host key; the channels are this server's own paired devices
 packages/core/src/dozo-relay-host.ts	fn runRelayHost	let syncing = Promise.resolve();	global-safe	promise chain ordering channel syncs; holds no data
 packages/core/src/dozo-relay-host.ts	class ChannelLoop	private readonly approvalWaiters = new Set<() => void>();	device	waiters of one paired channel loop
+packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn accept	let established = false;	local	per-call local of one session, dies with it
+packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn accept	let ended = false;	local	per-call local of one session, dies with it
 packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn connectOnce	let socket: RelayWebSocket;	local	per-call local, dies with the call
 packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn firstRecord	let seen = false;	local	per-call local, dies with the call
 packages/core/src/dozo-relay-mux.ts	module	const NULL_BODY_STATUSES = /* @__PURE__ */ new Set([204, 205, 304]);	global-safe	constant set of fixed words, never changed after load
