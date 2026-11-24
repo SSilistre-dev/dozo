@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { learningWriteLanded } from "./dozo-learning-apply.js";
 import type { LearningReviewDeps } from "./dozo-learning-review.js";
 import { learningAvailable, reviewLearning } from "./dozo-learning-review.js";
+import { suggestLearnedSkill } from "./dozo-learning-skill.js";
 import type { LearningChangeInput } from "./dozo-learning-store.js";
 import {
   consumeLearningTurns,
@@ -424,6 +425,13 @@ describePostgres("bot learning (PostgreSQL)", () => {
     expect((await drafts()).map((row) => [row.name, row.status])).toEqual([
       ["Inbox sweep", "draft"],
     ]);
+
+    // Once learning is off, nothing is suggested, even by a review already under way.
+    await system.taughtSkill.deleteMany({ where: { botId: chat.id } });
+    await as(owner, () => setLearningMode(prisma, chat, "off"));
+    const late = JSON.parse(skill("Daily plan")).skill;
+    expect(await as(owner, () => suggestLearnedSkill(deps, chat, late))).toBe(false);
+    expect(await drafts()).toEqual([]);
   });
 
   it("gives a bot six reviews in any day, in every zone", async () => {

@@ -868,6 +868,10 @@ bot under its Memory: Off (the default, no call, job or row), Ask first, or Auto
   (any case or spacing), is dropped: it never becomes an update of an existing skill, which the
   owner edits instead. An answer that breaks the contract (a line with angle brackets, a heading,
   a control character, fewer than two or more than eight steps) uses nothing.
+- **What is left open:** text the owner pastes into their own message (under 2,000 characters)
+  is read as theirs. Against an instruction hidden in it there is only the review's prompt, the
+  answer's shape and the owner reading the card, which shows the whole skill before Save. An
+  unanswered draft blocks every later suggestion for that bot until the owner saves or deletes it.
 - **Judged evaluation:** `packages/testkit/src/evals/dozo-learning-review-eval.ts` holds the
   reviewed examples (a lesson, none, a skill, an injection, someone else's details; every person
   invented), the versioned rubric (`dozo-learning-review-v1`) and its calibration labels. Offline
