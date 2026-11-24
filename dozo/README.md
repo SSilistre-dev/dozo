@@ -660,10 +660,34 @@ allow rule covers counts as an action that changes something, as upstream counts
 - "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
   computer; per account, table `dozo_command_settings`) now means: a card, never the approval
   model, outside Never ask. An account without the setting gets the default above.
-- It covers `shell` only. A script the bot wrote with the file tools is held when the command that
-  runs it is (a script is not a read), but what `write_file` writes, typing into a terminal through
-  screen control, and a command watch's later runs (asked about once, when the routine is made) are
-  not read per command.
+- It covers `shell`, and input on the bot's screen below. A script the bot wrote with the file
+  tools is held when the command that runs it is (a script is not a read), but what `write_file`
+  writes (also into a file an allowed command reads) and a command watch's later runs (asked about
+  once, when the routine is made) are not read per command.
+
+Input on the bot's screen (`screenInputCall` in `packages/adapters/src/dozo-command-gate.ts`):
+`computer_act`'s `type`, `key` and `focus` actions, an action of a kind the server does not know,
+and `launch_app` can run a command, typed into a terminal or started as a program. The server cannot
+tell whether the window with the focus is a terminal (the window title is the screen's own text), so
+it never asks. Such a call is held like a command, without command rules (it has no command to
+match):
+
+| Run | Auto review | Ask | Never ask |
+| --- | --- | --- | --- |
+| The member's own chat before it took in outside content | runs, as before | runs, as before | runs |
+| One that took in outside content (the screen counts: a look at it, or any `computer_act` result), another bot's message, a spawned bot, a ticket, the owner's routine | approval model, shown the text and keys and told outside content came in; a card when it asks, fails or there is none | card | runs |
+| Started by outside text (as above) | card | card | runs (as before) |
+| Reached by a token's text | card | card | card (as before) |
+
+- Clicks, drags, scrolls and waits stay free, as do `computer_observe` and the page browser tools;
+  in a webhook run upstream gates every `computer_act` call as before. "Ask before commands on bot
+  computers" makes the second row a card too. A block or always-allow rule for the tool applies as
+  for any tool.
+- The screen is outside content, so in practice a run takes in outside content with its first look:
+  in Auto review each `computer_act` call that types or presses a key is then one review call, with
+  its cost and wait (a call batches up to 24 actions, so one review covers them), and in Ask one card.
+- Not covered: a paste through a right-click menu with the mouse alone (text copied with the mouse
+  from a page into a terminal) is a click, and stays free.
 - The bot's computer is Linux, so the shell is known there; the reading below stays the one built
   for an unknown shell, which only makes more commands ask.
 

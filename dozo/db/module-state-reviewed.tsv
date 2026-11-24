@@ -229,3 +229,5 @@ packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<objec
 packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call
+packages/adapters/src/dozo-command-gate.ts	module	const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);	global-safe	constant tool names, never written
+packages/adapters/src/dozo-command-gate.ts	module	const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);	global-safe	constant action kinds, never written
