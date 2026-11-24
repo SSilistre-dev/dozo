@@ -7,14 +7,18 @@ import {
   learnedLines,
   learningMode,
   listLearningChanges,
+  lockSkillSuggestion,
   markLearningLinesOwnerEdited,
   markLearningUndoPending,
   pendingLearningTurns,
   pendingLearningWrites,
   recordLearningTurn,
   rejectedLearningLines,
+  rejectedLearningSkills,
+  rejectSkillSuggestion,
   saveLearningChanges,
   setLearningMode,
+  setSkillSuggestion,
   settleLearningWrite,
   takeLearningReview,
 } from "./dozo-learning-store.js";
@@ -176,7 +180,12 @@ describe("learning store", () => {
     expect(sql[0]).toContain('SET "undoneAt" = CURRENT_TIMESTAMP');
     // The undone add's line is turned down; the undone remove's put a line back.
     expect(sql[1]).toContain("INSERT INTO dozo_learning_rejections");
-    expect(landed.executeRaw.mock.calls[0]!.slice(2)).toEqual(["bot-1", "space-1", "Likes tea"]);
+    expect(landed.executeRaw.mock.calls[0]!.slice(2)).toEqual([
+      "bot-1",
+      "space-1",
+      "Likes tea",
+      "note",
+    ]);
     expect(sql[2]).toContain("DELETE FROM dozo_learning_rejections");
     expect(sql[3]).toContain('SET "supersededBy" = NULL WHERE "supersededBy" = ?');
     expect(sql[4]).toContain('SET "supersededBy" = NULL WHERE "supersededBy" = ?');
@@ -222,14 +231,71 @@ describe("learning store", () => {
     const rejected = db([{ text: "x" }]);
     expect(await rejectedLearningLines(rejected.client, "bot-1")).toEqual(["x"]);
     expect(rejected.sql()[0]).toContain("FROM dozo_learning_rejections");
+    // Only notes: a dismissed skill's name is not a note the review is told to avoid.
+    expect(rejected.queryRaw.mock.calls[0]!.slice(1)).toEqual(["bot-1", "note", 100]);
     const edited = db([{ botId: "bot-1", spaceId: "space-1", after: "Likes tea" }]);
     await markLearningLinesOwnerEdited(edited.client, ["c1"]);
     expect(edited.queryRaw.mock.calls[0]!.slice(1)).toEqual([["c1"]]);
     expect(edited.sql()[0]).toContain('SET "ownerEditedAt" = CURRENT_TIMESTAMP');
-    expect(edited.executeRaw.mock.calls[0]!.slice(2)).toEqual(["bot-1", "space-1", "Likes tea"]);
+    expect(edited.executeRaw.mock.calls[0]!.slice(2)).toEqual([
+      "bot-1",
+      "space-1",
+      "Likes tea",
+      "note",
+    ]);
     const none = db();
     await markLearningLinesOwnerEdited(none.client, []);
     expect(none.queryRaw).not.toHaveBeenCalled();
     expect(none.executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("reads Ask as its own mode and keeps the turns when switched to it", async () => {
+    expect(await learningMode(db([{ mode: "ask" }]).client, "bot-1")).toBe("ask");
+    const ask = db();
+    await setLearningMode(ask.client, { id: "bot-1", spaceId: "s" }, "ask");
+    expect(ask.sql()).toHaveLength(1);
+    expect(ask.executeRaw.mock.calls[0]!.slice(1)).toEqual(["bot-1", "s", "ask"]);
+  });
+
+  it("reads the names of dismissed skills apart from turned-down notes", async () => {
+    const dismissed = db([{ text: "Weekly report" }]);
+    expect(await rejectedLearningSkills(dismissed.client, "bot-1")).toEqual(["Weekly report"]);
+    expect(dismissed.queryRaw.mock.calls[0]!.slice(1)).toEqual(["bot-1", "skill", 100]);
+  });
+
+  it("locks the bot's row to read its unanswered suggestion, and records a new one", async () => {
+    const pending = db([{ pendingSkillId: "skill-1" }]);
+    expect(await lockSkillSuggestion(pending.client, "bot-1")).toEqual({
+      pendingSkillId: "skill-1",
+    });
+    expect(pending.sql()[0]).toContain("FOR UPDATE OF l");
+    // Turned off, nothing is suggested; the lock keeps it from being turned off meanwhile.
+    expect(pending.sql()[0]).toContain("l.mode <> 'off'");
+    expect(pending.sql()[0]).toContain("s.status = 'draft'");
+    expect(await lockSkillSuggestion(db([]).client, "bot-1")).toBeUndefined();
+    const set = db();
+    await setSkillSuggestion(set.client, "bot-1", "skill-2");
+    expect(set.executeRaw.mock.calls[0]!.slice(1)).toEqual(["skill-2", "bot-1"]);
+  });
+
+  it("turns a dismissed suggestion down once: only the delete that clears it records the name", async () => {
+    const skill = { id: "skill-1", botId: "bot-1", spaceId: "space-1", name: "Weekly report" };
+    const first = db([], 1);
+    expect(await rejectSkillSuggestion(first.client, skill)).toBe(true);
+    const sql = first.sql();
+    expect(sql[0]).toContain('SET "suggestedSkillId" = NULL');
+    expect(first.executeRaw.mock.calls[0]!.slice(1)).toEqual(["bot-1", "skill-1"]);
+    expect(sql[1]).toContain("INSERT INTO dozo_learning_rejections");
+    expect(first.executeRaw.mock.calls[1]!.slice(2)).toEqual([
+      "bot-1",
+      "space-1",
+      "Weekly report",
+      "skill",
+    ]);
+    // Older dismissed skills past the newest kept go; turned-down notes are counted apart.
+    expect(sql[2]).toContain("kind = ?");
+    const again = db([], 0);
+    expect(await rejectSkillSuggestion(again.client, skill)).toBe(false);
+    expect(again.executeRaw).toHaveBeenCalledOnce();
   });
 });

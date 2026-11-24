@@ -409,6 +409,51 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(unreached, "B's refused requests the owner's token does not reach").toEqual([]);
     }, 120_000);
 
+    it("a member's token in S reaches none of the bots A made there", async () => {
+      const { P, S } = world;
+      // M joins S through an invite and makes a token for every bot there: the app lets M talk
+      // to A's bots in S, the token does not reach them (as the MCP endpoint never did).
+      const { token } = await joinS("M");
+      const api = (path: string, init: RequestInit = {}) =>
+        send(
+          world,
+          `/api/v1/dozo${path}`,
+          { ...init, headers: { authorization: `Bearer ${token}`, ...init.headers } },
+          25,
+        );
+      const listed = await api("/bots");
+      expect(listed.status, listed.text).toBe(200);
+      expect(JSON.parse(listed.text), "the bots M's token lists in S").toEqual({ bots: [] });
+      // After the token's first use, which stamps its own "lastUsedAt" (M's row, not A's).
+      const before = await snapshot(world.db, scopeOf(P, S));
+      const problems: string[] = [];
+      for (const bot of [S.ids.botId!, S.ids.secondBotId!])
+        for (const [what, answer] of [
+          ["messages", api(`/bots/${bot}/messages`)],
+          ["chats", api(`/bots/${bot}/chats`)],
+          ["export", api(`/bots/${bot}/export`)],
+          ["run events", api(`/bots/${bot}/runs/${S.ids.runId}/events`)],
+          [
+            "send",
+            api(`/bots/${bot}/messages`, {
+              method: "POST",
+              headers: json({}),
+              body: JSON.stringify({ text: "iso-probe" }),
+            }),
+          ],
+        ] as const) {
+          const got = await answer;
+          const leaked = foreignLeaks(got, S.canaries, []);
+          if (got.status !== 404 || leaked.length)
+            problems.push(`${what} on ${bot}: ${got.status} ${leaked.join(",")}`);
+        }
+      expect(problems).toEqual([]);
+      expect(
+        snapshotDiff(before, await snapshot(world.db, scopeOf(P, S))),
+        "rows of P or S changed by M's token",
+      ).toEqual([]);
+    }, 60_000);
+
     it("the MCP endpoint refuses B's token on A's bots and chats", async () => {
       const { P, S, Bown } = world;
       let id = 0;
@@ -654,7 +699,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         24,
       );
       expect(fBots.status, "F's token while F is a member").toBe(200);
-      expect(fBots.text).toContain(S.ids.botId);
+      // A's bots in S are not F's: the token lists none of them (the case above).
+      expect(fBots.text).not.toContain(S.ids.botId);
 
       const fStream = await openStream(
         world,

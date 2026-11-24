@@ -62,6 +62,16 @@ describePostgres("a paired computer's capabilities (PostgreSQL)", () => {
     expect(left[0]?.count).toBe(0);
   });
 
+  it("offers passwords to a computer that declared it and never to a phone", async () => {
+    const device = await pairedDevice();
+    await recordDeviceCapabilities(db.prisma, device.id, ["shell", "passwords"]);
+    expect(await readDeviceCapabilities(db.prisma, device.id, "darwin")).toEqual([
+      "shell",
+      "passwords",
+    ]);
+    expect(await readDeviceCapabilities(db.prisma, device.id, "ios")).toEqual([]);
+  });
+
   it("gives the connected computer what it declared", async () => {
     const device = await pairedDevice();
     await system.userDeviceConnection.create({

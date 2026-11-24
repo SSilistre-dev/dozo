@@ -138,6 +138,20 @@ describe("gateToolCall: the daily send limit", () => {
     expect(limit.calls[0]?.call.approved).toBe(true);
   });
 
+  it("puts what the user's own computer decides, its browser's page tools included, through the limit too", async () => {
+    // The page tools of the user's own browser are approved by their own gate; the limit counts on top.
+    await gate("user_computer_shell", { approved: true }).catch(() => undefined);
+    expect(limit.calls[0]).toEqual({
+      call: expect.objectContaining({
+        name: "user_computer_shell",
+        viaConnector: false,
+        connectorChanges: 0,
+        approved: true,
+      }),
+      plan: "ask",
+    });
+  });
+
   it("acts on the limit's answer", async () => {
     limit.answer = "deny";
     expect(await gate("send_email")).toEqual({

@@ -3,7 +3,7 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { defaultCatalogModelId, loadStoredModelSecret } from "../model-selection.js";
-import { agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
+import { agentConnected, agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
 import type { CliAccount, CliModelDriver, LocalCliHost } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -18,6 +18,7 @@ import { cliLoginView, liveCliLogins, startCliLogin } from "./dozo-cli-login.js"
 import { CLI_MODEL_DRIVERS } from "./dozo-cli-providers.js";
 import { personalCliAccessCheck } from "./personal-access.js";
 
+export { isAgentProvider, saveAgentConnection } from "./dozo-agent-modes.js";
 export { cancelCliLogin, sendCliLoginCode } from "./dozo-cli-login.js";
 
 export type CliAccountsDeps = {
@@ -46,6 +47,8 @@ export interface CliToolView {
   login?: CliLoginView;
   /** An agent whose maker's terms put the person's account at risk (dozo-agent-accounts.ts). */
   termsRisk?: true;
+  /** The maker's page to get an agent from, only while it is not installed here. */
+  downloadUrl?: string;
 }
 
 /**
@@ -210,8 +213,8 @@ export async function cliHomeConnection(
   if (agent) {
     const host = await usableHost(deps, userId);
     if (!host) throw new ClientError("NOT_FOUND", "This tool cannot be used on this server.");
-    const connected = await deps.prisma.userModelCredential.count({ where: { userId, provider } });
-    if (connected) throw new CliAccountUnavailableError(`${agent.name} is already connected.`);
+    // A connection with no mode (saving it was cut short) is taken over, not refused.
+    if ((await agentConnected(deps.prisma, userId, [provider])).has(provider)) throw new CliAccountUnavailableError(`${agent.name} is already connected.`);
     return agentConnection(agent, host, {
       agent: options.consent === true,
       terms: options.termsConsent === true,

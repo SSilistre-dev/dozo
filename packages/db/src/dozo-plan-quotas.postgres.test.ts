@@ -79,6 +79,7 @@ describePostgres("plan quotas (PostgreSQL)", () => {
 
       const limits = await readPlanLimits(tx);
       expect(limits.pro).toEqual({
+        computers: 1,
         sharedSpaceBytes: 300 * MB,
         computerAllowanceCents: computerHoursCents(9),
       });
@@ -109,6 +110,7 @@ describePostgres("plan quotas (PostgreSQL)", () => {
       const limits = await readPlanLimits(tx);
       expect(limits.standard).toEqual({ sharedSpaceBytes: 100 * MB, computerAllowanceCents: 0 });
       expect(limits.max).toEqual({
+        computers: 3,
         sharedSpaceBytes: 5 * 1024 * MB,
         computerAllowanceCents: BYOK_TIERS.max.computerAllowanceCents,
       });

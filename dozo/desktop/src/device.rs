@@ -107,7 +107,15 @@ impl Access {
     pub fn new(app: &AppHandle) -> tauri::Result<Self> {
         let root = app.path().app_data_dir()?.join("computers");
         let home = app.path().home_dir()?;
-        let runner = Runner::new(root, home);
+        let vault = crate::password_manager::find()
+            .map(|cli| Arc::new(cli) as Arc<dyn crate::password_manager::PasswordManager>);
+        let file = app
+            .path()
+            .app_config_dir()?
+            .join(crate::password_links::FILE);
+        let passwords = crate::password_links::Passwords::new(Some(file), vault);
+        passwords.set_prompt(Arc::new(crate::passwords_ui::DialogFill(app.clone())));
+        let runner = Runner::with_passwords(root, home, passwords);
         #[cfg(unix)]
         crate::device_agent::attach(&runner, app);
         runner.set_sign_in_prompt(std::sync::Arc::new(crate::browser_signin::DialogPrompt(
@@ -154,6 +162,16 @@ impl Access {
 
 fn devices_dir(app: &AppHandle) -> Option<PathBuf> {
     Some(app.path().app_config_dir().ok()?.join("devices"))
+}
+
+/// The chosen server and this computer's token for it, while this computer is allowed there:
+/// what a call to the server as the paired computer needs.
+pub async fn credentials(app: &AppHandle) -> Option<(Url, String)> {
+    let (_, origin) = app.state::<Access>().current();
+    let origin = origin?;
+    let pairing = pairing(app, &origin)?;
+    pairing.consent()?;
+    Some((origin, pairing.token().await?))
 }
 
 fn pairing(app: &AppHandle, origin: &Url) -> Option<Pairing> {

@@ -444,6 +444,30 @@ describe("its handler", () => {
     warn.mockRestore();
   });
 
+  it("tells the model why there is no picture while a password the computer filled is on the page", async () => {
+    const run = setup();
+    await approved(run, "browser_navigate", { url: FORM });
+    const request = run.devices.request;
+    run.devices.request = async function* (
+      owner: string,
+      req: { method: string; command?: { method: string } },
+    ) {
+      if (req.command?.method === "Page.captureScreenshot") throw new Error("passwords-screenshot");
+      yield* request(owner, req as never);
+    } as never;
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    const looked = (await approved(run, "browser_snapshot", {})).result as {
+      content: Array<{ type: string; text?: string }>;
+    };
+    expect(looked.content.map((part) => part.type)).toEqual(["text"]);
+    expect(looked.content[0]?.text).toContain(
+      "No picture of this page while a password the user's computer filled is on it; the text snapshot is complete.",
+    );
+    // A refusal is expected: nothing is logged for it.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("hides the run's secrets in what the page shows", async () => {
     const run = setup();
     await approved(run, "browser_navigate", { url: FORM });

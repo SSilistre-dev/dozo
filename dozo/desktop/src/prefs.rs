@@ -129,6 +129,8 @@ fn list(app: &AppHandle) -> Value {
         "version": format!("{} {}", words::text("Version"), app.package_info().version),
         "lang": if words::turkish() { "tr" } else { "en" },
         "rows": rows(app).iter().map(Row::to_json).collect::<Vec<_>>(),
+        // Only while the password manager is on.
+        "logins": crate::passwords_ui::section(app),
     })
 }
 

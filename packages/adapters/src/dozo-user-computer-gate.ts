@@ -14,7 +14,7 @@ import {
   markCommandAsk,
 } from "./dozo-command-gate.js";
 import { isPhoneTool, phoneCard, phoneGate } from "./dozo-phone.js";
-import { dozoSendLimitCard } from "./dozo-send-limit.js";
+import { dozoSendLimitCard, dozoSendLimitHeld } from "./dozo-send-limit.js";
 import { isUserBrowserTool, userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
 import {
@@ -65,7 +65,9 @@ export function buildApprovalAskBlock(
   const [effectId, toolName, args, secrets, options] = input;
   if (isPhoneTool(toolName)) return phoneCard(effectId, toolName, args, secrets);
   const browserAsk = userBrowserAsk(args);
-  if (browserAsk) return userBrowserCard(effectId, toolName, args, secrets, browserAsk);
+  // A browser call held for the daily limit has the limit card: the browser asked nothing else.
+  if (browserAsk && !dozoSendLimitHeld(args))
+    return userBrowserCard(effectId, toolName, args, secrets, browserAsk);
   const hosted = toolName === HOSTED_SHELL_TOOL;
   const block = hosted
     ? // Written as upstream writes a command for the user's own computer, under its own question.

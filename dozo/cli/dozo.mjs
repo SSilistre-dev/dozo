@@ -18,7 +18,7 @@ const HELP = `Usage: dozo <command> [options]
 
   login              Save a token (read from standard input) for the server
   logout             Forget the saved token for the server
-  bots               List the bots the token can reach
+  bots               List your own bots the token can reach
   chats <bot>        List the bot's other chats (its main chat is the one used without --chat)
   send <bot> [text]  Send a message and print the reply as it comes (text or standard input)
   follow <bot> <run> Follow a run again, after an approval in the app

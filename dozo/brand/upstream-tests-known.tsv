@@ -29,6 +29,7 @@ apps/api/src/plugin-submissions.test.ts	integration page claims sends an expired
 apps/api/src/plugin-submissions.test.ts	reviewing submissions approves the previewed commit and lists it in the marketplace	b	Dozo has no public claim page: a claim opens the app's integrations view
 apps/api/src/referrals.test.ts	referral claims records a friend's claim	b	the referral program is off while Free has no price (dozo/README.md, Hosted plans)
 apps/mobile/lib/account-screen.test.tsx	puts the bot style back and releases it when the save fails	b	the bot style choices are the Dozo avatar sets
+apps/mobile/lib/account-screen.test.tsx	saves an Original choice even when the saved style is absent	b	the bot style choices are named Character and Simple
 apps/mobile/lib/api-auth.test.ts	mobile API sign-in and account account deletion code errors maps HTTP 429 with body {"message":"Please wait before trying again"}	b	error copy: a body without a code gets the fork's own sentence, never the server's text (auth error rules)
 apps/mobile/lib/api-auth.test.ts	mobile API sign-in and account account deletion errors maps HTTP 429 with body {"message":"Please wait before trying again"}	b	error copy: a body without a code gets the fork's own sentence, never the server's text (auth error rules)
 apps/mobile/lib/api-auth.test.ts	mobile API sign-in and account email auth errors maps HTTP 403 with body {"message":"Registration is closed"}	b	error copy: a body without a code gets the fork's own sentence, never the server's text (auth error rules)
@@ -75,6 +76,7 @@ apps/web/src/lib/logo-avatar-render.test.tsx	projects production feed events int
 apps/web/src/lib/logo-avatar-render.test.tsx	renders generic work elsewhere when the open chat is idle, preserving live detail	b	the Dozo avatar art replaces upstream's
 apps/web/src/lib/logo-avatar-render.test.tsx	retains the live pose through overlapping feed hydration, hidden updates and reconnect	b	the Dozo avatar art replaces upstream's
 apps/web/src/lib/user-error.test.ts	authErrorText keeps messages from older servers	b	error copy: the server's message is never shown as it is
+apps/web/src/pages/AccountSettingsOverlay.test.tsx	keeps bot style available without a saved value and saves an explicit Original choice	b	the bot style choices are named Character and Simple
 apps/web/src/pages/AdminAccessPage.test.tsx	grants once, holds every control meanwhile, then lists the grant and clears the form	b	the fork's grant actions put Revoke in a menu beside Edit and Delete
 apps/web/src/pages/AdminAccessPage.test.tsx	revokes a grant and reads the list again	b	the fork's grant actions put Revoke in a menu beside Edit and Delete
 apps/web/src/pages/AdminAccessPage.test.tsx	says why a grant failed, keeps what was typed and offers the controls again	b	the fork's grant actions put Revoke in a menu beside Edit and Delete

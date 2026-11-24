@@ -64,6 +64,9 @@ DOKPLOY_API_KEY_CMD='<command that prints the panel API key>'   # or export DOKP
 DOZO_DEPLOY_DIR=/opt/dozo        # optional, the folder on the host
 DOZO_DEPLOY_TIMEOUT=900          # optional, seconds to wait for the panel and for health
 DOZO_DEPLOY_OUTAGE_WARN=5        # optional, seconds of outage seen from outside before a warning
+# optional, the image build's limits (Build limit): DOZO_DEPLOY_BUILD_LIMIT=on|off,
+# DOZO_DEPLOY_BUILD_MEMORY_HIGH=4G, DOZO_DEPLOY_BUILD_MEMORY_MAX=6G,
+# DOZO_DEPLOY_BUILD_CPU_WEIGHT=20, DOZO_DEPLOY_BUILD_IO_WEIGHT=20
 ```
 
 Your machine needs `git`, `rsync`, `ssh`, `curl`, `jq` and Docker (for the brand step and the
@@ -408,6 +411,58 @@ Known limits:
   main:dozo/deploy/compose.deploy.yml`). On Docker 29 or newer the proxy cannot read the daemon;
   set `DOCKER_HOST` to a `docker:28.4.0-dind` that mounts the work folder at the same path,
   `DOCKER_SOCKET` to its socket and `DOZO_REHEARSAL_BIND=0.0.0.0` with its port 18443 published.
+
+## Deploy lock
+
+`deploy`, `rollback` and `site` take a lock on the host (`$DOZO_DEPLOY_DIR/.deploy.lock`, a symbolic
+link holding a random run id, the action and commit, and the start time), so two machines cannot
+deploy to the same host at once. A second run prints one line and waits for the first, polling
+every few seconds; the lock is freed on any exit, including Ctrl-C and `kill` (not `kill -9`).
+`owner` takes none. A failing ssh call is tried again up to 3 times.
+
+- `DOZO_DEPLOY_LOCK_WAIT`: seconds to wait for a running deploy (default 1800); 0 fails at once.
+- `DOZO_DEPLOY_LOCK_STALE`: seconds after which a lock is taken as left behind and broken
+  (default 7200; keep it above the longest deploy, a build and the panel's waits included).
+
+Both must be whole numbers (else exit 64). A lock whose content cannot be read is never broken:
+the run times out and says so. A run killed with `kill -9` or a lost connection leaves its lock
+until the stale limit; remove it with `ssh <host> rm $DOZO_DEPLOY_DIR/.deploy.lock` when no deploy
+is running. Stale locks are broken under a second link (`.deploy.lock.break`, one holder, a leftover
+older than a minute is removed); the one remaining window is a breaker stalled for over a minute
+or an owner releasing in the instant a stale lock is removed.
+
+## Build limit
+
+The image build shares the host with the running app and can starve it of memory first and CPU
+second. Before it builds, the host script starts a systemd slice, `dozobuild.slice` (no dash: systemd
+reads a dash as nesting, Docker does not), sets limits on it with `systemctl set-property --runtime`,
+reads them back from the slice's cgroup files (`memory.high`, `memory.max`, `memory.swap.max`,
+`cpu.weight`, `io.weight`) and, only if they match, passes `--cgroup-parent=dozobuild.slice` to each
+`docker build`. Nothing runs when the images of the commit are already on the host.
+
+- `DOZO_DEPLOY_BUILD_MEMORY_HIGH` (default `4G`): the build is throttled and reclaimed inside its own
+  group above this. `DOZO_DEPLOY_BUILD_MEMORY_MAX` (default `6G`): a build above it is killed and the
+  deploy fails before anything on the host was replaced, saying to raise this setting. Sizes are a
+  whole number with an optional `K`, `M` or `G`. Swap is fixed at 0 for the build.
+- `DOZO_DEPLOY_BUILD_CPU_WEIGHT` and `DOZO_DEPLOY_BUILD_IO_WEIGHT` (default 20 each, 1 to 10000;
+  everything else on the host has 100).
+- `DOZO_DEPLOY_BUILD_LIMIT=off` builds as before. A bad value exits 64 before any ssh.
+
+It prints one of two lines, and a failed setup never fails the deploy:
+
+```
+[deploy] host: build limited in dozobuild.slice (memory.high ..., memory.max ..., swap.max 0, cpu.weight 20, io.weight 20)
+[deploy] host: build NOT limited: <reason>
+```
+
+Reasons: turned off; the deploy user is not root; no systemd; no cgroup v2; systemd could not start the
+slice or refused the limits; the read-back differed (it prints both). To see a running build inside
+the slice, on the host: `systemd-cgls dozobuild.slice`, or `cat /sys/fs/cgroup/dozobuild.slice/*/cgroup.procs`
+(the build's containers are the child groups). The limits are runtime-only; each deploy sets them again.
+
+The limit bounds the build's own memory and lowers its priority; it does not bound what the build
+reads from disk or the network. It has been checked offline only (stub `systemctl` and `docker`,
+`dozo/deploy/deploy-build-limit.test.sh`) until the first real deploy.
 
 ## Roll back
 

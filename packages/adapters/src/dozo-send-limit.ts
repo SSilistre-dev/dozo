@@ -1,5 +1,6 @@
 import { takeDozoDailySend } from "@rakazo/db";
 import type { buildApprovalAskBlock } from "./approval-ask.js";
+import { dozoPageSubmits } from "./dozo-page-submit-gate.js";
 import type { RunContext } from "./run-context.js";
 
 /** Built-ins that send something to someone other than the owner. */
@@ -12,8 +13,9 @@ const limitAsks = new WeakMap<Record<string, unknown>, number>();
  * Upstream's plan for a call, then the account's daily sends: the sends of a call that would go
  * ahead without a person (allowed, or left to the approval model) are counted, and once they would
  * take this bot past the day's number, it asks instead. A send is a built-in that reaches someone
- * else, or an app action upstream counts as changing something (each one in a batch). A call that
- * already asks, is denied, or was approved on its card is not counted.
+ * else, an app action upstream counts as changing something (each one in a batch), or a form submit
+ * made through the page browser (each one in a batch; `dozo-page-submit.ts` says what is one). A call
+ * that already asks, is denied, or was approved on its card is not counted.
  */
 export async function dozoSendLimitGate<Plan extends string>(
   ctx: RunContext,
@@ -27,10 +29,13 @@ export async function dozoSendLimitGate<Plan extends string>(
   },
   plan: Plan,
 ): Promise<Plan | "ask"> {
+  if (call.approved || (plan !== "allow" && plan !== "judge")) return plan;
   const sends = call.viaConnector
     ? call.connectorChanges
-    : Number(SENDING_BUILTIN_TOOLS.has(call.name));
-  if (sends < 1 || call.approved || (plan !== "allow" && plan !== "judge")) return plan;
+    : SENDING_BUILTIN_TOOLS.has(call.name)
+      ? 1
+      : await dozoPageSubmits(ctx, call.name, call.args);
+  if (sends < 1) return plan;
   const taken = await takeDozoDailySend(ctx.deps.prisma, {
     userId: ctx.run.userId,
     botId: ctx.bot.id,
@@ -55,4 +60,9 @@ export function dozoSendLimitCard(
     onceOnly: true,
     reviewReason: `Over the daily limit: this bot may make ${dailySends} sends a day without asking.`,
   };
+}
+
+/** Whether the call asks only because it would pass the daily limit. */
+export function dozoSendLimitHeld(args: Record<string, unknown>): boolean {
+  return limitAsks.has(args);
 }

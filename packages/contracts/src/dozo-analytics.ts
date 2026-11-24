@@ -15,6 +15,7 @@ export const DOZO_PLAN_LIMIT_KINDS = [
   "computer_hours",
   PLAN_LIMIT_CODES.sharedSpaceFull,
   PLAN_LIMIT_CODES.computerLimit,
+  PLAN_LIMIT_CODES.computerLimitShared,
   PLAN_LIMIT_CODES.spaceLimit,
 ] as const;
 export const DozoPlanLimitKindSchema = /* @__PURE__ */ (() => z.enum(DOZO_PLAN_LIMIT_KINDS))();

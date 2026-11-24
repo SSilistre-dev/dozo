@@ -1967,11 +1967,11 @@ fn the_ended_notice_has_both_languages() {
 fn a_capability_word_the_header_cannot_carry_leaves_the_plain_header() {
     use crate::device_socket::capabilities_header;
     assert_eq!(
-        capabilities_header(true, true, &["a-b"]),
+        capabilities_header(true, true, false, &["a-b"]),
         "shell,browser,agent:a-b"
     );
     assert_eq!(
-        capabilities_header(true, true, &["bad\nid"]),
+        capabilities_header(true, true, false, &["bad\nid"]),
         "shell,browser"
     );
 }

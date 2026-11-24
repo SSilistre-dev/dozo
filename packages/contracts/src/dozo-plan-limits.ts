@@ -18,6 +18,8 @@ export const PLAN_LIMIT_CODES = {
   sharedSpaceFull: "shared_space_full",
   computersBusy: "COMPUTERS_BUSY",
   computerLimit: "computer_limit_reached",
+  /** The limit is full of shared Team Computers, so archiving a bot frees none. */
+  computerLimitShared: "computer_limit_shared",
   spaceLimit: "space_limit_reached",
   planNotOffered: "plan_not_offered",
 } as const;
@@ -54,6 +56,7 @@ export type PlanLimitCopy = {
   sharedSpaceFullTop: string;
   computersBusy: string;
   computerLimit: string;
+  computerLimitShared: string;
   spaceLimit: string;
   planNotOffered: string;
   upgrade: string;
@@ -68,6 +71,7 @@ const SERVER_CODES = new Set<string>([
   PLAN_LIMIT_CODES.sharedSpaceFull,
   PLAN_LIMIT_CODES.computersBusy,
   PLAN_LIMIT_CODES.computerLimit,
+  PLAN_LIMIT_CODES.computerLimitShared,
   PLAN_LIMIT_CODES.spaceLimit,
   PLAN_LIMIT_CODES.planNotOffered,
 ]);
@@ -81,6 +85,7 @@ function sentenceLimit(text: string, copy: PlanLimitCopy | undefined): PlanLimit
     [copy.sharedSpaceFull, PLAN_LIMIT_CODES.sharedSpaceFull],
     [copy.computersBusy, PLAN_LIMIT_CODES.computersBusy],
     [copy.computerLimit, PLAN_LIMIT_CODES.computerLimit],
+    [copy.computerLimitShared, PLAN_LIMIT_CODES.computerLimitShared],
     [copy.spaceLimit, PLAN_LIMIT_CODES.spaceLimit],
     [copy.planNotOffered, PLAN_LIMIT_CODES.planNotOffered],
   ];
@@ -183,6 +188,13 @@ export function planLimitNotice(
       return notice(limit, copy.computersBusy, { kind: "retry", label: copy.retry });
     case PLAN_LIMIT_CODES.computerLimit:
       return notice(limit, copy.computerLimit);
+    case PLAN_LIMIT_CODES.computerLimitShared:
+      // The way out is the Team Computer; a plan with more computers is offered beside it.
+      return notice(
+        limit,
+        copy.computerLimitShared,
+        next && !next.fromFree ? upgrade(copy.upgradeTo(next.name)) : null,
+      );
     case PLAN_LIMIT_CODES.spaceLimit:
       return notice(limit, copy.spaceLimit);
     case PLAN_LIMIT_CODES.planNotOffered:

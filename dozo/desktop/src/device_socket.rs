@@ -126,6 +126,7 @@ async fn session(
         capabilities_header(
             crate::browser::DECLARED,
             options.runner.browser_available(),
+            options.runner.passwords_declared(),
             &agents,
         ),
     );
@@ -197,12 +198,16 @@ async fn session(
 }
 
 /// What this computer offers: commands, the bot's own browser where the app has one
-/// (`browser::DECLARED`) and a browser is installed, and `agent:<id>` for each agent the person
-/// allowed that is installed (`device_agent.rs`).
-fn capabilities(declared: bool, available: bool, agents: &[&str]) -> String {
+/// (`browser::DECLARED`) and a browser is installed, the password manager when it is on and its
+/// program found, and `agent:<id>` for each agent the person allowed that is installed
+/// (`device_agent.rs`).
+fn capabilities(declared: bool, available: bool, passwords: bool, agents: &[&str]) -> String {
     let mut words = vec!["shell".to_owned()];
     if declared && available {
         words.push("browser".to_owned());
+    }
+    if passwords {
+        words.push("passwords".to_owned());
     }
     words.extend(agents.iter().map(|id| format!("agent:{id}")));
     words.join(",")
@@ -210,9 +215,14 @@ fn capabilities(declared: bool, available: bool, agents: &[&str]) -> String {
 
 /// The header: what this computer offers. A word it cannot carry leaves the plain header, never
 /// none.
-pub(crate) fn capabilities_header(declared: bool, available: bool, agents: &[&str]) -> HeaderValue {
-    HeaderValue::from_str(&capabilities(declared, available, agents))
-        .or_else(|_| HeaderValue::from_str(&capabilities(declared, available, &[])))
+pub(crate) fn capabilities_header(
+    declared: bool,
+    available: bool,
+    passwords: bool,
+    agents: &[&str],
+) -> HeaderValue {
+    HeaderValue::from_str(&capabilities(declared, available, passwords, agents))
+        .or_else(|_| HeaderValue::from_str(&capabilities(declared, available, passwords, &[])))
         .unwrap_or_else(|_| HeaderValue::from_static("shell"))
 }
 
@@ -342,16 +352,23 @@ mod tests {
     /// installed; Windows declares commands alone and has no browser.
     #[test]
     fn the_browser_is_declared_only_where_the_app_has_one() {
-        assert_eq!(capabilities(true, true, &[]), "shell,browser");
-        assert_eq!(capabilities(true, false, &[]), "shell");
-        assert_eq!(capabilities(false, true, &[]), "shell");
+        assert_eq!(capabilities(true, true, false, &[]), "shell,browser");
+        assert_eq!(capabilities(true, false, false, &[]), "shell");
+        assert_eq!(capabilities(false, true, false, &[]), "shell");
+        // The password manager is declared on its own terms: on, and the program found.
         assert_eq!(
-            capabilities(true, true, &["antigravity-agent"]),
+            capabilities(true, true, true, &[]),
+            "shell,browser,passwords"
+        );
+        assert_eq!(capabilities(true, false, true, &[]), "shell,passwords");
+        assert_eq!(capabilities(false, false, true, &[]), "shell,passwords");
+        assert_eq!(
+            capabilities(true, true, false, &["antigravity-agent"]),
             "shell,browser,agent:antigravity-agent"
         );
         assert_eq!(
-            capabilities(false, false, &["a", "b"]),
-            "shell,agent:a,agent:b"
+            capabilities(false, false, true, &["a", "b"]),
+            "shell,passwords,agent:a,agent:b"
         );
         #[cfg(windows)]
         {
@@ -364,6 +381,75 @@ mod tests {
         const {
             assert!(crate::browser::DECLARED)
         };
+    }
+
+    /// The header a connection sends says `passwords` only while the setting is on and the
+    /// program is found, as the runner says it now.
+    #[tokio::test]
+    #[allow(clippy::result_large_err)] // The handshake callback's signature is tungstenite's.
+    async fn the_connection_declares_passwords_only_while_on_and_found() {
+        use crate::password_links::Passwords;
+        use crate::password_manager::{Failure, Fut, Login, Part, PasswordManager, Secret};
+        struct Here;
+        impl PasswordManager for Here {
+            fn logins(&self) -> Fut<'_, Result<Vec<Login>, Failure>> {
+                Box::pin(async { Ok(Vec::new()) })
+            }
+            fn read(&self, _: &str, _: &str, _: Part) -> Fut<'_, Result<Secret, Failure>> {
+                Box::pin(async { Err(Failure::Failed) })
+            }
+        }
+        for (found, on, expected) in [
+            (true, true, true),
+            (true, false, false),
+            (false, true, false),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let server = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+            let (seen, header) = tokio::sync::oneshot::channel();
+            tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut seen = Some(seen);
+                let check = move |request: &Request, response: Response| {
+                    let declared = request.headers().get(CAPABILITIES_HEADER).unwrap();
+                    let _ = seen
+                        .take()
+                        .unwrap()
+                        .send(declared.to_str().unwrap().to_owned());
+                    Ok(response)
+                };
+                let _socket = tokio_tungstenite::accept_hdr_async(stream, check).await;
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            });
+            let dir = std::env::temp_dir().join(format!(
+                "dozo-socket-passwords-{}-{}",
+                std::process::id(),
+                jitter().to_bits()
+            ));
+            std::fs::create_dir_all(dir.join("home")).unwrap();
+            let vault: Option<Arc<dyn PasswordManager>> = found.then(|| Arc::new(Here) as _);
+            let passwords = Passwords::new(None, vault);
+            passwords.set_enabled(on);
+            let runner = Runner::with_passwords(dir.join("data"), dir.join("home"), passwords);
+            let options = Options {
+                server,
+                token: "good".to_owned(),
+                runner,
+                retry: (Duration::from_millis(20), Duration::from_millis(40)),
+                grace: Duration::from_millis(300),
+            };
+            let (stop, stopped) = watch::channel(false);
+            let connection = tokio::spawn(run(options, stopped));
+            let header = header.await.unwrap();
+            assert_eq!(
+                header.split(',').any(|name| name == "passwords"),
+                expected,
+                "{header}"
+            );
+            let _ = stop.send(true);
+            let _ = connection.await;
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     type Socket = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
@@ -386,7 +472,8 @@ mod tests {
                             let declared = request.headers().get(CAPABILITIES_HEADER);
                             // The browser only where the app has one and one is installed.
                             let available = crate::browser::find().is_some();
-                            let expected = capabilities(crate::browser::DECLARED, available, &[]);
+                            let expected =
+                                capabilities(crate::browser::DECLARED, available, false, &[]);
                             assert_eq!(declared.unwrap(), expected.as_str());
                             return Ok(response);
                         }

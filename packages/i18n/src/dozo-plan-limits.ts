@@ -29,6 +29,7 @@ export function planLimitCopy() {
     sharedSpaceFullTop: say("Shared space is full. Delete files to make room."),
     computersBusy: say("All computers are busy. Try again shortly."),
     computerLimit: say("Computer limit reached. Archive a bot to free one."),
+    computerLimitShared: say("Computer limit reached. This bot can use the Team Computer."),
     spaceLimit: say("Space limit reached. Delete a Space to add another."),
     planNotOffered: say("This plan is free. Choose a paid plan to upgrade."),
     upgrade: say("Upgrade"),

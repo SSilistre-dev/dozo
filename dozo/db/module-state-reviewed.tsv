@@ -71,6 +71,7 @@ packages/adapters/src/dozo-device-browser.ts	module	const INTERACTIVE = new Set(
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const byId = new Map(nodes.map((node) => [node.nodeId, node]));	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const parents = new Map<string, string>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	let line: string | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private readonly fills = new Map<string, { handle: string; field: DeviceFillField }>();	run	planned password-manager fills (handle and field, never a value) of the browser provider kept per run context in a WeakMap
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private notes: string[] = [];	run	notes of the browser provider kept per run context in a WeakMap
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn loaded	let looks = 0;	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn act	let completed = 0;	local	per-call local, dies with the call
@@ -80,6 +81,7 @@ packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	let lines = lin
 packages/adapters/src/dozo-learning-apply.ts	fn applyLearningOps	const refused = new Set([...rejected].map(learningNoteKey));	local	per-call working values of one learning change for one bot; die with the call
 packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	let change = found;	local	per-call working values of one learning change for one bot; die with the call
 packages/adapters/src/dozo-learning-apply.ts	fn undoLearningChange	const tag = newWriteTag();	local	per-call working values of one learning change for one bot; die with the call
+packages/adapters/src/dozo-learning-apply.ts	module	const skillLine = dozoLearningLine(LEARNING_SKILL_LINE_MAX_CHARS);	global-safe	schema of one line of a suggested skill; holds no data
 packages/adapters/src/dozo-learning-recall.ts	module	const recalledStates = new WeakSet<RunState>();	run	marks a run's own state object by identity; flag only
 packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let answer: string | null = null;	local	per-call answer and count of one review model call; die with the call
 packages/adapters/src/dozo-learning-review.ts	fn askReviewModel	let counted = false;	local	per-call answer and count of one review model call; die with the call
@@ -217,6 +219,13 @@ packages/i18n/src/dozo-server-text.ts	module	export const SIGN_IN_LABELS: Readon
 apps/api/src/app.ts	fn buildApp	const dozoJobPool =	global-safe	wiring of billing's job pool: a handle, no data
 apps/api/src/app.ts	fn buildApp	const dozoBilling =	global-safe	wiring of billing's mail service: no data
 apps/api/src/account-import.ts	class AccountImporter	this.repos = dozoReportingRepos(createRepos(deps.prisma), deps)	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputer	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let incomplete = false;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let ref = await provision();	local	per-call local, dies with the call
 packages/adapters/src/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
 packages/core/src/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled
+packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<object, number>();	request	count keyed by the identity of one tool call's action list; dies with the call
+packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
+packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
+packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call

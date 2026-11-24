@@ -23,6 +23,7 @@ import {
 } from "./dozo-bot-api.js";
 import { exportChat } from "./dozo-chat-export.js";
 import { messageBody } from "./dozo-chat-markdown.js";
+import { dozoTokenBotIds, dozoTokenReachesBot } from "./dozo-token-bots.js";
 import { requestBodyLimit } from "./request-body-limit.js";
 import type { createRouter } from "./router.js";
 import { isStopMessage } from "./thread-stop.js";
@@ -151,12 +152,9 @@ export function dozoMcpOperations(
 ): DozoMcpOperations {
   // Bots are rows of the owner's Space: read them as the owner, as the app's procedures do.
   const asOwner = <T>(work: () => Promise<T>) => refusals(() => runAsTenant(actor, work));
-  const reachable = { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null };
   const ownBot = async (botId: string) => {
-    const bot =
-      (onlyBotId === null || onlyBotId === botId) &&
-      (await prisma.bot.findFirst({ where: { id: botId, ...reachable }, select: { id: true } }));
-    if (!bot) throw new ClientError("NOT_FOUND", "No such bot.");
+    if (!(await dozoTokenReachesBot(prisma, actor, onlyBotId, botId)))
+      throw new ClientError("NOT_FOUND", "No such bot.");
   };
   const chatOf = async (botId: string, chatId: string | undefined) => {
     await ownBot(botId);
@@ -165,14 +163,10 @@ export function dozoMcpOperations(
   return {
     listBots: () =>
       asOwner(async () => {
-        const [bots, own] = await Promise.all([
+        const [bots, ids] = await Promise.all([
           client.bots.list(),
-          prisma.bot.findMany({
-            where: { ...reachable, ...(onlyBotId === null ? {} : { id: onlyBotId }) },
-            select: { id: true },
-          }),
+          dozoTokenBotIds(prisma, actor, onlyBotId),
         ]);
-        const ids = new Set(own.map((bot) => bot.id));
         return bots
           .filter((bot) => ids.has(bot.id))
           .map((bot) => ({ id: bot.id, name: bot.name, description: bot.description }));

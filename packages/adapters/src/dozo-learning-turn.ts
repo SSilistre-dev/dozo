@@ -84,7 +84,7 @@ async function recordTurn(ctx: RunContext, start: typeof startNow) {
   if (!countsForLearning(ctx)) return;
   const { deps, run, bot } = ctx;
   // The one read a bot with learning off pays.
-  if ((await learningMode(deps.prisma, bot.id)) !== "auto") return;
+  if ((await learningMode(deps.prisma, bot.id)) === "off") return;
   if ((await runCameByToken(ctx)) || (await runReadPhone(ctx))) return;
   // Notes are read by every member of the Space: learning is for a Space of the owner's own.
   if (!(await onlyOwnerReads(deps.prisma, ctx.thread, bot.userId))) return;
@@ -117,7 +117,7 @@ async function recordTurn(ctx: RunContext, start: typeof startNow) {
 
 /**
  * After a run completed: records the turn for the bot's next learning review when its owner has
- * learning on, and starts the review at once when enough turns wait. Never fails the run.
+ * learning on (Ask or Auto), and starts the review at once when enough turns wait. Never fails the run.
  */
 export async function dozoRecordLearningTurn(ctx: RunContext, start = startNow): Promise<void> {
   await bestEffort("learning turn", recordTurn(ctx, start));

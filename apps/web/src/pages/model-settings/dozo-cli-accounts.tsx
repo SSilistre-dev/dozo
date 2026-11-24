@@ -134,6 +134,20 @@ function AgentConsent({
   );
 }
 
+/** The maker's own page for an agent that is not installed: the one thing the row can do. */
+function DownloadLink({ href }: { href: string }) {
+  return (
+    <a
+      className="text-body-sm text-muted-foreground underline underline-offset-2"
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      <Trans>Download</Trans>
+    </a>
+  );
+}
+
 function CliToolRow({ tool }: { tool: DozoCliTool }) {
   const { t } = useLingui();
   const agent = tool.mode === "agent";
@@ -167,7 +181,8 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
       }
       control={
         <>
-          {tool.connected || asking ? null : tool.signedIn === false ? (
+          {tool.downloadUrl ? <DownloadLink href={tool.downloadUrl} /> : null}
+          {tool.connected || asking || !tool.found ? null : tool.signedIn === false ? (
             <span className="text-body-sm text-muted-foreground">
               <Trans>Not signed in</Trans>
             </span>
@@ -207,10 +222,13 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
   );
 }
 
-/** One row per installed tool with something to do; nothing at all where there is none. */
+/**
+ * One row per installed tool with something to do, and one per agent that is not installed, with
+ * its maker's page; nothing at all where there is none.
+ */
 export function DozoCliAccounts() {
-  const tools = useCliTools().filter(
-    (tool) => tool.found && (!tool.connected || tool.canAdd || tool.login),
+  const tools = useCliTools().filter((tool) =>
+    tool.found ? !tool.connected || tool.canAdd || tool.login : tool.downloadUrl,
   );
   if (!tools.length) return null;
   return (
