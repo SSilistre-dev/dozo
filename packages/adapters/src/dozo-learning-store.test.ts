@@ -269,6 +269,8 @@ describe("learning store", () => {
       pendingSkillId: "skill-1",
     });
     expect(pending.sql()[0]).toContain("FOR UPDATE OF l");
+    // Turned off, nothing is suggested; the lock keeps it from being turned off meanwhile.
+    expect(pending.sql()[0]).toContain("l.mode <> 'off'");
     expect(pending.sql()[0]).toContain("s.status = 'draft'");
     expect(await lockSkillSuggestion(db([]).client, "bot-1")).toBeUndefined();
     const set = db();

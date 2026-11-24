@@ -200,7 +200,8 @@ async function rejectLines(
 /**
  * The skill the bot's last review suggested while it is still an unanswered draft (null when
  * none), locking the bot's learning row (`FOR UPDATE`) in the caller's transaction, so two
- * reviews never both suggest. Undefined without a row: a bot never set learns nothing.
+ * reviews never both suggest and learning is not turned off before the caller commits.
+ * Undefined without a row or with learning off: nothing is suggested.
  */
 export async function lockSkillSuggestion(
   db: Db,
@@ -210,7 +211,7 @@ export async function lockSkillSuggestion(
     SELECT (
       SELECT s.id FROM taught_skills s WHERE s.id = l."suggestedSkillId" AND s.status = 'draft'
     ) AS "pendingSkillId"
-    FROM dozo_bot_learning l WHERE l."botId" = ${botId} FOR UPDATE OF l`;
+    FROM dozo_bot_learning l WHERE l."botId" = ${botId} AND l.mode <> 'off' FOR UPDATE OF l`;
   return row;
 }
 

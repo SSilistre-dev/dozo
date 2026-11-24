@@ -19,7 +19,14 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   sandboxAllowanceUsedUp: allowance.usedUp,
   rejectSkillSuggestion: rejected,
 }));
-vi.mock("./taught-skills.js", () => ({ createTaughtSkillsService: () => upstream }));
+/** The database each upstream service was made with: the remove of a suggestion makes one on its transaction. */
+const upstreamDbs = vi.hoisted(() => [] as unknown[]);
+vi.mock("./taught-skills.js", () => ({
+  createTaughtSkillsService: (deps: { prisma: unknown }) => {
+    upstreamDbs.push(deps.prisma);
+    return upstream;
+  },
+}));
 const reported = vi.hoisted(() => vi.fn());
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -408,40 +415,62 @@ describe("save", () => {
 });
 
 describe("remove", () => {
+  const skill = (id: string, name: string, goal: string, status = "draft") => ({
+    id,
+    botId: "bot-1",
+    spaceId: "space-1",
+    name,
+    goal,
+    status,
+  });
   const skills: Record<string, Record<string, unknown>> = {
-    "skill-1": {
-      id: "skill-1",
-      botId: "bot-1",
-      spaceId: "space-1",
-      name: "Weekly report",
-      goal: "g",
-    },
-    "skill-2": {
-      id: "skill-2",
-      botId: "bot-1",
-      spaceId: "space-1",
-      name: "",
-      goal: "Sort the inbox",
-    },
+    "skill-1": skill("skill-1", "Weekly report", "g"),
+    "skill-2": skill("skill-2", "", "Sort the inbox", "saved"),
+    "skill-3": skill("skill-3", "Sign in", "g", "recording"),
   };
   const service = (prisma: Record<string, unknown>) =>
     createTaughtSkillsService({ prisma } as never);
-  const prisma = () => ({
-    taughtSkill: {
-      findFirst: vi.fn(async ({ where }: { where: { id: string; spaceId: string } }) =>
-        where.spaceId === "space-1" ? (skills[where.id] ?? null) : null,
-      ),
-    },
-  });
+  const prisma = () => {
+    const tx = { name: "tx" };
+    const order: string[] = [];
+    return {
+      tx,
+      order,
+      taughtSkill: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string; spaceId: string } }) =>
+          where.spaceId === "space-1" ? (skills[where.id] ?? null) : null,
+        ),
+      },
+      $transaction: vi.fn(async (work: (db: unknown) => unknown) => {
+        order.push("begin");
+        try {
+          return await work(tx);
+        } finally {
+          order.push("end");
+        }
+      }),
+    };
+  };
 
-  it("deletes as upstream does, then turns down the skill when a review suggested it", async () => {
+  it("deletes a draft or saved skill and turns it down in one transaction", async () => {
     const db = prisma();
+    rejected.mockImplementation(async () => {
+      db.order.push("reject");
+      return true;
+    });
+    upstream.remove.mockImplementation(async () => {
+      db.order.push("delete");
+      return { ok: true as const };
+    });
     expect(await service(db).remove(actor, "skill-1")).toEqual({ ok: true });
+    expect(db.order).toEqual(["begin", "reject", "delete", "end"]);
+    // The delete ran on a service made with the transaction.
+    expect(upstreamDbs.at(-1)).toBe(db.tx);
     expect(upstream.remove).toHaveBeenCalledWith(actor, "skill-1");
     expect(db.taughtSkill.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "skill-1", spaceId: "space-1" } }),
     );
-    expect(rejected).toHaveBeenCalledExactlyOnceWith(db, {
+    expect(rejected).toHaveBeenCalledExactlyOnceWith(db.tx, {
       id: "skill-1",
       botId: "bot-1",
       spaceId: "space-1",
@@ -450,15 +479,23 @@ describe("remove", () => {
     // A skill without a name is turned down by the name its card shows.
     await service(db).remove(actor, "skill-2");
     expect(rejected).toHaveBeenLastCalledWith(
-      db,
+      db.tx,
       expect.objectContaining({ name: "Sort the inbox" }),
     );
   });
 
-  it("turns nothing down when the delete fails, or for a skill of no bot in the Space", async () => {
+  it("fails the whole transaction when the delete fails, so nothing is turned down alone", async () => {
     const db = prisma();
-    upstream.remove.mockRejectedValueOnce(new Error("Someone else is teaching this skill"));
-    await expect(service(db).remove(actor, "skill-1")).rejects.toThrow("Someone else");
+    upstream.remove.mockRejectedValueOnce(new Error("database down"));
+    await expect(service(db).remove(actor, "skill-1")).rejects.toThrow("database down");
+    expect(db.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it("ends a live recording as upstream does, turning nothing down, and refuses another Space's", async () => {
+    const db = prisma();
+    upstream.remove.mockResolvedValueOnce({ ok: true });
+    expect(await service(db).remove(actor, "skill-3")).toEqual({ ok: true });
+    expect(db.$transaction).not.toHaveBeenCalled();
     await expect(service(db).remove(actor, "gone")).rejects.toBeInstanceOf(IsolationError);
     expect(rejected).not.toHaveBeenCalled();
   });
