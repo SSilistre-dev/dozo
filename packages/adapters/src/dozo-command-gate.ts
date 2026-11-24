@@ -1,6 +1,13 @@
 import type { DozoCommandComputer } from "@rakazo/core";
-import { commandRuleCwd, matchCommandRules, readOnlyCwd, readOnlyPipeline } from "@rakazo/core";
-import { readDozoCommandRules, readDozoHostedAsks } from "@rakazo/db";
+import {
+  commandRuleCwd,
+  matchCommandRules,
+  readOnlyCwd,
+  readOnlyPipeline,
+  routineWriterIsOwner,
+} from "@rakazo/core";
+import { readDozoCommandRules, readDozoHostedAsks, readRoutineWriter } from "@rakazo/db";
+import { runCameByToken } from "./dozo-token-run.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted } from "./run-context.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
@@ -51,12 +58,13 @@ export async function commandRuleMatch(
  * Why a command on the bot's computer needs approval, before upstream plans it: nothing for a
  * command that only reads, that a block rule refuses (the gate refuses it), or that an allow rule
  * of the member covers; otherwise the gate counts it as consequential, as upstream counts a tool
- * that changes something. `review` lets the approval model pass it in Auto review; `person` asks a
- * person in every mode but Never ask: in a run outside content reached (isRunTainted: someone else
- * started it, it resumed, or a tool result such as a page, a file or a command's output came
- * back), where only an exact allow rule still covers it, or when the member asked for commands on
- * the bot's computer to ask. An always-allow rule for the tool and Never ask pass it, as upstream
- * passes any consequential tool.
+ * that changes something. `review` lets the approval model pass it in Auto review (told when the
+ * run took in outside content: dozoHostedReviewFacts); `person` asks a person in every mode but
+ * Never ask: in a run outside text started (dozoRunStartedFromOutside), or when the member asked
+ * for commands on the bot's computer to ask. In a run that took in outside content (isRunTainted:
+ * a page, a file, a command's output, a resumed turn, or a run the owner did not start, their
+ * routine included) only an exact allow rule covers a command, not a prefix rule. An always-allow
+ * rule for the tool and Never ask pass it, as upstream passes any consequential tool.
  */
 export async function dozoHostedCommandHold(
   ctx: RunContext,
@@ -67,18 +75,43 @@ export async function dozoHostedCommandHold(
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return undefined;
   const match = await hostedMatch(ctx, args);
   if (match === "block" || match === "allow") return undefined;
-  const tainted = await isRunTainted(ctx);
-  if (match === "allow_prefix" && !tainted) return undefined;
-  if (tainted || (await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId))) return "person";
+  if (match === "allow_prefix" && !(await isRunTainted(ctx))) return undefined;
+  if (
+    (await dozoRunStartedFromOutside(ctx)) ||
+    (await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId))
+  )
+    return "person";
   return "review";
 }
 
+/**
+ * Whether text from someone other than the run's member started the run or reached it: a webhook
+ * or email, a team chat's channel, a message sent with an access token, an outside message taken
+ * in while it ran, or a routine whose prompt someone else last wrote (dozo_routine_writers). A
+ * routine with no writer on record is taken as its owner's: it predates the record.
+ */
+export async function dozoRunStartedFromOutside(ctx: RunContext): Promise<boolean> {
+  const { run } = ctx;
+  if (run.trigger === "webhook" || ctx.source.messagingChannelRun) return true;
+  if ((await runCameByToken(ctx)) || (await ctx.trust.receivedOutsideMessage())) return true;
+  if (run.trigger !== "routine" || !run.routineId) return false;
+  const writer = (await readRoutineWriter(ctx.deps.prisma, run.routineId))?.writer;
+  return writer !== undefined && !routineWriterIsOwner(writer);
+}
+
+/** What the approval model is told about a command on the bot's computer: whether outside content came in. */
+export async function dozoHostedReviewFacts(
+  ctx: RunContext,
+  name: string,
+): Promise<{ outsideContent?: true }> {
+  return name === HOSTED_SHELL_TOOL && (await isRunTainted(ctx)) ? { outsideContent: true } : {};
+}
+
 function hostedMatch(ctx: RunContext, args: Record<string, unknown>) {
-  let match = hostedMatches.get(args);
-  if (!match) {
-    match = commandRuleMatch(ctx, args, "hosted");
-    hostedMatches.set(args, match);
-  }
+  const known = hostedMatches.get(args);
+  if (known) return known;
+  const match = commandRuleMatch(ctx, args, "hosted");
+  hostedMatches.set(args, match);
   return match;
 }
 

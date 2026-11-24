@@ -594,28 +594,33 @@ The fork gates it by default (`dozoHostedCommandHold` in `packages/adapters/src/
 on the hosted service and on a self-hosted server's bot computers alike. A command that only reads
 runs. Any other command (one that writes, reaches the network, deletes, or cannot be read) that no
 allow rule covers counts as an action that changes something, as upstream counts other tools:
-Auto review sends it to the approval model, which sees the command and its folder and passes it
-or asks with a card; with no approval model, or when the review fails, it asks. Ask asks. Never
-ask runs it. An always-allow rule for the tool runs it in every mode, as upstream does for any
-tool. Block rules refuse in every mode.
 
-- In a run outside content reached (upstream's tainted run: someone other than the owner started
-  it, a routine or webhook among them, it resumed after a card or a restart, or any tool result
-  came back, a command's own output included), such a command never goes to the approval model:
-  it asks, outside Never ask. Since nearly every run soon reads a command's output, in practice
-  most commands after the first that change something ask; Always allow on the card, an exact
-  allow rule or Never ask are the ways out. Only an exact allow rule covers a command there, not a
-  prefix rule. A run a token's text reached asks about every command, reads too, in every mode.
-- A card in a run nobody watches (a routine, a webhook, a chat app) waits like any other card, is
-  notified, and ends with the run's other waits after a day; a background helper's run refuses
-  instead of asking.
+| Run | Auto review | Ask | Never ask |
+| --- | --- | --- | --- |
+| The member's own chat, also after it read pages, files or command output, and the owner's own routine | approval model; a card when it asks, fails or there is none | card | runs |
+| Started by outside text: a webhook or email, a team chat's channel, an outside message taken in while it ran, a routine someone else last wrote | card | card | runs (as before) |
+| Reached by a token's text | card, reads too | card | card (as before) |
+
+- The approval model sees the command and its folder, and is told when the run already took in
+  outside content (pages, files, command output, messages), which it never sees and which may have
+  chosen the command (`packages/adapters/src/dozo-outside-review.prompt.ts`). A model that passes
+  a command does not stop the run, a routine included; one that asks leaves a card. With no model
+  that would judge it (none set, or only backups without a primary), the command asks.
+- An exact allow rule runs the command in every row but the last; a prefix rule only until the run
+  takes in outside content. An always-allow rule for the tool runs it, as upstream does for any
+  tool. Block rules refuse in every mode.
+- A card in a run nobody watches (a routine, a webhook, a chat app) waits like any other card: the
+  member is notified, and the wait ends with the run's other human waits (`STUCK_WORK_EXPIRE_AFTER_MS`,
+  a day by default). A background helper's run refuses instead of asking.
+- A routine with no writer on record (`dozo_routine_writers`) is taken as its owner's, since it
+  predates the record. A Space member's own chat is theirs, judged by their rules.
 - "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
-  computer; per account, table `dozo_command_settings`) now means: a person, never the approval
+  computer; per account, table `dozo_command_settings`) now means: a card, never the approval
   model, outside Never ask. An account without the setting gets the default above.
-- It covers `shell` only. Writing a script with the file tools and running it is held only when
-  the run command itself is (a script is not a read), but what `write_file` writes, typing into a
-  terminal through screen control, and a command watch's later runs (asked about once, when the
-  routine is made) are not read per command.
+- It covers `shell` only. A script the bot wrote with the file tools is held when the command that
+  runs it is (a script is not a read), but what `write_file` writes, typing into a terminal through
+  screen control, and a command watch's later runs (asked about once, when the routine is made) are
+  not read per command.
 - The bot's computer is Linux, so the shell is known there; the reading below stays the one built
   for an unknown shell, which only makes more commands ask.
 

@@ -21,10 +21,11 @@ import type { RunContext } from "./run-context.js";
 
 type Mode = "ask" | "auto" | "never";
 
-function context(mode: Mode = "ask", userId = "user-1", tainted = false) {
+function context(mode: Mode = "ask", userId = "user-1", tainted = false, trigger = "user") {
   return {
-    deps: { prisma: { attempt: { count: async () => 1 } } },
-    run: { userId },
+    deps: { prisma: { attempt: { count: async () => 1 }, $queryRaw: async () => [] } },
+    run: { userId, trigger, routineId: null },
+    source: { messagingChannelRun: false },
     runId: "run-1",
     bot: { id: "bot-1" },
     state: { tainted, earlierAttempt: undefined },
@@ -162,12 +163,13 @@ describe("dozoHostedCommandGate", () => {
 describe("dozoHostedCommandHold", () => {
   const hold = (
     command: string,
-    options: { tainted?: boolean; cwd?: string; name?: string } = {},
+    options: { tainted?: boolean; cwd?: string; name?: string; trigger?: string } = {},
   ) =>
-    dozoHostedCommandHold(context("auto", "user-1", options.tainted), options.name ?? "shell", {
-      command,
-      ...(options.cwd ? { cwd: options.cwd } : {}),
-    });
+    dozoHostedCommandHold(
+      context("auto", "user-1", options.tainted, options.trigger),
+      options.name ?? "shell",
+      { command, ...(options.cwd ? { cwd: options.cwd } : {}) },
+    );
 
   it("holds nothing that only reads, and no other tool", async () => {
     for (const command of ["ls -la", "cat notes.txt | grep todo", "pwd"]) {
@@ -178,10 +180,11 @@ describe("dozoHostedCommandHold", () => {
     expect(db.rules).not.toHaveBeenCalled();
   });
 
-  it("sends a command that does more than read to review, and to a person once outside content came in", async () => {
+  it("sends a command that does more than read to review, and to a person once outside text started the run", async () => {
     for (const command of ["rm -rf build", "npm install", "ls; rm x", "bash -c 'ls'"]) {
       expect(await hold(command), command).toBe("review");
-      expect(await hold(command, { tainted: true }), command).toBe("person");
+      expect(await hold(command, { tainted: true }), command).toBe("review");
+      expect(await hold(command, { tainted: true, trigger: "webhook" }), command).toBe("person");
     }
     expect(await hold("ls", { cwd: "~/.ssh" })).toBe("review");
   });
@@ -195,7 +198,7 @@ describe("dozoHostedCommandHold", () => {
     expect(await hold("rm -rf build", { tainted: true })).toBeUndefined();
     expect(await hold("npm test", { tainted: true })).toBeUndefined();
     expect(await hold("grep -r todo src")).toBeUndefined();
-    expect(await hold("grep -r todo src", { tainted: true })).toBe("person");
+    expect(await hold("grep -r todo src", { tainted: true })).toBe("review");
     expect(await hold("npm test", { cwd: "/tmp" })).toBe("review");
   });
 
@@ -204,6 +207,14 @@ describe("dozoHostedCommandHold", () => {
     expect(await hold("npm install")).toBe("person");
     expect(await hold("ls")).toBeUndefined();
     expect(db.hostedAsks).toHaveBeenCalledWith(expect.anything(), "user-1");
+  });
+
+  it("still refuses a blocked command first", async () => {
+    db.rules.mockResolvedValue([rule(["rm"], "block")]);
+    const ctx = context("auto");
+    const args = { command: "ls && rm -rf build" };
+    expect(await dozoHostedCommandHold(ctx, "shell", args)).toBeUndefined();
+    expect(await dozoHostedCommandGate(ctx, "shell", args, NO_RULE, "allow")).toBe("deny");
   });
 
   it("reads the rules once for the hold and the gate", async () => {

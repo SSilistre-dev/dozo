@@ -15,10 +15,16 @@ import type { ToolRequest } from "./run-tool-request.js";
 const seen = vi.hoisted(() => ({
   plans: [] as string[],
   blocks: [] as Array<{ text?: string; actions?: Array<{ id: string }> }>,
-  reviews: [] as Array<{ toolName: string; args: Record<string, unknown> }>,
+  reviews: [] as Array<{
+    toolName: string;
+    args: Record<string, unknown>;
+    outsideContent?: boolean;
+  }>,
   claims: 0,
   rules: new Map<string, DozoCommandRuleView[]>(),
   hostedAsks: new Set<string>(),
+  /** Who last wrote the routine a run fired from; undefined is no record. */
+  routineWriter: undefined as string | undefined,
 }));
 vi.mock("@rakazo/core", async (importOriginal) => {
   const core = await importOriginal<typeof Core>();
@@ -38,6 +44,9 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
     async (_db: unknown, owner: { userId: string }) => seen.rules.get(owner.userId) ?? [],
   ),
   readDozoHostedAsks: vi.fn(async (_db: unknown, userId: string) => seen.hostedAsks.has(userId)),
+  readRoutineWriter: vi.fn(async () =>
+    seen.routineWriter ? { writer: seen.routineWriter, writtenAt: new Date(0) } : undefined,
+  ),
 }));
 vi.mock("./run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -68,7 +77,7 @@ type Mode = "ask" | "auto" | "never";
 /** What the approval model answers in Auto review; `off` is no approval model at all. */
 type Review = AutoReviewResult["decision"] | "throws" | "off";
 /** The run: the owner's clean chat, one outside content reached, another's, or a token's. */
-type Run = "clean" | "tainted" | "webhook" | "routine" | "token" | "helper";
+type Run = "clean" | "webhook" | "channel" | "message" | "routine" | "token" | "helper";
 
 const COMMANDS = {
   read: "ls -la",
@@ -97,7 +106,11 @@ function reviewer(review: Review): AutoReviewProvider | undefined {
       capabilities: { offline: true, keyless: true },
     }),
     review: async (request) => {
-      seen.reviews.push({ toolName: request.toolName, args: request.args });
+      seen.reviews.push({
+        toolName: request.toolName,
+        args: request.args,
+        ...(request.outsideContent ? { outsideContent: true } : {}),
+      });
       if (review === "throws") throw new Error("checker down");
       return { decision: review, reason: "Scripted.", model: "scripted" };
     },
@@ -105,22 +118,32 @@ function reviewer(review: Review): AutoReviewProvider | undefined {
 }
 
 function context(
-  options: { mode?: Mode; review?: Review; run?: Run; userId?: string; alwaysAllow?: boolean } = {},
+  options: {
+    mode?: Mode;
+    review?: Review;
+    run?: Run;
+    userId?: string;
+    alwaysAllow?: boolean;
+    /** The member picked no approval model, only backups (no injected reviewer either). */
+    backupsOnly?: boolean;
+  } = {},
 ) {
   const mode = options.mode ?? "auto";
   const run = options.run ?? "clean";
   const trigger =
     run === "webhook"
       ? "webhook"
-      : run === "routine"
-        ? "routine"
-        : run === "helper"
-          ? BACKGROUND_HELPER_TRIGGER
-          : "user";
+      : run === "channel"
+        ? "messaging"
+        : run === "routine"
+          ? "routine"
+          : run === "helper"
+            ? BACKGROUND_HELPER_TRIGGER
+            : "user";
   const ownerStartedRun = trigger === "user";
   const ctx = {
     deps: {
-      autoReview: reviewer(options.review ?? "pass"),
+      autoReview: options.backupsOnly ? undefined : reviewer(options.review ?? "pass"),
       prisma: {
         attempt: { count: async () => 1 },
         externalEffect: {
@@ -160,7 +183,7 @@ function context(
     computer: { checkpoint: { flush: async () => {} } },
     settleRunningHelpers: async () => {},
     context: { signal: new AbortController().signal },
-    source: { ownerStartedRun, messagingChannelRun: false },
+    source: { ownerStartedRun, messagingChannelRun: run === "channel" },
     tools: { connector: new Map(), connectedPlugins: [] },
     state: {
       // A run someone else started begins tainted, before it reads anything.
@@ -178,9 +201,15 @@ function context(
         enabled: mode === "auto",
         skipApprovals: mode === "never",
       }),
-      loadApprovalModel: async () => ({ primary: null, primarySource: null, backups: [] }),
+      loadApprovalModel: async () => ({
+        primary: null,
+        primarySource: null,
+        backups: options.backupsOnly
+          ? [{ provider: "backup", modelId: "backup-model", thinkingLevel: undefined }]
+          : [],
+      }),
       loadOwnerWords: async () => "Set up the project",
-      receivedOutsideMessage: async () => false,
+      receivedOutsideMessage: async () => run === "message",
       routineNamesNewSite: async () => false,
       loadTrustedSites: async () => new Set<string>(),
       loadTrustedConnectors: async () => new Set<string>(),
@@ -189,8 +218,8 @@ function context(
   return ctx;
 }
 
-function request(name: string, args: Record<string, unknown>): ToolRequest {
-  const executionId = JSON.stringify(["pi-tool", "main", `call-${Math.random()}`]);
+function request(name: string, args: Record<string, unknown>, agent = "main"): ToolRequest {
+  const executionId = JSON.stringify(["pi-tool", agent, `call-${Math.random()}`]);
   return {
     name,
     args,
@@ -215,13 +244,13 @@ type Outcome = "runs" | "reviewed" | "card" | "refused";
 /** What happens to one command: it runs, the approval model passes it, a card asks, or it is refused. */
 async function outcome(
   command: string,
-  options: Parameters<typeof context>[0] & { read?: boolean; cwd?: string } = {},
+  options: Parameters<typeof context>[0] & { read?: boolean; cwd?: string; agent?: string } = {},
 ): Promise<Outcome> {
   const ctx = context(options);
   if (options.read) await markReadOutsideContent(ctx as never);
   const args = { command, ...(options.cwd ? { cwd: options.cwd } : {}) };
   const before = { blocks: seen.blocks.length, reviews: seen.reviews.length };
-  const result = await gateToolCall(ctx as never, request("shell", args), undefined);
+  const result = await gateToolCall(ctx as never, request("shell", args, options.agent), undefined);
   if (seen.blocks.length > before.blocks) return "card";
   if ("call" in result) return seen.reviews.length > before.reviews ? "reviewed" : "runs";
   return "refused";
@@ -234,6 +263,7 @@ beforeEach(() => {
   seen.claims = 0;
   seen.rules.clear();
   seen.hostedAsks.clear();
+  seen.routineWriter = undefined;
 });
 
 describe("a command on the bot's computer, by default", () => {
@@ -276,24 +306,61 @@ describe("a command on the bot's computer, by default", () => {
     });
   });
 
-  describe.each(CHANGING)("a %s command in a run outside content reached", (kind) => {
+  describe.each(CHANGING)("a %s command in a run that took in outside content", (kind) => {
     const command = COMMANDS[kind];
 
-    it.each<[Run, boolean]>([
-      ["clean", true],
-      ["webhook", false],
-      ["routine", false],
-    ])("asks a person, never the model, in a %s run (read: %s)", async (run, read) => {
-      for (const mode of ["ask", "auto"] as const)
-        expect(await outcome(command, { mode, run, read }), mode).toBe("card");
-      expect(seen.reviews).toEqual([]);
+    it("goes to the approval model, told that outside content came in", async () => {
+      expect(await outcome(command, { mode: "auto", read: true })).toBe("reviewed");
+      expect(seen.reviews.at(-1)).toEqual({
+        toolName: "shell",
+        args: { command },
+        outsideContent: true,
+      });
+      expect(await outcome(command, { mode: "auto", read: true, review: "ask" })).toBe("card");
+      expect(await outcome(command, { mode: "auto", read: true, review: "error" })).toBe("card");
+      expect(await outcome(command, { mode: "auto", read: true, review: "off" })).toBe("card");
+      expect(await outcome(command, { mode: "ask", read: true })).toBe("card");
     });
 
-    it("runs in Never ask, as upstream runs any consequential tool there", async () => {
-      expect(await outcome(command, { mode: "never", read: true })).toBe("runs");
-      expect(await outcome(command, { mode: "never", run: "webhook" })).toBe("runs");
+    it("in the owner's routine, runs when the model passes it and waits on a card when not", async () => {
+      expect(await outcome(command, { mode: "auto", run: "routine" })).toBe("reviewed");
+      expect(seen.reviews.at(-1)?.outsideContent).toBe(true);
+      expect(await outcome(command, { mode: "auto", run: "routine", review: "ask" })).toBe("card");
+      seen.routineWriter = "owner_run";
+      expect(await outcome(command, { mode: "auto", run: "routine" })).toBe("reviewed");
     });
   });
+
+  describe.each(CHANGING)("a %s command in a run outside text started", (kind) => {
+    const command = COMMANDS[kind];
+
+    it.each<Run>(["webhook", "channel", "message"])(
+      "asks a person, never the model, in a %s run",
+      async (run) => {
+        for (const mode of ["ask", "auto"] as const)
+          expect(await outcome(command, { mode, run }), mode).toBe("card");
+        expect(seen.reviews).toEqual([]);
+      },
+    );
+
+    it("asks a person in a routine whose prompt someone else last wrote", async () => {
+      seen.routineWriter = "outside_run";
+      expect(await outcome(command, { mode: "auto", run: "routine" })).toBe("card");
+      seen.routineWriter = "member";
+      expect(await outcome(command, { mode: "auto", run: "routine" })).toBe("card");
+      expect(seen.reviews).toEqual([]);
+    });
+  });
+
+  // As before this default: Never ask ran every command on the bot's computer but a blocked one,
+  // and a run a token's text reached asked about each.
+  it.each<Run>(["clean", "webhook", "channel", "message", "routine"])(
+    "runs every command in Never ask in a %s run, as before",
+    async (run) => {
+      for (const kind of [...CHANGING, "read" as const])
+        expect(await outcome(COMMANDS[kind], { mode: "never", run }), kind).toBe("runs");
+    },
+  );
 
   it("asks in every mode, reads too, in a run a token's text reached", async () => {
     for (const mode of MODES) {
@@ -303,8 +370,32 @@ describe("a command on the bot's computer, by default", () => {
     expect(seen.reviews).toEqual([]);
   });
 
+  it("asks when no approval model would judge it, backups only", async () => {
+    expect(await outcome(COMMANDS.write, { mode: "auto", backupsOnly: true })).toBe("card");
+    expect(await outcome(COMMANDS.write, { mode: "auto", backupsOnly: true, read: true })).toBe(
+      "card",
+    );
+    expect(await outcome(COMMANDS.read, { mode: "auto", backupsOnly: true })).toBe("runs");
+  });
+
+  it("shows the model the folder the command runs in", async () => {
+    expect(await outcome(COMMANDS.write, { mode: "auto", cwd: "app" })).toBe("reviewed");
+    expect(seen.reviews.at(-1)?.args).toEqual({ command: COMMANDS.write, cwd: "app" });
+  });
+
+  it("gates a subagent's command as the run's own, with the run's mode and content", async () => {
+    expect(await outcome(COMMANDS.write, { mode: "ask", agent: "sub-1" })).toBe("card");
+    expect(await outcome(COMMANDS.write, { mode: "auto", agent: "sub-1", read: true })).toBe(
+      "reviewed",
+    );
+    expect(seen.reviews.at(-1)?.outsideContent).toBe(true);
+    expect(await outcome(COMMANDS.write, { mode: "auto", agent: "sub-1", run: "webhook" })).toBe(
+      "card",
+    );
+  });
+
   it("refuses, never waits, in a background helper's run nobody sees", async () => {
-    const ctx = context({ mode: "auto", run: "helper" });
+    const ctx = context({ mode: "auto", run: "helper", review: "ask" });
     const result = await gateToolCall(
       ctx as never,
       request("shell", { command: COMMANDS.write }),
@@ -362,7 +453,8 @@ describe("the member's rules for a command on the bot's computer", () => {
     seen.rules.set("owner", [rule(["grep", "-r"], "allow_prefix")]);
     expect(await outcome("grep -r todo src", { mode: "ask" })).toBe("runs");
     expect(await outcome("grep -r todo src", { mode: "ask", read: true })).toBe("card");
-    expect(await outcome("grep -r todo src", { mode: "auto", read: true })).toBe("card");
+    expect(await outcome("grep -r todo src", { mode: "auto", read: true })).toBe("reviewed");
+    expect(await outcome("grep -r todo src", { mode: "auto", run: "webhook" })).toBe("card");
   });
 
   it("let an always-allow rule for the tool run it, as upstream does for any tool", async () => {
