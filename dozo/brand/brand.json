@@ -711,25 +711,25 @@
     {
       "file": "packages/adapter-kit/src/types.ts",
       "find": "  html?: string;\n  headers?: Record<string, string>;\n}\n",
-      "replace": "  html?: string;\n  headers?: Record<string, string>;\n  /** Images the HTML shows as `cid:<contentId>`, carried inside the message. */\n  inline?: InlineEmailImage[];\n}\n\n/** An image sent inside an email, shown where the HTML references its content id. */\nexport interface InlineEmailImage {\n  contentId: string;\n  filename: string;\n  contentType: string;\n  /** Base64. */\n  content: string;\n}\n",
-      "reason": "mail logo: a transactional mail may carry inline images, so the mail header's mark needs no remote image (optional field; every email adapter translates it)"
+      "replace": "  html?: string;\n  headers?: Record<string, string>;\n  /** Images the HTML shows as `cid:<contentId>`, carried inside the message. */\n  inline?: InlineEmailImage[];\n  /** Files that arrive with the message as attachments, such as a person's screenshots. */\n  attachments?: EmailAttachment[];\n}\n\n/** A file sent with an email as an attachment. */\nexport interface EmailAttachment {\n  filename: string;\n  contentType: string;\n  /** Base64. */\n  content: string;\n}\n\n/** An image sent inside an email, shown where the HTML references its content id. */\nexport interface InlineEmailImage {\n  contentId: string;\n  filename: string;\n  contentType: string;\n  /** Base64. */\n  content: string;\n}\n",
+      "reason": "mail logo: a transactional mail may carry inline images, so the mail header's mark needs no remote image (optional field; every email adapter translates it); and it may carry attachments (feedback screenshots; same)"
     },
     {
       "file": "packages/adapters/src/smtp-email.ts",
       "find": "            headers: message.headers,\n          });",
-      "replace": "            headers: message.headers,\n            ...(message.inline?.length\n              ? {\n                  attachments: message.inline.map((image) => ({\n                    cid: image.contentId,\n                    filename: image.filename,\n                    contentType: image.contentType,\n                    content: image.content,\n                    encoding: \"base64\",\n                    contentDisposition: \"inline\" as const,\n                  })),\n                }\n              : {}),\n          });",
-      "reason": "mail logo: SMTP sends a mail's inline images as related parts the HTML references by content id"
+      "replace": "            headers: message.headers,\n            ...(message.inline?.length || message.attachments?.length\n              ? {\n                  attachments: [\n                    ...(message.inline ?? []).map((image) => ({\n                      cid: image.contentId,\n                      filename: image.filename,\n                      contentType: image.contentType,\n                      content: image.content,\n                      encoding: \"base64\",\n                      contentDisposition: \"inline\" as const,\n                    })),\n                    ...(message.attachments ?? []).map((file) => ({\n                      filename: file.filename,\n                      contentType: file.contentType,\n                      content: file.content,\n                      encoding: \"base64\",\n                      contentDisposition: \"attachment\" as const,\n                    })),\n                  ],\n                }\n              : {}),\n          });",
+      "reason": "mail logo: SMTP sends a mail's inline images as related parts the HTML references by content id, and its attachments as attached files"
     },
     {
       "file": "packages/adapters/src/resend-email.ts",
       "find": "    const { from, replyTo, cc, ...rest } = message;",
-      "replace": "    const { from, replyTo, cc, inline, ...rest } = message;",
+      "replace": "    const { from, replyTo, cc, inline, attachments, ...rest } = message;",
       "reason": "mail logo: the inline images leave the fields sent as they are (the rule below translates them)"
     },
     {
       "file": "packages/adapters/src/resend-email.ts",
       "find": "      ...rest,\n    });\n",
-      "replace": "      ...rest,\n      ...(inline?.length\n        ? {\n            attachments: inline.map((image) => ({\n              filename: image.filename,\n              content: image.content,\n              content_type: image.contentType,\n              content_id: image.contentId,\n            })),\n          }\n        : {}),\n    });\n",
+      "replace": "      ...rest,\n      ...(inline?.length || attachments?.length\n        ? {\n            attachments: [\n              ...(inline ?? []).map((image) => ({\n                filename: image.filename,\n                content: image.content,\n                content_type: image.contentType,\n                content_id: image.contentId,\n              })),\n              ...(attachments ?? []).map((file) => ({\n                filename: file.filename,\n                content: file.content,\n                content_type: file.contentType,\n              })),\n            ],\n          }\n        : {}),\n    });\n",
       "reason": "mail logo: the HTTP email adapter sends a mail's inline images as attachments with a content id, which its API shows inline"
     },
     {
@@ -11158,11 +11158,12 @@
     {
       "file": "packages/adapters/src/index.ts",
       "find": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./bot-messages.js\";",
-      "replace": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./dozo-organization-logo.js\";\nexport * from \"./bot-messages.js\";",
+      "replace": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./dozo-organization-logo.js\";\nexport * from \"./dozo-feedback-image.js\";\nexport * from \"./bot-messages.js\";",
       "requires": [
-        "packages/adapters/src/dozo-organization-logo.ts"
+        "packages/adapters/src/dozo-organization-logo.ts",
+        "packages/adapters/src/dozo-feedback-image.ts"
       ],
-      "reason": "organization logo: the API checks and re-encodes an uploaded logo through the adapters package, as it does an avatar"
+      "reason": "organization logo and feedback screenshots: the API checks and re-encodes an uploaded logo or a report's picture through the adapters package, as it does an avatar"
     },
     {
       "file": "packages/db/src/index.ts",

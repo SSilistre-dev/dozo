@@ -6,6 +6,12 @@ import { Id, IsoDate } from "./ids.js";
 export const DOZO_FEEDBACK_MAX_CHARS = 4000;
 /** How many of the caller's own failed runs a report may name. */
 export const DOZO_FEEDBACK_MAX_RUNS = 5;
+/** Screenshots a report may carry, each a PNG, JPEG or WebP, and the bytes each and all may hold. */
+export const DOZO_FEEDBACK_MAX_IMAGES = 3;
+export const DOZO_FEEDBACK_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
+export const DOZO_FEEDBACK_IMAGES_MAX_BYTES = 8 * 1024 * 1024;
+/** The longest picture as a data URL: its base64 plus the header, so the server reads no more. */
+const IMAGE_DATA_URL_MAX_CHARS = Math.ceil(DOZO_FEEDBACK_IMAGE_MAX_BYTES / 3) * 4 + 40;
 
 /**
  * What the app adds about itself when the person asks for it: which surface and browser they use,
@@ -47,6 +53,11 @@ export type DozoFeedbackStatus = z.infer<typeof DozoFeedbackStatusSchema>;
 export const DozoFeedbackSendSchema = /* @__PURE__ */ (() =>
   z.object({
     message: z.string().trim().min(1).max(DOZO_FEEDBACK_MAX_CHARS),
+    /** Pictures as `data:image/...;base64,` values; the server checks the bytes and re-encodes. */
+    images: z
+      .array(z.string().max(IMAGE_DATA_URL_MAX_CHARS))
+      .max(DOZO_FEEDBACK_MAX_IMAGES)
+      .optional(),
     /** Only when the person chose to include diagnostics, as the preview showed them. */
     diagnostics: z
       .object({
@@ -68,8 +79,10 @@ export type DozoFeedbackDiagnostics = DozoClientDiagnostics & DozoServerDiagnost
 export function dozoFeedbackFooter(
   from: string | null,
   diagnostics: DozoFeedbackDiagnostics | null,
+  images = 0,
 ): string {
   const lines = ["--", `From: ${from ?? "(no reply address)"}`];
+  if (images > 0) lines.push(`Images: ${images}`);
   if (diagnostics) {
     const runs = diagnostics.failedRuns.map((run) => `${run.id} (${run.at})`).join(", ");
     lines.push(
@@ -89,8 +102,9 @@ export function dozoFeedbackText(
   message: string,
   from: string | null,
   diagnostics: DozoFeedbackDiagnostics | null,
+  images = 0,
 ): string {
-  return `${message.trim()}\n\n${dozoFeedbackFooter(from, diagnostics)}\n`;
+  return `${message.trim()}\n\n${dozoFeedbackFooter(from, diagnostics, images)}\n`;
 }
 
 export const dozoFeedbackContract = /* @__PURE__ */ (() => ({

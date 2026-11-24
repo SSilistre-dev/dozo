@@ -1,6 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoFeedbackStatus } from "@rakazo/contracts";
-import { DOZO_FEEDBACK_MAX_CHARS, dozoFeedbackFooter, dozoFeedbackText } from "@rakazo/contracts";
+import {
+  DOZO_FEEDBACK_MAX_CHARS,
+  DOZO_FEEDBACK_MAX_IMAGES,
+  dozoFeedbackFooter,
+  dozoFeedbackText,
+} from "@rakazo/contracts";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -15,7 +20,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../components/settings-group";
-import { mobileDiagnostics, reportLine, useFeedbackStatus } from "../../lib/dozo-feedback";
+import type { FeedbackImage } from "../../lib/dozo-feedback";
+import {
+  mobileDiagnostics,
+  pickFeedbackImages,
+  reportLine,
+  useFeedbackStatus,
+} from "../../lib/dozo-feedback";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSave } from "../../lib/query";
 import { useScreenHeader } from "../../lib/screen-header";
@@ -23,10 +34,11 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 /**
- * A note and, when switched on, the diagnostics. The lines added under the note are shown before
- * anything leaves: the server mails exactly those, or, without mail, the person shares the report
- * and writes to the operator's address themselves. Opened from a message's Report, the note starts
- * with which message it is about.
+ * A note, up to three pictures and, when switched on, the diagnostics. The lines added under the
+ * note are shown before anything leaves: the server mails exactly those with the pictures, or,
+ * without mail, the person shares the report and writes to the operator's address themselves
+ * (pictures are not offered then: the share sheet carries text, and they attach files themselves).
+ * Opened from a message's Report, the note starts with which message it is about.
  */
 export default function DozoFeedback() {
   const { t } = useLingui();
@@ -45,11 +57,22 @@ function FeedbackForm({ status, initial }: { status: DozoFeedbackStatus; initial
   const [message, setMessage] = useState(initial);
   const [withDiagnostics, setWithDiagnostics] = useState(false);
   const [client] = useState(mobileDiagnostics);
+  const [images, setImages] = useState<FeedbackImage[]>([]);
+  const addImages = async () => {
+    try {
+      const picked = await pickFeedbackImages(images.length);
+      setImages([...images, ...picked.images]);
+      if (picked.refused) Alert.alert(t`Couldn't use that image`);
+    } catch {
+      Alert.alert(t`Couldn't use that image`);
+    }
+  };
   const diagnostics = withDiagnostics ? { ...client, ...status.server } : null;
   const send = useSave({
     save: (_input, send) =>
       send("dozoFeedback/send", {
         message,
+        ...(images.length ? { images: images.map((image) => image.url) } : {}),
         ...(withDiagnostics
           ? { diagnostics: { client, runIds: status.server.failedRuns.map((run) => run.id) } }
           : {}),
@@ -85,13 +108,34 @@ function FeedbackForm({ status, initial }: { status: DozoFeedbackStatus; initial
             style={styles.input}
             value={message}
           />
-          <SettingsGroup footer={dozoFeedbackFooter(status.from, diagnostics)}>
+          <SettingsGroup footer={dozoFeedbackFooter(status.from, diagnostics, images.length)}>
             <SettingsSwitch
               label={t`Include diagnostics`}
               value={withDiagnostics}
               onChange={setWithDiagnostics}
             />
           </SettingsGroup>
+          {status.mode === "send" ? (
+            <SettingsGroup>
+              {images.map((image, index) => (
+                <SettingsRow
+                  key={`${index}-${image.name}`}
+                  title={image.name}
+                  value={t`Remove`}
+                  accessibilityLabel={t`Remove image`}
+                  onPress={() => setImages(images.filter((_, at) => at !== index))}
+                />
+              ))}
+              {images.length < DOZO_FEEDBACK_MAX_IMAGES ? (
+                <SettingsRow
+                  key="add"
+                  title={t`Add image`}
+                  tinted
+                  onPress={() => void addImages()}
+                />
+              ) : null}
+            </SettingsGroup>
+          ) : null}
           {status.mode === "send" ? (
             <NativeActionButton
               busy={send.pending}

@@ -252,3 +252,85 @@ describe("send", () => {
     ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
   });
 });
+
+describe("pictures", () => {
+  // A real one-pixel picture; sharp, which draws it again, is the adapters package's to test.
+  const png = async () =>
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "base64",
+    );
+  const url = (type: string, bytes: Uint8Array) =>
+    `data:image/${type};base64,${Buffer.from(bytes).toString("base64")}`;
+  const refused = { code: "feedback_image", message: "Couldn't use that image" };
+
+  it("attaches each one, drawn again by the server, to the mail to the operator", async () => {
+    const one = url("png", await png());
+    await caller().dozoFeedback.send({ message: "Look", images: [one, one] });
+    const mail = send.mock.calls[0]?.[0];
+    expect(mail?.to).toBe("inbox@operator.example.test");
+    expect(mail?.attachments?.map((file) => [file.filename, file.contentType])).toEqual([
+      ["screenshot-1.png", "image/png"],
+      ["screenshot-2.png", "image/png"],
+    ]);
+    expect(mail?.attachments?.[0]?.content).not.toBe("");
+    // The report says how many pictures come with it, and nothing of their content.
+    expect(mail?.text).toBe("Look\n\n--\nFrom: person@example.test\nImages: 2\n");
+  });
+
+  it("sends a note with no pictures as before, with no attachments", async () => {
+    await caller().dozoFeedback.send({ message: "Plain", images: [] });
+    expect(send.mock.calls[0]?.[0]).not.toHaveProperty("attachments");
+  });
+
+  it("refuses a GIF, an SVG, a file that is not a picture and a header that lies", async () => {
+    const good = await png();
+    const gif = Buffer.from("GIF89a\u0001\u0000\u0001\u0000", "latin1");
+    for (const bad of [
+      url("gif", gif),
+      url("svg+xml", Buffer.from("<svg onload='x()'/>")),
+      url("png", Buffer.from("not a picture")),
+      url("jpeg", good),
+      "https://example.test/a.png",
+    ])
+      await expect(
+        caller().dozoFeedback.send({ message: "Look", images: [url("png", good), bad] }),
+      ).rejects.toMatchObject(refused);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("refuses more than three pictures, one over its size and all together over theirs", async () => {
+    const one = url("png", await png());
+    await expect(
+      caller().dozoFeedback.send({ message: "Look", images: [one, one, one, one] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const big = url("png", Buffer.concat([await png(), Buffer.alloc(3 * 1024 * 1024)]));
+    await expect(
+      caller().dozoFeedback.send({ message: "Look", images: [big] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // Each within its limit, but more than the mail carries together.
+    const near = url("png", Buffer.concat([await png(), Buffer.alloc(2.9 * 1024 * 1024)]));
+    await expect(
+      caller().dozoFeedback.send({ message: "Look", images: [near, near, near] }),
+    ).rejects.toMatchObject(refused);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("counts a report with pictures against the same limits, before it reads them", async () => {
+    const built = routes();
+    const one = url("png", await png());
+    for (let index = 0; index < DOZO_FEEDBACK_PER_USER_HOUR; index++)
+      await caller(built).dozoFeedback.send({ message: `Note ${index}`, images: [one] });
+    await expect(
+      caller(built).dozoFeedback.send({ message: "One more", images: [one] }),
+    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    expect(send).toHaveBeenCalledTimes(DOZO_FEEDBACK_PER_USER_HOUR);
+    // A refused picture takes a turn too, so refusals cannot be retried without limit.
+    await expect(
+      caller(built, { ...actor, userId: "user-3" }).dozoFeedback.send({
+        message: "Look",
+        images: ["data:image/png;base64,AAAA"],
+      }),
+    ).rejects.toMatchObject(refused);
+  });
+});
