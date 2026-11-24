@@ -118,7 +118,11 @@ any of `DOZO_STAGE_REF`, `DOZO_UNIT_SRC`, `DOZO_COVERAGE_MIN`, `DOZO_BRAND_COVER
 
 ### olc
 
-Under 30 seconds once the Node image is local. It never installs anything and runs, in order:
+Under 30 seconds once the Node image is local (about 12 on an idle machine; it took 33 to 125 when
+its steps ran one after the other, the deploy lock test alone 12). It never installs anything and runs
+the checks below. The independent ones start together, each with its output in a file, and their lines
+are printed in the order listed, so the time is that of the slowest check; every check still runs and
+a failure in any of them fails the gate:
 
 - `bash -n` (`sh -n` for a `#!/bin/sh` script) on every `*.sh` under `dozo/`. The e2e `.ts` files
   have no cheap check; only `make e2e` compiles them.
@@ -203,10 +207,14 @@ into the store (same volume); a cold run installs everything, an unchanged lockf
 
 Cleaning up (nothing here removes anything for you; other sessions may be using the volume): the
 directory `/cache/w` is what older versions used and nothing reads it now, and a checkout that is
-gone leaves its `/cache/trees/<key>` behind. List what is there with
-`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim du -sh /cache/trees/* /cache/w`, then remove a
-directory you know is dead with
-`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim rm -rf /cache/w` (or `/cache/trees/<key>`).
+gone leaves its `/cache/trees/<key>` behind. Each run writes `/cache/trees/<key>.owner` beside the
+tree (outside it, since the sync removes what the stage lacks): the staged tree's path on the host.
+`dozo/docker/unit-trees.sh` lists every tree with its size and whether its owner is `live` (the
+staged tree is still there), `dead` (it is gone) or `unknown` (no note, and not one of this
+repository's checkouts), and prints the command that removes each dead one. It mounts the volume
+read-only and deletes nothing; run the printed `docker run ... rm -rf /cache/trees/<key>
+/cache/trees/<key>.owner` yourself for a tree you know is dead, and
+`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim rm -rf /cache/w` for the old directory.
 
 The database client (`packages/db/src/generated`) is generated in the volume before every
 run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api`, `apps/web`, `apps/mobile`, `packages/adapters`, `packages/core`, `packages/contracts`, `packages/db`, `packages/chat-ui` and `packages/ui-web` on the branded tree, one after the other (each timed in the log; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. Then the module state guard (`dozo/db/module-state-guard.mjs`) and its tests run on the unbranded working tree (mounted read-only), parsing with the TypeScript 6 the lockfile installs for `apps/www`: every long-lived mutable state in the fork's server code (`dozo-*` files), the relay worker (`dozo/relay/worker/src`) and what the anchored brand rules add to upstream files there (module-level `let`/`var`, containers, `new X()`, calls and mutated literals, class fields, factory state a closure reaches, `globalThis` writes) must be a row in `dozo/db/module-state-reviewed.tsv` with where it lives (`module`, `class X`, `fn make`) and its key scope. A new row, a hit that moved to another level, a stale row, or a missing guard, test, list or parser fails the step (exit 2); nothing is fetched. A failing run prints each file under the floor with its number.
