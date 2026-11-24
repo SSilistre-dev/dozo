@@ -1,0 +1,147 @@
+{
+  "valid": [
+    {
+      "method": "agentTurn",
+      "botId": "bot-1",
+      "runId": "run-1",
+      "agent": "antigravity-agent",
+      "instructions": "You are a helpful bot.",
+      "input": "Earlier in this conversation:\nUser: hi\n\nNow:\nList the files.",
+      "tools": [
+        {
+          "name": "memory_search",
+          "description": "Search the bot's memory.",
+          "inputSchema": { "type": "object", "properties": { "query": { "type": "string" } } }
+        }
+      ]
+    },
+    {
+      "method": "agentTurn",
+      "botId": "bot-1",
+      "runId": "run-1",
+      "agent": "codex-agent",
+      "model": "example-model-1.5",
+      "instructions": "",
+      "input": "Allow once",
+      "tools": []
+    },
+    {
+      "method": "agentToolResult",
+      "botId": "bot-1",
+      "runId": "run-1",
+      "callId": "call-1",
+      "text": "Found 2 notes.",
+      "isError": false
+    },
+    { "method": "agentStop", "botId": "bot-1", "runId": "run-1" }
+  ],
+  "invalid": [
+    {
+      "why": "a program to start",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "agent": "antigravity-agent",
+        "command": "/bin/sh",
+        "instructions": "",
+        "input": "hi",
+        "tools": []
+      }
+    },
+    {
+      "why": "arguments to start it with",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "agent": "antigravity-agent",
+        "args": ["--yolo"],
+        "instructions": "",
+        "input": "hi",
+        "tools": []
+      }
+    },
+    {
+      "why": "a folder to work in",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "agent": "antigravity-agent",
+        "cwd": "/",
+        "instructions": "",
+        "input": "hi",
+        "tools": []
+      }
+    },
+    {
+      "why": "an agent id that is a path",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "agent": "../agy",
+        "instructions": "",
+        "input": "hi",
+        "tools": []
+      }
+    },
+    {
+      "why": "a model id with a space, which could pass as an argument",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "agent": "codex-agent",
+        "model": "m --config x",
+        "instructions": "",
+        "input": "hi",
+        "tools": []
+      }
+    },
+    {
+      "why": "no run",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "agent": "codex-agent",
+        "instructions": "",
+        "input": "hi",
+        "tools": []
+      }
+    },
+    {
+      "why": "an empty turn",
+      "request": {
+        "method": "agentTurn",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "agent": "codex-agent",
+        "instructions": "",
+        "input": "",
+        "tools": []
+      }
+    },
+    {
+      "why": "an answer to the agent's own permission request",
+      "request": {
+        "method": "agentAnswer",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "approvalId": "1",
+        "decision": "accept"
+      }
+    },
+    {
+      "why": "a tool result without its call",
+      "request": {
+        "method": "agentToolResult",
+        "botId": "bot-1",
+        "runId": "run-1",
+        "text": "x",
+        "isError": false
+      }
+    }
+  ]
+}
