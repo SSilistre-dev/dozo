@@ -8,9 +8,11 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createRepos, runAsTenant } from "@rakazo/db";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
+import { userBrowserSignIn } from "./dozo-user-browser.js";
 import { recordConsent, userBrowserGate } from "./dozo-user-browser-gate.js";
 import { UserDeviceHub, UserDevices } from "./dozo-user-device-gateway.js";
 import type { RunContext } from "./run-context.js";
+import type { ToolCall } from "./run-tool-gate.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "./user-device-gateway.js";
 
 // The real relay, end to end: a migrated database, the server's own device hub and gateway, and
@@ -197,6 +199,31 @@ describeRelay("the bot's browser over the real relay", () => {
     expect(await cleared()).toBe(false);
     process.stdout.write(
       `E2E: relay: two runs asked, ${questions.filter((r) => r.cleared === true).length} heard "cleared", ${told.length} told the computer; the mark is gone\n`,
+    );
+    // The bot has the person sign in: its card asks, the call it approved reaches the computer,
+    // whose dialog the test answers Done, and the bot learns they signed in.
+    const signing = run(threads[0]!);
+    const args: Record<string, unknown> = { site: "example.com" };
+    expect(await userBrowserGate(signing, false, "browser_sign_in", args)).toBe("ask");
+    // The card was allowed: the call's effect keeps the request as the gate left it.
+    const approved = { id: "relay-effect", request: { ...args } };
+    const effects = new Proxy(db.prisma, {
+      get: (target, key) =>
+        key === "externalEffect"
+          ? { findUnique: async () => approved }
+          : Reflect.get(target, key, target),
+    });
+    (signing as { deps: { prisma: unknown } }).deps.prisma = effects;
+    const call = {
+      name: "browser_sign_in",
+      args,
+      effectKey: "relay-effect",
+      finish: async (result: unknown) => result,
+    } as unknown as ToolCall;
+    expect(await userBrowserSignIn(signing, call)).toEqual({ site: "example.com", signedIn: true });
+    expect(asked.filter((r) => r.method === "pageBrowserSignIn")).toHaveLength(1);
+    process.stdout.write(
+      "E2E: relay: a sign-in the card allowed reached the computer, and Done came back\n",
     );
     await writeFile(join(RELAY!, "done"), "");
     await until("the computer to finish", async () =>
