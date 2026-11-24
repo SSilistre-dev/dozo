@@ -4,7 +4,19 @@ import type { DeviceBrowserEvent, DeviceBrowserSend } from "./dozo-device-browse
 export interface DevicePage {
   title: string;
   /** `opens`: a click on it goes to that page. */
-  nodes: Array<{ role: string; name: string; value?: string; checked?: boolean; opens?: string }>;
+  nodes: Array<{
+    role: string;
+    name: string;
+    value?: string;
+    checked?: boolean;
+    opens?: string;
+    /** The element in the page's DOM (`DOM.getDocument`): its tag, attributes and the form it sits in. */
+    tag?: string;
+    attrs?: Record<string, string>;
+    form?: string;
+  }>;
+  /** The forms of the DOM, by the key a node names, with their attributes. */
+  forms?: Record<string, Record<string, string>>;
   /** A dialog the page opens once loaded. */
   dialog?: { type: "alert" | "confirm"; message: string };
 }
@@ -79,6 +91,47 @@ export function fakeDeviceBrowser(pages: Record<string, DevicePage>) {
             })),
           ],
         };
+      case "DOM.getDocument": {
+        const flat = (attrs: Record<string, string> = {}) => Object.entries(attrs).flat();
+        const defaultTag = (role: string) =>
+          role === "button"
+            ? "BUTTON"
+            : role === "link"
+              ? "A"
+              : role === "textbox"
+                ? "INPUT"
+                : "DIV";
+        const entries = (page()?.nodes ?? []).map((entry, index) => ({
+          form: entry.form,
+          element: {
+            backendNodeId: FIRST_NODE + index,
+            nodeName: entry.tag ?? defaultTag(entry.role),
+            attributes: flat(entry.attrs),
+          },
+        }));
+        const forms = Object.entries(page()?.forms ?? {}).map(([key, attrs], at) => ({
+          backendNodeId: 1000 + at,
+          nodeName: "FORM",
+          attributes: flat(attrs),
+          children: entries.filter((entry) => entry.form === key).map((entry) => entry.element),
+        }));
+        return {
+          root: {
+            backendNodeId: 1,
+            nodeName: "#document",
+            children: [
+              {
+                backendNodeId: 2,
+                nodeName: "BODY",
+                children: [
+                  ...entries.filter((entry) => !entry.form).map((entry) => entry.element),
+                  ...forms,
+                ],
+              },
+            ],
+          },
+        };
+      }
       case "DOM.scrollIntoViewIfNeeded":
         return {};
       case "DOM.getBoxModel": {

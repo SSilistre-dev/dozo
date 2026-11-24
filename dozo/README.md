@@ -740,10 +740,32 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
 - A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
   something (declared not read-only, or named like a change, the same test that makes it ask in
   Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
-  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
-  including form submits, are not counted yet: telling a submit from another click needs a new
-  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
-  the member's own cloud coding agents are not sends here.
+  sends do not fit in what is left asks, and none of them is counted. A form submit made with
+  `browser_act` is a send too (next bullet). Paid service calls (`service_call`, `paid_request`)
+  and the member's own cloud coding agents are not sends here.
+- Form submits (`packages/adapters/src/dozo-page-submit.ts`), judged before the call runs, so the
+  limit can ask first. The same rule on both surfaces: a press of a submit control (a button with no
+  type or of type submit, an input of type submit or image, also one a `form` attribute names) in a
+  form that is not a search counts one; a batch counts each. A search is a form read with GET that
+  says so (`role=search`, or a `type=search` field in it); it and a `method=dialog` form send
+  nothing. A GET form that does not say it is a search counts, which can count a filter box once.
+  Navigation, reading, filling and a click on a link or a plain button do not count. A button that
+  only runs a script (`type=button`, a link, `role=button`) is not a submit: a page that sends from
+  one cannot be told from any other click, and counting every click would stop a bot after the
+  number of its clicks. That is this count's limit, as is `computer_act`, which clicks on the screen
+  and is not counted. A press the browser cannot look at counts as a submit (a control in a frame, an
+  element its page no longer holds, a page it cannot read), so a miss errs towards asking.
+  - The bot's computer: its page browser's purchase check, which already runs before each
+    `browser_act` with a click, also says how many of the clicks submit (`submits`, in the answer
+    only when some do). A computer image from before this does not say, so nothing counts there
+    until its image is rebuilt.
+  - The user's own browser: the server reads the page's DOM (`DOM.getDocument`, depth 256, nothing
+    else is sent) before a call that clicks or types a line break, and applies the same rule. A line
+    break typed into a one-line field of such a form is a submit there; the bot's computer types no
+    line breaks into one-line fields, so it has none to count. Frames and shadow trees the desktop
+    does not return count as submits. A page too large to read counts each press.
+  - A call approved on its card is not counted, as for any send, so the first action the user's
+    browser asks about on a site (its card) is free and later ones count.
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
   rule, or left to the approval model. A send a person approves on its card is not counted. One
   the approval model then asks about, or that fails, still counts, so the number errs towards
