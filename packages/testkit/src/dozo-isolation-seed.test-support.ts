@@ -10,7 +10,7 @@ import type {
   Person,
   Target,
 } from "./dozo-isolation.test-support.js";
-import { canary, rand, rpc, sendAndWait } from "./dozo-isolation.test-support.js";
+import { canary, rand, rpc, sendAndWait, waitUntilBotIdle } from "./dozo-isolation.test-support.js";
 import { asSystem } from "./system-db.js";
 
 const pageSource = (heading: string) =>
@@ -340,7 +340,7 @@ async function sendAttachedAndWait(
   spaceId: string,
 ) {
   await rpc(world, cookie, "threads/send", input, spaceId);
-  await sendAndWait(world, cookie, { botId: input.botId }, "and that is all", spaceId);
+  await waitUntilBotIdle(world, cookie, { botId: input.botId }, spaceId);
 }
 
 /**
