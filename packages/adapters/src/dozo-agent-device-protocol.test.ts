@@ -64,6 +64,18 @@ describe("agent turns over the device connection", () => {
     expect(agentTurnRequest.safeParse(turn).success).toBe(true);
   });
 
+  it("holds what a computer sends during a turn to its limits", () => {
+    const call = { type: "toolCall", callId: "c", name: "t" };
+    const args = (size: number) => ({ text: "x".repeat(size) });
+    expect(agentTurnFrame.safeParse({ ...call, args: args(1000) }).success).toBe(true);
+    const over = args(AGENT_DEVICE_LIMITS.toolArgs);
+    expect(agentTurnFrame.safeParse({ ...call, args: over }).success).toBe(false);
+    const text = "x".repeat(AGENT_DEVICE_LIMITS.text + 1);
+    expect(agentTurnFrame.safeParse({ type: "text", text }).success).toBe(false);
+    const message = "x".repeat(AGENT_DEVICE_LIMITS.message + 1);
+    expect(agentTurnFrame.safeParse({ type: "failed", message }).success).toBe(false);
+  });
+
   it("reads each example frame the app sends during a turn", () => {
     for (const frame of frames.valid) expect(agentTurnFrame.parse(frame)).toEqual(frame);
   });

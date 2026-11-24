@@ -18,6 +18,8 @@ export const AGENT_DEVICE_LIMITS = {
   toolCount: 256,
   toolResult: 1024 * 1024,
   text: 64 * 1024,
+  /** The arguments of one tool call the agent makes, as one JSON text. */
+  toolArgs: 256 * 1024,
   line: 1024,
   message: 4096,
 } as const;
@@ -31,7 +33,11 @@ const agentId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/);
 const callId = z.string().min(1).max(64);
 const line = z.string().max(AGENT_DEVICE_LIMITS.line);
 
-const agentTool = z.object({
+/**
+ * One of the bot's tools as the agent sees it. Strict, like every object here: a field the schema
+ * does not name is refused, so nothing more reaches the computer than what is checked.
+ */
+const agentTool = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/),
   description: z.string().max(16 * 1024),
   inputSchema: z.record(z.string(), z.unknown()),
@@ -47,10 +53,14 @@ export const agentTurnRequest = z.strictObject({
   ...ids,
   method: z.literal("agentTurn"),
   agent: agentId,
-  /** A model id the agent takes as a protocol field, never as an argument. */
+  /**
+   * A model id the agent takes as a protocol field. Even so it could never read as an argument or
+   * a path: it starts with a letter or digit and holds no `..` and no `/` (no agent's ids need one).
+   */
   model: z
     .string()
-    .regex(/^[A-Za-z0-9._:/-]{1,128}$/)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+    .refine((model) => !model.includes(".."), { message: "model id holds .." })
     .optional(),
   instructions: z.string().max(AGENT_DEVICE_LIMITS.instructions),
   input: z.string().min(1).max(AGENT_DEVICE_LIMITS.input),
@@ -74,27 +84,37 @@ export const agentToolResultRequest = z.strictObject({
 /** Ends the run's agent session: its process, what it started and its folder. */
 export const agentStopRequest = z.strictObject({ ...ids, method: z.literal("agentStop") });
 
-/** What the app sends while a turn runs: one value per frame; `done` and `failed` end the turn. */
+/**
+ * What the app sends while a turn runs: one value per frame; `done` and `failed` end the turn.
+ * Each is strict and bounded, so a computer cannot send the server more than it reads.
+ */
 export const agentTurnFrame = z.discriminatedUnion("type", [
   /** The agent is running: before this, nothing of the turn happened on the computer. */
-  z.object({ type: z.literal("started") }),
-  z.object({ type: z.literal("text"), text: z.string().max(AGENT_DEVICE_LIMITS.text) }),
+  z.strictObject({ type: z.literal("started") }),
+  z.strictObject({ type: z.literal("text"), text: z.string().max(AGENT_DEVICE_LIMITS.text) }),
   /** Something the agent did on its own, for the run's progress line. */
-  z.object({ type: z.literal("activity"), text: line }),
+  z.strictObject({ type: z.literal("activity"), text: line }),
   /** The agent calls one of the bot's tools: answered with `agentToolResult`. */
-  z.object({
+  z.strictObject({
     type: z.literal("toolCall"),
     callId,
     name: agentTool.shape.name,
-    args: z.record(z.string(), z.unknown()),
+    args: z
+      .record(z.string(), z.unknown())
+      .refine((args) => JSON.stringify(args).length <= AGENT_DEVICE_LIMITS.toolArgs, {
+        message: "tool arguments too large",
+      }),
   }),
   /** The agent asks the person, on the computer, before it goes on. */
-  z.object({ type: z.literal("approvalWaiting"), summary: line }),
+  z.strictObject({ type: z.literal("approvalWaiting"), summary: line }),
   /** Nobody answered on the computer in time: the agent was told no. */
-  z.object({ type: z.literal("approvalExpired"), summary: line }),
+  z.strictObject({ type: z.literal("approvalExpired"), summary: line }),
   /** The account's usage ran out, with when it opens again (epoch ms) when the agent said. */
-  z.object({ type: z.literal("limit"), resetsAt: z.number().int().positive().optional() }),
-  z.object({ type: z.literal("done") }),
-  z.object({ type: z.literal("failed"), message: z.string().max(AGENT_DEVICE_LIMITS.message) }),
+  z.strictObject({ type: z.literal("limit"), resetsAt: z.number().int().positive().optional() }),
+  z.strictObject({ type: z.literal("done") }),
+  z.strictObject({
+    type: z.literal("failed"),
+    message: z.string().max(AGENT_DEVICE_LIMITS.message),
+  }),
 ]);
 export type AgentTurnFrame = z.infer<typeof agentTurnFrame>;
