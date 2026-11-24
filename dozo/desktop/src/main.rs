@@ -5,6 +5,7 @@
 
 #[cfg(unix)]
 mod agent_bridge;
+mod agent_ui;
 mod alerts;
 mod background;
 mod backup;
@@ -863,6 +864,7 @@ fn main() {
         .manage(update::Pending::default())
         .manage(prefs::Changes::default())
         .manage(passwords_ui::FillQuestion::default())
+        .manage(agent_ui::AgentQuestion::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -884,7 +886,9 @@ fn main() {
             passwords_ui::logins_link,
             passwords_ui::logins_remove,
             passwords_ui::fill_question,
-            passwords_ui::fill_answer
+            passwords_ui::fill_answer,
+            agent_ui::agent_question,
+            agent_ui::agent_answer
         ])
         .menu(menu)
         .on_menu_event(|app, event| run(app, event.id().as_ref()))

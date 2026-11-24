@@ -34,11 +34,13 @@ EOF
 
 mkdir -p .toolchain/linux
 # Runs as the calling user, so the files it writes in this directory stay theirs. The agent wire
-# examples the server's tests also read are mounted at the path the tests include them from.
+# examples the server's tests also read, and the sealed-file source the backup test reads, are
+# mounted at the paths the tests include them from.
 # Capped so a build leaves room for the rest of a shared machine.
 docker run --rm -i --cpus 3 --memory 6g -e CARGO_BUILD_JOBS=3 -u "$(id -u):$(id -g)" \
   -v "$HERE/..:/dozo" -w /dozo/desktop -e HOME=/tmp \
   -v "$HERE/../../packages/adapters/src/dozo-agent-device-fixtures:/packages/adapters/src/dozo-agent-device-fixtures:ro" \
+  -v "$HERE/../../packages/core/src/dozo-sealed-file.ts:/packages/core/src/dozo-sealed-file.ts:ro" \
   -e RUSTUP_HOME=/dozo/desktop/.toolchain/linux/rustup \
   -e CARGO_HOME=/dozo/desktop/.toolchain/linux/cargo \
   -e TAURI_CLI="$(sed -n 's/^TAURI_CLI=//p' build.sh)" \

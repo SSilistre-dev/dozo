@@ -78,9 +78,6 @@ pub const CATALOG: &[Entry] = &[Entry {
 /// Asks the person on this computer. The answer is `true` for allow, and anything else refuses.
 pub trait Approvals: Send + Sync {
     fn ask(&self, text: &str) -> oneshot::Receiver<bool>;
-    /// The question was refused for lack of an answer: tell the person that what they may still
-    /// see open does nothing now.
-    fn ended(&self, text: &str);
 }
 
 /// The waits of a session, apart so a test can shorten them.
@@ -962,14 +959,20 @@ impl Session {
             return Err(format!("{} is not installed on this computer.", entry.name));
         };
         let unreachable = format!("{} did not start as an ACP agent as expected.", entry.name);
-        create_private(&folder).map_err(|_| unreachable.clone())?;
-        let root = folder.canonicalize().map_err(|_| unreachable.clone())?;
         // A folder, or one of its parents, that is a link leading out of the app's data is not
-        // the bot's own folder.
+        // the bot's own folder: that is checked before anything is made, so nothing is made on
+        // the far side of a link.
+        create_private(&shared.computers).map_err(|_| unreachable.clone())?;
         let base = shared
             .computers
             .canonicalize()
             .map_err(|_| unreachable.clone())?;
+        let wanted = folder.to_str().map(|folder| resolve(&base, folder));
+        if !wanted.is_some_and(|wanted| wanted.starts_with(&base)) {
+            return Err(unreachable);
+        }
+        create_private(&folder).map_err(|_| unreachable.clone())?;
+        let root = folder.canonicalize().map_err(|_| unreachable.clone())?;
         if !root.starts_with(&base) {
             return Err(unreachable);
         }
@@ -1441,10 +1444,7 @@ impl Session {
         input: Option<&Value>,
     ) -> Decision {
         let decision = self.ask_once(kind, title, paths, input).await;
-        if matches!(
-            decision,
-            Decision::Deny | Decision::Expired | Decision::Refused
-        ) {
+        if counts_as_refusal(&decision) {
             self.refused_one().await;
         }
         decision
@@ -1506,8 +1506,7 @@ impl Session {
             () = async { let _ = over.wait_for(|epoch| *epoch != first).await; } => Decision::Cancelled,
             () = async { let _ = closed.wait_for(|closed| *closed).await; } => Decision::Cancelled,
         };
-        // What may still be open on the screen does nothing now.
-        approvals.ended(&text);
+        // The question's window goes with the receiver dropped here (`agent_ui.rs`).
         decision
     }
 
@@ -2143,16 +2142,6 @@ fn random_hex(bytes: usize) -> Option<String> {
     hex_from(bytes, |random| getrandom::fill(random).is_ok())
 }
 
-/// What the person is told when a question they may still see open was refused for lack of an
-/// answer.
-pub fn ended_text(turkish: bool) -> &'static str {
-    if turkish {
-        "Bir soru yanıtınız olmadan bitti, bu yüzden reddedildi. Üzerindeki İzin Ver ya da İptal artık bir şey yapmaz."
-    } else {
-        "A question ended without your answer, so it was refused. Allow or Cancel on it no longer does anything."
-    }
-}
-
 /// The question as the dialog shows it: what the agent will do, then what it names. Each part is
 /// cut on its own, so a long one cannot push the others out, and says so with an ellipsis.
 fn dialog_text(
@@ -2166,7 +2155,11 @@ fn dialog_text(
     let unsafe_part = unsafe_text(summary)
         || title.is_some_and(unsafe_text)
         || paths.iter().any(|path| unsafe_text(path))
-        || input.is_some_and(unsafe_value);
+        || input.is_some_and(unsafe_value)
+        || long_blank_run(summary)
+        || title.is_some_and(long_blank_run)
+        || long_blank_run(&joined)
+        || rendered.as_deref().is_some_and(long_blank_run);
     let too_long = len16(summary) > 300
         || title.is_some_and(|title| len16(title) > 300)
         || len16(&joined) > 600
@@ -2184,20 +2177,60 @@ fn dialog_text(
     (len16(&text) <= DIALOG_MAX).then_some(text)
 }
 
+/// Every answer but a yes: one that was refused, ran out, was cancelled or was not asked because
+/// another was open. A turn that goes on asking what is not granted is stopped.
+fn counts_as_refusal(decision: &Decision) -> bool {
+    !matches!(decision, Decision::Allow)
+}
+
 /// A line break or any other control character, or a character that changes the direction text
 /// runs in: what the person reads could then differ from what the agent will do.
 fn unsafe_char(character: char) -> bool {
     character.is_control()
         || matches!(
             character,
-            '\u{2028}'
-                | '\u{2029}'
-                | '\u{202A}'..='\u{202E}'
-                | '\u{2066}'..='\u{2069}'
-                | '\u{200E}'
-                | '\u{200F}'
+            // Format characters (Unicode `Cf`): soft hyphen, direction and joining marks, word
+            // joiners, tags, byte-order mark.
+            '\u{AD}'
                 | '\u{61C}'
+                | '\u{180E}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{206F}'
+                | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}'
+                | '\u{E0000}'..='\u{E007F}'
+                // Line and paragraph separators, and fillers that draw as nothing.
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{115F}'
+                | '\u{1160}'
+                | '\u{3164}'
+                | '\u{FFA0}'
+                | '\u{2800}'
         )
+}
+
+/// A space of any width (Unicode `Zs`).
+fn blank(character: char) -> bool {
+    matches!(
+        character,
+        ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+    )
+}
+
+/// More than four spaces in a row can push what follows out of sight.
+fn long_blank_run(text: &str) -> bool {
+    let mut run = 0;
+    for character in text.chars() {
+        run = if blank(character) { run + 1 } else { 0 };
+        if run > 4 {
+            return true;
+        }
+    }
+    false
 }
 
 fn unsafe_text(text: &str) -> bool {
@@ -2325,42 +2358,10 @@ mod dialogs {
     use tauri::{AppHandle, Manager};
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-    /// The person's questions, as small system dialogs of this app (`browser_signin.rs` does the same
-    /// for a sign-in).
-    struct Dialogs(AppHandle);
-
-    impl Approvals for Dialogs {
-        fn ask(&self, text: &str) -> oneshot::Receiver<bool> {
-            let (answer, answered) = oneshot::channel();
-            let (allow, cancel) = buttons(crate::words::turkish());
-            self.0
-                .dialog()
-                .message(text)
-                .title("Dozo")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    allow.to_owned(),
-                    cancel.to_owned(),
-                ))
-                .show(move |allowed| {
-                    let _ = answer.send(allowed);
-                });
-            answered
-        }
-
-        fn ended(&self, _text: &str) {
-            self.0
-                .dialog()
-                .message(ended_text(crate::words::turkish()))
-                .title("Dozo")
-                .show(|_| {});
-        }
-    }
-
     /// Wires the runner of the app to the dialogs and to what the person allowed.
     pub fn attach(runner: &Runner, app: &AppHandle) {
         let agents = runner.agents();
-        agents.set_approvals(Arc::new(Dialogs(app.clone())));
+        agents.set_approvals(Arc::new(crate::agent_ui::AgentDialogs(app.clone())));
         if let Ok(folder) = app.path().app_config_dir() {
             agents.set_config(folder.join("agents.json"));
         }
