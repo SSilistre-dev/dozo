@@ -5,71 +5,51 @@
 //! closes itself. It is built the way the login question is (`passwords_ui.rs`, whose `relay` it
 //! shares), and only its own page can call its commands (`capabilities/agent.json`).
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use serde_json::{Value, json};
 #[cfg(unix)]
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri::{State, WebviewWindow};
 use tokio::sync::oneshot;
 
+use crate::question_slot::Slot;
 use crate::words::text;
 
 #[cfg(unix)]
 const WINDOW: &str = "agent";
 
-/// The question on screen: its text, and where its answer goes.
+/// The question on screen (its text); the logic is the one `passwords_ui.rs` shares
+/// (`question_slot.rs`).
 #[derive(Default)]
-pub struct AgentQuestion {
-    open: Mutex<Option<Open>>,
-    count: AtomicU64,
-}
-
-struct Open {
-    id: u64,
-    text: String,
-    answer: oneshot::Sender<bool>,
-}
+pub struct AgentQuestion(Slot<String>);
 
 #[cfg_attr(not(unix), allow(dead_code))]
 impl AgentQuestion {
-    /// Puts a question up, in place of any other (which is refused). Answers its id and where its
-    /// answer comes from.
     fn put(&self, text: &str) -> (u64, oneshot::Receiver<bool>) {
-        let (answer, answered) = oneshot::channel();
-        let id = self.count.fetch_add(1, Ordering::SeqCst);
-        *self.open.lock().unwrap() = Some(Open {
-            id,
-            text: text.to_owned(),
-            answer,
-        });
-        (id, answered)
+        self.0.put(text.to_owned())
     }
 
-    fn words(&self) -> Option<String> {
-        self.open
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|open| open.text.clone())
+    fn words(&self) -> Option<(u64, String)> {
+        self.0.open()
     }
 
-    /// The person's answer, or a refusal when the window is gone. Only the first one counts.
-    fn answer(&self, allow: bool) {
-        if let Some(open) = self.open.lock().unwrap().take() {
-            let _ = open.answer.send(allow);
-        }
+    fn answer(&self, id: u64, allow: bool) -> bool {
+        self.0.answer(id, allow)
     }
 
-    /// The question `id` is over; true when it was the one on screen (its window should close).
+    fn window_gone(&self) {
+        self.0.window_gone();
+    }
+
+    fn retire_window(&self) -> bool {
+        self.0.retire_window()
+    }
+
+    fn window_opened(&self) {
+        self.0.window_opened();
+    }
+
     fn end(&self, id: u64) -> bool {
-        let mut open = self.open.lock().unwrap();
-        if open.as_ref().is_some_and(|open| open.id == id) {
-            *open = None;
-            return true;
-        }
-        false
+        self.0.end(id)
     }
 }
 
@@ -92,6 +72,10 @@ impl crate::device_agent::Approvals for AgentDialogs {
                 let _ = app.run_on_main_thread({
                     let app = app.clone();
                     move || {
+                        // Another question has come since: its window is this one.
+                        if !app.state::<AgentQuestion>().retire_window() {
+                            return;
+                        }
                         if let Some(window) = app.get_webview_window(WINDOW) {
                             let _ = window.destroy();
                         }
@@ -126,13 +110,14 @@ fn show_question(app: &AppHandle) {
         .build();
     match built {
         Ok(window) => {
+            app.state::<AgentQuestion>().window_opened();
             #[cfg(not(target_os = "macos"))]
             let _ = window.remove_menu();
             let app = app.clone();
             // Closing the window without answering refuses.
             window.on_window_event(move |event| {
                 if let WindowEvent::Destroyed = event {
-                    app.state::<AgentQuestion>().answer(false);
+                    app.state::<AgentQuestion>().window_gone();
                 }
             });
             let _ = window.set_focus();
@@ -140,14 +125,15 @@ fn show_question(app: &AppHandle) {
         // No window: the question cannot be answered, which refuses.
         Err(error) => {
             eprintln!("dozo: could not open the question: {error}");
-            app.state::<AgentQuestion>().answer(false);
+            app.state::<AgentQuestion>().window_gone();
         }
     }
 }
 
 /// What the window shows: the text, and the words of its buttons in the system's language.
-fn question_words(question: &str) -> Value {
+fn question_words(id: u64, question: &str) -> Value {
     json!({
+        "id": id,
         "lang": if crate::words::turkish() { "tr" } else { "en" },
         "question": question,
         "allow": text("Allow"),
@@ -157,13 +143,21 @@ fn question_words(question: &str) -> Value {
 
 #[tauri::command]
 pub fn agent_question(question: State<'_, AgentQuestion>) -> Option<Value> {
-    question.words().map(|words| question_words(&words))
+    question
+        .words()
+        .map(|(id, words)| question_words(id, &words))
 }
 
-/// The person's answer; the window closes with it.
+/// The person's answer to the question `id` the window showed; the window closes with it. An
+/// answer to a question that is no longer the open one is ignored.
 #[tauri::command]
-pub fn agent_answer(window: WebviewWindow, question: State<'_, AgentQuestion>, allow: bool) {
-    question.answer(allow);
+pub fn agent_answer(
+    window: WebviewWindow,
+    question: State<'_, AgentQuestion>,
+    id: u64,
+    allow: bool,
+) {
+    question.answer(id, allow);
     let _ = window.close();
 }
 
@@ -192,6 +186,8 @@ mod tests {
         assert!(script.contains("Escape"));
         // Escape and Enter on Cancel both refuse; a click on Allow alone allows.
         assert_eq!(script.matches("answer(true)").count(), 1);
+        // The answer names the question this window showed.
+        assert!(script.contains("id: shown?.id"));
     }
 
     #[test]
@@ -235,11 +231,11 @@ mod tests {
         for allow in [true, false] {
             let question = AgentQuestion::default();
             let (asked, answered) = oneshot::channel();
-            let (_, page) = question.put("Run ls?");
+            let (id, page) = question.put("Run ls?");
             let relaying = tokio::spawn(crate::passwords_ui::relay(asked, page));
-            assert_eq!(question.words().as_deref(), Some("Run ls?"));
-            question.answer(allow);
-            question.answer(!allow);
+            assert_eq!(question.words(), Some((id, "Run ls?".to_owned())));
+            assert!(question.answer(id, allow));
+            assert!(!question.answer(id, !allow));
             assert_eq!(
                 tokio::time::timeout(FIVE, answered).await.unwrap(),
                 Ok(allow)
@@ -280,10 +276,56 @@ mod tests {
 
     #[test]
     fn the_window_shows_the_text_and_the_buttons_in_the_systems_language() {
-        let shown = question_words("Run ls?");
+        let shown = question_words(7, "Run ls?");
+        assert_eq!(shown["id"], 7);
         assert_eq!(shown["question"], "Run ls?");
         assert_eq!(shown["allow"], crate::words::text("Allow"));
         assert_eq!(shown["cancel"], crate::words::text("Cancel"));
         assert!(["en", "tr"].contains(&shown["lang"].as_str().unwrap()));
+    }
+
+    #[test]
+    fn an_answer_for_a_question_that_is_no_longer_open_does_nothing() {
+        let question = AgentQuestion::default();
+        let (first, _gone) = question.put("Run ls?");
+        let (second, mut answered) = question.put("Run pwd?");
+        // The old window still shows the first question: its Allow must not approve the second.
+        assert!(!question.answer(first, true));
+        assert!(!question.answer(0, true));
+        assert_eq!(
+            answered.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        );
+        assert!(question.words().is_some());
+        assert!(question.answer(second, true));
+        assert_eq!(answered.try_recv(), Ok(true));
+    }
+
+    #[test]
+    fn a_window_retired_for_an_ended_question_never_refuses_the_next() {
+        let question = AgentQuestion::default();
+        let (first, _page) = question.put("Run ls?");
+        assert!(question.end(first));
+        assert!(question.retire_window());
+        // The next question arrives before the old window's destroy event does.
+        let (_, mut answered) = question.put("Run pwd?");
+        question.window_gone();
+        assert_eq!(
+            answered.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        );
+        assert!(question.words().is_some());
+        // A window the person closes is still a refusal.
+        question.window_gone();
+        assert_eq!(answered.try_recv(), Ok(false));
+    }
+
+    #[test]
+    fn a_question_that_arrived_before_the_retiring_keeps_its_window() {
+        let question = AgentQuestion::default();
+        let (first, _page) = question.put("Run ls?");
+        assert!(question.end(first));
+        question.put("Run pwd?");
+        assert!(!question.retire_window());
     }
 }
