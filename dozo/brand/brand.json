@@ -12322,6 +12322,12 @@
       "reason": "chat alert recipients: recipients are read before an alert is published, so someone removed from the Space, signed out or deactivated in between could still get its preview; the open notification stream checks the person may still read the Space before it passes each alert on, and ends as a signed-out session does when not"
     },
     {
+      "file": "apps/api/src/chat-alerts.test.ts",
+      "find": "  createAppRouter({\n    ...deps,\n",
+      "replace": "  createAppRouter({\n    // Dozo: a database that answers yes to the stream's check that the reader may still see the Space.\n    prisma: { $queryRaw: async () => [{ allowed: true }] },\n    ...deps,\n",
+      "reason": "upstream test fixture: the notification stream checks before each alert that the reader may still see the Space (chat stream membership), and these tests build the router with no database; the fixture above gains one that answers yes, and a test's own deps still win"
+    },
+    {
       "file": "apps/api/src/router.test.ts",
       "find": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "replace": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n      // Dozo: the stream's membership check, answering that the person is still in the Space.\n      $queryRaw: vi.fn().mockResolvedValue([{ member: true, seq: null }]),\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
