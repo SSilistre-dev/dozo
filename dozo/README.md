@@ -264,6 +264,16 @@ as before and never moves to another connection of the pool, and a run stays on 
   switch is turned on again. Mobile has the same switch and time on a connection's page
   (`apps/mobile/components/dozo-model-pool-switch.tsx`), read again on each roster signal.
 
+## Phone: themes and a bot's backup models
+
+- Settings > General > Appearance on the phone is one native menu of System, Light, Dark and the
+  six named themes, with Message color (Bot color or Neutral) under it, kept on the device as on the
+  web (`apps/mobile/components/dozo-appearance-setting.tsx`; details in `dozo/theme/README.md`).
+- A bot's settings, under its model, list the bot's own backup models in order, as the web does
+  (`apps/mobile/components/dozo-bot-backups.tsx`, procedures `dozoBotModelBackups.get` and `set`):
+  add one from the models of your own connections, change, move up or down, remove. They are read
+  again on each roster signal.
+
 ## Editing and regenerating
 
 In a person's own chat with a bot, the More menu offers Edit on their last message and Regenerate
