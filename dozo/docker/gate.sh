@@ -175,6 +175,7 @@ syntax_check() { # $1 = script
 # prints them in the order they started, so the gate takes as long as its slowest step, not the sum.
 # A step's failures travel back in a file, since a subshell cannot add to FAILS. No check is dropped.
 OLC_STEPS=(syntax compose deploylock buildlimit tunnel nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
+OLC_NODE_STEPS=(nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
 olc_job_end() { # $1 = step name, last line of its subshell: hands its failures to the parent
   # Written whole to a temporary file and moved into place: a failed write (full disk) leaves no
   # file, which the parent reports as "did not finish" (red), never as an empty list (green).
@@ -186,8 +187,15 @@ olc_collect() {
   local n f
   wait
   for n in "${OLC_STEPS[@]}"; do
-    [ -f "$OLC_TMP/$n.out" ] || continue   # a step the gate never started (no Node image, no .mjs files)
-    cat "$OLC_TMP/$n.out"
+    # Every step leaves its failures file (empty = passed). Without one: a step with no output file
+    # never started, which is allowed only for the Node steps when the main shell already failed
+    # for lack of an image or files (OLC_UNSTARTED_OK); anywhere else a step that did not run
+    # (its output file could not be created) must not pass by being absent.
+    if [ ! -f "$OLC_TMP/$n.fails" ] && [ ! -f "$OLC_TMP/$n.out" ]; then
+      case " ${OLC_NODE_STEPS[*]} " in *" $n "*) [ "${OLC_UNSTARTED_OK:-0}" = 1 ] && continue ;; esac
+      fail "$n: the step did not start"; continue
+    fi
+    cat "$OLC_TMP/$n.out" 2>/dev/null
     if [ -f "$OLC_TMP/$n.fails" ]; then while IFS= read -r f; do [ -z "$f" ] || FAILS+=("$f"); done < "$OLC_TMP/$n.fails"
     else fail "$n: the step did not finish"; fi
   done
@@ -230,7 +238,8 @@ olc() {
   else printf '%s\n' "$out"; fail "tunnel installer step (infra/compose/dozo-install-cloudflare.smoke.sh)"; fi
     olc_job_end tunnel) > "$OLC_TMP/tunnel.out" 2>&1 &
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
-  if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
+  OLC_UNSTARTED_OK=0   # 1 once the main shell has failed instead of starting the Node steps
+  if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"; OLC_UNSTARTED_OK=1
   elif node_image; then
     ( FAILS=()
     if printf '%s\0' "${mjs[@]}" | drun node-check -i -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" xargs -0 -n 1 node --check; then
@@ -352,6 +361,7 @@ olc() {
       else printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; fi
     else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
       olc_job_end leak) > "$OLC_TMP/leak.out" 2>&1 &
+  else OLC_UNSTARTED_OK=1   # node_image has already failed
   fi
   local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')
