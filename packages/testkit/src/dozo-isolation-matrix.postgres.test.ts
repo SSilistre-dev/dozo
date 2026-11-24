@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { findCanaries, ISOLATION_LOGINS, readAnswer } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
+import { DESIGNED_SHARING, ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
 import type { Procedure } from "./dozo-isolation-inputs.test-support.js";
 import {
   contractProcedures,
@@ -38,10 +38,13 @@ import {
   sweep,
   waitingRunKept,
 } from "./dozo-isolation-sweep.test-support.js";
-import { buildIsolationWorld } from "./dozo-isolation-world.test-support.js";
+import { asWorldRequest, buildIsolationWorld } from "./dozo-isolation-world.test-support.js";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeWithDatabase = hasDb ? describe : describe.skip;
+
+/** The designed sharing pairs a member or guest of S was shown, over the passes of both logins. */
+const designedSeen = new Map<string, Set<string>>();
 
 /** Procedures the owner must see P's canaries through: reads of every kind planted, one streamed. */
 const CONTROL_PATHS = ["threads/messages", "threads/subscribe", "bots/get", "artifacts/getById"];
@@ -223,9 +226,17 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
     });
 
     it("turns red on each kind of leak it is meant to catch (self-test)", async () => {
-      const { B, P, Bown } = world;
+      const { A, B, P, Bown } = world;
       const shape = procedures.find((procedure) => procedure.path === "bots/get")!.input;
-      const kinds = ["read-leak", "write-mixing", "header-leak", "foreign-id", "distinguishable"];
+      const kinds = [
+        "read-leak",
+        "write-mixing",
+        "header-leak",
+        "foreign-id",
+        "distinguishable",
+        "side-effect",
+        "stream-leak",
+      ];
       const fakes: Procedure[] = kinds.map((kind) => ({
         path: `isoSelfTest/${kind}`,
         input: shape,
@@ -239,6 +250,32 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           status,
           headers: { "content-type": "application/json", ...headers },
         });
+      // A live stream that opens with a heartbeat and sends one of P's canaries on the next read.
+      const streamLeak = (signal?: AbortSignal) => {
+        const encoder = new TextEncoder();
+        const frames = [{ type: "heartbeat" }, { type: "alert", alert: { title: P.canaries[2] } }];
+        const body = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            const next = frames.shift();
+            if (next) {
+              controller.enqueue(
+                encoder.encode(`event: message\ndata: ${JSON.stringify({ json: next })}\n\n`),
+              );
+              return;
+            }
+            // Open until the reader hangs up, as a live stream is.
+            if (!signal?.aborted)
+              await new Promise<void>((resolve) =>
+                signal?.addEventListener("abort", () => resolve(), { once: true }),
+              );
+            controller.close();
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      };
       // Each fake handler leaks one way; everything else goes to the real app.
       const app: IsolationApp = {
         request: async (input, init) => {
@@ -262,6 +299,19 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
               });
             case "foreign-id":
               return json({ json: { code: "NOT_FOUND", message: `see ${P.ids.threadId}` } }, 404);
+            case "side-effect":
+              // Refused like any foreign id, but mails A about P's bot while answering.
+              if (existing)
+                await asWorldRequest(new Headers(init?.headers).get("cookie") ?? undefined, () =>
+                  world.handles.email!.send({
+                    to: A.email,
+                    subject: "iso-self-test",
+                    text: `about ${P.ids.botId}`,
+                  }),
+                );
+              return json({ json: { code: "NOT_FOUND" } }, 404);
+            case "stream-leak":
+              return streamLeak(init?.signal ?? undefined);
             default:
               return existing
                 ? json({ json: { code: "NOT_FOUND" } }, 404)
@@ -279,7 +329,9 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         compare: true,
       };
       const before = await snapshot(world.db, scopeOf(P));
+      const from = mark(world.records!);
       const outcomes = await sweep(app, [caller], fakes);
+      const outgoing = outgoingReport(world.records!, from, [caller], A, [P.ids.botId!]);
       const diff = snapshotDiff(before, await snapshot(world.db, scopeOf(P)));
       await world.db.bot.update({
         where: { id: P.ids.botId! },
@@ -291,12 +343,22 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(caught("header-leak"), red.join("\n")).toBe(true);
       expect(caught("foreign-id"), red.join("\n")).toBe(true);
       expect(caught("distinguishable"), red.join("\n")).toBe(true);
+      expect(caught("stream-leak"), red.join("\n")).toBe(true);
+      expect(
+        outcomes.some((outcome) => outcome.path === "isoSelfTest/stream-leak" && outcome.streamed),
+      ).toBe(true);
+      expect(
+        outgoing.some((item) => item.includes("iso-self-test")),
+        outgoing.join("\n"),
+      ).toBe(true);
       expect(
         diff.some((item) => item.startsWith("bot:")),
         diff.join("\n"),
       ).toBe(true);
-      // A clean fake stays green, so the four above are red for their leak only.
+      // Fakes that leak no answer stay green there, so the ones above are red for their leak only:
+      // the write shows in the snapshot, the mail in what the app sent.
       expect(red.filter((item) => item.startsWith("isoSelfTest/write-mixing"))).toEqual([]);
+      expect(red.filter((item) => item.startsWith("isoSelfTest/side-effect"))).toEqual([]);
     });
 
     it("keeps P and S from B, a removed member, anonymous callers and foreign Space headers", async () => {
@@ -510,6 +572,11 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           kinds.add(kindOf(S, value));
           seen.set(outcome.path, kinds);
         }
+      for (const [path, kinds] of seen) {
+        const all = designedSeen.get(path) ?? new Set<string>();
+        for (const kind of kinds) all.add(kind);
+        designedSeen.set(path, all);
+      }
       console.log(
         `${prefix} S canaries a member or guest sees, by procedure\n${[...seen]
           .sort(([a], [b]) => a.localeCompare(b))
@@ -701,3 +768,16 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
     }, 900_000);
   },
 );
+
+// After both logins' passes: every pair the table allows was shown at least once, so a pair
+// nothing shows any more is taken out instead of staying there to let a later leak through. Over
+// both passes, as a pair the concurrent sweep shows only most of the time is still in use.
+describeWithDatabase("the designed sharing table", () => {
+  it("lists only pairs a member or guest of S was shown", () => {
+    expect(designedSeen.size, "the passes that record what S shows did not run").toBeGreaterThan(0);
+    const unseen = Object.entries(DESIGNED_SHARING).flatMap(([path, kinds]) =>
+      kinds.filter((kind) => !designedSeen.get(path)?.has(kind)).map((kind) => `${path}: ${kind}`),
+    );
+    expect(unseen, "designed sharing pairs no call showed (stale entries)").toEqual([]);
+  });
+});

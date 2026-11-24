@@ -20,6 +20,9 @@ apps/api/src/dozo-message-revision.ts	fn reviseInTransaction	let seq = -1;	local
 apps/api/src/dozo-queue-plan.ts	fn planQueue	const line: Array<{ run: QueueRun; reason: DozoQueueItem["reason"]; ahead: QueueRun | null }> =	local	per-call local, dies with the call
 apps/api/src/dozo-relay-session.ts	module	const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);	global-safe	constant set of fixed words, never changed after load
 apps/api/src/dozo-site-sessions.ts	fn dozoSiteSessionsRoutes	const repos = createRepos(deps.prisma);	global-safe	route wiring: repository handles over the pool, no data
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let checked: T[] = [];	request	one open stream's frames that passed its last check, held by that stream's own iterator and dropped with it
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let ended: IteratorResult<T> | undefined;	request	one open stream's end, held by that stream's own iterator and dropped with it
+apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let waiting: Promise<IteratorResult<T>> | undefined;	request	one open stream's next read in flight, held by that stream's own iterator and dropped with it
 apps/api/src/dozo-stream-membership.ts	fn dozoWhileMember	let checkedThrough = Number.NEGATIVE_INFINITY;	request	one open stream's last verified event number, held by that stream's own iterator and dropped with it
 apps/api/src/dozo-taught-skills.ts	fn createTaughtSkillsService	const upstream = createUpstreamTaughtSkillsService(deps);	global-safe	service wiring, no data
 apps/api/src/dozo-teach.ts	fn dozoTeachRoutes	const teach = createDozoTeach({	global-safe	route wiring, no data
@@ -101,6 +104,8 @@ packages/adapters/src/dozo-no-computer.ts	module	export const CLOUD_COMPUTER_TOO
 packages/adapters/src/dozo-no-computer.ts	module	const withheldComputers = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-phone.ts	module	const phoneRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-phone.ts	module	const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();	run	device consent keyed by the run's own tool-call object identity
+packages/adapters/src/dozo-phone.ts	module	const askedTainted = new WeakSet<Record<string, unknown>>();	run	marks the run's own tool-call arguments by identity; flag only
+packages/adapters/src/dozo-phone.ts	module	const askedUnsure = new WeakSet<Record<string, unknown>>();	run	marks the run's own tool-call arguments by identity; flag only
 packages/adapters/src/dozo-plugin-catalog.ts	fn defaultSiteIcon	const resolver = createFaviconResolver();	global-safe	favicon lookup of public site addresses; no person data
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let snapshot: Snapshot | null = null;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let images = new Map<string, string>();	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone

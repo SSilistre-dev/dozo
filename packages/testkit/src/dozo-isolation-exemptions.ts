@@ -47,7 +47,8 @@ export const NEVER_SHARED_KINDS: readonly string[] = [
 
 /**
  * What a shared Space shows its members and guests by design, per procedure and canary kind. A
- * canary of S seen by C or D through a pair not listed here fails the matrix.
+ * canary of S seen by C or D through a pair not listed here fails the matrix, and so does a pair
+ * listed here that no call of the sweep shows: an entry nothing exercises is taken out.
  */
 export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "artifacts/get": ["artifact", "artifactbody"],
@@ -79,41 +80,20 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "secondbot",
     "section",
     "sharedmemory",
-    "waiting",
   ],
   "bots/duplicate": ["bot", "botdescription", "instructionsnext"],
-  "bots/get": [
-    "bot",
-    "botdescription",
-    "callopening",
-    "callreason",
-    "instructions",
-    "instructionsnext",
-    "routineprompt",
-  ],
+  "bots/get": ["bot", "botdescription", "instructions", "instructionsnext", "routineprompt"],
   "bots/list": [
     "waitbot",
     "bot",
     "botdescription",
-    "callopening",
-    "callreason",
     "instructions",
     "instructionsnext",
     "routineprompt",
     "secondbot",
-    "waiting",
   ],
-  "bots/update": [
-    "bot",
-    "botdescription",
-    "callopening",
-    "callreason",
-    "instructions",
-    "instructionsnext",
-    "routineprompt",
-  ],
+  "bots/update": ["bot", "botdescription", "instructions", "instructionsnext"],
   "botSections/list": ["section"],
-  "computer/boot": ["bot"],
   "computer/downloadFile": ["file"],
   "computer/readFile": ["file"],
   "computer/status": ["bot"],
@@ -141,7 +121,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "dozoTeach/decideSaved": ["draftskill"],
   "dozoTeach/save": ["draftskill"],
   "export/bot": [
-    "artifact",
     "artifactbody",
     "attachment",
     "attachmentbody",
@@ -162,17 +141,16 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "routineprompt",
     "sharedmemory",
   ],
-  "groups/create": ["waitbot", "bot", "secondbot"],
+  "groups/create": ["bot", "secondbot"],
   "groups/duplicate": ["bot", "group", "secondbot"],
   "groups/get": ["artifact", "bot", "group", "secondbot"],
-  "groups/list": ["waitbot", "artifact", "bot", "group", "secondbot"],
+  "groups/list": ["artifact", "bot", "group", "secondbot"],
   "groups/update": ["artifact", "bot", "group", "secondbot"],
   "memory/exportMarkdown": ["memory"],
   "memory/list": ["memory"],
   "routines/list": ["routine", "routineprompt"],
   "routines/listForMentions": ["routine", "routineprompt"],
   "routines/update": ["routine", "routineprompt"],
-  "runs/list": ["artifact", "group", "waitbot", "bot", "draftskill", "routineprompt"],
   "scratchpad/list": ["scratchpad"],
   "scratchpad/update": ["scratchpad"],
   "skills/get": ["taught"],
@@ -184,17 +162,13 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "artifact",
     "bot",
     "botdescription",
-    "callopening",
-    "callreason",
     "group",
     "instructions",
     "instructionsnext",
     "routineprompt",
     "secondbot",
     "section",
-    "waiting",
   ],
-  "threads/answerCall": ["callopening", "callreason"],
   "threads/get": [
     "artifact",
     "attachment",
@@ -238,8 +212,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "attachmentmessage",
     "bot",
     "botdescription",
-    "callopening",
-    "callreason",
     "chatmessage",
     "draftskill",
     "file",
@@ -256,6 +228,18 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "tickets/get": ["ticket"],
   "tickets/list": ["ticket"],
   "tickets/move": ["ticket"],
+};
+
+/**
+ * Pairs a member or guest sees only when the sweep's own earlier calls happen to have left the
+ * thing where the procedure shows it (a run the sweep started, a computer it booted), which a
+ * concurrent sweep does not order. Allowed as the table above is, but not required to be seen.
+ */
+export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly string[]>> = {
+  "bots/update": ["routineprompt"],
+  "computer/boot": ["bot"],
+  "export/bot": ["artifact"],
+  "runs/list": ["artifact", "bot", "draftskill", "group", "routineprompt", "waitbot"],
 };
 
 export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
