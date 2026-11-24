@@ -51,6 +51,14 @@ function desktopBridge(): DesktopBridge | null {
   return inDesktopShell() ? (window.dozoDesktop ?? null) : null;
 }
 
+/**
+ * Whether Computers offers to connect this computer: in an older desktop app only. With the bridge,
+ * "Let bots use this computer" in the Desktop app section is that one control.
+ */
+export function offersConnectThisComputer(): boolean {
+  return inDesktopShell() && !desktopBridge();
+}
+
 const LABELS: Record<DesktopKey, ReactNode> = {
   openAtLogin: <Trans>Open at login</Trans>,
   keepRunning: <Trans>Keep running in background</Trans>,
@@ -205,13 +213,13 @@ function DesktopSwitchRow({
 }
 
 /**
- * The Computers group of Settings > General in the desktop app (`ComputerDeviceSettings`, which
- * the app shows even before a computer is paired) while no computer of the account is connected:
- * asks the app to let bots use this computer. The page can only ask; turning it on stays the app's
- * question to the person. An app without the bridge opens its Settings window, where the switch is.
+ * The Computers group of Settings > General in an older desktop app (`ComputerDeviceSettings`,
+ * which such an app shows even before a computer is paired) while no computer of the account is
+ * connected: opens the app's own Settings, where "Let Bots Use This Computer" is. The page can
+ * only open that window; turning it on stays the app's question to the person.
  */
 export function DozoConnectThisComputer() {
-  const shell = inDesktopShell();
+  const shell = offersConnectThisComputer();
   const [connected, setConnected] = useState<boolean | null>(null);
   useEffect(() => {
     if (!shell) return;
@@ -229,28 +237,15 @@ export function DozoConnectThisComputer() {
     };
   }, [shell]);
   if (connected !== false) return null;
-  const bridge = desktopBridge();
-  const label = <Trans>Connect this computer</Trans>;
   return (
     <div className="px-4 py-3">
-      {bridge ? (
-        <Button
-          variant="outline"
-          size="sm"
-          data-testid="dozo-connect-this-computer"
-          onClick={() => void bridge.set("thisComputer", true)}
-        >
-          {label}
-        </Button>
-      ) : (
-        <a
-          href={DESKTOP_SETTINGS}
-          data-testid="dozo-connect-this-computer"
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          {label}
-        </a>
-      )}
+      <a
+        href={DESKTOP_SETTINGS}
+        data-testid="dozo-connect-this-computer"
+        className={buttonVariants({ variant: "outline", size: "sm" })}
+      >
+        <Trans>Connect this computer</Trans>
+      </a>
     </div>
   );
 }

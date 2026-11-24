@@ -62,7 +62,12 @@ vi.mock("./SettingsRows", () => ({
 }));
 
 import type { DesktopBridge, DesktopSettings } from "./dozo-desktop-app";
-import { DESKTOP_SETTINGS, DozoConnectThisComputer, DozoDesktopAppRow } from "./dozo-desktop-app";
+import {
+  DESKTOP_SETTINGS,
+  DozoConnectThisComputer,
+  DozoDesktopAppRow,
+  offersConnectThisComputer,
+} from "./dozo-desktop-app";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -282,13 +287,17 @@ describe("DozoConnectThisComputer", () => {
     root = createRoot(container);
   });
 
-  it("asks the app with the bridge instead of opening its Settings", async () => {
-    const { bridge } = withBridge(SETTINGS);
+  it("leaves it to the section's switch in an app with the bridge", async () => {
+    withBridge(SETTINGS);
     api.devices.mockResolvedValue([]);
     await show(<DozoConnectThisComputer />);
-    expect(links()).toEqual([]);
-    await act(async () => button("Connect this computer")?.click());
-    expect(bridge.set).toHaveBeenCalledWith("thisComputer", true);
+    expect(container.innerHTML).toBe("");
+    expect(api.devices).not.toHaveBeenCalled();
+    expect(offersConnectThisComputer()).toBe(false);
+    delete window.dozoDesktop;
+    expect(offersConnectThisComputer()).toBe(true);
+    delete window.dozoDesktopShell;
+    expect(offersConnectThisComputer()).toBe(false);
   });
 
   it("stays away while a computer is connected or the list fails", async () => {
