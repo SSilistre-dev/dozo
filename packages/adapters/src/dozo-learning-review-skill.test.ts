@@ -22,13 +22,13 @@ const store = vi.hoisted(() => ({
   usage: [] as Array<{ attribution: unknown }>,
   skills: [] as string[],
   rejectedSkills: [] as string[],
-  suggested: [] as Array<{ skill: unknown; taken: readonly string[] }>,
+  suggested: [] as unknown[],
 }));
 
 vi.mock("./dozo-learning-skill.js", () => ({
   knownSkillNames: async () => store.skills,
-  suggestLearnedSkill: async (_deps: unknown, _bot: unknown, skill: unknown, taken: string[]) => {
-    store.suggested.push({ skill, taken });
+  suggestLearnedSkill: async (_deps: unknown, _bot: unknown, skill: unknown) => {
+    store.suggested.push(skill);
     return true;
   },
 }));
@@ -232,7 +232,7 @@ describe("reviewLearning: a suggested skill", () => {
     await reviewLearning(run.deps, BOT.id);
     expect(run.notes.doc.content).toBe("The owner is called Ada.\n");
     // Handed to the suggestion (a draft card the owner saves or dismisses), never saved here.
-    expect(store.suggested).toEqual([{ skill: SKILL, taken: ["Daily plan", "Inbox sweep"] }]);
+    expect(store.suggested).toEqual([SKILL]);
     expect(run.model.requests).toHaveLength(1);
     expect(store.turns).toEqual([]);
     const [request] = run.model.requests;
@@ -250,7 +250,7 @@ describe("reviewLearning: a suggested skill", () => {
     await reviewLearning(run.deps, BOT.id);
     expect(run.notes.commit).not.toHaveBeenCalled();
     expect(store.changes).toEqual([]);
-    expect(store.suggested).toEqual([{ skill: SKILL, taken: [] }]);
+    expect(store.suggested).toEqual([SKILL]);
     expect(store.turns).toEqual([]);
     expect(run.deps.events.publishRosterChange).not.toHaveBeenCalled();
   });
