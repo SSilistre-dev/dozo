@@ -74,7 +74,8 @@ for line in "CLOUDFLARE_TUNNEL_TOKEN=$token" RAKAZO_HOST=app.example.com \
   [[ "$(grep -cxF -- "$line" "$env_file")" -eq 1 ]] || fail ".env lacks exactly one '${line%%=*}'"
 done
 [[ "$(grep -c '^POSTGRES_PASSWORD=.' "$env_file")" -eq 1 ]] || fail "the installer's secrets are gone"
-[[ "$(stat -f %Lp "$env_file" 2>/dev/null || stat -c %a "$env_file")" == 600 ]] || fail ".env is not mode 600"
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; } # GNU first: on Linux `stat -f` is filesystem status and exits 0
+[[ "$(mode "$env_file")" == 600 ]] || fail ".env is not mode 600"
 grep -rlF -- "$token" "$tmp/cwd" | grep -vxF "$env_file" && fail "the token is written outside .env" || true
 ! grep -q -- "$token" "$tmp/docker.log" || fail "the token reached a docker argument"
 ! grep -qE ' up( |$)' "$tmp/docker.log" || fail "prepare-only started the stack"
@@ -93,6 +94,7 @@ CLOUDFLARE_TUNNEL_TOKEN=$token run --hostname app.example.com --local
 [[ $code -eq 0 ]] || fail "full run: exit $code: $out"
 [[ "$out" != *"$token"* ]] || fail "the token was printed"
 grep -E ' up( |$)' "$tmp/docker.log" | grep -q 'docker-compose.override.yml' || fail "up did not use the override"
+[[ "$(mode "$tmp/cwd/.env")" == 600 ]] || fail ".env is not mode 600 after the full run"
 
 # The default install is untouched: the installer without this script writes no tunnel setting.
 new_cwd
