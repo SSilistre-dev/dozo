@@ -14,6 +14,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 image=${DOZO_NODE_IMAGE:-node:24.22-slim}
 vol=${DOZO_TOKEN_DEPS_VOLUME:-dozo-qa-deps}
+# shellcheck source=SCRIPTDIR/../docker/unit-tree.sh
+. dozo/docker/unit-tree.sh
+# This checkout's working copy in the volume (the unit gate keeps one per staged tree).
+stage=${DOZO_STAGE_DIR:-$PWD/dozo/.stage}; case "$stage" in /*) ;; *) stage="$PWD/${stage#./}" ;; esac
+tree=$(unit_tree_dir "$stage/src")
 fail() { echo "[token-kiyas] $*" >&2; echo "TOKEN: FAIL"; exit 2; }
 command -v docker >/dev/null || fail "docker missing"
 docker image inspect "$image" >/dev/null 2>&1 || fail "no $image locally: docker pull $image"
@@ -27,16 +32,16 @@ want=$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)
 git ls-files -z -co --exclude-standard | tar --null --ignore-failed-read -T - -cf - 2>/dev/null |
 docker run -i --rm --cpus 3 --memory 6g --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD:/repo:ro" -v "$vol:/deps:ro" -v "$PWD/dozo/metrics:/out" "${pricing[@]}" \
-  -e WANT="$want" -e PRICED="${DOZO_TOKEN_PRICING:+1}" "$image" sh -c '
+  -e WANT="$want" -e TREE="${tree/#\/cache/\/deps}" -e PRICED="${DOZO_TOKEN_PRICING:+1}" "$image" sh -c '
   set -e
-  [ "$(cat /deps/w/node_modules/.dozo-deps 2>/dev/null)" = "$WANT" ] ||
+  [ "$(cat $TREE/node_modules/.dozo-deps 2>/dev/null)" = "$WANT" ] ||
     { echo "[token-kiyas] the deps volume is for another lockfile: run dozo/docker/gate.sh unit" >&2; exit 2; }
   mkdir /tmp/w && cd /tmp/w
   tar -xf -
   node /repo/dozo/brand/apply.mjs --root /tmp/w --strict --config /repo/dozo/brand/brand.json >/dev/null ||
     { echo "[token-kiyas] brand rules failed: make olc names the rule" >&2; exit 2; }
-  ln -s /deps/w/node_modules node_modules
-  for d in /deps/w/packages/*/node_modules; do p=${d#/deps/w/}; [ -d "${p%/node_modules}" ] && cp -a "$d" "$p"; done
-  cp -a /deps/w/packages/db/src/generated packages/db/src/generated
+  ln -s $TREE/node_modules node_modules
+  for d in $TREE/packages/*/node_modules; do p=${d#$TREE/}; [ -d "${p%/node_modules}" ] && cp -a "$d" "$p"; done
+  cp -a $TREE/packages/db/src/generated packages/db/src/generated
   node_modules/.bin/tsx packages/testkit/src/cli/dozo-token-kiyas.ts /out/token-baseline.json ${PRICED:+/pricing.json}
 ' || fail "benchmark failed"
