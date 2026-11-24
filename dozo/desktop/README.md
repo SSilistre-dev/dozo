@@ -127,9 +127,13 @@ Per system:
 - Linux (X11): tried by `tests/linux_gate.py`: the shortcut reaches the server's page down and up,
   a frame from another origin hears nothing, the shortcut brings back a closed window, and a
   shortcut another program holds turns the switch off with a message.
-- Windows: compiled, not tried. The system refuses keys another app registered, which is reported.
-- macOS: not built or tried yet. macOS does not always refuse keys the system or another app uses,
-  so there a clash may show only as the shortcut doing nothing.
+- Windows: compiled and unit-tested on every change by the `dozo-desktop-windows` workflow, never
+  tried by hand. The system refuses keys another app registered, which is reported.
+- macOS: compiled and unit-tested on every change by the `dozo-desktop-macos` workflow (which also
+  builds an ad hoc signed debug bundle and checks that it carries the microphone purpose string),
+  never tried by hand. macOS does not always refuse keys the system or another app uses, so there a
+  clash may show only as the shortcut doing nothing. The keys, labels and the Wayland refusal are
+  chosen by an `Os` value in `src/talk.rs`, so the unit tests cover all three systems on any host.
 
 ## Open at Login and Keep Running in Background
 

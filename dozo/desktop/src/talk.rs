@@ -12,26 +12,56 @@ use tauri_plugin_global_shortcut::{
 
 pub const MENU_ID: &str = "push-to-talk";
 
+/// The systems the shortcut differs on. A value, not a `cfg`, so every host tests all of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Os {
+    Macos,
+    Windows,
+    Linux,
+}
+
+impl Os {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Os::Macos
+        } else if cfg!(windows) {
+            Os::Windows
+        } else {
+            Os::Linux
+        }
+    }
+}
+
+/// The shortcut's keys as the label and the message about a refused one name them.
+const fn keys_for(os: Os) -> &'static str {
+    match os {
+        Os::Macos => "⇧⌘Space",
+        Os::Windows | Os::Linux => "Ctrl+Shift+Space",
+    }
+}
+
 /// The menu item's label, which names the shortcut: a menu accelerator would also make it a
 /// shortcut of the menu, which would flip the switch instead of talking.
-#[cfg(target_os = "macos")]
-pub const LABEL: &str = "Push to Talk (⇧⌘Space)";
-#[cfg(not(target_os = "macos"))]
-pub const LABEL: &str = "Push to Talk (Ctrl+Shift+Space)";
+const fn label_for(os: Os) -> &'static str {
+    match os {
+        Os::Macos => "Push to Talk (⇧⌘Space)",
+        Os::Windows | Os::Linux => "Push to Talk (Ctrl+Shift+Space)",
+    }
+}
 
-/// The shortcut's keys as the message about a refused one names them.
-#[cfg(target_os = "macos")]
-const KEYS: &str = "⇧⌘Space";
-#[cfg(not(target_os = "macos"))]
-const KEYS: &str = "Ctrl+Shift+Space";
+pub const LABEL: &str = label_for(Os::current());
 
-pub fn shortcut() -> Shortcut {
-    let command = if cfg!(target_os = "macos") {
+fn shortcut_for(os: Os) -> Shortcut {
+    let command = if os == Os::Macos {
         Modifiers::SUPER
     } else {
         Modifiers::CONTROL
     };
     Shortcut::new(Some(command | Modifiers::SHIFT), Code::Space)
+}
+
+pub fn shortcut() -> Shortcut {
+    shortcut_for(Os::current())
 }
 
 /// The window event the page's composer listens for (`TALK_KEY_EVENT` in
@@ -43,21 +73,36 @@ pub fn script(down: bool) -> String {
 
 /// Why the shortcut cannot be used here before trying, or None. A Wayland desktop gives an app
 /// no global shortcut it can grab: registering one through X11 succeeds and then never fires
-/// while a Wayland app is in front, which would fail silently.
+/// while a Wayland app is in front, which would fail silently. Only Linux has Wayland.
 pub fn unavailable(wayland_display: Option<&str>, gdk_backend: Option<&str>) -> Option<String> {
+    unavailable_on(Os::current(), wayland_display, gdk_backend)
+}
+
+fn unavailable_on(
+    os: Os,
+    wayland_display: Option<&str>,
+    gdk_backend: Option<&str>,
+) -> Option<String> {
     let wayland = wayland_display.is_some_and(|display| !display.is_empty())
         && !gdk_backend
             .is_some_and(|backends| backends.split(',').next().map(str::trim) == Some("x11"));
-    (cfg!(target_os = "linux") && wayland).then(|| {
+    (os == Os::Linux && wayland).then(|| {
         "This desktop does not let apps use a shortcut while another app is in front, so Push to \
          Talk stays off."
             .to_owned()
     })
 }
 
+fn taken_for(os: Os) -> String {
+    format!(
+        "{} is already used by another app, so Push to Talk stays off.",
+        keys_for(os)
+    )
+}
+
 /// What the person is told when the system refuses the shortcut.
 pub fn taken() -> String {
-    format!("{KEYS} is already used by another app, so Push to Talk stays off.")
+    taken_for(Os::current())
 }
 
 /// Turns the shortcut on or off. On: Err carries what to tell the person, and nothing is
@@ -158,27 +203,48 @@ mod tests {
 
     #[test]
     fn a_wayland_desktop_is_told_instead_of_failing_silently() {
-        let refused = |display, backend| unavailable(display, backend).is_some();
-        let linux = cfg!(target_os = "linux");
-        assert_eq!(refused(Some("wayland-0"), None), linux);
-        assert_eq!(refused(Some("wayland-0"), Some("wayland")), linux);
+        let refused = |display, backend| unavailable_on(Os::Linux, display, backend).is_some();
+        assert!(refused(Some("wayland-0"), None));
+        assert!(refused(Some("wayland-0"), Some("wayland")));
         // The app runs through X11 even on a Wayland desktop: the shortcut can work.
         assert!(!refused(Some("wayland-0"), Some("x11")));
         assert!(!refused(Some("wayland-0"), Some("x11,wayland")));
-        assert_eq!(refused(Some("wayland-0"), Some("wayland,x11")), linux);
+        assert!(refused(Some("wayland-0"), Some("wayland,x11")));
         assert!(!refused(None, None));
         assert!(!refused(Some(""), None));
     }
 
     #[test]
-    fn the_shortcut_and_the_message_name_the_same_keys() {
-        let expected = if cfg!(target_os = "macos") {
-            Modifiers::SUPER | Modifiers::SHIFT
-        } else {
-            Modifiers::CONTROL | Modifiers::SHIFT
+    fn macos_and_windows_never_refuse_before_trying() {
+        // Their variables are not a Wayland session, whatever the environment holds.
+        for os in [Os::Macos, Os::Windows] {
+            assert!(unavailable_on(os, Some("wayland-0"), Some("wayland")).is_none());
+        }
+    }
+
+    #[test]
+    fn each_system_names_the_keys_it_registers() {
+        let command = |os| match os {
+            Os::Macos => Modifiers::SUPER,
+            _ => Modifiers::CONTROL,
         };
-        assert_eq!(shortcut(), Shortcut::new(Some(expected), Code::Space));
-        assert!(LABEL.contains(KEYS));
-        assert!(taken().starts_with(KEYS));
+        for os in [Os::Macos, Os::Windows, Os::Linux] {
+            assert_eq!(
+                shortcut_for(os),
+                Shortcut::new(Some(command(os) | Modifiers::SHIFT), Code::Space)
+            );
+            assert!(label_for(os).contains(keys_for(os)));
+            assert!(taken_for(os).starts_with(keys_for(os)));
+        }
+        assert_eq!(keys_for(Os::Macos), "⇧⌘Space");
+        assert_eq!(keys_for(Os::Windows), "Ctrl+Shift+Space");
+        assert_eq!(keys_for(Os::Linux), "Ctrl+Shift+Space");
+    }
+
+    #[test]
+    fn this_build_uses_its_own_system() {
+        assert_eq!(shortcut(), shortcut_for(Os::current()));
+        assert_eq!(LABEL, label_for(Os::current()));
+        assert_eq!(taken(), taken_for(Os::current()));
     }
 }
