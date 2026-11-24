@@ -376,7 +376,10 @@ mod tests {
 
     #[test]
     fn a_new_backup_takes_the_password_length_every_surface_takes() {
-        let shared = include_str!("../../../packages/core/src/dozo-sealed-file.ts");
+        // Read when this test runs, so a build without the TypeScript tree still compiles.
+        let root = env!("CARGO_MANIFEST_DIR");
+        let path = format!("{root}/../../packages/core/src/dozo-sealed-file.ts");
+        let shared = std::fs::read_to_string(&path).expect(&path);
         let line = format!("export const SEALED_MIN_PASSWORD_LENGTH = {MIN_BACKUP_PASSWORD};");
         assert!(shared.contains(&line), "{line}");
     }
