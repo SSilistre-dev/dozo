@@ -389,16 +389,13 @@ fn run(app: &AppHandle, id: &str) {
     prefs::changed(app);
 }
 
-/// The window opened on the server itself (`start.rs`): when that page does not come, the window
-/// goes back to the bundled page, which connects as it always did and shows "unreachable". The
-/// web view says nothing of a load that failed, so this is the only way back from a blank window.
-/// It leaves a window that has moved on (Change Server) or another chosen server alone.
-fn guard_first_load(
-    app: &AppHandle,
-    window: &WebviewWindow,
-    server: Url,
-    loaded: tokio::sync::watch::Receiver<bool>,
-) {
+/// The window opened on the server itself (`start.rs`): when no document of that page arrives, the
+/// window goes back to the bundled page, which connects as it always did and shows "unreachable".
+/// The web view says nothing of a load that failed, so this is the only way back from a blank
+/// window. A page that is arriving, a window sent to a screen of the app and another chosen server
+/// are left alone.
+fn guard_first_load(app: &AppHandle, window: &WebviewWindow, server: Url) {
+    let loaded = app.state::<start::FirstLoad>().watch();
     let (app, window) = (app.clone(), window.clone());
     tauri::async_runtime::spawn(async move {
         let probe = {
@@ -409,10 +406,10 @@ fn guard_first_load(
                     .unwrap_or(false)
             }
         };
-        start::guard(probe, loaded, start::LOAD_LIMIT, move || {
-            // A window whose page has no address yet is not on a local screen.
-            let on_local = window.url().is_ok_and(|url| is_local(&url));
-            if !on_local && chosen(&app).as_ref() == Some(&server) {
+        let (limit, grace) = (start::LOAD_LIMIT, start::COMMIT_GRACE);
+        start::guard(probe, loaded, limit, grace, move || {
+            // Asked again here: a Change Server may have landed since the timeout fired.
+            if chosen(&app).as_ref() == Some(&server) && app.state::<start::FirstLoad>().claim() {
                 show_local(&window, "");
             }
         })
@@ -421,6 +418,11 @@ fn guard_first_load(
 }
 
 fn show_local(window: &WebviewWindow, query: &str) {
+    // Said here as well as by the navigation hook, which not every system asks for a load the
+    // app starts itself.
+    if let Some(first) = window.try_state::<start::FirstLoad>() {
+        first.report(start::Load::Away);
+    }
     let _ = window.navigate(Url::parse(&format!("{LOCAL}{query}")).expect("a constant URL"));
 }
 
@@ -902,7 +904,7 @@ fn main() {
 
             // A chosen remote server loads at once; the other cases open the bundled page.
             let first = start::window_url(settings.server.as_ref(), settings.this_computer);
-            let (first_loaded, first_load) = tokio::sync::watch::channel(false);
+            app.manage(start::FirstLoad::new());
             let window = WebviewWindowBuilder::new(&app, "main", first.clone())
                 .title("Dozo")
                 .visible(!hidden)
@@ -912,7 +914,14 @@ fn main() {
                 .background_color(Color(20, 20, 20, 255))
                 .on_navigation({
                     let app = app.clone();
-                    move |url| follow(&app, decide(url, chosen(&app).as_ref()))
+                    move |url| {
+                        // The window is asked to go to a screen of the app: the first page's
+                        // watcher stands down, whatever the page's address says meanwhile.
+                        if is_local(url) {
+                            app.state::<start::FirstLoad>().report(start::Load::Away);
+                        }
+                        follow(&app, decide(url, chosen(&app).as_ref()))
+                    }
                 })
                 .initialization_script(SHELL_MARK)
                 // The app has one window: a link that asks for a new one goes to the browser.
@@ -964,17 +973,21 @@ fn main() {
                         // A page of the server loaded, as after signing in again: pair if
                         // allowed.
                         let server = chosen(&app).map(|server| server.origin());
-                        if load.event() == PageLoadEvent::Finished
-                            && server == Some(load.url().origin())
-                        {
-                            first_loaded.send_replace(true);
-                            device::wake(&app);
+                        if server == Some(load.url().origin()) {
+                            let first = app.state::<start::FirstLoad>();
+                            match load.event() {
+                                PageLoadEvent::Started => first.report(start::Load::Committed),
+                                PageLoadEvent::Finished => {
+                                    first.report(start::Load::Finished);
+                                    device::wake(&app);
+                                }
+                            }
                         }
                     }
                 })
                 .build()?;
             if let WebviewUrl::External(server) = first {
-                guard_first_load(&app, &window, server, first_load);
+                guard_first_load(&app, &window, server);
             }
             window.on_window_event({
                 let app = app.clone();

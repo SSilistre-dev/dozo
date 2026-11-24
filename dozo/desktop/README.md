@@ -12,10 +12,15 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 - A server that cannot be reached gives a screen with Try again and Change server, not a blank page.
 - A chosen server (not the one on this computer) is the window's first page: no bundled page
   before it (`src/start.rs`). The web view says nothing of a load that failed, so the app watches
-  it: a server that does not accept a connection within 4 seconds, or whose page has not finished
-  loading within 20, sends the window back to the bundled page, which connects and shows the
-  screen above as it always did. With no server chosen, or the one on this computer (it waits for
-  its start), the window opens on the bundled page.
+  for the page's document to start arriving: none within 20 seconds, or within 2 seconds of a
+  failed connection probe (which can itself take about 4 seconds per address), sends the window
+  back to the bundled page, which connects and shows the screen above as it always did. A page
+  that is arriving is never cancelled, however slow, and the watch ends when the window is sent to
+  a screen of the app (Change Server). With no server chosen, or the one on this computer (it
+  waits for its start), the window opens on the bundled page. Known limits: a window whose server
+  accepts connections but never answers is blank until the 20 seconds pass; and behind a proxy
+  (the probe ignores it), a server that takes longer than the probe plus those 2 seconds to send
+  its first byte is loaded twice.
 - Standard macOS menus (About, Settings…, Change Server…, Reload, Quit, and the Edit menu's
   shortcuts). The window comes back at its last size and position.
 - Settings (Dozo, Settings…, Cmd+,; Ctrl+, on Windows and Linux): one window that lists what the
