@@ -308,6 +308,54 @@ setInterval(async () => {{
         wm.kill()
 
 
+def pointerdown_gate(binary):
+    """The web app asks for notifications on the first pointer press or key press of the window
+    (apps/web/src/lib/dozo-desktop-notify.ts): WebKitGTK must count that as the person's gesture,
+    and the app's answer for the server's origin is the one that counts."""
+    report = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            path, _, query = self.path.partition("?")
+            if path == "/report":
+                report.append(query)
+            body = """<body style="margin:0;height:100vh"><script>
+addEventListener('pointerdown', async () => {
+  const result = await Notification.requestPermission();
+  fetch('/report?result=' + result);
+}, { capture: true, once: true });</script>""" if path == "/" else ""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    site_url = f"http://127.0.0.1:{server.server_address[1]}"
+    service = pathlib.Path(tempfile.mkdtemp(prefix="dozo-notify-"))
+    fake = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("fake_notifications.py")), str(service)])
+    wm = subprocess.Popen(["openbox"], stderr=subprocess.DEVNULL)
+    work, _, env = sandbox(site_url)
+    app = None
+    try:
+        until("the stand-in notification service is up", lambda: (service / "ready").exists())
+        app = subprocess.Popen([binary], env=env, stderr=(work / "app.log").open("w"))
+        until("the window is on screen", lambda: len(windows()) == 1)
+        time.sleep(1)
+        subprocess.run(["xdotool", "mousemove", "--window", windows()[0], "600", "400", "click", "1"], check=True)
+        until("a pointer press asks for notifications and is granted them", lambda: "result=granted" in report)
+    finally:
+        if app:
+            app.kill()
+        fake.kill()
+        wm.kill()
+        server.shutdown()
+
+
 def grab_shortcut():
     """Another program holding Ctrl+Shift+Space, as a desktop's own shortcut would: an X connection
     that grabs it (with and without NumLock and CapsLock) and keeps it until closed."""
@@ -535,6 +583,7 @@ setInterval(async () => {{
         app.wait()
         background_gate(binary, a)
         notify_gate(binary)
+        pointerdown_gate(binary)
         talk_gate(binary)
         print("linux gate: PASS")
     finally:

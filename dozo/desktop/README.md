@@ -226,7 +226,12 @@ Per system:
 Known limits:
 
 - Linux keeps the grant only for the life of the web view's process: after a restart the page
-  asks again with the next message sent, and nothing notifies before that.
+  asks again, on the first click or key press in the window
+  (`apps/web/src/lib/dozo-desktop-notify.ts`, desktop app's window only), and nothing notifies
+  before that. Only the web app's own preferences decide what is shown: the per-bot switch,
+  snoozing, and the open chat while the window is focused; the app adds no setting and no copy.
+  Do Not Disturb is the system's: it holds the notifications the web view hands it. No
+  message-hiding preference exists in the web app, so none is invented here.
 - Windows keeps the grant in the web view's profile. An origin granted before Change Server keeps
   it there, though it can no longer be the window's page.
 
