@@ -184,6 +184,10 @@ olc() {
   # origin allowlist and the app's Referrer-Policy, from `docker compose config` (about a second).
   if out=$(bash dozo/deploy/compose.deploy.test.sh 2>&1); then echo "[olc] compose layer ok (dozo/deploy/compose.deploy.test.sh)"
   else printf '%s\n' "$out"; fail "compose layer (dozo/deploy/compose.deploy.test.sh)"; fi
+  # The deploy lock on the host (one deploy at a time): taking, waiting, stale, release, signal,
+  # with `remote` pointed at the local shell (no ssh, about 15 seconds).
+  if out=$(bash dozo/deploy/deploy-lock.test.sh 2>&1); then echo "[olc] deploy lock ok (dozo/deploy/deploy-lock.test.sh)"
+  else printf '%s\n' "$out"; fail "deploy lock (dozo/deploy/deploy-lock.test.sh)"; fi
   # The opt-in Cloudflare Tunnel step of the installer: its refusals, .env writes, no token in any
   # output, and the overlay against upstream's compose file (offline, docker stub, about a second).
   if out=$(bash infra/compose/dozo-install-cloudflare.smoke.sh 2>&1); then echo "[olc] tunnel installer step ok (infra/compose/dozo-install-cloudflare.smoke.sh)"
