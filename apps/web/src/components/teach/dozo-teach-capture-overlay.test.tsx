@@ -44,6 +44,7 @@ async function mount() {
   overlay.getBoundingClientRect = () =>
     ({ left: 0, top: 0, width: 640, height: 400, right: 640, bottom: 400 }) as DOMRect;
   overlay.setPointerCapture = () => undefined;
+  overlay.hasPointerCapture = () => false;
   return { container, header, overlay };
 }
 
@@ -81,6 +82,9 @@ it("sends keys typed in a row together, once, and a click between them keeps its
     );
     typed("c");
     typed("Enter");
+    overlay.dispatchEvent(
+      new MouseEvent("pointerup", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }),
+    );
   });
   await vi.waitFor(() => expect(keys).toHaveBeenCalledTimes(2));
   expect(keys.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
@@ -89,7 +93,9 @@ it("sends keys typed in a row together, once, and a click between them keeps its
   ]);
   // Upstream's own listener never sent them one by one.
   expect(computerInput).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "key" }));
-  expect(computerInput).toHaveBeenCalledWith(expect.objectContaining({ kind: "pointer" }));
+  await vi.waitFor(() =>
+    expect(computerInput).toHaveBeenCalledWith(expect.objectContaining({ kind: "pointer" })),
+  );
 });
 
 it("closes the batch on a scroll or protected input, and sends what is left as the page goes", async () => {
