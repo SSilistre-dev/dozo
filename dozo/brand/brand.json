@@ -13225,6 +13225,161 @@
       "find": "            events: [...latestSeq].map(([threadId, seq]) => ({ threadId, seq })),\n          };\n        },\n        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },",
       "replace": "            events: [...latestSeq].map(([threadId, seq]) => ({ threadId, seq })),\n          };\n        },\n        {\n          ...THREAD_LOCK_TRANSACTION_OPTIONS,\n          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,\n        },",
       "reason": "leaving a Space: the departure cancels the person's runs and writes to their chats, so it locks chat rows other work holds for seconds; it gets the budget the other thread-locking transactions share instead of Prisma's 5 s default, which under load expired it and answered a member's removal with a server error"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "import { getCachedAppearancePreference, setAppearancePreference } from \"../../lib/appearance\";",
+      "replace": "import { DozoAppearanceSetting } from \"../../components/dozo-appearance-setting\";",
+      "requires": [
+        "apps/mobile/components/dozo-appearance-setting.tsx"
+      ],
+      "reason": "phone themes: the import of the rules below, in place of the two names the plain Appearance control used"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "  const appearance = getCachedAppearancePreference();\n  const streamReplies",
+      "replace": "  const streamReplies",
+      "requires": [
+        "apps/mobile/components/dozo-appearance-setting.tsx"
+      ],
+      "reason": "phone themes: the plain control's stored choice is read by the new row itself"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "        <View accessibilityLabel={t`Appearance`} style={styles.section}>\n          <SettingsLabel>{t`Appearance`}</SettingsLabel>\n          <NativeSegmentedControl\n            accessibilityLabel={t`Appearance`}\n            onChange={(value) => void setAppearancePreference(value)}\n            options={[\n              { value: \"system\", label: t`System` },\n              { value: \"light\", label: t`Light` },\n              { value: \"dark\", label: t`Dark` },\n            ]}\n            value={appearance}\n          />\n        </View>\n",
+      "replace": "        <DozoAppearanceSetting />\n",
+      "requires": [
+        "apps/mobile/components/dozo-appearance-setting.tsx",
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: General's Appearance is a native menu of System, Light, Dark and the six named themes, with Message color under it, as on the web; both are kept on this device"
+    },
+    {
+      "file": "apps/mobile/lib/appearance.ts",
+      "find": "  tokensForAppearance,\n  UI_APPEARANCE_STORAGE_KEY,\n} from \"@rakazo/ui-tokens\";",
+      "replace": "  UI_APPEARANCE_STORAGE_KEY,\n} from \"@rakazo/ui-tokens\";\nimport { subscribeDozoTheme, tokensForAppearance } from \"./dozo-theme\";\nimport { loadDozoTheme } from \"./dozo-theme-store\";",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts",
+        "apps/mobile/lib/dozo-theme-store.ts"
+      ],
+      "reason": "phone themes: the palette for a tone comes from the wrapper, which paints the named theme over it (same name, same signature); the saved theme is read by the next rule"
+    },
+    {
+      "file": "apps/mobile/lib/appearance.ts",
+      "find": "    memoryPreference = normalizeAppearancePreference(stored);\n  } catch {",
+      "replace": "    memoryPreference = normalizeAppearancePreference(stored);\n    await loadDozoTheme(memoryPreference);\n  } catch {",
+      "requires": [
+        "apps/mobile/lib/dozo-theme-store.ts"
+      ],
+      "reason": "phone themes: the saved theme and message color are read with the saved Light or Dark, the theme counting only beside its own tone; the notification after it covers both"
+    },
+    {
+      "file": "apps/mobile/lib/appearance.ts",
+      "find": "  listeners.add(listener);\n  return () => {\n    listeners.delete(listener);\n  };",
+      "replace": "  listeners.add(listener);\n  const unsubscribeTheme = subscribeDozoTheme(listener);\n  return () => {\n    listeners.delete(listener);\n    unsubscribeTheme();\n  };",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: whoever follows the appearance also hears a change of theme or message color"
+    },
+    {
+      "file": "apps/mobile/lib/native.ts",
+      "find": "import { tokensForAppearance } from \"@rakazo/ui-tokens\";",
+      "replace": "import { dozoThemeKey, tokensForAppearance } from \"./dozo-theme\";",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: the palette of a tone comes from the wrapper that paints the named theme over it; the key lets styles tell a theme change"
+    },
+    {
+      "file": "apps/mobile/lib/native.ts",
+      "find": "  return `${getCachedAppearancePreference()}:${resolveMobileAppearance()}`;",
+      "replace": "  return `${getCachedAppearancePreference()}:${resolveMobileAppearance()}:${dozoThemeKey()}`;",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: a change of theme or message color within one tone still re-renders what follows the appearance"
+    },
+    {
+      "file": "apps/mobile/lib/native.ts",
+      "find": "  return useMemo(factory, [resolved, preference]);",
+      "replace": "  return useMemo(factory, [resolved, preference, dozoThemeKey()]);",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: styles are built again when the theme changes within one tone"
+    },
+    {
+      "file": "apps/mobile/components/name-dialog-compose.tsx",
+      "find": "import { tokensForAppearance } from \"@rakazo/ui-tokens\";",
+      "replace": "import { tokensForAppearance } from \"../lib/dozo-theme\";",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: the Android native sheet paints with the same palette as the screen under it (same name, same signature)"
+    },
+    {
+      "file": "apps/mobile/components/native-switch-compose.tsx",
+      "find": "import { tokensForAppearance } from \"@rakazo/ui-tokens\";",
+      "replace": "import { tokensForAppearance } from \"../lib/dozo-theme\";",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: the Android native sheet paints with the same palette as the screen under it (same name, same signature)"
+    },
+    {
+      "file": "apps/mobile/components/message-action-sheet-compose.tsx",
+      "find": "import { tokensForAppearance } from \"@rakazo/ui-tokens\";",
+      "replace": "import { tokensForAppearance } from \"../lib/dozo-theme\";",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: the Android native sheet paints with the same palette as the screen under it (same name, same signature)"
+    },
+    {
+      "file": "apps/mobile/lib/user-bubble.ts",
+      "find": "import type { ColorTokens } from \"@rakazo/ui-tokens\";\n\nexport type",
+      "replace": "import type { ColorTokens } from \"@rakazo/ui-tokens\";\nimport { dozoUserBubble } from \"./dozo-theme\";\n\nexport type",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/user-bubble.ts",
+      "find": "  return userBubble\n    ? { ...tokens, chatUser: userBubble.background, chatUserForeground: userBubble.foreground }\n    : tokens;",
+      "replace": "  return dozoUserBubble(tokens, userBubble);",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: your own bubble wears the bot's color as before, unless Message color is Neutral, when it keeps the theme's neutral tone"
+    },
+    {
+      "file": "apps/mobile/app/_layout.tsx",
+      "find": "  }, [resolved]);",
+      "replace": "  }, [resolved, mobileTokens()]);",
+      "requires": [
+        "apps/mobile/lib/dozo-theme.ts"
+      ],
+      "reason": "phone themes: the navigation theme is built again when the named theme changes within one tone (the tokens are one object per theme)"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "import { useComputerMaintenanceRows } from \"../components/computer-maintenance-actions\";\nimport { glassHeaderOptions }",
+      "replace": "import { useComputerMaintenanceRows } from \"../components/computer-maintenance-actions\";\nimport { DozoBotBackups } from \"../components/dozo-bot-backups\";\nimport { glassHeaderOptions }",
+      "requires": [
+        "apps/mobile/components/dozo-bot-backups.tsx"
+      ],
+      "reason": "bot backups on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "            </SettingsGroup>\n            <SettingsGroup>\n              <SettingsSwitch\n                label={t`Own computer`}",
+      "replace": "            </SettingsGroup>\n            {botId ? <DozoBotBackups botId={botId} /> : null}\n            <SettingsGroup>\n              <SettingsSwitch\n                label={t`Own computer`}",
+      "requires": [
+        "apps/mobile/components/dozo-bot-backups.tsx"
+      ],
+      "reason": "bot backups on mobile: the bot's own ordered backup models sit under its model, as on the web: one Add fallback line until there is one; the list reads and saves on its own, so the screen around it is unchanged"
     }
   ],
   "assets": {
