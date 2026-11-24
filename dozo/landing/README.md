@@ -57,17 +57,25 @@ fixed `canonical` on every page covers `?theme=` and `?lang=` addresses.
 Closed pre-release state (lifted):
 
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
-  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
+  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the second hero and closing buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
+- Order: hero, the two ideas, then the run-it-yourself section (`#get`: the "Desktop app." block and
+  the self-hosting row), then "Hosted plans.", then the closing buttons. The header has no plans or
+  pricing link; the plans are reached by scrolling. The first hero and closing button, "Download",
+  links to `#get`; `landing.js` points it straight at the build for the visitor's system (the plain
+  macOS, Windows and Linux links under the hero button, found by `data-os`) and leaves it on `#get`
+  on a phone, on an unknown system and without the script.
 - The "Desktop app." block links the macOS, Windows and Linux installers by the fixed asset names of the
   latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
   `Dozo-Windows-x64-setup.exe`, `Dozo-Linux-x86_64.AppImage`), so a new release needs no edit here; renaming an asset breaks them.
+  The links work only while the latest release is a published desktop release (`dozo-desktop-release`
+  creates it as a draft; the server bundles never become latest).
   The "not signed yet" note (Windows and Linux; macOS is signed) is in the one `<p>` in that block,
   once per language: edit that line when a package is signed.
-- Plans: the "Plans." section shows the three hosted plans as cards, one under the other on a
-  phone, with self-hosting as one row under them. Each card holds both the monthly and the yearly
+- Plans: the "Hosted plans." section shows the three hosted plans as cards, one under the other on a
+  phone, equal in weight (no frame, badge or larger type for any of them). Each card holds both the monthly and the yearly
   price; the Monthly / Yearly switch (`landing.js`, yearly first) shows one and sets `period=` on the
   paid cards' sign-up links, which also carry `plan=premium` or `plan=premium_plus`. Without the
-  script both prices show. Premium has the ink frame. The prices, the yearly saving, computer
+  script both prices show. The prices, the yearly saving, computer
   hours, file storage and each computer's vCPUs and memory are read from the code by
   `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing.ts`,
   `dozo-plans.ts`, and the default `RAKAZO_COMPUTER_SIZES` in `dozo/deploy/compose.deploy.yml`), and
