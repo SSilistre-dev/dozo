@@ -1,22 +1,23 @@
 import { Trans } from "@lingui/react/macro";
 import type { DozoLearningMode } from "@rakazo/contracts";
 import { DOZO_LEARNING_CHANGED_CODE } from "@rakazo/contracts";
-import { Button, SectionHeading } from "@rakazo/ui-web";
+import { Button, NativeSelect, NativeSelectOption, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { errorText, toastError } from "../lib/dozo-error-text";
 import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query";
 import { errorCode } from "../lib/user-error";
-import { SettingsCard, SwitchRow } from "./shell/bot-settings-sections";
+import { SettingsCard } from "./shell/bot-settings-sections";
 
 function changedSince(error: Error | null): boolean {
   return errorCode(error) === DOZO_LEARNING_CHANGED_CODE;
 }
 
 /**
- * Under the bot's memory, for its owner only (`ownerId`, unknown on an older server): whether it
- * learns from their chat, a switch offered only while nobody else is in the Space, and the lines
- * it learned, each to undo. Nothing when the setting cannot be read (a server without it).
+ * Under the bot's memory, for its owner only (`ownerId`, unknown on an older server): how it learns
+ * from their chat (off, suggesting skills to save, or also writing notes itself), offered only
+ * while nobody else is in the Space, and the lines it learned, each to undo. Nothing when the
+ * setting cannot be read (a server without it).
  */
 export function DozoLearningSection({
   botId,
@@ -50,7 +51,7 @@ export function DozoLearningSection({
     },
   });
   if (!owner || !read.data) return null;
-  const on = mode.pending ? mode.input === "auto" : read.data.mode === "auto";
+  const current = mode.pending && mode.input ? mode.input : read.data.mode;
   const changes = read.data.changes.filter((change) => !change.undoneAt);
   const conflictId = !undo.pending && changedSince(undo.error) ? undo.input : undefined;
   const { available } = read.data;
@@ -59,13 +60,30 @@ export function DozoLearningSection({
     <section data-testid="bot-learning">
       {available ? (
         <SettingsCard>
-          <SwitchRow
-            id={`${ids}-learn`}
-            label={<Trans>Learn from chats</Trans>}
-            checked={on}
-            disabled={mode.pending}
-            onChange={(checked) => mode.run(checked ? "auto" : "off")}
-          />
+          <label
+            htmlFor={`${ids}-learn`}
+            className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
+          >
+            <Trans>Learn from chats</Trans>
+            <NativeSelect
+              id={`${ids}-learn`}
+              size="sm"
+              className="w-auto"
+              value={current}
+              disabled={mode.pending}
+              onChange={(event) => mode.run(event.target.value as DozoLearningMode)}
+            >
+              <NativeSelectOption value="off">
+                <Trans>Off</Trans>
+              </NativeSelectOption>
+              <NativeSelectOption value="ask">
+                <Trans id="Ask first">Ask first</Trans>
+              </NativeSelectOption>
+              <NativeSelectOption value="auto">
+                <Trans>Auto</Trans>
+              </NativeSelectOption>
+            </NativeSelect>
+          </label>
         </SettingsCard>
       ) : null}
       {changes.length ? (

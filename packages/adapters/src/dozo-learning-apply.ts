@@ -7,13 +7,21 @@ import {
   DOZO_LEARNING_CHANGED_CODE,
   DozoLearningNoteKind,
   DozoLearningNoteText,
+  dozoLearningLine,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { ClientError, retry } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
-import { LEARNING_MAX_CHANGES } from "./dozo-learning-review.prompt.js";
+import {
+  LEARNING_MAX_CHANGES,
+  LEARNING_SKILL_LINE_MAX_CHARS,
+  LEARNING_SKILL_MAX_INPUTS,
+  LEARNING_SKILL_MAX_STEPS,
+  LEARNING_SKILL_MIN_STEPS,
+  LEARNING_SKILL_NAME_MAX_CHARS,
+} from "./dozo-learning-review.prompt.js";
 import type { LearningChangeInput } from "./dozo-learning-store.js";
 import {
   findLearningChange,
@@ -52,6 +60,20 @@ const MEMORY_SAVE_ATTEMPTS = 3;
  */
 export const LEARNING_WRITE_SETTLE_MS = 5 * 60_000;
 
+const skillLine = dozoLearningLine(LEARNING_SKILL_LINE_MAX_CHARS);
+
+/** A suggested skill as the answer gives it: one line per field, a bounded list of steps. */
+const SkillSuggestion = z
+  .object({
+    name: dozoLearningLine(LEARNING_SKILL_NAME_MAX_CHARS),
+    whenToUse: skillLine,
+    inputs: z.array(dozoLearningLine(LEARNING_SKILL_NAME_MAX_CHARS)).max(LEARNING_SKILL_MAX_INPUTS),
+    steps: z.array(skillLine).min(LEARNING_SKILL_MIN_STEPS).max(LEARNING_SKILL_MAX_STEPS),
+    whatToReturn: skillLine,
+  })
+  .strict();
+export type LearningSkillSuggestion = z.infer<typeof SkillSuggestion>;
+
 /** The answer's contract; anything else applies nothing. */
 const Answer = z
   .object({
@@ -77,6 +99,8 @@ const Answer = z
         ]),
       )
       .max(LEARNING_MAX_CHANGES),
+    // An answer of the first step has none.
+    skill: SkillSuggestion.nullable().optional(),
   })
   .strict();
 export type LearningOp = z.infer<typeof Answer>["changes"][number];
@@ -93,12 +117,24 @@ function jsonObjectIn(text: string): unknown {
   }
 }
 
-/** The changes a reply asks for, or null when it breaks the contract or names an unknown id. */
-export function parseLearningAnswer(text: string, ids: ReadonlySet<string>): LearningOp[] | null {
+/**
+ * The changes and the skill a reply asks for, or null when it breaks the contract or names an
+ * unknown id: then nothing of it is used, the skill neither.
+ */
+export function parseLearningReply(
+  text: string,
+  ids: ReadonlySet<string>,
+): { ops: LearningOp[]; skill: LearningSkillSuggestion | null } | null {
   const parsed = Answer.safeParse(jsonObjectIn(text));
   if (!parsed.success) return null;
-  const { changes } = parsed.data;
-  return changes.every((change) => change.op === "add" || ids.has(change.id)) ? changes : null;
+  const { changes, skill } = parsed.data;
+  if (!changes.every((change) => change.op === "add" || ids.has(change.id))) return null;
+  return { ops: changes, skill: skill ?? null };
+}
+
+/** The changes a reply asks for, or null when it breaks the contract or names an unknown id. */
+export function parseLearningAnswer(text: string, ids: ReadonlySet<string>): LearningOp[] | null {
+  return parseLearningReply(text, ids)?.ops ?? null;
 }
 
 /**

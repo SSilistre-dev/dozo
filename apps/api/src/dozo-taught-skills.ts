@@ -5,6 +5,7 @@ import {
   parsePlaybook,
   parseRecording,
   recordTeachingKeys,
+  rejectSkillSuggestion,
   sandboxAllowanceUsedUp,
 } from "@rakazo/adapters";
 import type { Actor, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
@@ -369,6 +370,36 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         });
       }
       return saved;
+    },
+
+    /**
+     * Deletes the skill as upstream does. A skill a learning review suggested and the owner
+     * deletes (its card's Delete, or the skills list) is not suggested again: a draft or saved
+     * skill is deleted and turned down in one transaction, so neither happens without the other,
+     * and the first of two deletes records it. A live recording, never a suggestion, is ended
+     * by upstream alone.
+     */
+    async remove(actor: Actor, skillId: string) {
+      const skill = await deps.prisma.taughtSkill.findFirst({
+        where: { id: skillId, spaceId: actor.spaceId },
+        select: { id: true, botId: true, spaceId: true, name: true, goal: true, status: true },
+      });
+      if (!skill) throw new IsolationError();
+      if (skill.status !== "draft" && skill.status !== "saved") {
+        return upstream.remove(actor, skillId);
+      }
+      const { goal, status: _status, ...suggested } = skill;
+      return deps.prisma.$transaction(async (tx) => {
+        await rejectSkillSuggestion(tx, {
+          ...suggested,
+          name: suggested.name || goal.slice(0, 80),
+        });
+        // Upstream's delete of a draft or saved skill reads and deletes its row, nothing else.
+        return createUpstreamTaughtSkillsService({ ...deps, prisma: tx as PrismaClient }).remove(
+          actor,
+          skillId,
+        );
+      });
     },
 
     /**

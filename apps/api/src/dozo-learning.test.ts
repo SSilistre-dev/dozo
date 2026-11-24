@@ -102,7 +102,7 @@ describe("learning routes", () => {
     state.mode = "auto";
     expect((await client("creator").get({ botId: "bot-1" })).mode).toBe("auto");
     state.mode = "ask";
-    expect((await client("creator").get({ botId: "bot-1" })).mode).toBe("off");
+    expect((await client("creator").get({ botId: "bot-1" })).mode).toBe("ask");
     await expect(client("creator").get({ botId: "elsewhere" })).rejects.toThrow();
   });
 
@@ -138,11 +138,19 @@ describe("learning routes", () => {
     expect(state.set).toEqual([{ botId: "bot-1", mode: "off" }]);
   });
 
-  it("refuse a mode this phase does not offer", async () => {
+  it("offer Ask to the owner as Auto is, only in a Space of their own, and refuse any other mode", async () => {
+    expect(await client("creator").setMode({ botId: "bot-1", mode: "ask" })).toEqual({
+      mode: "ask",
+    });
+    await expect(client("member").setMode({ botId: "bot-1", mode: "ask" })).rejects.toThrow();
+    state.alone = false;
+    await expect(client("creator").setMode({ botId: "bot-1", mode: "ask" })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
     await expect(
-      client("creator").setMode({ botId: "bot-1", mode: "ask" as never }),
+      client("creator").setMode({ botId: "bot-1", mode: "always" as never }),
     ).rejects.toThrow();
-    expect(state.set).toEqual([]);
+    expect(state.set).toEqual([{ botId: "bot-1", mode: "ask" }]);
   });
 
   it("let only the bot's owner undo a change", async () => {

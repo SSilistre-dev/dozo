@@ -9,7 +9,7 @@ import { RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { MEMORY_INDEX_PATH } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   isPartialReplyClientNonce,
   LeaseHeldError,
@@ -25,12 +25,13 @@ import type { DozoLearningMemory, LearningEvents } from "./dozo-learning-apply.j
 import {
   learningChanged,
   linesOf,
-  parseLearningAnswer,
+  parseLearningReply,
   saveLearnedNotes,
   settleLeftLearningWrites,
 } from "./dozo-learning-apply.js";
 import type { LearningTranscriptLine } from "./dozo-learning-review.prompt.js";
 import { learningReviewInstructions, learningReviewPrompt } from "./dozo-learning-review.prompt.js";
+import { knownSkillNames, suggestLearnedSkill } from "./dozo-learning-skill.js";
 import type { LearningTurn } from "./dozo-learning-store.js";
 import {
   consumeLearningTurns,
@@ -39,6 +40,7 @@ import {
   learningMode,
   pendingLearningTurns,
   rejectedLearningLines,
+  rejectedLearningSkills,
   takeLearningReview,
 } from "./dozo-learning-store.js";
 import { onlyOwnerReads } from "./dozo-phone.js";
@@ -89,8 +91,11 @@ export type LearningReviewDeps = RunRedactionDeps & {
   /** The bot's own model, which a review falls back to as compaction does. */
   resolveModel: (scope: { userId: string; spaceId: string; botId?: string }) => Promise<Model>;
   resolveConnectedModel: CompactionModelSources["resolveConnectedModel"];
-  /** Tells the owner's apps that the notes changed (learningChanged). */
-  events?: LearningEvents;
+  /**
+   * Tells the owner's apps that the notes changed (learningChanged), and publishes a suggested
+   * skill's card in the bot's chat.
+   */
+  events: LearningEvents & Pick<ThreadEvents, "notify">;
 };
 
 /**
@@ -318,9 +323,11 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
     await deps.memory.read({ scope: "bot", botId: bot.id, path: MEMORY_INDEX_PATH }, context)
   ).documents;
   const content = notes?.content ?? "";
-  const [own, rejected] = await Promise.all([
+  const [own, rejected, skills, rejectedSkills] = await Promise.all([
     ownLines(deps.prisma, bot.id, content),
     rejectedLearningLines(deps.prisma, bot.id),
+    knownSkillNames(deps.prisma, bot),
+    rejectedLearningSkills(deps.prisma, bot.id),
   ]);
   const yours = new Set(own.values());
   const prompt = learningReviewPrompt({
@@ -328,35 +335,42 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
     yours: [...own].map(([id, text]) => ({ id, text })),
     owners: linesOf(content).filter((line) => line.trim() && !yours.has(line)),
     rejected: rejected.slice(0, REJECTED_SHOWN),
+    skills,
+    rejectedSkills: rejectedSkills.slice(0, REJECTED_SHOWN),
   });
   // A failed call keeps the turns: the job tries again.
   const answer = await askReviewModel(deps, bot, `learning:${bot.id}:${first.id}`, prompt, signal);
   // Nothing asked (no model that can answer, no review left today): the turns wait.
   if (answer === null) return;
-  // Turned off while the model answered: nothing is learned from these turns.
-  if ((await learningMode(deps.prisma, bot.id)) !== "auto") {
-    return consumeLearningTurns(deps.prisma, bot.id, turns);
-  }
+  // Read again: the owner may have changed it while the model answered.
+  const mode = await learningMode(deps.prisma, bot.id);
+  // Turned off meanwhile: nothing is learned from these turns.
+  if (mode === "off") return consumeLearningTurns(deps.prisma, bot.id, turns);
   // Another member or a guest joined while it answered: as above, the turns are dropped.
   if (!(await learningAvailable(deps.prisma, bot))) return dropLearningTurns(deps.prisma, bot.id);
-  const ops = parseLearningAnswer(answer, new Set(own.keys()));
-  if (ops?.length) {
+  const reply = parseLearningReply(answer, new Set(own.keys()));
+  // Only Auto writes notes; in Ask they are not even offered.
+  if (mode === "auto" && reply?.ops.length) {
     const applied = await saveLearnedNotes(deps, bot, context, {
-      ops,
+      ops: reply.ops,
       labels: own,
       rejected: new Set(rejected),
       source: { threadId: newest.threadId, messageId: newest.messageId },
     });
     if (applied.length) await learningChanged(deps.events, bot.userId);
   }
+  // A skill joins what the bot follows: in every mode it waits for the owner's Save.
+  if (reply?.skill) {
+    await suggestLearnedSkill(deps, bot, reply.skill);
+  }
   // An answer that broke the contract is not asked again for the same turns.
   await consumeLearningTurns(deps.prisma, bot.id, turns);
 }
 
 /**
- * Reviews the bot's waiting turns once, when its owner has learning on. One review per bot runs
- * at a time across processes: while another holds the bot, this one leaves the turns to it and
- * answers "held". Runs in the bot owner's tenant context.
+ * Reviews the bot's waiting turns once, when its owner has learning on (Ask or Auto). One review
+ * per bot runs at a time across processes: while another holds the bot, this one leaves the turns
+ * to it and answers "held". Runs in the bot owner's tenant context.
  */
 export async function reviewLearning(
   deps: LearningReviewDeps,
@@ -366,7 +380,7 @@ export async function reviewLearning(
     where: { id: botId },
     select: { id: true, spaceId: true, userId: true },
   });
-  if (!bot || (await learningMode(deps.prisma, botId)) !== "auto") return;
+  if (!bot || (await learningMode(deps.prisma, botId)) === "off") return;
   try {
     await withLease(deps.prisma, `dozo-learning:${botId}`, { ttlMs: LEASE_TTL_MS }, (lease) =>
       review(deps, bot, lease.signal),
@@ -386,7 +400,7 @@ export function dozoLearningReviewJob(
   deps: RunRedactionDeps & {
     runtime: AgentRuntime;
     jobs: JobPublisher;
-    events?: LearningEvents;
+    events: LearningReviewDeps["events"];
     /** The bot notes' store; a worker built without one cannot review (the job fails). */
     memory?: DozoLearningMemory;
     executor: Pick<LearningReviewDeps, "resolveModel" | "resolveConnectedModel">;

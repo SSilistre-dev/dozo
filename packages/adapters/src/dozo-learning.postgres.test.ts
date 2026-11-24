@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { learningWriteLanded } from "./dozo-learning-apply.js";
 import type { LearningReviewDeps } from "./dozo-learning-review.js";
 import { learningAvailable, reviewLearning } from "./dozo-learning-review.js";
+import { suggestLearnedSkill } from "./dozo-learning-skill.js";
 import type { LearningChangeInput } from "./dozo-learning-store.js";
 import {
   consumeLearningTurns,
@@ -22,6 +23,8 @@ import {
   pendingLearningWrites,
   recordLearningTurn,
   rejectedLearningLines,
+  rejectedLearningSkills,
+  rejectSkillSuggestion,
   saveLearningChanges,
   setLearningMode,
   settleLearningWrite,
@@ -313,6 +316,7 @@ describePostgres("bot learning (PostgreSQL)", () => {
       secretStore: { load: vi.fn() } as never,
       resolveModel: async () => ({ provider: "test", id: "own" }) as never,
       resolveConnectedModel: async () => ({ provider: "test", id: "role" }) as never,
+      events: { publishRosterChange: vi.fn(async () => undefined), notify: vi.fn() },
     };
     const first = as(owner, () => reviewLearning(deps, chat.id));
     await asked.promise;
@@ -328,6 +332,108 @@ describePostgres("bot learning (PostgreSQL)", () => {
       expect.objectContaining({ kind: "add", after: "Call the owner Ada." }),
     ]);
   });
+  it("suggests a skill as a draft card in Ask, one at a time, and never again once dismissed", async () => {
+    const owner = await member();
+    const chat = await bot(owner);
+    await as(owner, () => setLearningMode(prisma, chat, "ask"));
+    const skill = (name: string) =>
+      JSON.stringify({
+        changes: [{ op: "add", kind: "preference", text: "The owner likes short reports." }],
+        skill: {
+          name,
+          whenToUse: "When the owner asks for the weekly sales report.",
+          inputs: ["The week"],
+          steps: ["Open the sales sheet for the week.", "Sum each region in three lines."],
+          whatToReturn: "The three lines.",
+        },
+      });
+    const answers: string[] = [];
+    const requests: AgentRunRequest[] = [];
+    const notify = vi.fn();
+    const commit = vi.fn();
+    const deps: LearningReviewDeps = {
+      prisma,
+      runtime: {
+        describe: () => ({ capabilities: { compaction: true } }) as never,
+        abort: async () => undefined,
+        async *run(request: AgentRunRequest): AsyncIterable<AgentRuntimeEvent> {
+          requests.push(request);
+          yield { type: "done", text: answers.shift()! };
+        },
+      },
+      memory: { read: vi.fn(async () => ({ documents: [] })), commit },
+      secretStore: { load: vi.fn() } as never,
+      resolveModel: async () => ({ provider: "test", id: "own" }) as never,
+      resolveConnectedModel: async () => ({ provider: "test", id: "role" }) as never,
+      events: { publishRosterChange: vi.fn(async () => undefined), notify },
+    };
+    const review = async (answer: string) => {
+      for (const said of ["Weekly report please", "Thanks", "Same as last week"])
+        await record(owner, chat, await turn(owner, chat, said));
+      answers.push(answer);
+      await as(owner, () => reviewLearning(deps, chat.id));
+    };
+    const drafts = () =>
+      system.taughtSkill.findMany({ where: { botId: chat.id }, orderBy: { createdAt: "asc" } });
+    const cards = async () =>
+      (await system.message.findMany({ where: { threadId: chat.threadId, role: "bot" } })).flatMap(
+        (message) =>
+          (message.blocks as Array<{ kind: string; skillId?: string }>).filter(
+            (block) => block.kind === "skill_draft",
+          ),
+      );
+
+    await review(skill("Weekly report"));
+    const [draft] = await drafts();
+    expect(draft).toMatchObject({ name: "Weekly report", status: "draft", userId: owner.userId });
+    expect(await cards()).toEqual([
+      expect.objectContaining({ kind: "skill_draft", skillId: draft!.id, status: "draft" }),
+    ]);
+    expect(notify).toHaveBeenCalledWith(chat.threadId, expect.any(Number));
+    // Ask writes no note.
+    expect(commit).not.toHaveBeenCalled();
+
+    // While it is unanswered no other is suggested, and its card is not posted twice.
+    await review(skill("Inbox sweep"));
+    expect((await drafts()).map((row) => row.name)).toEqual(["Weekly report"]);
+    expect(await cards()).toHaveLength(1);
+
+    // Dismissed: two deletes at once turn it down once, as a skill and not as a note.
+    await system.taughtSkill.delete({ where: { id: draft!.id } });
+    const named = { ...draft!, name: draft!.name };
+    expect(
+      (
+        await Promise.all([
+          as(owner, () => rejectSkillSuggestion(prisma, named)),
+          as(owner, () => rejectSkillSuggestion(prisma, named)),
+        ])
+      ).sort(),
+    ).toEqual([false, true]);
+    expect(await as(owner, () => rejectedLearningSkills(prisma, chat.id))).toEqual([
+      "Weekly report",
+    ]);
+    expect(await as(owner, () => rejectedLearningLines(prisma, chat.id))).toEqual([]);
+
+    // Suggested again in other case: told it was dismissed, and nothing is made.
+    await review(skill("weekly REPORT"));
+    expect(requests.at(-1)!.prompt).toContain(
+      "<rejected_skills>\nWeekly report\n</rejected_skills>",
+    );
+    expect(await drafts()).toEqual([]);
+    // Another skill is suggested as before.
+    await review(skill("Inbox sweep"));
+    expect((await drafts()).map((row) => [row.name, row.status])).toEqual([
+      ["Inbox sweep", "draft"],
+    ]);
+
+    // Once learning is off, nothing is suggested, even by a review already under way.
+    await system.taughtSkill.deleteMany({ where: { botId: chat.id } });
+    await as(owner, () => setLearningMode(prisma, chat, "off"));
+    const late = JSON.parse(skill("Daily plan")).skill;
+    expect(await as(owner, () => suggestLearnedSkill(deps, chat, late))).toBe(false);
+    expect(await drafts()).toEqual([]);
+  });
+
   it("gives a bot six reviews in any day, in every zone", async () => {
     const owner = await member();
     const chat = await bot(owner);
@@ -459,7 +565,16 @@ describePostgres("bot learning (PostgreSQL)", () => {
     // Nothing else of the chat stays: no thread, message or other line beside the turned-down text.
     const kept = await system.$queryRaw<Array<Record<string, unknown>>>`
       SELECT * FROM dozo_learning_rejections WHERE "botId" = ${chat.id}`;
-    expect(Object.keys(kept[0]!).sort()).toEqual(["botId", "createdAt", "id", "spaceId", "text"]);
+    expect(Object.keys(kept[0]!).sort()).toEqual([
+      "botId",
+      "createdAt",
+      "id",
+      "kind",
+      "spaceId",
+      "text",
+    ]);
+    // What kind of line it was, a note here: no link to the chat either.
+    expect(kept.map((row) => row.kind)).toEqual(["note", "note"]);
     // A second member's Space never sees them, and they go with the bot.
     const stranger = await member();
     expect(await as(stranger, () => rejectedLearningLines(prisma, chat.id))).toEqual([]);
@@ -575,8 +690,9 @@ describePostgres("bot learning (PostgreSQL)", () => {
     expect(await as(owner, () => learningMode(prisma, chat.id))).toBe("off");
     expect(await as(owner, () => pendingLearningTurns(prisma, chat.id, 10))).toEqual([]);
     // Another Space's bot keeps learning.
-    expect(await system.$queryRaw`SELECT mode FROM dozo_bot_learning WHERE "botId" = ${elsewhere.id}`)
-      .toEqual([{ mode: "auto" }]);
+    expect(
+      await system.$queryRaw`SELECT mode FROM dozo_bot_learning WHERE "botId" = ${elsewhere.id}`,
+    ).toEqual([{ mode: "auto" }]);
     // The owner turns it on again only once they are alone again.
     await system.spaceMember.delete({ where: { id: joined } });
     expect(await as(owner, () => learningMode(prisma, chat.id))).toBe("off");
