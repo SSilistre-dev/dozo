@@ -61,6 +61,7 @@ packages/adapters/src/dozo-bot-model-backups.ts	module	let missingTableReported 
 packages/adapters/src/dozo-call-preflight.ts	module	let registryAddresses: Map<string, string | undefined> | undefined;	global-safe	provider id to the model registry's public base address, built once from the built-in catalog; same for everyone
 packages/adapters/src/dozo-command-gate.ts	module	const commandBlocks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
+packages/adapters/src/dozo-command-gate.ts	module	const hostedMatches = new WeakMap<	request	keyed by a tool-call object's identity; holds that call's own rule match, read for the run's member
 packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const large: string[] = [];	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const visited = new Set<string>();	local	per-call local, dies with the call

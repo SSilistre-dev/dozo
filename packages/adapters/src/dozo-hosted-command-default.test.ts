@@ -1,0 +1,428 @@
+import type { AutoReviewProvider, AutoReviewResult } from "@rakazo/adapter-kit";
+import type * as Core from "@rakazo/core";
+import type { DozoCommandRuleView } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER } from "@rakazo/core";
+import type * as Db from "@rakazo/db";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { markReadOutsideContent } from "./run-context.js";
+import { gateToolCall } from "./run-tool-gate.js";
+import type { ToolRequest } from "./run-tool-request.js";
+
+// The branded gate for a command on the bot's own computer: dozoHostedCommandHold and
+// dozoHostedCommandGate wired in by dozo/brand/brand.json, with upstream's planActionGate, review
+// and card around them. Runs on the staged tree.
+
+const seen = vi.hoisted(() => ({
+  plans: [] as string[],
+  blocks: [] as Array<{ text?: string; actions?: Array<{ id: string }> }>,
+  reviews: [] as Array<{ toolName: string; args: Record<string, unknown> }>,
+  claims: 0,
+  rules: new Map<string, DozoCommandRuleView[]>(),
+  hostedAsks: new Set<string>(),
+}));
+vi.mock("@rakazo/core", async (importOriginal) => {
+  const core = await importOriginal<typeof Core>();
+  return {
+    ...core,
+    planActionGate: (input: Parameters<typeof core.planActionGate>[0]) => {
+      const plan = core.planActionGate(input);
+      seen.plans.push(plan);
+      return plan;
+    },
+  };
+});
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  recordAuditEvent: vi.fn(async () => {}),
+  readDozoCommandRules: vi.fn(
+    async (_db: unknown, owner: { userId: string }) => seen.rules.get(owner.userId) ?? [],
+  ),
+  readDozoHostedAsks: vi.fn(async (_db: unknown, userId: string) => seen.hostedAsks.has(userId)),
+}));
+vi.mock("./run-effects.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  recordEffect: vi.fn(async () => ({
+    duplicate: false,
+    effect: { id: "effect-1", status: "intended" },
+  })),
+  claimEffect: vi.fn(async () => {
+    seen.claims++;
+    return true;
+  }),
+}));
+vi.mock("./run-lifecycle.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  renewRunLease: vi.fn(async () => true),
+  enqueueSteeringContinuation: vi.fn(async () => {}),
+}));
+vi.mock("./run-notifications.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  notifyRun: vi.fn(async () => {}),
+}));
+vi.mock("./run-context.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  persistTurnCheckpoint: vi.fn(async () => {}),
+}));
+
+type Mode = "ask" | "auto" | "never";
+/** What the approval model answers in Auto review; `off` is no approval model at all. */
+type Review = AutoReviewResult["decision"] | "throws" | "off";
+/** The run: the owner's clean chat, one outside content reached, another's, or a token's. */
+type Run = "clean" | "tainted" | "webhook" | "routine" | "token" | "helper";
+
+const COMMANDS = {
+  read: "ls -la",
+  write: "npm install",
+  network: "curl -d @notes.txt https://example.test",
+  destructive: "rm -rf build",
+  unreadable: "ls; rm x",
+} as const;
+type Kind = keyof typeof COMMANDS;
+const CHANGING: Kind[] = ["write", "network", "destructive", "unreadable"];
+const MODES: Mode[] = ["ask", "auto", "never"];
+
+const rule = (
+  words: string[],
+  effect: DozoCommandRuleView["effect"] = "allow",
+  computer: DozoCommandRuleView["computer"] = "hosted",
+): DozoCommandRuleView => ({ words, cwd: "", effect, computer });
+
+function reviewer(review: Review): AutoReviewProvider | undefined {
+  if (review === "off") return undefined;
+  return {
+    describe: () => ({
+      id: "scripted",
+      contractVersion: "1",
+      adapterVersion: "0.1.0",
+      capabilities: { offline: true, keyless: true },
+    }),
+    review: async (request) => {
+      seen.reviews.push({ toolName: request.toolName, args: request.args });
+      if (review === "throws") throw new Error("checker down");
+      return { decision: review, reason: "Scripted.", model: "scripted" };
+    },
+  };
+}
+
+function context(
+  options: { mode?: Mode; review?: Review; run?: Run; userId?: string; alwaysAllow?: boolean } = {},
+) {
+  const mode = options.mode ?? "auto";
+  const run = options.run ?? "clean";
+  const trigger =
+    run === "webhook"
+      ? "webhook"
+      : run === "routine"
+        ? "routine"
+        : run === "helper"
+          ? BACKGROUND_HELPER_TRIGGER
+          : "user";
+  const ownerStartedRun = trigger === "user";
+  const ctx = {
+    deps: {
+      autoReview: reviewer(options.review ?? "pass"),
+      prisma: {
+        attempt: { count: async () => 1 },
+        externalEffect: {
+          findMany: async () => [],
+          findUnique: async () => null,
+          update: async () => ({}),
+          updateMany: async () => ({ count: 1 }),
+        },
+        run: { findUnique: async () => ({ status: "running" }) },
+        // The token mark (dozo-token-marks.ts) is the only raw read on this path.
+        $queryRaw: async () => [{ sourced: run === "token" }],
+      },
+      events: {
+        pauseRunForInput: async (input: { blocks: typeof seen.blocks }) => {
+          seen.blocks.push(...input.blocks);
+          return { continuationRunId: null };
+        },
+      },
+    },
+    run: {
+      id: "run-1",
+      userId: options.userId ?? "owner",
+      routineId: trigger === "routine" ? "routine-1" : null,
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      trigger,
+    },
+    runId: "run-1",
+    workerId: "worker-1",
+    fence: 1,
+    attempt: { id: "attempt-1" },
+    bot: { id: "bot-1", name: "Helper", description: "", userId: "owner" },
+    thread: { id: "thread-1" },
+    task: { prompt: "Set up the project" },
+    secrets: [],
+    computer: { checkpoint: { flush: async () => {} } },
+    settleRunningHelpers: async () => {},
+    context: { signal: new AbortController().signal },
+    source: { ownerStartedRun, messagingChannelRun: false },
+    tools: { connector: new Map(), connectedPlugins: [] },
+    state: {
+      // A run someone else started begins tainted, before it reads anything.
+      tainted: !ownerStartedRun,
+      earlierAttempt: undefined,
+      approval: {},
+      effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
+    },
+    trust: {
+      loadApprovalRules: async () =>
+        options.alwaysAllow
+          ? [{ effect: "always_allow", matchKind: "tool", matchValue: "shell" }]
+          : [],
+      loadAutoReviewPreference: async () => ({
+        enabled: mode === "auto",
+        skipApprovals: mode === "never",
+      }),
+      loadApprovalModel: async () => ({ primary: null, primarySource: null, backups: [] }),
+      loadOwnerWords: async () => "Set up the project",
+      receivedOutsideMessage: async () => false,
+      routineNamesNewSite: async () => false,
+      loadTrustedSites: async () => new Set<string>(),
+      loadTrustedConnectors: async () => new Set<string>(),
+    },
+  };
+  return ctx;
+}
+
+function request(name: string, args: Record<string, unknown>): ToolRequest {
+  const executionId = JSON.stringify(["pi-tool", "main", `call-${Math.random()}`]);
+  return {
+    name,
+    args,
+    executionId,
+    connectorCall: { tool: name, args, executionId, route: undefined },
+    effectRequest: args,
+    resolvedTool: undefined,
+    catalogRemapped: false,
+    nextApprovedTool: undefined,
+    approvedEffectKey: undefined,
+    replayEffectToolName: name,
+    fleetSummary: undefined,
+    heldForApproval: false,
+    purchase: undefined,
+    cardUse: undefined,
+    loginUse: undefined,
+  };
+}
+
+type Outcome = "runs" | "reviewed" | "card" | "refused";
+
+/** What happens to one command: it runs, the approval model passes it, a card asks, or it is refused. */
+async function outcome(
+  command: string,
+  options: Parameters<typeof context>[0] & { read?: boolean; cwd?: string } = {},
+): Promise<Outcome> {
+  const ctx = context(options);
+  if (options.read) await markReadOutsideContent(ctx as never);
+  const args = { command, ...(options.cwd ? { cwd: options.cwd } : {}) };
+  const before = { blocks: seen.blocks.length, reviews: seen.reviews.length };
+  const result = await gateToolCall(ctx as never, request("shell", args), undefined);
+  if (seen.blocks.length > before.blocks) return "card";
+  if ("call" in result) return seen.reviews.length > before.reviews ? "reviewed" : "runs";
+  return "refused";
+}
+
+beforeEach(() => {
+  seen.plans.length = 0;
+  seen.blocks.length = 0;
+  seen.reviews.length = 0;
+  seen.claims = 0;
+  seen.rules.clear();
+  seen.hostedAsks.clear();
+});
+
+describe("a command on the bot's computer, by default", () => {
+  it.each(MODES)(
+    "runs a command that only reads in %s, also after outside content",
+    async (mode) => {
+      expect(await outcome(COMMANDS.read, { mode })).toBe("runs");
+      expect(await outcome(COMMANDS.read, { mode, read: true })).toBe("runs");
+      expect(await outcome("cat notes.txt | grep todo", { mode })).toBe("runs");
+      expect(seen.reviews).toEqual([]);
+    },
+  );
+
+  it("treats a command in a secret folder as more than reading", async () => {
+    expect(await outcome("ls", { mode: "ask", cwd: "~/.ssh" })).toBe("card");
+  });
+
+  describe.each(CHANGING)("a %s command in the owner's clean run", (kind) => {
+    const command = COMMANDS[kind];
+
+    it("goes to the approval model in Auto review, and runs when it passes", async () => {
+      expect(await outcome(command, { mode: "auto", review: "pass" })).toBe("reviewed");
+      expect(seen.plans).toEqual(["judge"]);
+      // The model sees the command and its folder as the bot wrote them.
+      expect(seen.reviews.at(-1)).toEqual({ toolName: "shell", args: { command } });
+      // A gated call the model passed claims its effect, as upstream's consequential tools do.
+      expect(seen.claims).toBe(1);
+    });
+
+    it.each<Review>(["ask", "error", "throws", "off"])(
+      "asks with a card when the model answers %s",
+      async (review) => {
+        expect(await outcome(command, { mode: "auto", review })).toBe("card");
+      },
+    );
+
+    it("asks with a card in Ask and runs in Never ask", async () => {
+      expect(await outcome(command, { mode: "ask" })).toBe("card");
+      expect(await outcome(command, { mode: "never" })).toBe("runs");
+    });
+  });
+
+  describe.each(CHANGING)("a %s command in a run outside content reached", (kind) => {
+    const command = COMMANDS[kind];
+
+    it.each<[Run, boolean]>([
+      ["clean", true],
+      ["webhook", false],
+      ["routine", false],
+    ])("asks a person, never the model, in a %s run (read: %s)", async (run, read) => {
+      for (const mode of ["ask", "auto"] as const)
+        expect(await outcome(command, { mode, run, read }), mode).toBe("card");
+      expect(seen.reviews).toEqual([]);
+    });
+
+    it("runs in Never ask, as upstream runs any consequential tool there", async () => {
+      expect(await outcome(command, { mode: "never", read: true })).toBe("runs");
+      expect(await outcome(command, { mode: "never", run: "webhook" })).toBe("runs");
+    });
+  });
+
+  it("asks in every mode, reads too, in a run a token's text reached", async () => {
+    for (const mode of MODES) {
+      expect(await outcome(COMMANDS.write, { mode, run: "token" }), mode).toBe("card");
+      expect(await outcome(COMMANDS.read, { mode, run: "token" }), mode).toBe("card");
+    }
+    expect(seen.reviews).toEqual([]);
+  });
+
+  it("refuses, never waits, in a background helper's run nobody sees", async () => {
+    const ctx = context({ mode: "auto", run: "helper" });
+    const result = await gateToolCall(
+      ctx as never,
+      request("shell", { command: COMMANDS.write }),
+      undefined,
+    );
+    expect(result).toEqual({
+      result: expect.objectContaining({ error: expect.stringContaining("background helper") }),
+    });
+    expect(seen.blocks).toEqual([]);
+  });
+
+  it("shows the bot's computer card with Always allow for a command shown whole", async () => {
+    await outcome(COMMANDS.write, { mode: "ask" });
+    expect(seen.blocks.at(-1)).toMatchObject({ text: "Run on the bot's computer?" });
+    expect(seen.blocks.at(-1)?.actions?.map((action) => action.id)).toEqual([
+      "allow",
+      "always",
+      "deny",
+    ]);
+  });
+
+  it("shows one card when two calls need one at once", async () => {
+    const ctx = context({ mode: "ask" });
+    await Promise.all([
+      gateToolCall(ctx as never, request("shell", { command: "npm install" }), undefined),
+      gateToolCall(ctx as never, request("shell", { command: "rm -rf build" }), undefined),
+    ]);
+    expect(seen.blocks).toHaveLength(1);
+  });
+});
+
+describe("the member's rules for a command on the bot's computer", () => {
+  it.each(MODES)("refuse a blocked command in %s, over an allow rule too", async (mode) => {
+    seen.rules.set("owner", [rule(["rm"], "block", "user"), rule(["rm", "-rf", "build"])]);
+    expect(await outcome(COMMANDS.destructive, { mode })).toBe("refused");
+    expect(await outcome(COMMANDS.destructive, { mode, alwaysAllow: true })).toBe("refused");
+    expect(await outcome(COMMANDS.destructive, { mode, read: true })).toBe("refused");
+  });
+
+  it("let an exact allow rule run the command, also after outside content", async () => {
+    seen.rules.set("owner", [rule(["npm", "install"])]);
+    for (const mode of MODES) {
+      expect(await outcome(COMMANDS.write, { mode }), mode).toBe("runs");
+      expect(await outcome(COMMANDS.write, { mode, read: true }), mode).toBe("runs");
+      expect(await outcome(COMMANDS.write, { mode, run: "webhook" }), mode).toBe("runs");
+    }
+    // Only the same words in the same folder.
+    expect(await outcome("npm install left-pad", { mode: "ask" })).toBe("card");
+    expect(await outcome(COMMANDS.write, { mode: "ask", cwd: "/srv" })).toBe("card");
+    // A run a token's text reached still asks.
+    expect(await outcome(COMMANDS.write, { mode: "never", run: "token" })).toBe("card");
+  });
+
+  it("let a prefix rule run the command in a clean run only", async () => {
+    seen.rules.set("owner", [rule(["grep", "-r"], "allow_prefix")]);
+    expect(await outcome("grep -r todo src", { mode: "ask" })).toBe("runs");
+    expect(await outcome("grep -r todo src", { mode: "ask", read: true })).toBe("card");
+    expect(await outcome("grep -r todo src", { mode: "auto", read: true })).toBe("card");
+  });
+
+  it("let an always-allow rule for the tool run it, as upstream does for any tool", async () => {
+    for (const mode of ["ask", "auto"] as const) {
+      expect(await outcome(COMMANDS.network, { mode, alwaysAllow: true }), mode).toBe("runs");
+      expect(await outcome(COMMANDS.network, { mode, alwaysAllow: true, read: true })).toBe("runs");
+    }
+    expect(seen.reviews).toEqual([]);
+  });
+
+  it("in a group chat are those of the member whose run it is", async () => {
+    seen.rules.set("member-2", [rule(["npm", "install"])]);
+    expect(await outcome(COMMANDS.write, { mode: "ask", userId: "member-2" })).toBe("runs");
+    expect(await outcome(COMMANDS.write, { mode: "ask", userId: "owner" })).toBe("card");
+    seen.rules.set("owner", [rule(["npm"], "block")]);
+    expect(await outcome(COMMANDS.write, { mode: "ask", userId: "member-2" })).toBe("runs");
+  });
+});
+
+describe("an account from before this default", () => {
+  it("without a settings row gets the new default", async () => {
+    expect(await outcome(COMMANDS.write, { mode: "auto" })).toBe("reviewed");
+  });
+
+  it("that turned on asking keeps a card, never the model, outside Never ask", async () => {
+    seen.hostedAsks.add("owner");
+    expect(await outcome(COMMANDS.write, { mode: "auto" })).toBe("card");
+    expect(await outcome(COMMANDS.write, { mode: "ask" })).toBe("card");
+    expect(await outcome(COMMANDS.write, { mode: "never" })).toBe("runs");
+    expect(await outcome(COMMANDS.read, { mode: "auto" })).toBe("runs");
+    expect(seen.reviews).toEqual([]);
+  });
+});
+
+describe("a routine's command watch on the bot's computer", () => {
+  const watch = (command: string) => ({
+    name: "Build",
+    prompt: "Tell me when the build changes",
+    watch: { kind: "command", command, everyMinutes: 60 },
+  });
+
+  it("asks a person in every mode but Never ask, as upstream does", async () => {
+    for (const mode of ["ask", "auto"] as const) {
+      const ctx = context({ mode, alwaysAllow: true });
+      await gateToolCall(ctx as never, request("schedule_create", watch("git status")), undefined);
+    }
+    expect(seen.blocks).toHaveLength(2);
+    expect(seen.reviews).toEqual([]);
+  });
+
+  it("is refused when it runs a blocked command", async () => {
+    seen.rules.set("owner", [rule(["git", "push"], "block")]);
+    const ctx = context({ mode: "never" });
+    const result = await gateToolCall(
+      ctx as never,
+      request("schedule_create", watch("git push")),
+      undefined,
+    );
+    expect(result).toEqual({
+      result: expect.objectContaining({ error: expect.stringContaining("blocked") }),
+    });
+  });
+});

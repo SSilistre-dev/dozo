@@ -8887,11 +8887,11 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
-      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
+      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate, dozoHostedCommandHold } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "command rules: the import of the two rules below"
+      "reason": "command rules: the import of the rules below"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -8900,7 +8900,7 @@
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an allow passes it), and asks when it changes something once the member turned that on; the default stays upstream's. Inside the token gate, so a run a token's text reached still asks"
+      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an exact allow passes it where outside text started the run). Inside the token gate, so a run a token's text reached still asks"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -8910,6 +8910,33 @@
         "packages/adapters/src/dozo-command-gate.ts"
       ],
       "reason": "command rules: closes the call above, and a command refused by a block rule is refused as blocked, not as needing approval"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const requiresApprovalByDefault =\n    request.heldForApproval ||\n    paying ||",
+      "replace": "  // A command on the bot's computer that does more than read, and no allow rule covers, is gated.\n  const dozoHostedHold = await dozoHostedCommandHold(ctx, name, args);\n  const requiresApprovalByDefault =\n    request.heldForApproval ||\n    dozoHostedHold !== undefined ||\n    paying ||",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: by default a command on the bot's computer that does more than read and that no allow rule covers is consequential, so Auto review judges it, Ask asks and Never ask runs it, as upstream gates any tool that changes something; it also fails closed when the review errors"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const reviewable = mode === \"auto\" && !mandatoryInAnyRun;\n",
+      "replace": "  const reviewable = mode === \"auto\" && !mandatoryInAnyRun && dozoHostedHold !== \"person\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: such a command in a run outside content reached, or once the member asked for commands on the bot's computer to ask, goes to a person, never the approval model"
+    },
+    {
+      "file": "packages/adapters/src/executor-login-redaction.test.ts",
+      "find": "  provisionComputer: async () => COMPUTER,\n}));\n\nconst USERNAME",
+      "replace": "  provisionComputer: async () => COMPUTER,\n}));\n\n// The member allows the test's commands on the bot's computer exactly: in a routine's run any other\n// command that does more than read asks (packages/adapters/src/dozo-command-gate.ts).\nvi.mock(\"@rakazo/db\", async (importOriginal) => ({\n  ...(await importOriginal<object>()),\n  readDozoCommandRules: async () =>\n    [[\"deploy\"], [\"deploy\", \"again\"], [\"read-filled-fields\"]].map((words) => ({\n      words,\n      cwd: \"\",\n      effect: \"allow\",\n      computer: \"hosted\",\n    })),\n}));\n\nconst USERNAME",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: a fixture for upstream's test, whose routine run runs commands the fork does not read as reads; with them allowed exactly it still tests what the output hides"
     },
     {
       "file": "packages/adapters/src/routine-watch.ts",

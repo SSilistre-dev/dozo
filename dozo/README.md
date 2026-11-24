@@ -589,18 +589,35 @@ one bot does not hold for another. A rule does one of three things
 
 ### Commands on the bot's computer
 
-Upstream never asks before a command on the bot's own computer: it is an isolated machine without
-the member's files. The fork keeps that default (`packages/adapters/src/dozo-command-gate.ts`), so
-no bot starts asking after this change. Block rules refuse there in every mode. In a run that
-outside text started (a webhook), where upstream asks, an exact allow rule lets the command go
-ahead as an always-allow rule for the tool would; a prefix rule does not, and a run a token's text
-reached still asks. "Ask before commands on bot computers" (Settings > Approvals, shown once the
-Space has such a computer) makes a command that does more than read ask, outside Never ask, with
-the same card and Always allow; it is per account (table `dozo_command_settings`). It covers
-`shell` only: typing into a terminal through screen control or writing a script with the file
-tools is not read.
-- Only the owner's own chats reach their computer, never routines, webhooks or chat apps, so no
-  card waits on a run nobody watches.
+Upstream never asks before a command on the bot's own computer (`shell` is exempt from approval).
+The fork gates it by default (`dozoHostedCommandHold` in `packages/adapters/src/dozo-command-gate.ts`),
+on the hosted service and on a self-hosted server's bot computers alike. A command that only reads
+runs. Any other command (one that writes, reaches the network, deletes, or cannot be read) that no
+allow rule covers counts as an action that changes something, as upstream counts other tools:
+Auto review sends it to the approval model, which sees the command and its folder and passes it
+or asks with a card; with no approval model, or when the review fails, it asks. Ask asks. Never
+ask runs it. An always-allow rule for the tool runs it in every mode, as upstream does for any
+tool. Block rules refuse in every mode.
+
+- In a run outside content reached (upstream's tainted run: someone other than the owner started
+  it, a routine or webhook among them, it resumed after a card or a restart, or any tool result
+  came back, a command's own output included), such a command never goes to the approval model:
+  it asks, outside Never ask. Since nearly every run soon reads a command's output, in practice
+  most commands after the first that change something ask; Always allow on the card, an exact
+  allow rule or Never ask are the ways out. Only an exact allow rule covers a command there, not a
+  prefix rule. A run a token's text reached asks about every command, reads too, in every mode.
+- A card in a run nobody watches (a routine, a webhook, a chat app) waits like any other card, is
+  notified, and ends with the run's other waits after a day; a background helper's run refuses
+  instead of asking.
+- "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
+  computer; per account, table `dozo_command_settings`) now means: a person, never the approval
+  model, outside Never ask. An account without the setting gets the default above.
+- It covers `shell` only. Writing a script with the file tools and running it is held only when
+  the run command itself is (a script is not a read), but what `write_file` writes, typing into a
+  terminal through screen control, and a command watch's later runs (asked about once, when the
+  routine is made) are not read per command.
+- The bot's computer is Linux, so the shell is known there; the reading below stays the one built
+  for an unknown shell, which only makes more commands ask.
 
 How a command is read, and what that does not cover:
 
