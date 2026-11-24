@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useState } from "react";
 import { requestBrowserNotificationPermission } from "./browser-notifications";
+import { useEventListener } from "./use-event-listener";
 
 /**
  * In the desktop app's window, ask for notifications on the first click or key press. The app
@@ -10,19 +11,17 @@ import { requestBrowserNotificationPermission } from "./browser-notifications";
  * the browser asks as it always did.
  */
 export function useDesktopNotificationAsk() {
-  useEffect(() => {
-    if (window.dozoDesktopShell !== true || typeof Notification === "undefined") return;
-    if (Notification.permission !== "default") return;
-    const ask = () => {
-      remove();
-      void requestBrowserNotificationPermission();
-    };
-    const remove = () => {
-      window.removeEventListener("pointerdown", ask, true);
-      window.removeEventListener("keydown", ask, true);
-    };
-    window.addEventListener("pointerdown", ask, true);
-    window.addEventListener("keydown", ask, true);
-    return remove;
-  }, []);
+  const [armed, setArmed] = useState(
+    () =>
+      window.dozoDesktopShell === true &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "default",
+  );
+  const ask = () => {
+    setArmed(false);
+    void requestBrowserNotificationPermission();
+  };
+  const target = armed ? window : null;
+  useEventListener(target, "pointerdown", ask, true);
+  useEventListener(target, "keydown", ask, true);
 }

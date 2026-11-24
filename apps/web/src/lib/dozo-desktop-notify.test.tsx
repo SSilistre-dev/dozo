@@ -16,6 +16,11 @@ function mount(permission: string, shell: boolean) {
   if (shell) vi.stubGlobal("dozoDesktopShell", true);
   act(() => root.render(<Harness />));
 }
+function fire(event: Event) {
+  act(() => {
+    window.dispatchEvent(event);
+  });
+}
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   request.mockClear();
@@ -29,25 +34,25 @@ afterEach(() => {
 it("asks once, on the first click, in the desktop app's window", () => {
   mount("default", true);
   expect(request).not.toHaveBeenCalled();
-  window.dispatchEvent(new Event("pointerdown"));
-  window.dispatchEvent(new KeyboardEvent("keydown"));
+  fire(new Event("pointerdown"));
+  fire(new KeyboardEvent("keydown"));
   expect(request).toHaveBeenCalledTimes(1);
 });
 
 it("asks on a key press too", () => {
   mount("default", true);
-  window.dispatchEvent(new KeyboardEvent("keydown"));
+  fire(new KeyboardEvent("keydown"));
   expect(request).toHaveBeenCalledTimes(1);
 });
 
 it("never asks in a browser, or when the answer is already known", () => {
   mount("default", false);
-  window.dispatchEvent(new Event("pointerdown"));
+  fire(new Event("pointerdown"));
   act(() => root.unmount());
   root = createRoot(document.createElement("div"));
   for (const known of ["granted", "denied"]) {
     mount(known, true);
-    window.dispatchEvent(new Event("pointerdown"));
+    fire(new Event("pointerdown"));
     act(() => root.unmount());
     root = createRoot(document.createElement("div"));
   }
@@ -57,6 +62,6 @@ it("never asks in a browser, or when the answer is already known", () => {
 it("stops listening when the shell goes", () => {
   mount("default", true);
   act(() => root.render(null));
-  window.dispatchEvent(new Event("pointerdown"));
+  fire(new Event("pointerdown"));
   expect(request).not.toHaveBeenCalled();
 });
