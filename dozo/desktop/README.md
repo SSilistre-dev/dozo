@@ -539,7 +539,9 @@ The capability `passwords` is declared to the server only while it is on and the
 - The question is a small window of the app's own (`ui/fill.html`, `capabilities/fill.json`), not a
   system dialog, because it must close when the request it is for ends: when the server cancels
   the request, or after two minutes, it closes and counts as Cancel, and nothing is approved. Cancel
-  comes first and has the focus, so Enter and Escape cancel; only a click on Allow allows.
+  comes first and has the focus, so Enter and Escape cancel; only a click on Allow allows. The window
+  answers for the question it shows (by id): when that one was cancelled and another opened before
+  the window reloaded, a click on Allow is ignored and cannot approve the new question.
 - Scrubbing: a password or code is added to the browser's list of values that are scrubbed from
   every later answer (as it is, as JSON writes it and as an address carries it, so a navigation
   event's address is covered; names are left alone) before it is written. A username is never
@@ -551,7 +553,10 @@ The capability `passwords` is declared to the server only while it is on and the
   back-forward cache does not count), `Page.captureScreenshot` is refused with `passwords-screenshot`,
   because the bot could make the page show the password ("show password") and photograph it. The
   server then tells the model there is no picture and that the text snapshot is complete. The rule
-  is coarse on purpose: it holds the page, not the field.
+  is coarse on purpose: it holds the page, not the field. The hold is kept per browser (the
+  pipe), not per tab. When the page session is lost (the tab closed, or the page detached), the
+  hold stays; the bot's next page is a new blank tab, and that tab's first document lifts it. This
+  gives nothing away: the old tab cannot be returned to.
 - `Page.createIsolatedWorld`, `DOM.resolveNode` and `Runtime.callFunctionOn` are used by this app
   only: they are not in `ALLOWED`.
 - Honest limits: the page itself can read what was typed into it, as any page can; copies of the

@@ -209,6 +209,8 @@ impl Running {
     }
 
     /// From now until the page's top frame commits another document, no picture of the page.
+    /// Kept per browser (the pipe), not per tab: after the page session is lost, the first
+    /// document of the new blank tab lifts it.
     fn hold_pictures(&self, loader: &str) {
         *self.pipe.filled.lock().unwrap() = Some(loader.to_owned());
     }
