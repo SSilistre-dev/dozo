@@ -32,6 +32,11 @@ export async function joinWithInvite(
  */
 const inRequest = new AsyncLocalStorage<string>();
 
+/** Runs `work` as the world's request with `cookie` would, so what it sends counts as that request's. */
+export function asWorldRequest<T>(cookie: string | undefined, work: () => T): T {
+  return inRequest.run(cookie ?? "anonymous", work);
+}
+
 /**
  * Every job, push notification and mail the app sends from now on while answering a request (or
  * in work a request started), recorded as text so a scan can tell whom and what each one names,

@@ -12935,32 +12935,77 @@
     {
       "file": "apps/api/src/routes/account.ts",
       "find": "} from \"../voice.js\";\nimport type { RouterContext } from \"./context.js\";\n",
-      "replace": "} from \"../voice.js\";\nimport { dozoEnsureStreamCaller } from \"../dozo-stream-membership.js\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "replace": "} from \"../voice.js\";\nimport { dozoEnsureStreamCaller, dozoWhileAllowed } from \"../dozo-stream-membership.js\";\nimport type { RouterContext } from \"./context.js\";\n",
       "requires": [
         "apps/api/src/dozo-stream-membership.ts"
       ],
-      "reason": "chat alert recipients: the import of the rule below"
+      "reason": "live stream checks: the import of the notification and call stream rules below"
     },
     {
       "file": "apps/api/src/routes/account.ts",
-      "find": "          else if (next.spaceId === spaceId) yield { type: \"alert\" as const, alert: next };\n",
-      "replace": "          else if (next.spaceId === spaceId) {\n            await dozoEnsureStreamCaller(deps.prisma, context);\n            yield { type: \"alert\" as const, alert: next };\n          }\n",
+      "find": "        const frames = withHeartbeats(context, (signal) =>\n          mergeStreams(\n            followChatAlerts(userId, spaceId, signal),\n            rosterChanges(signal),\n            spaceChanges(signal),\n            dozoSiteChanges(deps, signal),\n          ),\n        );\n",
+      "replace": "        const frames = withHeartbeats(context, (signal) =>\n          dozoWhileAllowed(\n            deps.prisma,\n            context,\n            mergeStreams(\n              followChatAlerts(userId, spaceId, signal),\n              rosterChanges(signal),\n              spaceChanges(signal),\n              dozoSiteChanges(deps, signal),\n            ),\n          ),\n        );\n",
       "requires": [
         "apps/api/src/dozo-stream-membership.ts"
       ],
-      "reason": "chat alert recipients: recipients are read before an alert is published, so someone removed from the Space, signed out or deactivated in between could still get its preview; the open notification stream checks the person may still read the Space before it passes each alert on, and ends as a signed-out session does when not"
+      "reason": "live stream checks: the open notification stream checks that the person is still in the Space, their account is not deactivated and their session still holds before it passes on a chat alert, roster signal, Space change or site change signal, one check for every frame already waiting, so someone removed, signed out or deactivated gets nothing after that and the stream ends at once instead of at the next session re-check (alert recipients are read before an alert is published, so this also keeps a preview from someone removed in between)"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "        for await (const next of signals) {\n          yield next === HEARTBEAT\n            ? { type: \"heartbeat\" as const }\n            : {\n                type: \"incoming.calls\" as const,\n                payload: { calls: await loadUserIncomingCalls(deps.prisma, userId) },\n              };\n        }\n",
+      "replace": "        for await (const next of signals) {\n          if (next === HEARTBEAT) {\n            yield { type: \"heartbeat\" as const };\n            continue;\n          }\n          // Dozo: read, then checked, so the calls that go out were read while the caller was allowed.\n          const calls = await loadUserIncomingCalls(deps.prisma, userId);\n          await dozoEnsureStreamCaller(deps.prisma, context);\n          yield { type: \"incoming.calls\" as const, payload: { calls } };\n        }\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "live stream checks: the open call stream checks, after it reads the ringing calls and before it sends them, that the person may still read the Space and their session still holds, so someone removed, signed out or deactivated gets no call after that and the stream ends at once"
     },
     {
       "file": "apps/api/src/chat-alerts.test.ts",
       "find": "  createAppRouter({\n    ...deps,\n    env:",
       "replace": "  createAppRouter({\n    ...deps,\n    // Dozo: a database that answers yes to the stream's check that the reader may still see the Space.\n    prisma: deps.prisma ?? ({ $queryRaw: async () => [{ allowed: true }] } as unknown as RouterDeps[\"prisma\"]),\n    env:",
-      "reason": "upstream test fixture: the notification stream checks before each alert that the reader may still see the Space (chat stream membership), and these tests build the router with no database; the fixture above gains one that answers yes, and a test's own deps still win"
+      "reason": "upstream test fixture: the notification stream checks that the reader may still see the Space before it passes alerts on (live stream checks), and these tests build the router with no database; the fixture above gains one that answers yes, and a test's own deps still win"
     },
     {
       "file": "apps/api/src/router.test.ts",
       "find": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "replace": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n      // Dozo: the stream's membership check, answering that the person is still in the Space.\n      $queryRaw: vi.fn().mockResolvedValue([{ member: true, seq: null }]),\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "reason": "upstream test fixture: a chat stream checks membership before delivering anything newer than its last check (chat stream membership), and this fake database had no answer for it; it answers that the person is still a member, so the session re-checks the tests are about decide as before"
+    },
+    {
+      "file": "apps/api/src/routes/boards.ts",
+      "find": "} from \"@rakazo/db\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "replace": "} from \"@rakazo/db\";\nimport { dozoWhileAllowed } from \"../dozo-stream-membership.js\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "live stream checks: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/boards.ts",
+      "find": "        const events = withHeartbeats(context, (signal) =>\n          deps.boardEvents.follow(spaceId, signal),\n        );\n",
+      "replace": "        const events = withHeartbeats(context, (signal) =>\n          dozoWhileAllowed(deps.prisma, context, deps.boardEvents.follow(spaceId, signal)),\n        );\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "live stream checks: the open board stream checks that the person may still read the Space and their session still holds before it passes on a board change, one check for every change already waiting, so someone removed, signed out or deactivated sees no change after that and the stream ends at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "        return {\n          context: {\n            context: {\n              ...(policy || directoryClaim",
+      "replace": "        return {\n          context: {\n            // Dozo: a password change always signs out the other sessions, whatever the client sends.\n            ...(ctx.path === \"/change-password\"\n              ? { body: { ...ctx.body, revokeOtherSessions: true } }\n              : {}),\n            context: {\n              ...(policy || directoryClaim",
+      "reason": "password change: the auth library signs out the other sessions only when the client asks with revokeOtherSessions, and a client that leaves it out would leave a taken-over session signed in under the new password; the server now always asks, so every session from before ends and the one that made the change goes on under a new one, as the web and mobile apps already request"
+    },
+    {
+      "file": "apps/api/src/space-changes.test.ts",
+      "find": "  createAppRouter({\n    ...deps,\n    env:",
+      "replace": "  createAppRouter({\n    ...deps,\n    // Dozo: a database that answers yes to the stream's check that the reader may still see the Space.\n    prisma: deps.prisma ?? ({ $queryRaw: async () => [{ allowed: true }] } as unknown as RouterDeps[\"prisma\"]),\n    env:",
+      "reason": "upstream test fixture: the notification stream checks that the reader may still see the Space before it passes signals on (live stream checks), and these tests build the router with no database; the fixture above gains one that answers yes, and a test's own deps still win"
+    },
+    {
+      "file": "apps/api/src/calls.test.ts",
+      "find": "          prisma: { message: { findMany } },\n",
+      "replace": "          // Dozo: the call stream's check that the reader may still see the Space, answering yes.\n          prisma: { message: { findMany }, $queryRaw: vi.fn(async () => [{ allowed: true }]) },\n",
+      "reason": "upstream test fixture: the call stream checks that the reader may still see the Space before it sends the calls it read (live stream checks), and this fake database had no answer for it; it answers yes, so the session re-check the test is about decides as before"
     },
     {
       "file": "apps/web/src/lib/model-auth.ts",
