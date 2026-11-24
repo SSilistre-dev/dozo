@@ -184,7 +184,8 @@ is `docker pull node:24.22-slim`). Nothing is skipped silently.
 
 Runs every `dozo-*.test.ts(x)` under `apps/`, `packages/` and `infra/` of the branded staged tree
 (`DOZO_UNIT_SRC` names another tree and skips the `stage.complete` check) with Vitest in
-`node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, with a per-file floor
+`node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, tests and
+`*.test-support.*` fixtures left out (a fixture only a Postgres test loads never runs here), with a per-file floor
 `DOZO_COVERAGE_MIN` (default 90 percent) for lines, branches and functions. Fewer
 test files than the committed tree has (counted with `git ls-tree` on `DOZO_STAGE_REF` or `HEAD`,
 never a fixed number) fails, so a deleted test is noticed; commit the deletion when it is meant. A
@@ -204,8 +205,10 @@ directory `/cache/w` is what older versions used and nothing reads it now, and a
 gone leaves its `/cache/trees/<key>` behind. List what is there with
 `docker run --rm -v dozo-qa-deps:/cache node:24.22-slim du -sh /cache/trees/* /cache/w`, then remove a
 directory you know is dead with
-`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim rm -rf /cache/w` (or `/cache/trees/<key>`). The database client (`packages/db/src/generated`) is generated in the volume before every
-run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api`, `apps/web`, `apps/mobile`, `packages/adapters`, `packages/core`, `packages/contracts`, `packages/db`, `packages/chat-ui` and `packages/ui-web` on the branded tree, one after the other (each timed in the log; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. A failing run prints each file under the floor with its number.
+`docker run --rm -v dozo-qa-deps:/cache node:24.22-slim rm -rf /cache/w` (or `/cache/trees/<key>`).
+
+The database client (`packages/db/src/generated`) is generated in the volume before every
+run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api`, `apps/web`, `apps/mobile`, `packages/adapters`, `packages/core`, `packages/contracts`, `packages/db`, `packages/chat-ui` and `packages/ui-web` on the branded tree, one after the other (each timed in the log; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. Then the module state guard (`dozo/db/module-state-guard.mjs`) and its tests run on the unbranded working tree (mounted read-only), parsing with the TypeScript 6 the lockfile installs for `apps/www`: every long-lived mutable state in the fork's server code (`dozo-*` files), the relay worker (`dozo/relay/worker/src`) and what the anchored brand rules add to upstream files there (module-level `let`/`var`, containers, `new X()`, calls and mutated literals, class fields, factory state a closure reaches, `globalThis` writes) must be a row in `dozo/db/module-state-reviewed.tsv` with where it lives (`module`, `class X`, `fn make`) and its key scope. A new row, a hit that moved to another level, a stale row, or a missing guard, test, list or parser fails the step (exit 2); nothing is fetched. A failing run prints each file under the floor with its number.
 
 ### checks
 
