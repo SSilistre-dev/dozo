@@ -1,5 +1,6 @@
 import { ORPCError, os } from "@orpc/server";
 import type { Actor, ProductEvent } from "@rakazo/contracts";
+import { currentDbContext } from "@rakazo/db";
 import { Hono } from "hono";
 import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,6 +134,9 @@ let client: ReturnType<typeof fakeClient>;
 let contexts: DozoBotApiContext[];
 let runStatus: Mock<DozoBotApiDeps["runStatus"]>;
 let authenticate: Mock<DozoBotApiDeps["authenticate"]>;
+/** The bots the token's member made in the token's Space; the app may list others of the Space. */
+let ownBotIds: Set<string>;
+let ownsBot: Mock<DozoBotApiDeps["ownsBot"]>;
 /** The shared per-minute counts, as Postgres would keep them for every instance. */
 let minutes: Map<string, number>;
 const take = (key: string, limit: number) => {
@@ -152,6 +156,8 @@ function app(overrides: Partial<DozoBotApiDeps> = {}) {
       return client as unknown as DozoBotApiClient;
     },
     runStatus,
+    ownBots: async () => ownBotIds,
+    ownsBot,
     touch: vi.fn(async () => undefined),
     take,
     clientIp: () => "203.0.113.5",
@@ -175,6 +181,8 @@ const send = (hono: Hono, body: unknown, headers: Record<string, string> = {}) =
 
 beforeEach(() => {
   minutes = new Map();
+  ownBotIds = new Set(["bot-1", "bot-2"]);
+  ownsBot = vi.fn<DozoBotApiDeps["ownsBot"]>(async (_caller, botId) => ownBotIds.has(botId));
   client = fakeClient();
   contexts = [];
   runStatus = vi.fn<DozoBotApiDeps["runStatus"]>(async () => "running");
@@ -301,6 +309,58 @@ describe("a token limited to one bot", () => {
     expect(client.threads.send).not.toHaveBeenCalled();
     expect(client.threads.messages).not.toHaveBeenCalled();
     expect(client.dozoChatExport.markdown).not.toHaveBeenCalled();
+  });
+});
+
+describe("a member of a shared Space", () => {
+  // bot-2 is another member's: the app lists it to this member and lets them talk to it.
+  beforeEach(() => {
+    ownBotIds = new Set(["bot-1"]);
+  });
+
+  it("lists only the bots the token's member made", async () => {
+    const listed = await call(app(), "/bots");
+    expect(await listed.json()).toEqual({ bots: [{ id: "bot-1", name: "Chef" }] });
+  });
+
+  it("answers another member's bot exactly as a missing one, on every call, without calling the app", async () => {
+    const hono = app();
+    const answers = async (botId: string) => {
+      const base = `/bots/${botId}`;
+      const all = [
+        await call(hono, `${base}/messages`),
+        await call(hono, `${base}/chats`),
+        await call(hono, `${base}/export`),
+        await call(hono, `${base}/runs/run-1/events`),
+        await call(hono, `${base}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "text/event-stream" },
+          body: JSON.stringify({ text: "hi" }),
+        }),
+      ];
+      return Promise.all(all.map(async (answer) => [answer.status, await answer.text()]));
+    };
+    const others = await answers("bot-2");
+    expect(others).toEqual(await answers("bot-missing"));
+    expect(others.every(([status]) => status === 404)).toBe(true);
+    expect(ownsBot).toHaveBeenCalledWith(expect.objectContaining(everyBot), "bot-2");
+    for (const procedure of [
+      client.threads.send,
+      client.threads.messages,
+      client.threads.head,
+      client.threads.subscribe,
+      client.dozoChatExport.markdown,
+      client.dozoChats.list,
+    ])
+      expect(procedure).not.toHaveBeenCalled();
+    expect(minutes.has(`sends:token:${everyBot.tokenId}`)).toBe(false);
+  });
+
+  it("still reaches the member's own bot", async () => {
+    const hono = app();
+    expect((await call(hono, "/bots/bot-1/messages")).status).toBe(200);
+    expect((await send(hono, { text: "hi" })).status).toBe(202);
+    expect(client.threads.send).toHaveBeenCalledOnce();
   });
 });
 
@@ -748,5 +808,33 @@ describe("production wiring", () => {
     await deps.touch("token-1");
     expect(spies.touch).toHaveBeenCalledWith(prisma, "token-1");
     expect(deps.authenticate).toBe(spies.authenticator);
+  });
+
+  it("reaches only the member's own bots in the token's Space, read as the member", async () => {
+    const contexts: unknown[] = [];
+    const findMany = vi.fn(async () => {
+      contexts.push(currentDbContext());
+      return [{ id: "bot-1" }];
+    });
+    const findFirst = vi.fn(async () => ({ id: "bot-1" }) as { id: string } | null);
+    const prisma = { bot: { findMany, findFirst } } as unknown as Parameters<
+      typeof dozoBotApiDeps
+    >[0];
+    const deps = dozoBotApiDeps(prisma, {} as Parameters<typeof dozoBotApiDeps>[1], () => "x");
+    const own = { spaceId: "space-1", userId: "user-1", archivedAt: null };
+    expect([...(await deps.ownBots(everyBot))]).toEqual(["bot-1"]);
+    expect(findMany).toHaveBeenCalledWith({ where: own, select: { id: true } });
+    expect(contexts).toEqual([{ kind: "tenant", spaceId: "space-1", userId: "user-1" }]);
+    expect(await deps.ownsBot(everyBot, "bot-1")).toBe(true);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "bot-1", ...own },
+      select: { id: true },
+    });
+    findFirst.mockResolvedValue(null);
+    expect(await deps.ownsBot(everyBot, "bot-2")).toBe(false);
+    // A token for one bot reaches no other, without a lookup.
+    findFirst.mockClear();
+    expect(await deps.ownsBot({ ...everyBot, botId: "bot-1" }, "bot-2")).toBe(false);
+    expect(findFirst).not.toHaveBeenCalled();
   });
 });

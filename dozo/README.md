@@ -415,6 +415,19 @@ the server's revision, and the ids and times of the sender's own failed runs in 
 sent, and the server sends only the runs it showed. Nothing is sent without the person pressing
 Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
 
+Screenshots: a report can carry up to 3 pictures (PNG, JPEG or WebP, 3 MB each and 8 MB together;
+a file picker, a paste into the note or a drop on the dialog on the web and desktop, the photo
+library on mobile). The server accepts a picture only when its own bytes are one of those kinds
+(never a GIF or SVG), refuses more than 40 million pixels, and draws it again in the same format,
+turned upright, scaled to at most 2560 px on a side and with all metadata (location, device, time)
+left out. The pictures leave the server only as attachments of the mail to the operator (the SMTP
+and HTTP mail adapters carry `attachments`): they are not stored, not given a link and not logged,
+and a refused picture counts against the same hourly limits. The body limit of the API's RPC
+(16 MiB) carries three pictures as base64; the proxy has no lower limit. With no mail provider the
+web dialog downloads the pictures next to `feedback.txt` as chosen, nothing is uploaded, and mobile
+offers none (the share sheet carries text only). Larger screenshots are not scaled down in the
+browser: they are refused with the same short message.
+
 Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
 it an address. There is no anonymous path to the hosted service from a local server.
 
@@ -425,7 +438,11 @@ OpenAPI in `dozo/api/openapi.yaml`): list bots, send a message and follow the re
 server-sent events, read the chat, export it. Each call carries a personal access token made under
 Settings > General > Security > Access tokens (`apps/web/src/components/dozo-access-tokens.tsx`).
 
-A token belongs to one member in one Space and can be limited to one bot. Only its SHA-256 and last
+A token belongs to one member in one Space and reaches only the bots that member made there, or
+the one bot it is limited to, as the MCP endpoint does (`apps/api/src/dozo-token-bots.ts`, one rule
+for both). Another member's bot in a shared Space is left out of the list and answered as missing,
+the same 404 as a bot that does not exist, though the app lets the member talk to it; a token is
+not made for one. Only its SHA-256 and last
 four characters are stored (`dozo_access_tokens`); it is shown once. Making one asks the person to
 confirm it is them (as revealing a secret does) and mails the account's address when a mail
 provider is set. It lasts 90 days unless made to never expire, and every token stops when the
@@ -488,13 +505,29 @@ support.
 On the local server only (the desktop app runs it and passes `HOST_USER_HOME` and `HOST_USER_PATH`),
 a provider's own agent CLI can run a bot's whole turn as the person: Codex, through its own
 app-server (`packages/adapters/src/cli-models/dozo-agent.ts` and `codex/dozo-codex-agent.ts`). It
-was written against Codex 0.171's protocol schema and has not been run against a real, signed-in
-Codex yet, so it is off until turned on by hand:
+was written against Codex 0.171's protocol schema and the ACP agents against their documented
+protocol, and none has been run end to end against a real, signed-in CLI yet, so treat all of it as
+unverified. Nothing is edited by hand any more:
 
-- **Turn it on:** put `codex-agent` on its own line in `dozo-agent-tools` in the server's data
-  folder (the `data/` next to the server's other files), then restart the app. Remove the line, or
-  the file, to turn it off. No settings screen shows or changes this.
-- **Connecting:** Settings > Models then shows Codex, marked Agent. Connecting asks the person to
+- **Where it shows:** Settings > Models lists Codex, Antigravity and Grok, marked Agent, on every
+  local server except Windows, where no row shows (process groups and the bridge's socket are Unix
+  only). With the CLI on the person's login `PATH` (absolute entries only) the row offers Connect.
+  Without it the row has one link, Download, to the maker's own page, a fixed https address in the
+  agent's descriptor (`downloadUrl`). Dozo never downloads or installs a CLI. The hosted service
+  lists none of this: it has no person's computer, so its answers are unchanged.
+- **Turn it on:** connecting is what turns an agent's mode on. After the person agrees (below) and
+  the agent passes its check, the connection is saved and a row in `dozo_agent_modes` names the
+  agent and that connection (no row is off). It is a setting of the server, written only by its one
+  person's signed-in session (an access token never reaches this call), that holds an agent id and a
+  connection and nothing else: never a path or a command line. If saving the connection goes through
+  and writing the row does not, the agent shows as not connected, and connecting again takes the
+  saved connection over. Nothing restarts: the agents are always in the catalog, and a run reads
+  the setting.
+- **Turn it off:** remove the agent's connection in Settings; its row goes with it (the table's
+  foreign key), and the row in Settings offers Connect again. A line in the file `dozo-agent-tools`
+  in the data folder (one id per line) from before the setting keeps an agent on until the line is
+  removed from the file.
+- **Connecting:** Connecting an agent asks the person to
   agree to what agent mode means and checks, there and then, that Codex is 0.171.x, is signed in,
   and reaches Dozo's tools through the bridge; a failed check says why and saves nothing.
 - **A turn:** one Codex process per run, in an empty folder of the bot's own under
@@ -509,7 +542,7 @@ Codex yet, so it is off until turned on by hand:
   again; a mark in `data/agent-runs/` holds this across processes.
 - **ACP agents:** Antigravity (`antigravity-agent`, run as `agy acp`) and Grok (`grok-agent`, run
   as `grok agent stdio`) are driven over the Agent Client Protocol
-  (`packages/adapters/src/cli-models/acp/`), turned on the same way, one id per line. Dozo offers
+  (`packages/adapters/src/cli-models/acp/`), listed and turned on the same way. Dozo offers
   them no file or terminal methods: they use their own tools and ask through ACP permission
   requests, answered only with the one-time allow or reject option (never an "always" one), and
   every waiting request is answered as cancelled when a turn stops. The connection check reads the
@@ -519,7 +552,10 @@ Codex yet, so it is off until turned on by hand:
   reason to close their account. ACP reports no usage limits: an agent's own error is shown as is.
 - **Not in agent mode:** runs that text sent with an access token reached (until the bot is trusted
   again), and every run the person did not start with their own message in Dozo.
-- **Not yet:** more accounts or the model pool for agents, mobile.
+- **Not yet:** more accounts or the model pool for agents, a way to turn an agent's mode off in the
+  settings screen apart from removing the connection, and mobile: a phone
+  connected to a local server shows no agent rows, because the phone has no screen for the tools on
+  the computer at all.
 
 ## Commands on your own computer
 
@@ -589,18 +625,47 @@ one bot does not hold for another. A rule does one of three things
 
 ### Commands on the bot's computer
 
-Upstream never asks before a command on the bot's own computer: it is an isolated machine without
-the member's files. The fork keeps that default (`packages/adapters/src/dozo-command-gate.ts`), so
-no bot starts asking after this change. Block rules refuse there in every mode. In a run that
-outside text started (a webhook), where upstream asks, an exact allow rule lets the command go
-ahead as an always-allow rule for the tool would; a prefix rule does not, and a run a token's text
-reached still asks. "Ask before commands on bot computers" (Settings > Approvals, shown once the
-Space has such a computer) makes a command that does more than read ask, outside Never ask, with
-the same card and Always allow; it is per account (table `dozo_command_settings`). It covers
-`shell` only: typing into a terminal through screen control or writing a script with the file
-tools is not read.
-- Only the owner's own chats reach their computer, never routines, webhooks or chat apps, so no
-  card waits on a run nobody watches.
+Upstream never asks before a command on the bot's own computer (`shell` is exempt from approval).
+The fork gates it by default (`dozoHostedCommandHold` in `packages/adapters/src/dozo-command-gate.ts`),
+on the hosted service and on a self-hosted server's bot computers alike. A command that only reads
+runs, except where upstream already gates every command: in a webhook run Auto review judges it
+and Ask asks, and a run a token's text reached asks. Any other command (one that writes, reaches the network, deletes, or cannot be read) that no
+allow rule covers counts as an action that changes something, as upstream counts other tools:
+
+| Run | Auto review | Ask | Never ask |
+| --- | --- | --- | --- |
+| The member's own chat, also after it read pages, files or command output, and the owner's own routine | approval model; a card when it asks, fails or there is none | card | runs |
+| Another bot's message, a spawned bot, a ticket, or any other run the owner did not start | approval model, told the task is not the owner's words | card | runs |
+| Started by outside text: a webhook or email, a team chat's channel, an outside message taken in while it ran, a routine a change trigger fired or someone else last wrote | card | card | runs (as before) |
+| Reached by a token's text | card, reads too | card | card (as before) |
+
+- The approval model sees the command and its folder, is told to ask when a command sends a local
+  file or an environment value over the network unasked, and is told when the run already took in
+  outside content (pages, files, command output, messages) it never sees, or when the task is not
+  the owner's words (`packages/adapters/src/dozo-outside-review.prompt.ts`). In Auto review every
+  such command is one more review call, with its cost and wait. A model that passes
+  a command does not stop the run, a routine included; one that asks leaves a card. With no model
+  that would judge it (none set, or only backups without a primary), the command asks.
+- An exact allow rule runs the command in every row but the last; a prefix rule only until the run
+  takes in outside content. An always-allow rule for the tool runs it, as upstream does for any
+  tool. Block rules refuse in every mode.
+- A card in a run nobody watches (a routine, a webhook, a chat app) waits like any other card: the
+  member is notified, and the wait ends with the run's other human waits (`STUCK_WORK_EXPIRE_AFTER_MS`,
+  a day by default). A background helper's run refuses instead of asking.
+- Which runs outside text started follows the lasting-write rule's `runStartedFromOutside`, with one
+  departure: that rule counts a routine with no writer on record (`dozo_routine_writers`) as from
+  outside, while the command rule counts it as its owner's, so routines made before the record keep
+  running as they do today; with a writer on record the two agree. A Space member's own chat is
+  theirs, judged by their rules.
+- "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
+  computer; per account, table `dozo_command_settings`) now means: a card, never the approval
+  model, outside Never ask. An account without the setting gets the default above.
+- It covers `shell` only. A script the bot wrote with the file tools is held when the command that
+  runs it is (a script is not a read), but what `write_file` writes, typing into a terminal through
+  screen control, and a command watch's later runs (asked about once, when the routine is made) are
+  not read per command.
+- The bot's computer is Linux, so the shell is known there; the reading below stays the one built
+  for an unknown shell, which only makes more commands ask.
 
 How a command is read, and what that does not cover:
 
@@ -711,10 +776,39 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
 - A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
   something (declared not read-only, or named like a change, the same test that makes it ask in
   Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
-  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
-  including form submits, are not counted yet: telling a submit from another click needs a new
-  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
-  the member's own cloud coding agents are not sends here.
+  sends do not fit in what is left asks, and none of them is counted. A form submit made with
+  `browser_act` is a send too (next bullet). Paid service calls (`service_call`, `paid_request`)
+  and the member's own cloud coding agents are not sends here.
+- Form submits (`packages/adapters/src/dozo-page-submit.ts`), judged before the call runs, so the
+  limit can ask first. The same rule on both surfaces: a press of a submit control (a button with no
+  type or of type submit, an input of type submit or image, also one a `form` attribute names) in a
+  form that is not a search counts one; a batch counts each. A search is a form read with GET that
+  says so (`role=search`, or a `type=search` field in it); it and a `method=dialog` form send
+  nothing. A GET form that does not say it is a search counts, which can count a filter box once.
+  Navigation, reading, filling and a click on a link or a plain button do not count. A button that
+  only runs a script (`type=button`, a link, `role=button`) is not a submit: a page that sends from
+  one cannot be told from any other click, and counting every click would stop a bot after the
+  number of its clicks. That is this count's limit, as is `computer_act`, which clicks on the screen
+  and is not counted. A press the browser cannot look at counts as a submit, so a miss errs towards
+  asking: on the bot's computer a control inside a frame or a page it cannot read (a ref the page
+  no longer holds is skipped, as the click itself would fail); in the user's browser an element it
+  cannot find or a page it cannot read.
+  - The bot's computer: its page browser's purchase check, which already runs before each
+    `browser_act` with a click, also says how many of the clicks submit (`submits`, in the answer
+    only when some do). A computer image from before this does not say, so nothing counts there
+    until its image is rebuilt.
+  - The user's own browser: before a call that clicks or types a line break, the server asks the
+    desktop about each element alone (`DOM.describeNode`: its tag and attributes), which settles
+    every press that cannot submit (links, plain and script buttons, text areas). Only when a press
+    could submit does it read the page's DOM (`DOM.getDocument`, depth 256) once, to find the
+    form around the control. That DOM crosses to the server, so it can hold page text and
+    attribute values; it is judged in memory and nothing of it is logged, stored, put in an event
+    or the call's arguments (a test holds this). Frames and shadow trees the desktop does not
+    return count as submits, and a page too large to read counts each press that could submit. A
+    line break typed into a one-line field of such a form is a submit there; the bot's computer
+    types no line breaks into one-line fields, so it has none to count.
+  - A call approved on its card is not counted, as for any send, so the first action the user's
+    browser asks about on a site (its card) is free and later ones count.
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
   rule, or left to the approval model. A send a person approves on its card is not counted. One
   the approval model then asks about, or that fails, still counts, so the number errs towards
@@ -742,7 +836,7 @@ Outside MCP clients (code editors, other agents) reach a person's own bots over 
 Tools: `list_bots` and `send_message`, which waits up to 45 seconds for the reply and returns at
 once when the bot asks a question or needs an approval (that is answered in the app); each bot's
 chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the chat export. A
-token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
+token reaches only the bots its owner made in its Space, or its one bot, by the Bot API's rule. The server keeps no
 session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
 a newer client falls back to those. A token's requests and an account's messages count against the
 Bot API's budgets (a token's share and the account's total of messages), shared by every instance; an address that presents 20 refused tokens in a minute

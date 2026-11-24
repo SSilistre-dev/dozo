@@ -33,6 +33,7 @@ mod stack_os;
 mod stack_proc;
 mod stack_setup;
 mod stack_update;
+mod start;
 mod talk;
 mod update;
 mod words;
@@ -388,7 +389,40 @@ fn run(app: &AppHandle, id: &str) {
     prefs::changed(app);
 }
 
+/// The window opened on the server itself (`start.rs`): when no document of that page arrives, the
+/// window goes back to the bundled page, which connects as it always did and shows "unreachable".
+/// The web view says nothing of a load that failed, so this is the only way back from a blank
+/// window. A page that is arriving, a window sent to a screen of the app and another chosen server
+/// are left alone.
+fn guard_first_load(app: &AppHandle, window: &WebviewWindow, server: Url) {
+    let loaded = app.state::<start::FirstLoad>().watch();
+    let (app, window) = (app.clone(), window.clone());
+    tauri::async_runtime::spawn(async move {
+        let probe = {
+            let server = server.clone();
+            async move {
+                tauri::async_runtime::spawn_blocking(move || reachable(&server))
+                    .await
+                    .unwrap_or(false)
+            }
+        };
+        let (limit, grace) = (start::LOAD_LIMIT, start::COMMIT_GRACE);
+        start::guard(probe, loaded, limit, grace, move || {
+            // Asked again here: a Change Server may have landed since the timeout fired.
+            if chosen(&app).as_ref() == Some(&server) && app.state::<start::FirstLoad>().claim() {
+                show_local(&window, "");
+            }
+        })
+        .await;
+    });
+}
+
 fn show_local(window: &WebviewWindow, query: &str) {
+    // Said here as well as by the navigation hook, which not every system asks for a load the
+    // app starts itself.
+    if let Some(first) = window.try_state::<start::FirstLoad>() {
+        first.report(start::Load::Away);
+    }
     let _ = window.navigate(Url::parse(&format!("{LOCAL}{query}")).expect("a constant URL"));
 }
 
@@ -868,77 +902,93 @@ fn main() {
                 can_reopen(&app),
             );
 
-            let window =
-                WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
-                    .title("Dozo")
-                    .visible(!hidden)
-                    .inner_size(1200.0, 800.0)
-                    .min_inner_size(420.0, 520.0)
-                    .theme(Some(Theme::Dark))
-                    .background_color(Color(20, 20, 20, 255))
-                    .on_navigation({
-                        let app = app.clone();
-                        move |url| follow(&app, decide(url, chosen(&app).as_ref()))
-                    })
-                    .initialization_script(SHELL_MARK)
-                    // The app has one window: a link that asks for a new one goes to the browser.
-                    .on_new_window(|url, _| {
-                        if let Some(url) = outside(&url) {
-                            open_outside(url);
+            // A chosen remote server loads at once; the other cases open the bundled page.
+            let first = start::window_url(settings.server.as_ref(), settings.this_computer);
+            app.manage(start::FirstLoad::new());
+            let window = WebviewWindowBuilder::new(&app, "main", first.clone())
+                .title("Dozo")
+                .visible(!hidden)
+                .inner_size(1200.0, 800.0)
+                .min_inner_size(420.0, 520.0)
+                .theme(Some(Theme::Dark))
+                .background_color(Color(20, 20, 20, 255))
+                .on_navigation({
+                    let app = app.clone();
+                    move |url| {
+                        // The window is asked to go to a screen of the app: the first page's
+                        // watcher stands down, whatever the page's address says meanwhile.
+                        if is_local(url) {
+                            app.state::<start::FirstLoad>().report(start::Load::Away);
                         }
-                        NewWindowResponse::Deny
-                    })
-                    // Downloads go to the Downloads folder under a name that is not taken; a
-                    // missing folder is made first, or the web view drops the download unsaid.
-                    .on_download({
-                        let app = app.clone();
-                        move |_, event| {
-                            if let DownloadEvent::Requested { destination, .. } = event {
-                                download_folder(destination, app.path().download_dir().ok());
+                        follow(&app, decide(url, chosen(&app).as_ref()))
+                    }
+                })
+                .initialization_script(SHELL_MARK)
+                // The app has one window: a link that asks for a new one goes to the browser.
+                .on_new_window(|url, _| {
+                    if let Some(url) = outside(&url) {
+                        open_outside(url);
+                    }
+                    NewWindowResponse::Deny
+                })
+                // Downloads go to the Downloads folder under a name that is not taken; a
+                // missing folder is made first, or the web view drops the download unsaid.
+                .on_download({
+                    let app = app.clone();
+                    move |_, event| {
+                        if let DownloadEvent::Requested { destination, .. } = event {
+                            download_folder(destination, app.path().download_dir().ok());
+                        }
+                        true
+                    }
+                })
+                // Notifications and the microphone for the server's own origin; camera,
+                // location and the like are refused (the web view grants them unless told
+                // otherwise).
+                .on_permission_request({
+                    let app = app.clone();
+                    move |webview, kind| {
+                        alerts::answer(kind, webview.url().ok().as_ref(), chosen(&app).as_ref())
+                    }
+                })
+                // The server's page puts its unread count in front of its title; nothing
+                // else of it reaches the app, and any other page counts as none. The window
+                // keeps its own title.
+                .on_document_title_changed({
+                    let app = app.clone();
+                    move |window, title| {
+                        let page = window.url().ok();
+                        let count = alerts::count_for(page.as_ref(), chosen(&app).as_ref(), &title);
+                        alerts::show_unread(&window, count);
+                    }
+                })
+                // Leaving the server (Change Server, the connection screens) clears the badge
+                // at once, whether or not the next page's title changes.
+                .on_page_load({
+                    let app = app.clone();
+                    move |window, load| {
+                        if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
+                            alerts::show_unread(&window, 0);
+                        }
+                        // A page of the server loaded, as after signing in again: pair if
+                        // allowed.
+                        let server = chosen(&app).map(|server| server.origin());
+                        if server == Some(load.url().origin()) {
+                            let first = app.state::<start::FirstLoad>();
+                            match load.event() {
+                                PageLoadEvent::Started => first.report(start::Load::Committed),
+                                PageLoadEvent::Finished => {
+                                    first.report(start::Load::Finished);
+                                    device::wake(&app);
+                                }
                             }
-                            true
                         }
-                    })
-                    // Notifications and the microphone for the server's own origin; camera,
-                    // location and the like are refused (the web view grants them unless told
-                    // otherwise).
-                    .on_permission_request({
-                        let app = app.clone();
-                        move |webview, kind| {
-                            alerts::answer(kind, webview.url().ok().as_ref(), chosen(&app).as_ref())
-                        }
-                    })
-                    // The server's page puts its unread count in front of its title; nothing
-                    // else of it reaches the app, and any other page counts as none. The window
-                    // keeps its own title.
-                    .on_document_title_changed({
-                        let app = app.clone();
-                        move |window, title| {
-                            let page = window.url().ok();
-                            let count =
-                                alerts::count_for(page.as_ref(), chosen(&app).as_ref(), &title);
-                            alerts::show_unread(&window, count);
-                        }
-                    })
-                    // Leaving the server (Change Server, the connection screens) clears the badge
-                    // at once, whether or not the next page's title changes.
-                    .on_page_load({
-                        let app = app.clone();
-                        move |window, load| {
-                            if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
-                                alerts::show_unread(&window, 0);
-                            }
-                            // A page of the server loaded, as after signing in again: pair if
-                            // allowed.
-                            let server = chosen(&app).map(|server| server.origin());
-                            if load.event() == PageLoadEvent::Finished
-                                && server == Some(load.url().origin())
-                            {
-                                device::wake(&app);
-                            }
-                        }
-                    })
-                    .build()?;
+                    }
+                })
+                .build()?;
+            if let WebviewUrl::External(server) = first {
+                guard_first_load(&app, &window, server);
+            }
             window.on_window_event({
                 let app = app.clone();
                 move |event| {

@@ -125,7 +125,7 @@ test("llms.txt states the plans the page shows and calls Dozo source available",
   assert.doesNotMatch(llms.replace(/It is not open source\./, ""), /open[- ]source/i);
   const html = read("index.html");
   const prices = (s) => [...s.matchAll(/\$\d+/g)].map((m) => m[0]);
-  const plans = llms.slice(llms.indexOf("## Plans"), llms.indexOf("## Apps"));
+  const plans = llms.slice(llms.indexOf("## Plans"), llms.indexOf("## Links"));
   const shown = new Set(prices(html.slice(html.indexOf('id="plans"'))));
   for (const price of new Set(prices(plans))) assert.ok(shown.has(price), `${price} is not on the page`);
   for (const url of llms.match(/https:\/\/[^\s)]+/g)) assert.doesNotMatch(url, /[.,]$/);

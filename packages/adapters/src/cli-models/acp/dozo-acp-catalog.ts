@@ -10,6 +10,7 @@ export const ACP_AGENTS: readonly AcpAgentEntry[] = [
     provider: "antigravity-agent",
     name: "Antigravity",
     command: "agy",
+    downloadUrl: "https://antigravity.google/product/antigravity-cli",
     args: ["acp"],
     versions: { min: [1, 5, 0], below: [1, 6, 0] },
     // Google's terms count use of this sign-in outside its own products as a reason to close it.
@@ -19,6 +20,7 @@ export const ACP_AGENTS: readonly AcpAgentEntry[] = [
     provider: "grok-agent",
     name: "Grok",
     command: "grok",
+    downloadUrl: "https://docs.x.ai/build/overview",
     args: ["agent", "stdio"],
     // Its headless guide signs in with the cached sign-in of `grok login`, never an API key.
     authenticate: (methods) =>

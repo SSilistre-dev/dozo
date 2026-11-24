@@ -15,6 +15,9 @@ const mail = {
   inline: [{ contentId: "mark", filename: "mark.png", contentType: "image/png", content: PIXEL }],
 };
 
+const file = { to: "ada@example.test", subject: "Feedback", text: "It froze." };
+const shot = { filename: "screenshot-1.png", contentType: "image/png", content: PIXEL };
+
 describe("inline images", () => {
   it("SMTP sends them as related parts the HTML finds by content id", async () => {
     const stream = nodemailer.createTransport({ streamTransport: true, buffer: true });
@@ -69,5 +72,49 @@ describe("inline images", () => {
     const plain = sent(1);
     expect(plain).not.toHaveProperty("attachments");
     expect(plain).not.toHaveProperty("inline");
+  });
+
+  it("SMTP attaches files as attachments, beside inline images and not instead of them", async () => {
+    const stream = nodemailer.createTransport({ streamTransport: true, buffer: true });
+    let raw = "";
+    const transport = {
+      sendMail: async (options: object) => {
+        const info = await stream.sendMail(options);
+        raw = String(info.message);
+        return info;
+      },
+      close: () => undefined,
+    };
+    const provider = new SmtpEmailProvider(
+      { url: "smtps://smtp.example.test:465", from: "no-reply@example.test" },
+      { transport: transport as never },
+    );
+    await provider.send({ ...file, attachments: [shot] });
+    expect(raw).toMatch(/Content-Type: multipart\/mixed/);
+    expect(raw).toMatch(/Content-Disposition: attachment; filename=screenshot-1\.png/);
+    expect(raw).toMatch(/Content-Type: image\/png; name=screenshot-1\.png/);
+    expect(raw).toContain(PIXEL.slice(0, 40));
+    await provider.send({ ...mail, attachments: [shot] });
+    expect(raw).toMatch(/Content-ID: <mark>/);
+    expect(raw).toMatch(/Content-Disposition: attachment; filename=screenshot-1\.png/);
+  });
+
+  it("the HTTP adapter sends them as attachments without a content id", async () => {
+    const fetch = vi.fn(async () => Response.json({ id: "email-1" }));
+    const provider = new ResendEmailProvider(
+      { apiKey: "key", from: "no-reply@example.test" },
+      { fetch: fetch as never },
+    );
+    await provider.send({ ...mail, attachments: [shot] });
+    await provider.send({ ...file, attachments: [shot] });
+    const sent = (call: number) =>
+      JSON.parse(String((fetch.mock.calls[call] as unknown as [string, RequestInit])[1].body));
+    expect(sent(0).attachments).toEqual([
+      { filename: "mark.png", content: PIXEL, content_type: "image/png", content_id: "mark" },
+      { filename: "screenshot-1.png", content: PIXEL, content_type: "image/png" },
+    ]);
+    expect(sent(1).attachments).toEqual([
+      { filename: "screenshot-1.png", content: PIXEL, content_type: "image/png" },
+    ]);
   });
 });

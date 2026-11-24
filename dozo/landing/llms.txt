@@ -9,20 +9,24 @@ Dozo is source available: its own files are under the Elastic License 2.0, the c
 - Each bot has its own computer. You can watch its screen, take control and hand it back.
 - A bot asks before it acts on anything that matters. You approve, edit or deny.
 - Routines run a bot on a schedule. Bots keep memory between chats.
+- A bot can have several chats; you can edit a message or regenerate a reply. Per-bot backup models take over when a model runs out, and a reply from a backup names it.
+- Learning from chats is off until you turn it on; every note it keeps is listed and can be undone.
+- A bot API, a command-line tool and an MCP endpoint reach your bots from scripts and other tools.
+- An account backup is one file locked with a password. An organization can share a skill library and show its logo.
 - Every plan uses your own model connection (your key or your subscription); model costs come from there.
 - The desktop app can run the server on your own computer, so chats and files are stored there; what is sent to a model goes to the provider you chose (a local model stays on the computer).
+
+## Apps
+
+- Self-hosted: free on your own server.
+- Desktop app for macOS, Windows and Linux: https://github.com/SSilistre-dev/dozo/releases/latest . It opens the hosted server, your own server, or runs a server on your computer. The macOS build is signed; the Windows and Linux builds are not signed yet.
+- Web app: https://app.dozo.bot (sign-up is open)
 
 ## Plans (hosted, prices in US dollars as shown on the site)
 
 - Free: $0 a month, no card needed. Bots work on your own computer (no hosted bot computer), 500 MB file storage.
 - Premium: $49 a month, or $39 a month billed yearly ($468 a year). Bot computer with 2 vCPU and 2 GB RAM, 100 computer hours a month, 2 GB file storage.
 - Premium Plus: $99 a month, or $79 a month billed yearly ($948 a year). Bot computer with 4 vCPU and 4 GB RAM, 200 computer hours a month, 5 GB file storage.
-- Self-hosted: free on your own server.
-
-## Apps
-
-- Web app: https://app.dozo.bot (sign-up is open)
-- Desktop app for macOS, Windows and Linux: https://github.com/SSilistre-dev/dozo/releases/latest . It opens the hosted server, your own server, or runs a server on your computer. The macOS build is signed; the Windows and Linux builds are not signed yet.
 
 ## Links
 

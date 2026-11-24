@@ -64,6 +64,7 @@ packages/adapters/src/dozo-bot-model-backups.ts	module	let missingTableReported 
 packages/adapters/src/dozo-call-preflight.ts	module	let registryAddresses: Map<string, string | undefined> | undefined;	global-safe	provider id to the model registry's public base address, built once from the built-in catalog; same for everyone
 packages/adapters/src/dozo-command-gate.ts	module	const commandBlocks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
+packages/adapters/src/dozo-command-gate.ts	module	const hostedMatches = new WeakMap<	request	keyed by a tool-call object's identity; holds that call's own rule match, read for the run's member
 packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const large: string[] = [];	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const visited = new Set<string>();	local	per-call local, dies with the call
@@ -219,6 +220,13 @@ packages/i18n/src/dozo-server-text.ts	module	export const SIGN_IN_LABELS: Readon
 apps/api/src/app.ts	fn buildApp	const dozoJobPool =	global-safe	wiring of billing's job pool: a handle, no data
 apps/api/src/app.ts	fn buildApp	const dozoBilling =	global-safe	wiring of billing's mail service: no data
 apps/api/src/account-import.ts	class AccountImporter	this.repos = dozoReportingRepos(createRepos(deps.prisma), deps)	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputer	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let incomplete = false;	local	per-call local, dies with the call
+packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let ref = await provision();	local	per-call local, dies with the call
 packages/adapters/src/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
 packages/core/src/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled
+packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<object, number>();	request	count keyed by the identity of one tool call's action list; dies with the call
+packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
+packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
+packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call

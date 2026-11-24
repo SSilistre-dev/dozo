@@ -14,6 +14,7 @@ import {
   trustDozoBot,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { dozoTokenReachesBot } from "./dozo-token-bots.js";
 import { requireIdentityConfirmation } from "./identity-confirmation.js";
 import type { RouterContext } from "./routes/context.js";
 import { resolveThreadTarget } from "./thread-target.js";
@@ -58,6 +59,10 @@ export function dozoAccessTokensRoutes(ctx: RouterContext) {
           ? await resolveThreadTarget(deps.prisma, context.actor, { botId: input.botId })
           : null;
         const bot = target?.kind === "bot" ? target.bot : null;
+        // And only one the member made: a token never reaches another member's bot in a shared
+        // Space (dozo-token-bots.ts), so it is not made for one either.
+        if (bot && !(await dozoTokenReachesBot(deps.prisma, context.actor, null, bot.id)))
+          throw new ClientError("NOT_FOUND", "Bot not found");
         const created = await createDozoAccessToken(deps.prisma, context.actor, {
           name: input.name,
           botId: bot?.id ?? null,

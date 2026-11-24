@@ -7,7 +7,10 @@ const db = vi.hoisted(() => ({
     }),
   ),
 }));
-vi.mock("@rakazo/db", () => ({ takeDozoDailySend: db.take }));
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  takeDozoDailySend: db.take,
+}));
 
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import { dozoSendLimitCard, dozoSendLimitGate } from "./dozo-send-limit.js";

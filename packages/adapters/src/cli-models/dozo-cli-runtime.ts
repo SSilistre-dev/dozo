@@ -5,6 +5,7 @@ import { dozoBotTokenTainted } from "../dozo-token-marks.js";
 import { createRuntimeModels } from "../pi-runtime-models.js";
 import { withRuntimeModels } from "../pi-runtime-scope.js";
 import type { RunRuntimeEnv } from "../run-runtime.js";
+import { agentModeEnabled } from "./dozo-agent-modes.js";
 import { AGENT_OWN_RUNS_ONLY, AGENT_TOKEN_TEXT, withAgentRuntime } from "./dozo-agent.js";
 import { localCliHost } from "./dozo-cli-driver.js";
 import {
@@ -36,6 +37,7 @@ export function cliModelRuntime(
   return withAgentRuntime(withRuntimeModels(runtime, models), AGENT_DRIVERS, {
     accessCheck,
     runAllowed: (runId) => ownRun(deps.prisma, runId),
+    enabled: (provider) => agentModeEnabled(deps.prisma, provider),
   });
 }
 

@@ -1,6 +1,11 @@
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
+import { encodeFeedbackImage } from "@rakazo/adapters";
 import type { DozoServerDiagnostics } from "@rakazo/contracts";
-import { DOZO_FEEDBACK_MAX_RUNS, dozoFeedbackText } from "@rakazo/contracts";
+import {
+  DOZO_FEEDBACK_IMAGES_MAX_BYTES,
+  DOZO_FEEDBACK_MAX_RUNS,
+  dozoFeedbackText,
+} from "@rakazo/contracts";
 import { ClientError, deadlineSignal, MESSAGING_EMAIL_SUFFIX, withAbort } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import * as z from "zod";
@@ -17,6 +22,32 @@ const SEND_DEADLINE_MS = 15_000;
 const HOUR_MS = 60 * 60 * 1000;
 
 const Email = z.string().email();
+
+/** A picture that is not a PNG, JPEG or WebP the server can read, or that is over a limit. */
+export class FeedbackImageError extends ClientError {
+  constructor() {
+    super("BAD_REQUEST", "Couldn't use that image", "feedback_image");
+  }
+}
+
+/**
+ * The pictures to attach: each checked from its own bytes and drawn again by the server, so no
+ * location or device data travels. They go into the mail and nowhere else: not stored, not logged.
+ */
+async function feedbackImages(values: readonly string[]) {
+  // A data URL is base64: four characters per three bytes.
+  const bytes = values.reduce((sum, value) => sum + (value.length * 3) / 4, 0);
+  if (bytes > DOZO_FEEDBACK_IMAGES_MAX_BYTES) throw new FeedbackImageError();
+  const images = await Promise.all(values.map((value, index) => encodeFeedbackImage(value, index)));
+  const drawn = images.map((image) => {
+    if (!image) throw new FeedbackImageError();
+    return image;
+  });
+  // A picture can come out larger than it went in, and the mail has its own size limit.
+  const sent = drawn.reduce((sum, image) => sum + (image.content.length * 3) / 4, 0);
+  if (sent > DOZO_FEEDBACK_IMAGES_MAX_BYTES) throw new FeedbackImageError();
+  return drawn;
+}
 
 /** The operator's inbox for feedback (`DOZO_FEEDBACK_EMAIL`); unset or not an address, none. */
 export function feedbackAddress(value = process.env.DOZO_FEEDBACK_EMAIL): string | null {
@@ -55,8 +86,8 @@ async function failedRuns(
 
 /**
  * In-app feedback. It goes to the operator's own address by the server's mail provider; without
- * one, the person saves the report and writes to the address themselves. Only the note and, when
- * asked for, the diagnostics the preview showed leave the server. The limits are per process, so
+ * one, the person saves the report and writes to the address themselves. Only the note, the
+ * pictures the person added and, when asked for, the diagnostics the preview showed leave the server. The limits are per process, so
  * with several API instances each counts on its own.
  */
 export function dozoFeedbackRoutes(ctx: RouterContext, now: () => number = Date.now) {
@@ -88,6 +119,7 @@ export function dozoFeedbackRoutes(ctx: RouterContext, now: () => number = Date.
         if (total("all") > DOZO_FEEDBACK_PER_HOUR)
           throw new ClientError("TOO_MANY_REQUESTS", "Too many reports, try again later");
         const from = replyAddress(context.actor.email);
+        const images = await feedbackImages(input.images ?? []);
         const diagnostics = input.diagnostics
           ? {
               ...input.diagnostics.client,
@@ -101,7 +133,8 @@ export function dozoFeedbackRoutes(ctx: RouterContext, now: () => number = Date.
           to: address,
           ...(from ? { replyTo: from } : {}),
           subject: "Feedback",
-          text: dozoFeedbackText(input.message, from, diagnostics),
+          text: dozoFeedbackText(input.message, from, diagnostics, images.length),
+          ...(images.length ? { attachments: images } : {}),
         };
         await withAbort(
           deps.email.send(mail),

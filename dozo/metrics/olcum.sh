@@ -28,9 +28,10 @@ DOZO_STAGE_DIR="$STAGE" DOZO_STAGE_WORKTREE=1 dozo/docker/build.sh stage >/dev/n
 DOZO_STAGE_DIR="$STAGE" dozo/docker/build.sh brand >/dev/null || fail "brand"
 rm -rf "$STAGE/out" && mkdir -p "$STAGE/out"
 # The repository as git lists it (tracked and untracked-not-ignored), deleted files skipped, unpacked
-# in the container; the measuring runs there, in the dozo-olcum-deps volume.
+# in the container; the measuring runs there, in the dozo-olcum-deps volume. That volume holds one
+# working copy, shared by every checkout, so measuring waits on /tmp/dozo-olcum.lock for the one in progress.
 git ls-files -z -co --exclude-standard | tar --null --ignore-failed-read -T - -cf - 2>/dev/null |
-  docker run -i --init --rm "${LIMITS[@]}" --name "$NAME" --label "dozo.run=olcum-$$" \
+  flock /tmp/dozo-olcum.lock docker run -i --init --rm "${LIMITS[@]}" --name "$NAME" --label "dozo.run=olcum-$$" \
     -v "$STAGE/src:/stage:ro" -v dozo-olcum-deps:/cache -v "$STAGE/out:/out" \
     -e HOST_UID="$(id -u):$(id -g)" "$IMAGE" \
     bash -c 'rm -rf /cache/in && mkdir -p /cache/in && tar -C /cache/in -xf - && exec bash /cache/in/dozo/metrics/collect.sh' ||

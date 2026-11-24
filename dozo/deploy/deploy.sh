@@ -7,6 +7,10 @@ set -Eeuo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
+# shellcheck source=SCRIPTDIR/deploy-lock.sh
+. "$here/deploy-lock.sh"
+# shellcheck source=SCRIPTDIR/deploy-build-limit.sh
+. "$here/deploy-build-limit.sh"
 
 say() { printf '[deploy] %s\n' "$*"; }
 die() {
@@ -44,6 +48,8 @@ conf=${DOZO_DEPLOY_CONF:-$HOME/.config/dozo/deploy.conf}
 for name in DOZO_DEPLOY_SSH DOZO_DEPLOY_DOMAIN DOKPLOY_URL DOKPLOY_COMPOSE_ID; do
   [ -n "${!name:-}" ] || die "$name is not set in $conf"
 done
+# A bad build limit setting stops the run here, before any ssh.
+[ "$action" != deploy ] || build_limit_validate
 remote_dir=${DOZO_DEPLOY_DIR:-/opt/dozo}
 timeout=${DOZO_DEPLOY_TIMEOUT:-900}
 if [ -z "${DOKPLOY_API_KEY:-}" ]; then
@@ -88,6 +94,7 @@ finish() {
     say "the host retires the copies of api and web once those run healthy ($remote_dir/bridge.log)"
   fi
   rm -rf ${stage:+"$stage"} ${probe_dir:+"$probe_dir"}
+  lock_release
 }
 trap finish EXIT
 
@@ -256,6 +263,9 @@ if [ "$action" = owner ]; then
   exit 0
 fi
 
+# Everything below changes the host: one run at a time, released by `finish` on any exit.
+lock_take "$action-$(git -C "$repo" rev-parse --short HEAD)"
+
 if [ "$action" = rollback ]; then
   tag=$2
   remote docker image inspect "dozo/app:$tag" "dozo/supervisor:$tag" "rakazo/computer:$tag" \
@@ -350,26 +360,7 @@ git -C "$repo" show "$tag:dozo/deploy/host-jobs.sh" | remote \
   "cat >$remote_dir/host-jobs.sh.new && chmod 700 $remote_dir/host-jobs.sh.new && mv $remote_dir/host-jobs.sh.new $remote_dir/host-jobs.sh"
 
 say "build the images on the host"
-remote bash -s -- "$remote_dir" "$tag" <<'EOF' || die "the image build failed"
-set -euo pipefail
-dir=$1 tag=$2
-# A rebuild gives the app image a new id even when every step comes from cache, and a new id
-# restarts its containers. dozo/app:<tag> is tagged last, so finding all three means a whole set.
-if docker image inspect "dozo/app:$tag" "dozo/supervisor:$tag" "rakazo/computer:$tag" >/dev/null 2>&1; then
-  echo "[deploy] host: the images of $tag are there, nothing to build"
-  exit 0
-fi
-cd "$dir/src"
-{
-  docker build -q -f infra/sandboxes/supervisor/Dockerfile -t "dozo/supervisor:$tag" .
-  docker build -q -t "rakazo/computer:$tag" infra/sandboxes/computer
-  docker build -q --build-arg "GIT_SHA=$tag" -f infra/compose/Dockerfile -t "dozo/app:$tag-base" .
-  # The theme ships inside the image, so a tag is one artefact and a rollback restores it too.
-  printf 'FROM dozo/app:%s-base\nCOPY theme.json /theme/theme.json\n' "$tag" |
-    docker build -q -t "dozo/app:$tag" -f - "$dir/theme"
-  docker image rm "dozo/app:$tag-base"
-} >/dev/null
-EOF
+build_images "$remote_dir" "$tag"
 
 run_tag "$tag" "$merged"
 

@@ -95,6 +95,14 @@ services:
       HOSTED_LOGIN_OVERLAP_KEY:
       # Where in-app feedback goes (dozo/README.md, Feedback). Empty: the app offers none.
       DOZO_FEEDBACK_EMAIL: ${DOZO_FEEDBACK_EMAIL:-}
+      # Connections the api may hold to Postgres (upstream's default of 4 queues requests: every
+      # call reads a session, a user and a membership first). Postgres here runs stock, 100
+      # connections with 3 kept for the owner, so 97 are usable. Each api process holds this
+      # pool + 2 for content keys + 1 for live updates; the worker 8 + 2 + 1 = 11 (its own
+      # default, left alone); a migration 2. A deploy runs two api processes (the bridge copy and
+      # the new one) and up to two workers: 2 x (16 + 3) + 2 x 11 + 2 = 62 of 97, and 30 when
+      # steady. Raising it past 24 leaves under 25 spare at that peak.
+      DB_POOL_MAX: ${DOZO_API_DB_POOL_MAX:-16}
     volumes: !override
       - data:/data
     # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through
