@@ -71,9 +71,11 @@ export function useTeachClick(
   const height = screenHeight ?? DEFAULT_COMPUTER_SCREEN.height;
   useTimeout(() => setRing(null), ring ? RING_MS : null, ring?.id);
 
-  function screenPoint(event: MouseEvent) {
-    const rect = overlay?.getBoundingClientRect() ?? { left: 0, top: 0, width, height };
-    return mapTeachPointer(event.clientX, event.clientY, rect, { width, height });
+  function screenPoint(event: MouseEvent, from: HTMLElement) {
+    return mapTeachPointer(event.clientX, event.clientY, from.getBoundingClientRect(), {
+      width,
+      height,
+    });
   }
 
   useEventListener(
@@ -83,8 +85,9 @@ export function useTeachClick(
       if (own.has(event)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      overlay?.setPointerCapture(event.pointerId);
-      const at = screenPoint(event);
+      const from = event.currentTarget as HTMLElement;
+      from.setPointerCapture(event.pointerId);
+      const at = screenPoint(event, from);
       press.current = {
         ...at,
         clientX: event.clientX,
@@ -93,12 +96,8 @@ export function useTeachClick(
         buttons: event.buttons,
         pointerId: event.pointerId,
       };
-      const rect = overlay?.getBoundingClientRect();
-      setRing({
-        id: ++rings.current,
-        left: event.clientX - (rect?.left ?? 0),
-        top: event.clientY - (rect?.top ?? 0),
-      });
+      const rect = from.getBoundingClientRect();
+      setRing({ id: ++rings.current, left: event.clientX - rect.left, top: event.clientY - rect.top });
     },
     true,
   );
@@ -108,10 +107,11 @@ export function useTeachClick(
     (event) => {
       const held = press.current;
       if (!held || !event.buttons) return;
-      const at = screenPoint(event);
-      if (Math.hypot(at.x - held.x, at.y - held.y) >= DRAG_PX && overlay) {
+      const from = event.currentTarget as HTMLElement;
+      const at = screenPoint(event, from);
+      if (Math.hypot(at.x - held.x, at.y - held.y) >= DRAG_PX) {
         press.current = null;
-        replayPress(overlay, held);
+        replayPress(from, held);
         return;
       }
       event.stopImmediatePropagation();
@@ -124,7 +124,8 @@ export function useTeachClick(
     press.current = null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (overlay?.hasPointerCapture(event.pointerId)) overlay.releasePointerCapture(event.pointerId);
+    const from = event.currentTarget as HTMLElement;
+    if (from.hasPointerCapture(event.pointerId)) from.releasePointerCapture(event.pointerId);
     if (!click) return;
     const { x, y, button } = held;
     void enqueueTeachComputerInput(botId, async () => {

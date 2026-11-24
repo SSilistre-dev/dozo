@@ -229,3 +229,15 @@ it("restarts the ring's time for a second click, and draws none outside a record
   });
   expect(document.querySelectorAll('[data-testid="teach-click-ring"]').length).toBe(1);
 });
+
+it("lets go of the pointer it captured when the press ends, and ignores a release with no press", async () => {
+  const { overlay } = await mount();
+  const release = vi.fn();
+  overlay.hasPointerCapture = () => true;
+  overlay.releasePointerCapture = release;
+  await pointer(overlay, "pointerdown", 100, 50);
+  await pointer(overlay, "pointermove", 101, 50, { buttons: 0 });
+  await pointer(overlay, "pointerup", 100, 50);
+  expect(release).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(computerInput).toHaveBeenCalledOnce());
+});
