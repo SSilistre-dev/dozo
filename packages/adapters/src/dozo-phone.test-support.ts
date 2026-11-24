@@ -24,6 +24,7 @@ export interface PhoneEffect {
   kind: string;
   status: string;
   request?: unknown;
+  result?: unknown;
 }
 
 /**
@@ -80,10 +81,15 @@ export function setup(options: {
     runId?: string;
     status?: string | { in: string[] };
     request?: { equals: unknown };
+    result?: { path: string[]; equals: unknown };
   };
   const holds = (effect: PhoneEffect, clause: Clause) =>
     (!clause.id || effect.id !== clause.id.not) &&
     (!clause.runId || effect.runId === clause.runId) &&
+    (!clause.result ||
+      (clause.result.path.length === 1 &&
+        (effect.result as Record<string, unknown> | undefined)?.[clause.result.path[0]!] ===
+          clause.result.equals)) &&
     (!clause.request || JSON.stringify(effect.request) === JSON.stringify(clause.request.equals)) &&
     (clause.status === undefined ||
       (typeof clause.status === "string"

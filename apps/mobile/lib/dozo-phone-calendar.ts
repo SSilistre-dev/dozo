@@ -27,7 +27,8 @@ export type PhonePermission = "granted" | "denied" | "unavailable";
 export type PhoneReadErrorCode =
   | `${"calendar" | "contacts" | "location" | "reminders" | PhoneWriteKind}-${"off" | "permission" | "unavailable"}`
   | `${PhoneWriteKind}-invalid`
-  | "contacts-query";
+  | "contacts-query"
+  | "reminders-write-list";
 type PhoneWriteKind = "calendar-write" | "reminders-write";
 
 export class PhoneReadError extends Error {

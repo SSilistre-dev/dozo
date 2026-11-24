@@ -10,7 +10,8 @@ import {
 
 /**
  * Adds one reminder the user approved (wire contract: `phoneReminderCreate`), iOS only, to the
- * named list when the phone has one, else to the default list. Create only: nothing here changes
+ * named list, which must exist (else nothing is written: `reminders-write-list`), or to the default
+ * list when none is named. Create only: nothing here changes
  * or deletes a reminder or sets alarms, a link or a repeat. The only thing read back is which list
  * the system chose, to name it in the answer. The one check the server ran before the card
  * (`checkPhoneReminder`, @rakazo/contracts) runs here again.
@@ -63,7 +64,12 @@ export async function createReminder(value: unknown): Promise<PhoneReminderCreat
   const { list: asked } = reminder;
   try {
     lists = await module.getCalendarsAsync(module.EntityTypes.REMINDER);
-    const named = asked ? lists.find((entry) => sameList(entry.title, asked)) : undefined;
+  } catch {
+    throw new PhoneReadError("reminders-write-unavailable");
+  }
+  const named = asked ? lists.find((entry) => sameList(entry.title, asked)) : undefined;
+  if (asked && !named) throw new PhoneReadError("reminders-write-list");
+  try {
     id = await module.createReminderAsync(named?.id ?? null, {
       title: reminder.title,
       ...(reminder.due ? { dueDate: new Date(reminder.due) } : {}),

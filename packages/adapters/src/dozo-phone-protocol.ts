@@ -364,7 +364,8 @@ export const PHONE_CALENDAR_CREATE_ERRORS = [
 ] as const;
 
 /**
- * Creates one reminder, in the list of that name when there is one, else the default list; it
+ * Creates one reminder, in the list of that name (one that does not exist is the error
+ * `reminders-write-list`, nothing written) or the default list when none is named; it
  * never changes or deletes one. The reminder is what `checkPhoneReminder` (@rakazo/contracts)
  * accepts. The phone answers PhoneReminderCreateValue (the list it went to) or one of
  * PHONE_REMINDER_CREATE_ERRORS. iOS only.
@@ -381,6 +382,7 @@ export const PHONE_REMINDER_CREATE_ERRORS = [
   "reminders-write-permission",
   "reminders-write-unavailable",
   "reminders-write-invalid",
+  "reminders-write-list",
 ] as const;
 
 const createdIn = (key: "calendar" | "list") =>

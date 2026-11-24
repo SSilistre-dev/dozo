@@ -665,8 +665,13 @@ screen or browser, stay out of Computers and its limit, and an account has one p
   (title, times, all-day dates, location, notes, how it repeats); an item the card could not show in
   full is refused before any card. A bot only creates: it never changes or deletes an event or a
   reminder and never adds invitees, and a repeating event must end. At most three writes a run, and
-  a card asked after the run read outside content says so. Adding to the calendar or adding
-  reminders has its own switch and system permission, apart from reading.
+  a card asked after the run read outside content says so, as does a card that follows a write
+  whose result was unsure. An event goes to the phone's default calendar, which the card does not
+  name (the phone only knows it when it writes); a reminder goes to the list the card names, and a
+  named list the phone does not have is refused rather than replaced by the default one. Adding to
+  the calendar or adding reminders has its own switch and system permission, apart from reading; on
+  Android the system grants reading the calendar together with writing it, while the app reads only
+  when Calendar is on.
 - Contacts: a name to look up (two letters or digits at least; no wildcards, no paging; one line,
   without control characters, on the card and the phone alike), at most 10 people, each with their
   name and up to three values of the one kind asked for (phone numbers or email addresses), nothing

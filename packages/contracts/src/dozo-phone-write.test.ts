@@ -90,6 +90,26 @@ describe("how long an event may repeat", () => {
       error(checkPhoneEvent(repeating(daysAfter(PHONE_WRITE_LIMITS.startDaysAhead + 1)), NOW)),
     ).toContain("two years");
   });
+
+  const counted = (frequency: string, interval: number, count: number) =>
+    checkPhoneEvent({ ...TIMED, recurrence: { frequency, interval, count } }, NOW);
+
+  it("ends at most two years after its start when it is counted, whatever the period", () => {
+    // The last time is start + (count - 1) x interval periods; from 2026-11-24 two calendar years is 731 days.
+    for (const [frequency, interval, fits, tooMany] of [
+      ["daily", 10, 74, 75],
+      ["weekly", 1, 105, 106],
+      ["monthly", 1, 24, 25],
+      ["yearly", 1, 2, 3],
+      ["yearly", 30, 1, 2],
+    ] as const) {
+      expect(counted(frequency, interval, fits), `${frequency} ${fits}`).toHaveProperty("value");
+      expect(error(counted(frequency, interval, tooMany)), `${frequency} ${tooMany}`).toContain(
+        "two years",
+      );
+    }
+    expect(error(counted("yearly", 30, 365))).toContain("two years");
+  });
 });
 
 describe("a reminder a write may create", () => {

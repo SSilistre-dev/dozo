@@ -151,6 +151,21 @@ export function checkPhoneEvent(value: unknown, now: number): PhoneWriteCheck<Ph
   };
 }
 
+/** When the `count`th time falls: months and years are calendar ones, so a leap year counts. */
+function lastOccurrence(
+  start: string,
+  frequency: PhoneRecurrence["frequency"],
+  interval: number,
+  count: number,
+): number {
+  const steps = (count - 1) * interval;
+  const first = new Date(Date.parse(start));
+  if (frequency === "daily" || frequency === "weekly")
+    return first.getTime() + steps * (frequency === "daily" ? 1 : 7) * DAY_MS;
+  first.setUTCMonth(first.getUTCMonth() + steps * (frequency === "monthly" ? 1 : 12));
+  return first.getTime();
+}
+
 /** How an event repeats: it always ends, after `count` times or on `until` (as start is written). */
 function checkRecurrence(
   value: unknown,
@@ -178,6 +193,12 @@ function checkRecurrence(
     return { error: "recurrence until must be written as start is, and not before it." };
   if (until && Date.parse(until) - Date.parse(start) > PHONE_WRITE_LIMITS.startDaysAhead * DAY_MS)
     return { error: "recurrence until can be at most two years after start." };
+  if (
+    count !== undefined &&
+    lastOccurrence(start, frequency, interval as number, count as number) - Date.parse(start) >
+      PHONE_WRITE_LIMITS.startDaysAhead * DAY_MS
+  )
+    return { error: "recurrence can last at most two years after start." };
   if ((count === undefined) === (until === undefined))
     return { error: "recurrence needs count or until, not both, so that it ends." };
   return {

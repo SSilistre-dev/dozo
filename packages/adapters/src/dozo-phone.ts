@@ -86,6 +86,8 @@ const EVENT_ASK = "Add this event to your phone's calendar?";
 const REMINDER_ASK = "Add this reminder to your phone?";
 /** A write's card, first line, when the run read outside content before it asked. */
 export const PHONE_WRITE_TAINTED_LINE = "This run read outside content before asking.";
+/** A write's card line, after that one, when an earlier write of this run may have been made. */
+export const PHONE_WRITE_UNSURE_LINE = "An earlier try may have added this already.";
 const SECRET_ON_CARD =
   "This holds a secret of the bot's, which the approval card cannot show. Leave it out.";
 const CONTACTS_QUERY =
@@ -163,6 +165,9 @@ const WRITES_PER_RUN = {
 /** What a write that got no readable answer may have done, as the model is told. */
 const unsure = (why: string) =>
   `The user's phone ${why}, so it may have been added. Ask the user before trying again.`;
+
+/** The result a write keeps when it may have been made: the marker the next card looks for. */
+const unsureResult = (error: string) => ({ error, uncertain: true });
 
 const PHONE_TOOLS: Record<string, PhoneTool> = {
   [PHONE_CALENDAR_READ_TOOL]: {
@@ -312,6 +317,8 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
     errors: {
       "reminders-write-invalid":
         "The user's phone could not add the reminder as given; check its fields.",
+      "reminders-write-list":
+        "The phone has no reminders list with that name; ask the user which list to use.",
     },
     plan(args) {
       const input = reminderCreateInput(args);
@@ -464,6 +471,21 @@ const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();
 
 /** Writes whose card asks after the run read outside content, by their arguments. */
 const askedTainted = new WeakSet<Record<string, unknown>>();
+/** Writes whose card asks after a write of the run that may have been made, by their arguments. */
+const askedUnsure = new WeakSet<Record<string, unknown>>();
+
+/** Whether a write of this run is of unknown outcome: left uncertain, or finished as unsure. */
+async function earlierWriteUnsure(ctx: RunContext): Promise<boolean> {
+  const found = await ctx.deps.prisma.externalEffect.findFirst({
+    where: {
+      runId: ctx.runId,
+      kind: { in: [...PHONE_WRITE_TOOL_NAMES] },
+      OR: [{ status: "uncertain" }, { result: { path: ["uncertain"], equals: true } }],
+    },
+    select: { id: true },
+  });
+  return found !== null;
+}
 
 /**
  * Whether this run made as many calls of this tool (or its kinds) as one run may. `own` is the
@@ -554,6 +576,7 @@ export async function phoneGate(
     consent = await consentTo(ctx, name, route, args, true);
   if (!consent) {
     if (tool.write && tainted) askedTainted.add(args);
+    if (tool.write && (await earlierWriteUnsure(ctx))) askedUnsure.add(args);
     return "ask";
   }
   await markReadOutsideContent(ctx);
@@ -575,7 +598,11 @@ export function phoneCard(
   const plan = tool.plan(args);
   const card = "error" in plan ? { text: tool.ask } : plan.card;
   const shown = card.detail ? redactSecrets(card.detail, [...secrets]) : "";
-  const detail = shown && askedTainted.has(args) ? `${PHONE_WRITE_TAINTED_LINE}\n${shown}` : shown;
+  const lines = [
+    ...(askedTainted.has(args) ? [PHONE_WRITE_TAINTED_LINE] : []),
+    ...(askedUnsure.has(args) ? [PHONE_WRITE_UNSURE_LINE] : []),
+  ];
+  const detail = shown ? [...lines, shown].join("\n") : shown;
   return {
     kind: "ask",
     approvalEffectId: effectId,
@@ -610,15 +637,19 @@ function failure(
   tool: PhoneTool,
   error: unknown,
   deadline: AbortSignal,
-): { kind: string; error: string } {
+): { kind: string; error: string; unsure?: true } {
   if (deadline.aborted)
-    return { kind: "timeout", error: tool.write ? unsure("did not answer in time") : TIMEOUT };
+    return tool.write
+      ? { kind: "timeout", error: unsure("did not answer in time"), unsure: true }
+      : { kind: "timeout", error: TIMEOUT };
   const text = error instanceof Error ? error.message : "";
   // Another process holding no socket for it says so in words. A write that already went out may
   // have been made before the link dropped: only a call that never left (no route, `phoneRead`) is
   // known to have written nothing.
   if (error instanceof UserDeviceOfflineError || text === USER_DEVICE_OFFLINE_MESSAGE)
-    return { kind: "offline", error: tool.write ? unsure("lost its connection") : OFFLINE };
+    return tool.write
+      ? { kind: "offline", error: unsure("lost its connection"), unsure: true }
+      : { kind: "offline", error: OFFLINE };
   const { capability, setting, cannot } = tool;
   if (text === `${capability}-off` || text === `${capability}-permission`)
     return {
@@ -629,10 +660,9 @@ function failure(
   if (extra) return { kind: text, error: extra };
   if (text === `${capability}-unavailable`) return { kind: text, error: cannot };
   // An answer of no code the phone knows (a dropped socket included) says nothing of a write.
-  return {
-    kind: "other",
-    error: tool.write ? unsure("failed in a way that is not known") : cannot,
-  };
+  return tool.write
+    ? { kind: "other", error: unsure("failed in a way that is not known"), unsure: true }
+    : { kind: "other", error: cannot };
 }
 
 /**
@@ -667,13 +697,16 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
     if (signal.aborted) throw error;
     const failed = failure(tool, error, deadline);
     getLogger().warn(tool.failed, { kind: failed.kind });
-    return call.finish({ error: failed.error });
+    return call.finish(failed.unsure ? unsureResult(failed.error) : { error: failed.error });
   }
   const read = plan.read(answer, Date.now() - sentAt);
   if (!read) {
     getLogger().warn(tool.failed, { kind: "invalid" });
-    const error = tool.write ? unsure("gave an answer that cannot be read") : tool.cannot;
-    return call.finish({ error });
+    return call.finish(
+      tool.write
+        ? unsureResult(unsure("gave an answer that cannot be read"))
+        : { error: tool.cannot },
+    );
   }
   if ("error" in read) {
     getLogger().warn(tool.failed, { kind: "stale" });

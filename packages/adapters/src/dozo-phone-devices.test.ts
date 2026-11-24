@@ -5,7 +5,8 @@ import {
   parseDeviceCapabilities,
   readDeviceCapabilities,
 } from "./dozo-device-capabilities.js";
-import { phoneRoute } from "./dozo-phone.js";
+import { offerPhoneTools, phoneRoute } from "./dozo-phone.js";
+import { PHONE_TOOL_NAMES } from "./dozo-phone.tool-definition.js";
 import { UserDevices, userDeviceForwardSecret } from "./dozo-user-device-gateway.js";
 import { withHostComputerScreen } from "./host-computer-device.js";
 import type { RunContext } from "./run-context.js";
@@ -165,6 +166,56 @@ describe("a phone among the user's devices", () => {
     expect(await gateway.connectedPhone("user-2", "calendar")).toBeNull();
     devices[1]!.revokedAt = new Date();
     expect(await gateway.connectedPhone("user-1", "calendar")).toBeNull();
+  });
+});
+
+describe("reminders on an Android phone", () => {
+  const declared = ["calendar", "calendar-write", "reminders", "reminders-write"];
+  const run = (gateway: unknown) =>
+    ({
+      source: { userComputerOwner: "user-1" },
+      deps: { userDevices: gateway, prisma: { spaceMember: { findFirst: async () => null } } },
+      thread: { id: "t", spaceId: "space-1", groupId: null },
+    }) as unknown as RunContext;
+
+  it("is never the phone for them, even when it declared them; an iPhone is", async () => {
+    const { pair, connect, gateway, prisma } = fakePrisma();
+    pair("droid", "android");
+    connect("droid", declared);
+    expect(await gateway.connectedPhone("user-1", "calendar")).toMatchObject({ deviceId: "droid" });
+    expect(await gateway.connectedPhone("user-1", "calendar-write")).toMatchObject({
+      deviceId: "droid",
+    });
+    expect(await gateway.connectedPhone("user-1", "reminders")).toBeNull();
+    expect(await gateway.connectedPhone("user-1", "reminders-write")).toBeNull();
+    expect(await readDeviceCapabilities(prisma, "droid", "android")).toEqual([
+      "calendar",
+      "calendar-write",
+    ]);
+    expect(await phoneRoute(run(gateway), "reminders-write")).toBeUndefined();
+    const offered = async () => {
+      const disabled = new Set(PHONE_TOOL_NAMES);
+      await offerPhoneTools(
+        {
+          prisma: { spaceMember: { findFirst: async () => null }, $queryRaw: async () => [] },
+          userDevices: gateway,
+        } as never,
+        { botId: "b", threadId: "t" },
+        { spaceId: "space-1" },
+        "user-1",
+        disabled,
+        null,
+      );
+      return PHONE_TOOL_NAMES.filter((name) => !disabled.has(name));
+    };
+    expect(await offered()).not.toContain("phone_reminders_read");
+    expect(await offered()).not.toContain("phone_reminder_create");
+    expect(await offered()).toContain("phone_calendar_create");
+    pair("iphone", "ios");
+    connect("iphone", declared);
+    expect(await offered()).toContain("phone_reminders_read");
+    expect(await offered()).toContain("phone_reminder_create");
+    expect(await phoneRoute(run(gateway), "reminders")).toMatchObject({ deviceId: "iphone" });
   });
 });
 

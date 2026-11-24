@@ -70,9 +70,12 @@ const REMINDER_SAMPLES: Array<[string, Record<string, unknown>, boolean]> = [
 
 describe("checking a reminder before it is written", () => {
   it.each(REMINDER_SAMPLES)("%s: accepted %s", async (_name, item, ok) => {
-    const written = write.createReminder(item);
-    if (ok) await expect(written).resolves.toMatchObject({ created: true });
-    else await expect(written).rejects.toMatchObject({ code: "reminders-write-invalid" });
+    // An accepted item may still name a list the phone does not have: only "invalid" is the check's.
+    const code = await write.createReminder(item).then(
+      () => undefined,
+      (error: { code: string }) => error.code,
+    );
+    expect(code === "reminders-write-invalid").toBe(!ok);
   });
 
   it("refuses what is not a reminder", () => {
@@ -99,15 +102,20 @@ describe("adding a reminder", () => {
     expect(native.legacy.getReminderAsync).not.toHaveBeenCalled();
   });
 
-  it("adds it to the default list when the named one is not there, and names that list", async () => {
-    expect(await write.createReminder({ title: "Call Ada", list: "Errands" })).toEqual({
+  it("writes nothing when the named list is not there, and says so", async () => {
+    await expect(
+      write.createReminder({ title: "Call Ada", list: "Errands" }),
+    ).rejects.toMatchObject({ code: "reminders-write-list" });
+    expect(native.legacy.createReminderAsync).not.toHaveBeenCalled();
+  });
+
+  it("adds it to the default list when no list is named, and names that list", async () => {
+    expect(await write.createReminder({ title: "Call Ada" })).toEqual({
       created: true,
       list: "Reminders",
     });
     expect(native.legacy.createReminderAsync).toHaveBeenCalledWith(null, { title: "Call Ada" });
     expect(native.legacy.getReminderAsync).toHaveBeenCalledWith("created-1");
-    await write.createReminder({ title: "Call Ada" });
-    expect(native.legacy.createReminderAsync).toHaveBeenLastCalledWith(null, { title: "Call Ada" });
   });
 
   it("refuses a reminder it cannot check, before anything else", async () => {

@@ -252,6 +252,7 @@ describe("a write that fails", () => {
     expect((await pending).result).toEqual({
       error:
         "The user's phone did not answer in time, so it may have been added. Ask the user before trying again.",
+      uncertain: true,
     });
   });
 
@@ -282,6 +283,7 @@ describe("a write that fails", () => {
     expect((await write(run)).result).toEqual({
       error:
         "The user's phone gave an answer that cannot be read, so it may have been added. Ask the user before trying again.",
+      uncertain: true,
     });
   });
 });
@@ -481,7 +483,9 @@ describe("a write's card", () => {
     const card = phoneCard("e", EVENT_TOOL, longest, []) as { detail: string };
     expect(card.detail).toContain("n".repeat(1000));
     expect(
-      card.detail.length + "This run read outside content before asking.\n".length,
+      card.detail.length +
+        "This run read outside content before asking.\nAn earlier try may have added this already.\n"
+          .length,
     ).toBeLessThanOrEqual(approvalDetailLength(EVENT_TOOL));
   });
 
@@ -497,6 +501,56 @@ describe("a write's card", () => {
     expect((phoneCard("e", EVENT_TOOL, other, []) as { detail: string }).detail).not.toContain(
       "outside content",
     );
+  });
+});
+
+describe("a write after one that may have been made", () => {
+  const first = (detail: string) => detail.split("\n").slice(0, 2);
+  const cardOf = async (run: ReturnType<typeof setup>) => {
+    const args = { ...EVENT };
+    expect(await phoneGate(run.ctx, false, EVENT_TOOL, args)).toBe("ask");
+    return (phoneCard("e", EVENT_TOOL, args, []) as { detail: string }).detail;
+  };
+
+  it("says an earlier try may have added it already, below the outside-content line", async () => {
+    for (const earlier of [
+      { status: "uncertain" },
+      { status: "completed", result: { error: "so it may have been added", uncertain: true } },
+    ]) {
+      const run = setup();
+      run.effects.push({ id: "w1", runId: "run-1", kind: REMINDER_TOOL, ...earlier });
+      expect((await cardOf(run)).split("\n")[0]).toBe(
+        "An earlier try may have added this already.",
+      );
+    }
+    const both = setup({ tainted: true });
+    both.effects.push({ id: "w1", runId: "run-1", kind: EVENT_TOOL, status: "uncertain" });
+    expect(first(await cardOf(both))).toEqual([
+      "This run read outside content before asking.",
+      "An earlier try may have added this already.",
+    ]);
+  });
+
+  it("stays quiet after clean writes, other runs' tries and reads", async () => {
+    const run = setup();
+    run.effects.push(
+      {
+        id: "w1",
+        runId: "run-1",
+        kind: EVENT_TOOL,
+        status: "completed",
+        result: { created: true },
+      },
+      { id: "w2", runId: "run-0", kind: EVENT_TOOL, status: "uncertain" },
+      { id: "w3", runId: "run-1", kind: "phone_calendar_read", status: "uncertain" },
+    );
+    expect(await cardOf(run)).not.toContain("earlier try");
+  });
+
+  it("is what a write that got no readable answer leaves in its effect", async () => {
+    const run = setup({ answer: answers({ ok: 1 }) });
+    const { persisted } = await write(run);
+    expect(persisted).toEqual([expect.objectContaining({ uncertain: true })]);
   });
 });
 
@@ -540,6 +594,10 @@ describe("a reminder write", () => {
     expect((await write(run, { ...REMINDER }, REMINDER_TOOL)).result).toEqual({
       error:
         "Add reminders is off on the user's phone. Ask them to turn on Add reminders in the app's Phone settings.",
+    });
+    const noList = setup({ answer: failing(new Error("reminders-write-list")) });
+    expect((await write(noList, { ...REMINDER }, REMINDER_TOOL)).result).toEqual({
+      error: "The phone has no reminders list with that name; ask the user which list to use.",
     });
     const invalid = setup({ answer: failing(new Error("reminders-write-invalid")) });
     expect((await write(invalid, { ...REMINDER }, REMINDER_TOOL)).result).toHaveProperty(
