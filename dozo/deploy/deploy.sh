@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Deploys the committed tree (HEAD) to a host that a Dokploy panel manages: stage, brand, build
-# the images here and send them to the host (or build them on the host), hand the panel the merged compose file and the image tag, wait for the
-# panel's deployment, then check health. Settings, first-time setup and rollback:
-# dozo/deploy/README.md. Exits 2 on any failure and 64 on a usage error.
+# the images here and send them to the host (or build them on the host), hand the panel the merged
+# compose file and the image tag, wait for the panel's deployment, then check health. Settings,
+# first-time setup and rollback: dozo/deploy/README.md. Exits 2 on any failure and 64 on a usage error.
 set -Eeuo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -355,7 +355,7 @@ env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
 
 # Built here before the lock is taken, so a long build does not hold the host.
 [ "$ship_mode" = host ] || ship_build "$tag"
-lock_take "deploy-$(git -C "$repo" rev-parse --short HEAD)"
+lock_take "deploy-${tag:0:9}"
 
 if [ "$ship_mode" = host ]; then
   say "copy the branded tree to the host"
