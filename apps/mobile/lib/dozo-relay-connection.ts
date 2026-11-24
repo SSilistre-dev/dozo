@@ -327,6 +327,9 @@ export class RelayConnection {
           this.present(null);
           this.drop(new RelayUnreachableError(error.message));
           // The channel was deleted under an open socket: removed at once, no reconnect needed.
+          // No grace as for a 404 (`refused`): that one is expected right after pairing, until the
+          // computer sets the phone's token. The relay sends 4001 only for a deleted or replaced
+          // channel, which no pairing in progress produces.
           if (error.code === CLOSE_DELETED && this.mode.kind === "paired" && !this.closed) {
             this.onGone?.();
           }

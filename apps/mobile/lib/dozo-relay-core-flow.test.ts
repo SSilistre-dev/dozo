@@ -204,8 +204,10 @@ describe("the chat over the relay", { timeout: 60_000 }, () => {
     unsubscribe();
   });
 
-  it("drops the phone at once when the computer removes it, its live stream included", async () => {
+  it("drops the phone at once when the computer removes it, its live stream included, even right after pairing", async () => {
     const me = await phone();
+    // Inside the grace a 404 gets after pairing: a deleted channel's close needs none.
+    expect(Date.now() - me.pairing.pairedAt).toBeLessThan(2 * 60_000);
     const live = await me.subscribe();
     await live.next();
     expect(await world.revoke(me.pairing.channel)).toMatchObject({ relay: "deleted" });

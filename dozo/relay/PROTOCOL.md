@@ -103,7 +103,12 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 
 - One socket per role and channel. A new one replaces the old, which is closed with code `4000`.
 - When the channel is deleted (`DELETE`, or expiry as above) both sockets close with code `4001`. An
-  end takes `4001` as final at once: the app forgets the pairing without asking the relay again.
+  end takes `4001` as final at once: the app forgets the pairing without asking the relay again,
+  also right after pairing. A `404` on the app's upgrade is not final in the first minutes after
+  pairing (the reference app waits 2): until the host has set the app verifier, the app's own token
+  is refused by design. Nothing in pairing makes a relay close with `4001`. Like a `404`, it is the
+  relay's word, not a sealed message from the host: a relay that lies can end a pairing either way
+  (it can always refuse the channel), never read or take it over.
 - The relay sends text messages only of the form `{"type":"peer","present":true|false}`: once on
   open, and whenever the other role connects or goes away. That first message can arrive together
   with the upgrade's answer, so an end listens for messages before it hands the socket on.
