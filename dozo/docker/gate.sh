@@ -10,6 +10,8 @@
 set -uo pipefail
 # shellcheck source=SCRIPTDIR/lock.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lock.sh"
+# shellcheck source=SCRIPTDIR/unit-tree.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/unit-tree.sh"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SELF")/../.." && pwd)"
 PWD0="$PWD"
@@ -439,20 +441,20 @@ unit_tests() {
   # pipeline would hold the trap until the run ends) and removes the named container.
   # The quoted script is expanded by the container's shell, not this one (SC2016).
   # shellcheck disable=SC2086,SC2016
-  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$vol:/cache" -e CI=1 -e WORK="$(unit_tree_dir "$src")" -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
-      mkdir -p /cache/w /cache/store; cd /cache/w
+      mkdir -p "$WORK" /cache/store; cd "$WORK"
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
       # Sync incrementally (no rsync in the image): a manifest of path, size and mtime in seconds per
       # file on both sides. Files only in the volume go; files new or different in the stage are
       # copied (tar keeps the mtime); the rest is left alone. Every node_modules and data/ are kept.
       export LC_ALL=C
       manifest() { (cd "$1" && find . -name node_modules -prune -o -path ./data -prune -o \( -type f -o -type l \) -printf "%p\t%s\t%Ts\0" | sort -z); }
-      manifest /src > /tmp/src.m; manifest /cache/w > /tmp/vol.m
+      manifest /src > /tmp/src.m; manifest "$WORK" > /tmp/vol.m
       cut -z -f1 /tmp/src.m > /tmp/src.p; cut -z -f1 /tmp/vol.m > /tmp/vol.p
       comm -z -13 /tmp/src.p /tmp/vol.p | xargs -0 -r rm -f
       comm -z -23 /tmp/src.m /tmp/vol.m | cut -z -f1 > /tmp/changed
-      if [ -s /tmp/changed ]; then tar -C /src --null -T /tmp/changed -cf - | tar -C /cache/w -xf -; fi
+      if [ -s /tmp/changed ]; then tar -C /src --null -T /tmp/changed -cf - | tar -C "$WORK" -xf -; fi
       echo "[unit] sync: $(tr -cd "\0" < /tmp/changed | wc -c) file(s) copied, $(comm -z -13 /tmp/src.p /tmp/vol.p | tr -cd "\0" | wc -c) removed"
       corepack enable
       if [ "$(cat node_modules/.dozo-deps 2>/dev/null)" != "$want" ]; then
@@ -483,7 +485,7 @@ unit_tests() {
       # rows and the anchored rules are in upstream words. It parses with the TypeScript 6 this
       # lockfile installs for apps/www (the root TypeScript 7 has no JS parser). A missing guard,
       # test, list or parser is a failure, never a skip; nothing is fetched.
-      g=/guard/dozo/db; ts=/cache/w/apps/www/node_modules/typescript
+      g=/guard/dozo/db; ts=$WORK/apps/www/node_modules/typescript
       for f in module-state-guard.mjs module-state-guard.test.mjs module-state-reviewed.tsv; do
         [ -f "$g/$f" ] || { echo "[unit] module state guard FAILED: dozo/db/$f is missing, so server state is not checked"; exit 2; }
       done

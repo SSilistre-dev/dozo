@@ -61,6 +61,7 @@ packages/adapters/src/dozo-bot-model-backups.ts	module	let missingTableReported 
 packages/adapters/src/dozo-call-preflight.ts	module	let registryAddresses: Map<string, string | undefined> | undefined;	global-safe	provider id to the model registry's public base address, built once from the built-in catalog; same for everyone
 packages/adapters/src/dozo-command-gate.ts	module	const commandBlocks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
+packages/adapters/src/dozo-command-gate.ts	module	const hostedMatches = new WeakMap<	request	keyed by a tool-call object's identity; holds that call's own rule match, read for the run's member
 packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const large: string[] = [];	local	per-call local, dies with the call
 packages/adapters/src/dozo-computer-move.ts	fn largeFiles	const visited = new Set<string>();	local	per-call local, dies with the call
@@ -101,6 +102,8 @@ packages/adapters/src/dozo-no-computer.ts	module	export const CLOUD_COMPUTER_TOO
 packages/adapters/src/dozo-no-computer.ts	module	const withheldComputers = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-phone.ts	module	const phoneRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-phone.ts	module	const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();	run	device consent keyed by the run's own tool-call object identity
+packages/adapters/src/dozo-phone.ts	module	const askedTainted = new WeakSet<Record<string, unknown>>();	run	weak set keyed by the identity of one call's own args object: phoneGate adds it and phoneCard reads it for the same args in the same turn; nothing is keyed by a name or id, and the entry goes with the args
+packages/adapters/src/dozo-phone.ts	module	const askedUnsure = new WeakSet<Record<string, unknown>>();	run	same as askedTainted: a weak set of one call's args object, added by phoneGate and read by phoneCard for the same args, so another run's call never matches
 packages/adapters/src/dozo-plugin-catalog.ts	fn defaultSiteIcon	const resolver = createFaviconResolver();	global-safe	favicon lookup of public site addresses; no person data
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let snapshot: Snapshot | null = null;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let images = new Map<string, string>();	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
