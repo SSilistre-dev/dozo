@@ -55,16 +55,14 @@ const chat = (id: string, botId: string, overrides: Partial<DozoBotChat> = {}): 
 });
 const keys = (items: DozoInboxItem[]) =>
   items.map((item) =>
-    item.type === "botChat" ? `${item.bot.id}/${item.chat.id}` : (item.type + (item.type === "bot" ? item.bot.id : "")),
+    item.type === "botChat"
+      ? `${item.bot.id}/${item.chat.id}`
+      : item.type + (item.type === "bot" ? item.bot.id : ""),
   );
 
 it("lists a bot's open extra chats under the bot, in the order the server gave them", () => {
   const items = [heading, botItem("a"), botItem("b")];
-  const rows = dozoInboxItems(
-    items,
-    [chat("b2", "b"), chat("a1", "a"), chat("b1", "b")],
-    api.now,
-  );
+  const rows = dozoInboxItems(items, [chat("b2", "b"), chat("a1", "a"), chat("b1", "b")], api.now);
   expect(keys(rows)).toEqual(["heading", "bota", "a/a1", "botb", "b/b2", "b/b1"]);
   const first = rows[2];
   expect(first).toMatchObject({ type: "botChat", bot: bot("a"), chat: chat("a1", "a") });

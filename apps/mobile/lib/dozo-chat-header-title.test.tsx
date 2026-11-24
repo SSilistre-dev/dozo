@@ -28,9 +28,7 @@ import { DozoChatHeaderTitle } from "../components/dozo-chat-header-title";
 let root: Root;
 let container: HTMLDivElement;
 const render = (params: object) =>
-  act(async () =>
-    root.render(createElement(DozoChatHeaderTitle, { routeKey: "route-1", params })),
-  );
+  act(async () => root.render(createElement(DozoChatHeaderTitle, { routeKey: "route-1", params })));
 const hasSwitcher = () => container.querySelector("[data-switcher]") !== null;
 
 beforeEach(() => {

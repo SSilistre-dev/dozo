@@ -321,7 +321,28 @@ rows do; an extra chat has its own unread dot.
 On the phone a bot's extra chats are on its profile (reached from the chat's title), under Chats,
 only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
 as read or unread, snooze, pinned, export, archive). New chat is in the profile's "..." menu, and
-names the chat by when it began, as on web. A chat route holds one chat (`DozoChatScope`, from its
+names the chat by when it began, as on web.
+
+The inbox lists them as web's roster does: each open, awake extra chat is its own row under its
+bot's row (`apps/mobile/lib/dozo-inbox-chats.ts`, `components/dozo-inbox-chat-row.tsx`), in line
+with the bot's name, with its name and its own unread dot, never the bot's. The rows come from one
+read of the selected Space's chats (`dozoChats/list` without a bot), not one per bot, and are read
+again on each roster signal, never on a timer; a bot with none, a server without the read, and the
+share picker look as before. The badge and the bot's row count the main chat only, so reading or
+marking an extra chat (a tap, or its sheet: a long press, or the row's action) changes that chat
+alone. A snoozed chat leaves the list until it wakes. Known limits: only the selected Space's bots
+have chat rows (the roster stream is that Space's; another Space's bot shows them once it is
+selected), a bot pinned as a tile on Android shows none (its tile is not a row; its chats are on
+its profile), and the inbox's chat sheet has no Pinned entry (that would read every chat's pins:
+it is on the profile).
+
+The chat's title has a menu beside it (`components/dozo-chat-switcher.tsx`) in a one-to-one chat of
+a bot that is not archived: the bot's main chat and each open extra chat (the open one marked),
+then New chat, as web's header menu. A switch replaces the chat on screen, so going back and forth
+never stacks routes; New chat opens the chat it makes, as on the profile. A route from a
+notification marks the extra chat its thread names.
+
+A chat route holds one chat (`DozoChatScope`, from its
 `chatId`, or from the `threadId` of a notification: the main chat opens at once, with no request,
 when that is the bot's main thread as the inbox or the saved copy knows it; any other thread waits
 for the bot's chat list, and one it cannot place (an unreadable list, or an archived chat while the

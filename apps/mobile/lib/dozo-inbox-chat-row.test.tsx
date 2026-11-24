@@ -44,11 +44,14 @@ vi.mock("../components/drag-safe-pressable", () => ({
     onAccessibilityAction: () => void;
     onPress: () => void;
     onLongPress: () => void;
+    style: (state: { pressed: boolean }) => unknown[];
     children?: ReactNode;
   }) =>
     createElement(
-      "button",
+      "div",
       {
+        "data-style": JSON.stringify(props.style({ pressed: false })),
+        "data-pressed-style": JSON.stringify(props.style({ pressed: true })),
         "aria-label": props.accessibilityLabel,
         "aria-selected": props.accessibilityState.selected,
         "data-action": props.accessibilityActions.map((action) => action.label).join(),
@@ -111,7 +114,7 @@ const render = (entry = chat(), context: { compact?: boolean; selected?: string 
       ),
     ),
   );
-const button = () => container.querySelector("button")!;
+const button = () => container.querySelector<HTMLElement>("[data-style]")!;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -149,6 +152,14 @@ it("marks the chat that is open beside the list, and no other", async () => {
   expect(button().getAttribute("aria-selected")).toBe("true");
   await render(chat(), { selected: "bot-1" });
   expect(button().getAttribute("aria-selected")).toBe("false");
+});
+
+it("dims the row while it is pressed, and fills it only while its chat is the open one", async () => {
+  await render();
+  expect(button().getAttribute("data-style")).not.toContain("pressed");
+  expect(button().getAttribute("data-pressed-style")).toContain("pressed");
+  await render(chat(), { selected: "chat-1" });
+  expect(button().getAttribute("data-style")).toContain("backgroundColor");
 });
 
 it("opens the chat on its own route, through the inbox so a wide window replaces the open chat", async () => {

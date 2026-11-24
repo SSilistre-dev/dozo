@@ -60,8 +60,9 @@ vi.mock("./user-error", () => ({
 vi.mock("./query", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   const { useRef } = await import("react");
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return {
-    queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    queryClient,
     rpcQuery: (proc: string, input: unknown) => ({
       queryKey: [proc, input],
       queryFn: () => api.rpc(proc, input),
@@ -69,6 +70,7 @@ vi.mock("./query", async () => {
     // The save's own machinery is the app's; this one sends, then reports as it does.
     useSave: <I, S>(options: {
       save: (input: I, send: (proc: string, body: unknown) => Promise<unknown>) => Promise<S>;
+      stale?: readonly (readonly unknown[])[];
       onSaved?: (saved: S, input: I) => unknown;
       onFailed?: (error: Error, input: I) => unknown;
     }) => {
@@ -78,6 +80,15 @@ vi.mock("./query", async () => {
         run: (input: I) =>
           void latest.current
             .save(input, (proc, body) => api.rpc(proc, body) as Promise<never>)
+            // As the real save does: what it made out of date is read again before it reports.
+            .then(async (saved) => {
+              await Promise.all(
+                (latest.current.stale ?? []).map((queryKey) =>
+                  queryClient.invalidateQueries({ queryKey }),
+                ),
+              );
+              return saved;
+            })
             .then(
               (saved) => latest.current.onSaved?.(saved, input),
               (error: Error) => latest.current.onFailed?.(error, input),
