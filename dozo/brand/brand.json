@@ -1429,8 +1429,8 @@
     },
     {
       "file": "apps/web/src/pages/onboarding/model-step.tsx",
-      "find": "import { Shimmer } from \"../../components/ai/primitives\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
-      "replace": "import { Shimmer } from \"../../components/ai/primitives\";\nimport { DozoKeyLink } from \"./dozo-key-link\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "find": "import { Check, Copy } from \"lucide-react\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "replace": "import { Check, Copy } from \"lucide-react\";\nimport { DozoKeyLink } from \"./dozo-key-link\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
       "requires": ["apps/web/src/pages/onboarding/dozo-key-link.tsx"],
       "reason": "the link under the API key field, placed by the next rule"
     },
@@ -12416,6 +12416,150 @@
       "find": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "replace": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n      // Dozo: the stream's membership check, answering that the person is still in the Space.\n      $queryRaw: vi.fn().mockResolvedValue([{ member: true, seq: null }]),\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
       "reason": "upstream test fixture: a chat stream checks membership before delivering anything newer than its last check (chat stream membership), and this fake database had no answer for it; it answers that the person is still a member, so the session re-checks the tests are about decide as before"
+    },
+    {
+      "file": "apps/web/src/lib/model-auth.ts",
+      "find": "  client: RpcClient = rpc,\n) {\n  return waitForModelOAuthCompletion(() => client.models.completeOAuth({ loginId }, { signal }), {\n    signal,\n  });",
+      "replace": "  client: RpcClient = rpc,\n  pollIntervalMs?: number,\n) {\n  return waitForModelOAuthCompletion(() => client.models.completeOAuth({ loginId }, { signal }), {\n    signal,\n    pollIntervalMs,\n  });",
+      "reason": "sign-in code: a caller that knows the wait is short can check more often than the default"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "from \"./desktop\";\nimport { waitForModelOAuth }",
+      "replace": "from \"./desktop\";\nimport { CODE_EXCHANGE_POLL_MS, useOAuthPhase } from \"./dozo-oauth-phase\";\nimport { waitForModelOAuth }",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "  const [oauthPending, setOauthPending] = useState(false);\n",
+      "replace": "  const { oauthPending, oauthSubmitting, setOauthPending, setOauthSubmitting } = useOAuthPhase();\n",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: pending and submitting are one phase, so a pasted code can show Connecting"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "    oauthCodeSubmittingRef.current = true;\n    setPasteCode(\"\");",
+      "replace": "    oauthCodeSubmittingRef.current = true;\n    setOauthSubmitting(true);\n    setPasteCode(\"\");",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: the submit starts the Connecting state"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "      if (oauthAbortRef.current === controller) {\n        oauthCodeSubmittingRef.current = false;\n      }",
+      "replace": "      if (oauthAbortRef.current === controller) {\n        oauthCodeSubmittingRef.current = false;\n        setOauthSubmitting(false);\n      }",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: a rejected submit leaves Connecting and the code can be sent again"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "    await waitForModelOAuth(loginId, controller.signal, rpc);",
+      "replace": "    await waitForModelOAuth(\n      loginId,\n      controller.signal,\n      rpc,\n      oauthCodeSubmittingRef.current ? CODE_EXCHANGE_POLL_MS : undefined,\n    );",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: after a code is pasted the exchange takes a second or two, so check every second, not every 5"
+    },
+    {
+      "file": "apps/web/src/lib/use-model-oauth-signin.ts",
+      "find": "    oauthPending,\n    popupBlocked,\n    cancelOAuthAttempt,\n    startSubscriptionSignIn,",
+      "replace": "    oauthPending,\n    oauthSubmitting,\n    popupBlocked,\n    cancelOAuthAttempt,\n    startSubscriptionSignIn,",
+      "requires": [
+        "apps/web/src/lib/dozo-oauth-phase.ts"
+      ],
+      "reason": "sign-in code: the screens read whether a code is being exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    oauthPending,\n    popupBlocked,\n    cancelOAuthAttempt,",
+      "replace": "    oauthPending,\n    oauthSubmitting,\n    popupBlocked,\n    cancelOAuthAttempt,",
+      "reason": "sign-in code: read from the sign-in hook, passed on below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    oauthPending,\n    openAiCompatibleReady,",
+      "replace": "    oauthPending,\n    oauthSubmitting,\n    openAiCompatibleReady,",
+      "reason": "sign-in code: the connection controls show Connecting while a code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "import { CompatibleKeyField } from \"./compatible-key-field\";\n\nimport type",
+      "replace": "import { CompatibleKeyField } from \"./compatible-key-field\";\nimport { DozoOAuthConnecting } from \"../../components/dozo-oauth-connecting\";\n\nimport type",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "  oauthPending,\n  pasteCode,",
+      "replace": "  oauthPending,\n  oauthSubmitting,\n  pasteCode,",
+      "reason": "sign-in code: read the Connecting state"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "  | \"oauthPending\"\n  | \"pasteCode\"",
+      "replace": "  | \"oauthPending\"\n  | \"oauthSubmitting\"\n  | \"pasteCode\"",
+      "reason": "sign-in code: the prop type of the rule above"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "                      value={pasteCode}\n                      onChange",
+      "replace": "                      value={pasteCode}\n                      disabled={oauthSubmitting}\n                      onChange",
+      "reason": "sign-in code: the code field is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "disabled={!pasteCode.trim()}",
+      "replace": "disabled={oauthSubmitting || !pasteCode.trim()}",
+      "reason": "sign-in code: Submit is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "                    <Plural\n                      value={Math.ceil(oauth.expiresInSeconds / 60)}\n                      one=\"Waiting for sign-in — the link expires in about # minute.\"\n                      other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                    />",
+      "replace": "                    {oauthSubmitting ? (\n                      <DozoOAuthConnecting />\n                    ) : (\n                      <Plural\n                        value={Math.ceil(oauth.expiresInSeconds / 60)}\n                        one=\"Waiting for sign-in — the link expires in about # minute.\"\n                        other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                      />\n                    )}",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: while the code is exchanged the note says Connecting, not that the link expires"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "} from \"@rakazo/ui-web\";\nimport { Check, Copy }",
+      "replace": "} from \"@rakazo/ui-web\";\nimport { DozoOAuthConnecting } from \"../../components/dozo-oauth-connecting\";\nimport { Check, Copy }",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "                  value={pasteCode}\n                  onChange",
+      "replace": "                  value={pasteCode}\n                  disabled={model.oauthSubmitting}\n                  onChange",
+      "reason": "sign-in code: the code field is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "<Button disabled={!pasteCode.trim()} onClick={() => void submitOAuthCode()}>",
+      "replace": "<Button\n                  disabled={model.oauthSubmitting || !pasteCode.trim()}\n                  onClick={() => void submitOAuthCode()}\n                >",
+      "reason": "sign-in code: Submit is locked while the code is exchanged"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "                <Plural\n                  value={Math.ceil(oauth.expiresInSeconds / 60)}\n                  one=\"Waiting for sign-in — the link expires in about # minute.\"\n                  other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                />",
+      "replace": "                {model.oauthSubmitting ? (\n                  <DozoOAuthConnecting />\n                ) : (\n                  <Plural\n                    value={Math.ceil(oauth.expiresInSeconds / 60)}\n                    one=\"Waiting for sign-in — the link expires in about # minute.\"\n                    other=\"Waiting for sign-in — the link expires in about # minutes.\"\n                  />\n                )}",
+      "requires": [
+        "apps/web/src/components/dozo-oauth-connecting.tsx"
+      ],
+      "reason": "sign-in code: while the code is exchanged the note says Connecting, not that the link expires"
     }
   ],
   "assets": {

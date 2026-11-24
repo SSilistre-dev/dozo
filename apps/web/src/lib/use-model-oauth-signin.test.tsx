@@ -5,12 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useModelOAuthSignIn } from "./use-model-oauth-signin";
 
-const models = vi.hoisted(() => ({
-  beginOAuth: vi.fn(),
-  cancelOAuth: vi.fn(),
-  submitOAuthCode: vi.fn(),
-}));
-const waitForModelOAuth = vi.hoisted(() => vi.fn());
+const models = vi.hoisted(() => ({ beginOAuth: vi.fn(), cancelOAuth: vi.fn() }));
 vi.mock("./space-rpc", () => ({ useSpaceRpc: () => ({ models }) }));
 vi.mock("./desktop", () => ({
   desktopBridge: () => undefined,
@@ -18,7 +13,10 @@ vi.mock("./desktop", () => ({
   onDesktopOAuthCallback: vi.fn(),
 }));
 vi.mock("./model-auth", () => ({
-  waitForModelOAuth,
+  waitForModelOAuth: (_loginId: string, signal: AbortSignal) =>
+    new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true }),
+    ),
 }));
 
 const verificationUri = "https://example.test/device";
@@ -40,13 +38,6 @@ beforeEach(() => {
     expiresInSeconds: 300,
   });
   models.cancelOAuth.mockResolvedValue(undefined);
-  models.submitOAuthCode.mockResolvedValue(undefined);
-  waitForModelOAuth.mockImplementation(
-    (_loginId: string, signal: AbortSignal) =>
-      new Promise<void>((resolve) =>
-        signal.addEventListener("abort", () => resolve(), { once: true }),
-      ),
-  );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -92,52 +83,4 @@ it("reports a blocked tab and keeps the manual sign-in details", async () => {
   expect(latest.popupBlocked).toBe(true);
   expect(latest.oauth?.verificationUri).toBe(verificationUri);
   expect(onError).not.toHaveBeenCalled();
-});
-
-it("shows connecting from submit until the sign-in ends, checking every second", async () => {
-  models.beginOAuth.mockResolvedValue({
-    mode: "auth-url",
-    loginId: "login",
-    verificationUri,
-    expiresInSeconds: 300,
-  });
-  vi.spyOn(window, "open").mockReturnValue(null);
-  await act(async () => {
-    void latest.startSubscriptionSignIn({ provider: "subscription" });
-  });
-  expect(latest.oauthSubmitting).toBe(false);
-
-  await act(async () => {
-    void latest.submitOAuthCode("pasted-code");
-  });
-  expect(latest.oauthSubmitting).toBe(true);
-  expect(waitForModelOAuth).toHaveBeenCalledWith(
-    "login",
-    expect.anything(),
-    expect.anything(),
-    1000,
-  );
-
-  await act(async () => latest.cancelOAuthAttempt());
-  expect(latest.oauthSubmitting).toBe(false);
-});
-
-it("lets the code be submitted again after a rejected submit", async () => {
-  models.beginOAuth.mockResolvedValue({
-    mode: "auth-url",
-    loginId: "login",
-    verificationUri,
-    expiresInSeconds: 300,
-  });
-  models.submitOAuthCode.mockRejectedValue(new Error("bad code"));
-  vi.spyOn(window, "open").mockReturnValue(null);
-  await act(async () => {
-    void latest.startSubscriptionSignIn({ provider: "subscription" });
-  });
-  await act(async () => {
-    await latest.submitOAuthCode("pasted-code");
-  });
-  expect(latest.oauthSubmitting).toBe(false);
-  expect(latest.pasteCode).toBe("pasted-code");
-  expect(onError).toHaveBeenCalled();
 });

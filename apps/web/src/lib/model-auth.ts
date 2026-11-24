@@ -10,10 +10,8 @@ export async function waitForModelOAuth(
   loginId: string,
   signal?: AbortSignal,
   client: RpcClient = rpc,
-  pollIntervalMs?: number,
 ) {
   return waitForModelOAuthCompletion(() => client.models.completeOAuth({ loginId }, { signal }), {
     signal,
-    pollIntervalMs,
   });
 }
