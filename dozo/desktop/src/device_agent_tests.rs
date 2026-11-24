@@ -20,6 +20,30 @@ const REQUESTS: &str =
 const FRAMES: &str =
     include_str!("../../../packages/adapters/src/dozo-agent-device-fixtures/frames.json");
 
+/// The catalog the tests run with: the real entry's words, verified.
+static VERIFIED: &[Entry] = &[Entry {
+    id: "antigravity-agent",
+    name: "Antigravity",
+    command: "agy",
+    args: &["acp"],
+    min: [1, 5, 0],
+    below: [1, 6, 0],
+    terms: None,
+    verified: true,
+}];
+
+/// Another agent, under another name.
+static OTHER: &[Entry] = &[Entry {
+    id: "fake-agent",
+    name: "Fake",
+    command: "agy",
+    args: &["acp", "extra"],
+    min: [1, 5, 0],
+    below: [1, 6, 0],
+    terms: None,
+    verified: true,
+}];
+
 // ---------------------------------------------------------------------------------------------
 // The fake agent.
 
@@ -305,6 +329,45 @@ mod fake {
                                 "locations": [{ "path": format!("{outside}/secret.txt") }] }));
                             std::thread::sleep(Duration::from_secs(120));
                         }
+                        "permission-long" | "permission-bidi" | "permission-newline" => {
+                            let mut call = tool.clone();
+                            match scenario {
+                                "permission-long" => {
+                                    call["rawInput"] = json!({ "command": "x".repeat(5000) });
+                                }
+                                "permission-bidi" => call["title"] = json!("Run \u{202E}sl"),
+                                _ => call["rawInput"] = json!({ "command": "ls\nrm -rf /" }),
+                            }
+                            let answer = permission(&mut fake, &all, call);
+                            fake.log(json!({ "outcome": answer["result"]["outcome"] }));
+                            fake.chunk("after");
+                            end(&fake, "end_turn");
+                        }
+                        "permission-many" => {
+                            for _ in 0..5 {
+                                let answer = permission(&mut fake, &all, tool.clone());
+                                fake.log(json!({ "outcome": answer["result"]["outcome"] }));
+                            }
+                            end(&fake, "end_turn");
+                        }
+                        "write-newline-path" => {
+                            let answer = fake.call(
+                                "fs/write_text_file",
+                                json!({
+                                "sessionId": "s-1", "path": cwd.join("a\nb.txt"), "content": "x" }),
+                            );
+                            fake.log(json!({ "write": answer }));
+                            end(&fake, "end_turn");
+                        }
+                        "read-race" => {
+                            let answer = fake.call(
+                                "fs/read_text_file",
+                                json!({
+                                "sessionId": "s-1", "path": format!("{outside}/sub/secret.txt") }),
+                            );
+                            fake.log(json!({ "read": answer }));
+                            end(&fake, "end_turn");
+                        }
                         "outside-tool" => {
                             fake.update(json!({ "sessionUpdate": "tool_call", "toolCallId": "t1",
                                 "title": "Read secret", "kind": "read", "status": "in_progress",
@@ -499,6 +562,7 @@ fn bench(scenario: &str, answers: &[Option<bool>]) -> Bench {
     let runner = Runner::new(dir.join("data"), dir.join("home"));
     let approvals = TestApprovals::new(answers);
     let agents = runner.agents();
+    agents.set_catalog(VERIFIED);
     agents.set_path(format!("{}:/usr/bin:/bin", bin().display()));
     agents.set_approvals(approvals.clone());
     agents.set_enabled("antigravity-agent", true);
@@ -841,15 +905,6 @@ async fn an_agent_the_catalog_lacks_or_the_person_has_not_allowed_gets_an_error(
 
 #[tokio::test]
 async fn the_catalog_can_be_replaced_for_a_fake_agent() {
-    static OTHER: &[Entry] = &[Entry {
-        id: "fake-agent",
-        name: "Fake",
-        command: "agy",
-        args: &["acp", "extra"],
-        min: [1, 5, 0],
-        below: [1, 6, 0],
-        terms: None,
-    }];
     let bench = bench("reply", &[]);
     bench.runner.agents().set_catalog(OTHER);
     bench.runner.agents().set_enabled("fake-agent", true);
@@ -1361,6 +1416,7 @@ async fn a_run_seen_before_that_has_no_session_is_interrupted() {
     frames(&bench.runner, turn("run-1", "go")).await;
     // The app restarted: a new runner over the same folder has the run on record, not the session.
     let again = Runner::new(bench.dir.join("data"), bench.dir.join("home"));
+    again.agents().set_catalog(VERIFIED);
     again
         .agents()
         .set_path(format!("{}:/usr/bin:/bin", bin().display()));
@@ -1731,23 +1787,6 @@ async fn only_one_question_is_open_at_a_time() {
 }
 
 #[test]
-fn each_part_of_the_question_is_cut_on_its_own_and_says_so() {
-    let summary = "Antigravity asks before it goes on (execute).";
-    let text = dialog_text(
-        summary,
-        Some("Run ls"),
-        &["/w/a".to_owned()],
-        Some(&"x".repeat(5000)),
-    );
-    assert!(text.chars().count() <= 2000, "{}", text.chars().count());
-    assert!(text.starts_with(summary));
-    assert!(text.contains("Run ls") && text.contains("/w/a"));
-    assert!(text.contains('…'));
-    let short = dialog_text(summary, Some("Run ls"), &[], Some("{}"));
-    assert!(!short.contains('…'));
-}
-
-#[test]
 fn lengths_are_counted_the_way_the_protocol_counts_them() {
     assert_eq!(cut("😀😀😀", 4), "😀😀");
     assert_eq!(cut("a😀", 2), "a");
@@ -1892,6 +1931,7 @@ async fn a_folder_that_is_not_utf8_ends_the_start_with_an_error() {
     let bench = bench("reply", &[]);
     let odd = std::ffi::OsStr::from_bytes(b"d\xffata");
     let runner = Runner::new(bench.dir.join(odd), bench.dir.join("home"));
+    runner.agents().set_catalog(VERIFIED);
     runner
         .agents()
         .set_path(format!("{}:/usr/bin:/bin", bin().display()));
@@ -1934,4 +1974,238 @@ fn a_capability_word_the_header_cannot_carry_leaves_the_plain_header() {
         capabilities_header(true, true, &["bad\nid"]),
         "shell,browser"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The security review's findings.
+
+fn pieces(title: &str, input: Value) -> Option<String> {
+    dialog_text(
+        "Antigravity asks before it goes on (execute).",
+        Some(title),
+        &["/w/a".to_owned()],
+        Some(&input),
+    )
+}
+
+#[test]
+fn a_question_that_fits_is_shown_as_it_is_and_one_that_does_not_is_not_shown() {
+    let text = pieces("Run ls", json!({ "command": "ls" })).unwrap();
+    assert!(text.starts_with("Antigravity asks before it goes on (execute)."));
+    assert!(
+        text.contains("Run ls") && text.contains("/w/a") && text.contains("{\"command\":\"ls\"}")
+    );
+    assert!(!text.contains('…'));
+    assert!(text.chars().count() <= 2000);
+    assert!(pieces("Run ls", json!({ "command": "x".repeat(5000) })).is_none());
+    assert!(pieces(&"t".repeat(400), json!({})).is_none());
+    let long_path = dialog_text("head", None, &["p".repeat(700)], None);
+    assert!(long_path.is_none());
+}
+
+#[test]
+fn a_question_with_a_control_or_direction_character_is_not_shown() {
+    for bad in [
+        "\n", "\r", "\t", "\u{0}", "\u{85}", "\u{2028}", "\u{2029}", "\u{202A}", "\u{202B}",
+        "\u{202C}", "\u{202D}", "\u{202E}", "\u{2066}", "\u{2067}", "\u{2068}", "\u{2069}",
+        "\u{200E}", "\u{200F}", "\u{61C}",
+    ] {
+        let text = format!("a{bad}b");
+        assert!(pieces(&text, json!({})).is_none(), "title {bad:?}");
+        assert!(
+            dialog_text("h", None, std::slice::from_ref(&text), None).is_none(),
+            "path {bad:?}"
+        );
+        assert!(
+            pieces("t", json!({ "command": text.clone() })).is_none(),
+            "input {bad:?}"
+        );
+        assert!(
+            pieces("t", json!([{ text.clone(): 1 }])).is_none(),
+            "key {bad:?}"
+        );
+    }
+    assert!(pieces("Run ls ünï 😀", json!({ "command": "ls" })).is_some());
+}
+
+#[tokio::test]
+async fn a_command_too_long_to_show_is_refused_without_asking() {
+    let bench = bench("permission-long", &[Some(true)]);
+    let answered = frames(&bench.runner, turn("run-1", "go")).await;
+    assert!(bench.approvals.asked().is_empty());
+    assert_eq!(
+        bench.logged("outcome").unwrap(),
+        json!({ "outcome": "selected", "optionId": "no" })
+    );
+    assert_eq!(
+        kinds(&answered),
+        ["started", "activity", "text", "done"],
+        "{answered:?}"
+    );
+    assert_eq!(
+        values(&answered)[1]["text"],
+        "This request could not be shown safely, so it was refused."
+    );
+}
+
+#[tokio::test]
+async fn a_command_with_a_direction_or_line_character_is_refused_without_asking() {
+    for scenario in ["permission-bidi", "permission-newline"] {
+        let bench = bench(scenario, &[Some(true)]);
+        frames(&bench.runner, turn("run-1", "go")).await;
+        assert!(bench.approvals.asked().is_empty(), "{scenario}");
+        assert_eq!(
+            bench.logged("outcome").unwrap(),
+            json!({ "outcome": "selected", "optionId": "no" })
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_file_name_with_a_line_break_is_refused_without_asking() {
+    let bench = bench("write-newline-path", &[Some(true)]);
+    std::fs::create_dir_all(bench.folder("bot-1")).unwrap();
+    frames(&bench.runner, turn("run-1", "go")).await;
+    assert!(bench.approvals.asked().is_empty());
+    let answer = bench.logged("write").unwrap();
+    assert_eq!(
+        answer["error"]["message"],
+        "This request could not be shown safely, so it was refused."
+    );
+}
+
+#[test]
+fn an_agent_not_yet_verified_is_never_offered() {
+    let entry = &CATALOG[0];
+    assert!(
+        !entry.verified,
+        "Antigravity has not been checked with a real agent yet"
+    );
+}
+
+#[tokio::test]
+async fn an_unverified_entry_is_neither_declared_nor_driven_nor_in_the_menu() {
+    let bench = bench("reply", &[]);
+    // The real catalog, whose entry is not verified.
+    let runner = Runner::new(bench.dir.join("data2"), bench.dir.join("home"));
+    runner
+        .agents()
+        .set_path(format!("{}:/usr/bin:/bin", bin().display()));
+    runner.agents().set_enabled("antigravity-agent", true);
+    assert!(runner.agents().enabled("antigravity-agent"));
+    assert!(runner.agents().offered().await.is_empty());
+    assert!(runner.agents().found().await.is_empty());
+    let answered = frames(&runner, turn("run-1", "go")).await;
+    assert!(!error_of(&answered).is_empty());
+    assert!(bench.log().is_empty());
+    // The same entry, verified, is offered.
+    assert_eq!(bench.runner.agents().offered().await, ["antigravity-agent"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_whose_folder_became_a_link_after_the_answer_is_not_read() {
+    let bench = bench("read-race", &[Some(true)]);
+    std::fs::create_dir_all(bench.folder("bot-1")).unwrap();
+    let outside = bench.dir.join("outside");
+    std::fs::create_dir_all(outside.join("sub")).unwrap();
+    std::fs::create_dir_all(outside.join("other")).unwrap();
+    std::fs::write(outside.join("sub/secret.txt"), "the one shown").unwrap();
+    std::fs::write(outside.join("other/secret.txt"), "another one").unwrap();
+    *bench.approvals.before.lock().unwrap() = Some(Box::new(move || {
+        std::fs::rename(outside.join("sub"), outside.join("sub-old")).unwrap();
+        std::os::unix::fs::symlink(outside.join("other"), outside.join("sub")).unwrap();
+    }));
+    frames(&bench.runner, turn("run-1", "go")).await;
+    let read = bench.logged("read").unwrap();
+    assert!(read["error"].is_object(), "{read}");
+    assert!(read["result"].is_null());
+}
+
+#[tokio::test]
+async fn the_fourth_refused_question_of_a_turn_ends_the_turn() {
+    let bench = bench(
+        "permission-many",
+        &[
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(false),
+        ],
+    );
+    let answered = frames(&bench.runner, turn("run-1", "go")).await;
+    assert_eq!(
+        failed_message(&answered),
+        "Antigravity asked too many questions that were refused, so the turn was stopped."
+    );
+    ends_with_done(&answered);
+    assert_eq!(bench.approvals.asked().len(), 4);
+    assert_eq!(bench.runner.agents().live(), 0);
+}
+
+#[tokio::test]
+async fn the_messages_carry_the_name_of_the_agent_they_are_about() {
+    for (scenario, message) in [
+        (
+            "unauth",
+            "Fake on this computer is not signed in. Sign in to it once in a terminal, then try again.",
+        ),
+        (
+            "old",
+            "This Fake version has not been checked with Dozo yet.",
+        ),
+        (
+            "outside-tool",
+            "Fake reached outside the bot's folder without asking, so the turn was stopped.",
+        ),
+    ] {
+        let bench = bench(scenario, &[]);
+        bench.runner.agents().set_catalog(OTHER);
+        bench.runner.agents().set_enabled("fake-agent", true);
+        let mut request = turn("run-1", "go");
+        request["agent"] = json!("fake-agent");
+        let answered = frames(&bench.runner, request).await;
+        assert_eq!(failed_message(&answered), message, "{scenario}");
+    }
+}
+
+#[test]
+fn only_absolute_folders_of_the_path_are_searched() {
+    let absolute = bin().to_str().unwrap().to_owned();
+    // The same folder, written relative to where the tests run.
+    let here = std::env::current_dir().unwrap();
+    let up = "../".repeat(here.components().count() - 1);
+    let relative = format!("{up}{}", absolute.trim_start_matches('/'));
+    assert!(
+        std::path::Path::new(&here)
+            .join(&relative)
+            .join("agy")
+            .exists()
+    );
+    assert!(find_on_path("agy", &absolute).is_some());
+    assert!(find_on_path("agy", &relative).is_none());
+    assert!(find_on_path("agy", &format!(".:{relative}:{absolute}")).is_some());
+}
+
+#[tokio::test]
+async fn a_bot_folder_that_is_a_link_out_of_the_app_data_starts_nothing() {
+    for (case, linked) in [("folder", false), ("parent", true)] {
+        let bench = bench("reply", &[]);
+        let data = bench.dir.join("data");
+        let elsewhere = bench.dir.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let key = bot_key("bot-1");
+        if linked {
+            std::fs::create_dir_all(&data).unwrap();
+            std::os::unix::fs::symlink(&elsewhere, data.join("desktop-computers")).unwrap();
+        } else {
+            std::fs::create_dir_all(data.join("desktop-computers")).unwrap();
+            std::os::unix::fs::symlink(&elsewhere, data.join("desktop-computers").join(&key))
+                .unwrap();
+        }
+        let answered = frames(&bench.runner, turn("run-1", "go")).await;
+        assert_eq!(kinds(&answered), ["failed"], "{case}: {answered:?}");
+        assert!(bench.log().is_empty(), "{case}: no agent was started");
+        assert_eq!(bench.runner.agents().live(), 0);
+    }
 }

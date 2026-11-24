@@ -49,6 +49,9 @@ pub struct Entry {
     pub min: [u32; 3],
     pub below: [u32; 3],
     pub terms: Option<Terms>,
+    /// Whether this agent was checked with this app against the real thing. Until it was, it is
+    /// not offered to the server, not driven and not in the menu.
+    pub verified: bool,
 }
 
 pub struct Terms {
@@ -69,6 +72,7 @@ pub const CATALOG: &[Entry] = &[Entry {
         en: "Google may close accounts used outside its own products.",
         tr: "Google, kendi ürünleri dışında kullanılan hesapları kapatabilir.",
     }),
+    verified: false,
 }];
 
 /// Asks the person on this computer. The answer is `true` for allow, and anything else refuses.
@@ -120,11 +124,26 @@ const SEEN_DAYS: u64 = 7;
 const SEEN_LINES: usize = 10_000;
 const MCP_SERVER: &str = "dozo";
 
-const UNCHECKED: &str = "This Antigravity version has not been checked with Dozo yet.";
-const SIGNED_OUT: &str = "Antigravity on this computer is not signed in. Sign in to it once in a terminal, then try again.";
 const INTERRUPTED: &str = "The agent was interrupted: its process ended before this turn finished. Send the message again.";
-const OUTSIDE: &str =
-    "Antigravity reached outside the bot's folder without asking, so the turn was stopped.";
+/// What the person is told about a question that was not put to them.
+const UNSHOWN: &str = "This request could not be shown safely, so it was refused.";
+/// Questions of one turn that may be refused (or go unanswered) before the turn is stopped.
+const REFUSALS: u32 = 3;
+
+fn unchecked(name: &str) -> String {
+    format!("This {name} version has not been checked with Dozo yet.")
+}
+
+fn signed_out(name: &str) -> String {
+    format!(
+        "{name} on this computer is not signed in. Sign in to it once in a terminal, then try again."
+    )
+}
+
+fn outside(name: &str) -> String {
+    format!("{name} reached outside the bot's folder without asking, so the turn was stopped.")
+}
+
 const NOT_ALLOWED: &str = "The person did not allow this.";
 
 // ---------------------------------------------------------------------------------------------
@@ -369,6 +388,8 @@ impl Seen {
 }
 
 struct Shared {
+    /// `<app data>/computers`: every bot's folder is under it.
+    computers: PathBuf,
     catalog: Mutex<&'static [Entry]>,
     enabled: Mutex<HashSet<String>>,
     config: Mutex<Option<PathBuf>>,
@@ -436,6 +457,7 @@ impl Agents {
     /// `dir` holds what is kept between runs of the app (the runs seen).
     pub fn new(dir: PathBuf) -> Self {
         Agents(Arc::new(Shared {
+            computers: dir.parent().map(Path::to_path_buf).unwrap_or_default(),
             seen: Mutex::new(Seen::load(dir.join("seen"))),
             catalog: Mutex::new(CATALOG),
             enabled: Mutex::default(),
@@ -515,7 +537,7 @@ impl Agents {
         *self.0.timing.lock().unwrap() = timing;
     }
 
-    /// The catalog's agents found on the person's login `PATH`, allowed or not.
+    /// The catalog's verified agents found on the person's login `PATH`, allowed or not.
     pub async fn found(&self) -> Vec<&'static Entry> {
         let shared = self.0.clone();
         tokio::task::spawn_blocking(move || {
@@ -525,7 +547,7 @@ impl Agents {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|entry| find_on_path(entry.command, &path).is_some())
+                .filter(|entry| entry.verified && find_on_path(entry.command, &path).is_some())
                 .collect()
         })
         .await
@@ -668,7 +690,7 @@ impl Agents {
         let shared = &self.0;
         let Some(entry) = shared
             .entry(agent)
-            .filter(|entry| shared.is_enabled(entry.id))
+            .filter(|entry| entry.verified && shared.is_enabled(entry.id))
         else {
             return reply.error(NOT_HERE).await;
         };
@@ -802,21 +824,12 @@ fn cut(text: &str, max: usize) -> String {
     kept
 }
 
-/// `cut`, with an ellipsis where something was left out.
-fn cut_dots(text: &str, max: usize) -> String {
-    if len16(text) <= max {
-        return text.to_owned();
-    }
-    let mut kept = cut(text, max.saturating_sub(1));
-    kept.push('…');
-    kept
-}
-
-/// An executable file called `command` in one of the folders of `path`.
+/// An executable file called `command` in one of the absolute folders of `path`: a relative one
+/// would mean the app's own working folder.
 fn find_on_path(command: &str, path: &str) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     std::env::split_paths(path)
-        .filter(|folder| !folder.as_os_str().is_empty())
+        .filter(|folder| folder.is_absolute())
         .map(|folder| folder.join(command))
         .find(|file| {
             std::fs::metadata(file)
@@ -875,6 +888,8 @@ struct State {
     /// Tool calls that name a place outside the bot's folder and were not allowed (yet).
     suspects: HashSet<String>,
     violation: bool,
+    /// Questions of this turn that were refused or went unanswered.
+    refused: u32,
 }
 
 struct Session {
@@ -922,6 +937,8 @@ enum Decision {
     Cancelled,
     /// Another question is open: this one was not asked.
     Busy,
+    /// It could not be shown safely: not asked, and refused.
+    Refused,
 }
 
 impl Session {
@@ -947,6 +964,15 @@ impl Session {
         let unreachable = format!("{} did not start as an ACP agent as expected.", entry.name);
         create_private(&folder).map_err(|_| unreachable.clone())?;
         let root = folder.canonicalize().map_err(|_| unreachable.clone())?;
+        // A folder, or one of its parents, that is a link leading out of the app's data is not
+        // the bot's own folder.
+        let base = shared
+            .computers
+            .canonicalize()
+            .map_err(|_| unreachable.clone())?;
+        if !root.starts_with(&base) {
+            return Err(unreachable);
+        }
         let name = random_hex(8).ok_or_else(|| unreachable.clone())?;
         let bridge_key = random_hex(32).ok_or_else(|| unreachable.clone())?;
         let bridge_dir = std::env::temp_dir().join(format!("dozo-agent-{name}"));
@@ -1055,7 +1081,7 @@ impl Session {
         if answer.get("protocolVersion").and_then(Value::as_u64) != Some(PROTOCOL_VERSION)
             || !in_range(version, self.entry)
         {
-            return Err(UNCHECKED.to_owned());
+            return Err(unchecked(name));
         }
         let exe = std::env::current_exe()
             .ok()
@@ -1086,7 +1112,7 @@ impl Session {
                     fail.code.map(|code| code.to_string()).unwrap_or_default()
                 );
                 if said.to_ascii_lowercase().contains("auth") {
-                    SIGNED_OUT.to_owned()
+                    signed_out(name)
                 } else {
                     fail.message
                 }
@@ -1322,7 +1348,7 @@ impl Session {
             }
         };
         if violation {
-            self.emit(failed_frame(OUTSIDE)).await;
+            self.emit(failed_frame(&outside(self.entry.name))).await;
         }
     }
 
@@ -1372,11 +1398,11 @@ impl Session {
         let call = params.get("toolCall").cloned().unwrap_or(Value::Null);
         let (kind, title, paths, input) = approval(&call);
         let decision = self
-            .ask(kind, title.as_deref(), &paths, input.as_deref())
+            .ask(kind, title.as_deref(), &paths, input.as_ref())
             .await;
         let wanted = match decision {
             Decision::Allow => "allow_once",
-            Decision::Deny | Decision::Expired => "reject_once",
+            Decision::Deny | Decision::Expired | Decision::Refused => "reject_once",
             Decision::Cancelled | Decision::Busy => "",
         };
         if matches!(decision, Decision::Allow) {
@@ -1412,7 +1438,42 @@ impl Session {
         kind: &str,
         title: Option<&str>,
         paths: &[String],
-        input: Option<&str>,
+        input: Option<&Value>,
+    ) -> Decision {
+        let decision = self.ask_once(kind, title, paths, input).await;
+        if matches!(
+            decision,
+            Decision::Deny | Decision::Expired | Decision::Refused
+        ) {
+            self.refused_one().await;
+        }
+        decision
+    }
+
+    /// A refused question; the turn that goes on asking what is refused is stopped.
+    async fn refused_one(&self) {
+        let stop = {
+            let mut state = self.st.lock().unwrap();
+            state.refused += 1;
+            let stop = state.refused > REFUSALS && !state.violation;
+            state.violation |= stop;
+            stop
+        };
+        if stop {
+            let said = format!(
+                "{} asked too many questions that were refused, so the turn was stopped.",
+                self.entry.name
+            );
+            self.emit(failed_frame(&said)).await;
+        }
+    }
+
+    async fn ask_once(
+        &self,
+        kind: &str,
+        title: Option<&str>,
+        paths: &[String],
+        input: Option<&Value>,
     ) -> Decision {
         let Some(approvals) = self.shared.approvals.lock().unwrap().clone() else {
             return Decision::Deny;
@@ -1424,11 +1485,15 @@ impl Session {
         let mut over = self.epoch.subscribe();
         let first = *over.borrow_and_update();
         let mut closed = self.closed.subscribe();
+        let head = asks(self.entry.name, kind, crate::words::turkish());
+        let Some(text) = dialog_text(&head, title, paths, input) else {
+            self.emit(json!({ "type": "activity", "text": UNSHOWN }))
+                .await;
+            return Decision::Refused;
+        };
         let summary = asks(self.entry.name, kind, false);
         self.emit(json!({ "type": "approvalWaiting", "summary": cut(&summary, 1024) }))
             .await;
-        let head = asks(self.entry.name, kind, crate::words::turkish());
-        let text = dialog_text(&head, title, paths, input);
         let answer = approvals.ask(&text);
         let decision = tokio::select! {
             answered = answer => {
@@ -1454,6 +1519,10 @@ impl Session {
         let known = self.st.lock().unwrap().approved.contains(&path);
         if !path.starts_with(&self.root) && !known {
             self.allow(&path, "read").await?;
+            // What is read is the file the person was shown, not another one the path leads to now.
+            if self.file_path(params)? != path {
+                return Err((-32000, NOT_ALLOWED.to_owned()));
+            }
         }
         let text = tokio::task::spawn_blocking(move || read_text(&path))
             .await
@@ -1514,6 +1583,7 @@ impl Session {
                 self.st.lock().unwrap().approved.insert(path.to_path_buf());
                 Ok(())
             }
+            Decision::Refused => Err((-32000, UNSHOWN.to_owned())),
             _ => Err((-32000, NOT_ALLOWED.to_owned())),
         }
     }
@@ -1530,6 +1600,7 @@ impl Session {
             state.approved_calls.clear();
             state.suspects.clear();
             state.violation = false;
+            state.refused = 0;
             std::mem::take(&mut state.lead)
         };
         if !put(reply, json!({ "type": "started" })).await {
@@ -1947,7 +2018,7 @@ fn write_text(path: &Path, content: &str) -> std::io::Result<()> {
 }
 
 /// What a permission request is about: its kind, and what it names.
-fn approval(call: &Value) -> (&'static str, Option<String>, Vec<String>, Option<String>) {
+fn approval(call: &Value) -> (&'static str, Option<String>, Vec<String>, Option<Value>) {
     const KINDS: [&str; 10] = [
         "read",
         "edit",
@@ -1969,7 +2040,7 @@ fn approval(call: &Value) -> (&'static str, Option<String>, Vec<String>, Option<
         kind,
         call.get("title").and_then(Value::as_str).map(str::to_owned),
         paths_of(call),
-        call.get("rawInput").map(Value::to_string),
+        call.get("rawInput").cloned(),
     )
 }
 
@@ -2088,19 +2159,61 @@ fn dialog_text(
     summary: &str,
     title: Option<&str>,
     paths: &[String],
-    input: Option<&str>,
-) -> String {
-    let mut parts = vec![cut_dots(summary, 300)];
-    if let Some(title) = title {
-        parts.push(cut_dots(title, 300));
+    input: Option<&Value>,
+) -> Option<String> {
+    let joined = paths.join("\n");
+    let rendered = input.map(Value::to_string);
+    let unsafe_part = unsafe_text(summary)
+        || title.is_some_and(unsafe_text)
+        || paths.iter().any(|path| unsafe_text(path))
+        || input.is_some_and(unsafe_value);
+    let too_long = len16(summary) > 300
+        || title.is_some_and(|title| len16(title) > 300)
+        || len16(&joined) > 600
+        || rendered.as_ref().is_some_and(|input| len16(input) > 800);
+    if unsafe_part || too_long {
+        return None;
     }
+    let mut parts = vec![summary.to_owned()];
+    parts.extend(title.map(str::to_owned));
     if !paths.is_empty() {
-        parts.push(cut_dots(&paths.join("\n"), 600));
+        parts.push(joined);
     }
-    if let Some(input) = input {
-        parts.push(cut_dots(input, 800));
+    parts.extend(rendered);
+    let text = parts.join("\n\n");
+    (len16(&text) <= DIALOG_MAX).then_some(text)
+}
+
+/// A line break or any other control character, or a character that changes the direction text
+/// runs in: what the person reads could then differ from what the agent will do.
+fn unsafe_char(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{2028}'
+                | '\u{2029}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{200E}'
+                | '\u{200F}'
+                | '\u{61C}'
+        )
+}
+
+fn unsafe_text(text: &str) -> bool {
+    text.chars().any(unsafe_char)
+}
+
+/// Any text inside the value, names included.
+fn unsafe_value(value: &Value) -> bool {
+    match value {
+        Value::String(text) => unsafe_text(text),
+        Value::Array(items) => items.iter().any(unsafe_value),
+        Value::Object(fields) => fields
+            .iter()
+            .any(|(name, value)| unsafe_text(name) || unsafe_value(value)),
+        _ => false,
     }
-    cut_dots(&parts.join("\n\n"), DIALOG_MAX)
 }
 
 /// Compared without stopping at the first difference.
@@ -2161,6 +2274,15 @@ pub struct Words {
     pub consent: String,
 }
 
+/// The two buttons of a question: allow, and cancel.
+fn buttons(turkish: bool) -> (&'static str, &'static str) {
+    if turkish {
+        ("İzin Ver", "İptal")
+    } else {
+        ("Allow", "Cancel")
+    }
+}
+
 pub fn words(entry: &Entry, turkish: bool) -> Words {
     let name = entry.name;
     let risk = |said: &str| {
@@ -2173,8 +2295,8 @@ pub fn words(entry: &Entry, turkish: bool) -> Words {
     if turkish {
         return Words {
             menu: format!("Botlar Burada {name} Kullansın"),
-            allow: "İzin Ver",
-            cancel: "İptal",
+            allow: buttons(true).0,
+            cancel: buttons(true).1,
             consent: format!(
                 "Bir bot bu bilgisayarda {name}'yi {name} hesabınızla çalıştırabilir. {name} yazmadan, program çalıştırmadan ya da botun klasörü dışına çıkmadan önce burada sorar.{}",
                 risk(entry.terms.as_ref().map_or("", |terms| terms.tr)),
@@ -2183,8 +2305,8 @@ pub fn words(entry: &Entry, turkish: bool) -> Words {
     }
     Words {
         menu: format!("Let Bots Use {name} Here"),
-        allow: "Allow",
-        cancel: "Cancel",
+        allow: buttons(false).0,
+        cancel: buttons(false).1,
         consent: format!(
             "A bot can run {name} on this computer with your {name} account. {name} asks you here before it writes, runs a program or reaches outside the bot's folder.{}",
             risk(entry.terms.as_ref().map_or("", |terms| terms.en)),
@@ -2210,15 +2332,15 @@ mod dialogs {
     impl Approvals for Dialogs {
         fn ask(&self, text: &str) -> oneshot::Receiver<bool> {
             let (answer, answered) = oneshot::channel();
-            let words = words(&CATALOG[0], crate::words::turkish());
+            let (allow, cancel) = buttons(crate::words::turkish());
             self.0
                 .dialog()
                 .message(text)
                 .title("Dozo")
                 .kind(MessageDialogKind::Warning)
                 .buttons(MessageDialogButtons::OkCancelCustom(
-                    words.allow.to_owned(),
-                    words.cancel.to_owned(),
+                    allow.to_owned(),
+                    cancel.to_owned(),
                 ))
                 .show(move |allowed| {
                     let _ = answer.send(allowed);
