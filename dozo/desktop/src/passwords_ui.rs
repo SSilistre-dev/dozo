@@ -92,7 +92,7 @@ pub fn flipped(app: &AppHandle, wanted: bool) {
     }
     app.dialog()
         .message(text(
-            "Bots can fill the logins you link in their own browser on this computer. Passwords are read here when needed and never leave it.",
+            "Bots can fill the logins you link in their own browser on this computer. Passwords are read here when needed, typed only into the site they belong to, and never sent to Dozo or shown to the bot.",
         ))
         .title(text("Use your password manager?"))
         .kind(MessageDialogKind::Warning)

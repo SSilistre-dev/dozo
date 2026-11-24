@@ -5633,7 +5633,7 @@
     {
       "file": "packages/adapters/src/bot-secrets.ts",
       "find": "import { generateSecretValue } from \"./secret-generator.js\";\nimport { persistPreparedSecret } from \"./secret-persistence.js\";\n",
-      "replace": "import { generateSecretValue } from \"./secret-generator.js\";\nimport {\n  deviceLoginFill,\n  deviceLoginOf,\n  rejectDeviceLoginReveal,\n} from \"./dozo-device-login.js\";\nimport { persistPreparedSecret } from \"./secret-persistence.js\";\n",
+      "replace": "import { generateSecretValue } from \"./secret-generator.js\";\nimport {\n  deviceLoginFill,\n  deviceLoginOf,\n  rejectDeviceLoginReveal,\n  unlinkDeviceLogin,\n} from \"./dozo-device-login.js\";\nimport { persistPreparedSecret } from \"./secret-persistence.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-device-login.ts"
       ],
@@ -5756,6 +5756,15 @@
         "packages/adapters/src/dozo-device-login-store.ts"
       ],
       "reason": "password manager link: the routes of a computer's linked logins (apps/api) read the link and its store"
+    },
+    {
+      "file": "packages/adapters/src/bot-secrets.ts",
+      "find": "          data: { id, ...vault, ...destination, ...labelled, ciphertext },\n        });\n      await saveItemBots(tx, scope, id, input.bots);\n",
+      "replace": "          data: { id, ...vault, ...destination, ...labelled, ciphertext },\n        });\n      // A linked login the owner saves a value over is an ordinary login from here on.\n      if (current) await unlinkDeviceLogin(tx, id, () => openVaultValue(prisma, secretStore, current));\n      await saveItemBots(tx, scope, id, input.bots);\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-login.ts"
+      ],
+      "reason": "password manager link: a vault item that was a linked login and is saved over with a value of its own stops being linked in the same write, so removing the link or the computer never deletes what the person typed"
     },
     {
       "file": "packages/adapters/src/browser-conformance.test.ts",

@@ -106,3 +106,18 @@ export function rejectDeviceLoginReveal(plaintext: string): void {
   if (deviceLoginOf(plaintext))
     throw new ClientError("CONFLICT", "This login has no stored value.");
 }
+
+/**
+ * Called in the write that overwrites a vault item with a value of its own (the owner saved a
+ * username and password over it): when the item was a linked login it stops being one, so a later
+ * removal of the link or of the computer cannot delete what the person typed. The old stored value
+ * is read only to tell; one that cannot be read is no link.
+ */
+export async function unlinkDeviceLogin(
+  tx: { $executeRaw: (strings: TemplateStringsArray, ...values: unknown[]) => PromiseLike<number> },
+  id: string,
+  previous: () => Promise<string>,
+): Promise<void> {
+  const link = await previous().then(deviceLoginOf, () => undefined);
+  if (link) await tx.$executeRaw`DELETE FROM dozo_device_logins WHERE "credentialId" = ${id}`;
+}

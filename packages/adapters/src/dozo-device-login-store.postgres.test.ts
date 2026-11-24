@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { deviceLoginOf } from "./dozo-device-login.js";
+import { deviceLoginOf, unlinkDeviceLogin } from "./dozo-device-login.js";
 import { createDeviceLogin, deleteDeviceLogin } from "./dozo-device-login-store.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "./dozo-user-device-gateway.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -142,5 +142,31 @@ describePostgres("logins linked to a computer's password manager (PostgreSQL)", 
     await link(device, "Short Lived");
     await system.vaultCredential.deleteMany({ where: { userId, name: "short-lived" } });
     expect(await links(device.id)).toEqual([]);
+  });
+
+  it("keeps an item the owner saved a real value over: revoking and removing leave it", async () => {
+    const mine = await pairedDevice();
+    const key = handle();
+    await link(mine, "Overwritten");
+    await link(mine, "Untouched", key);
+    const row = await system.vaultCredential.findFirstOrThrow({
+      where: { userId, name: "overwritten" },
+    });
+    await system.$transaction((tx) =>
+      unlinkDeviceLogin(tx, row.id, () => secretStore.load(row.ciphertext, row.id)),
+    );
+    // Not a link any more, whatever the owner saved over it.
+    await system.vaultCredential.update({ where: { id: row.id }, data: { ciphertext: "typed" } });
+    const other = (await links(mine.id)).map((entry) => entry.handle);
+    expect(other).toEqual([key]);
+    expect(await deleteDeviceLogin(db.prisma, mine.id, key)).toBe(true);
+    await link(mine, "Untouched Again");
+    await system.userDevice.updateMany({
+      where: { id: mine.id },
+      data: { revokedAt: new Date(), revokedBy: "device" },
+    });
+    const names = (await items()).map((entry) => entry.name);
+    expect(names).toContain("overwritten");
+    expect(names).not.toContain("untouched-again");
   });
 });

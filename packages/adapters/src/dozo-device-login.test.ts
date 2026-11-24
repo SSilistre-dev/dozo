@@ -246,3 +246,48 @@ describe("a linked login elsewhere in the vault", () => {
     });
   });
 });
+
+describe("a linked login the owner saves a real value over", () => {
+  /** The link rows of the fake database: the write must delete the row of the item it overwrites. */
+  function withLinks(db: ReturnType<typeof fakeDatabase>, ids: string[]) {
+    const deleted: unknown[] = [];
+    Object.assign(db.prisma, {
+      $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (!strings.join("?").includes("DELETE FROM dozo_device_logins"))
+          throw new Error("unexpected");
+        deleted.push(values[0]);
+        return ids.includes(values[0] as string) ? 1 : 0;
+      },
+    });
+    return deleted;
+  }
+  const save = (db: ReturnType<typeof fakeDatabase>, name: string) =>
+    storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination: { name, origin: SITE, auth: { type: "login" } },
+      plaintext: JSON.stringify({
+        fields: [{ label: "Password", value: "typed-by-owner-1", hidden: true }],
+      }),
+    });
+
+  it("stops being a linked login in the same write", async () => {
+    const db = fakeDatabase();
+    const id = await linked(db);
+    const deleted = withLinks(db, [id]);
+    await save(db, "work");
+    expect(deleted).toEqual([id]);
+    expect(await fill(db, { deviceId: "device-1" })).toEqual({
+      error: "Saved logins are unavailable here.",
+    });
+  });
+
+  it("leaves an ordinary login's overwrite and a new login alone", async () => {
+    const db = fakeDatabase();
+    const deleted = withLinks(db, []);
+    await save(db, "plain");
+    await save(db, "plain");
+    expect(deleted).toEqual([]);
+  });
+});

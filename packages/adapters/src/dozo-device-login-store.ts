@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { VAULT_ITEM_LIMIT } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, retry } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { newVaultItemName } from "./bot-secrets.js";
@@ -57,70 +57,74 @@ export async function createDeviceLogin(
   const known = await linkedName(prisma, device.id, input.handle);
   if (known) return { name: known, created: false };
   const scope = { userId: device.userId, spaceId: "", vault: "account" as const };
-  for (let attempt = 1; ; attempt += 1) {
-    const id = randomBytes(12).toString("hex");
-    const name = await runAsSystem("name a linked login", () =>
-      newVaultItemName(prisma, scope, input.title, "login"),
-    );
-    const ciphertext = await sealVaultValue(
-      prisma,
-      secretStore,
-      { id, userId: device.userId, spaceId: null },
-      encodeDeviceLogin({ deviceId: device.id, handle: input.handle }),
-      {
-        operationId: id,
-        traceId: id,
-        userId: device.userId,
-        spaceId: "",
-        signal: new AbortController().signal,
-      },
-    );
-    try {
-      await persistPreparedSecret(prisma, secretStore, { id, ciphertext }, () =>
-        runAsSystem("save a linked login", () =>
-          prisma.$transaction(async (tx) => {
-            // The vault's own order for a write: the owner's row, then the count under it.
-            await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${device.userId} FOR UPDATE`;
-            // A computer disconnected meanwhile has already had its links removed.
-            const live = await tx.$queryRaw<{ id: string }[]>`
+  // Each try picks a free name again; only a collision on the unique name is tried again.
+  return retry(
+    async () => {
+      const id = randomBytes(12).toString("hex");
+      const name = await runAsSystem("name a linked login", () =>
+        newVaultItemName(prisma, scope, input.title, "login"),
+      );
+      const ciphertext = await sealVaultValue(
+        prisma,
+        secretStore,
+        { id, userId: device.userId, spaceId: null },
+        encodeDeviceLogin({ deviceId: device.id, handle: input.handle }),
+        {
+          operationId: id,
+          traceId: id,
+          userId: device.userId,
+          spaceId: "",
+          signal: new AbortController().signal,
+        },
+      );
+      try {
+        await persistPreparedSecret(prisma, secretStore, { id, ciphertext }, () =>
+          runAsSystem("save a linked login", () =>
+            prisma.$transaction(async (tx) => {
+              // The vault's own order for a write: the owner's row, then the count under it.
+              await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${device.userId} FOR UPDATE`;
+              // A computer disconnected meanwhile has already had its links removed.
+              const live = await tx.$queryRaw<{ id: string }[]>`
               SELECT id FROM user_devices WHERE id = ${device.id} AND "revokedAt" IS NULL FOR SHARE`;
-            if (!live.length)
-              throw new ClientError(
-                "UNAUTHORIZED",
-                "This computer is not connected to the account",
-              );
-            const items = await tx.vaultCredential.count({
-              where: { userId: device.userId, spaceId: null },
-            });
-            if (items >= VAULT_ITEM_LIMIT)
-              throw new ClientError("CONFLICT", "Credential limit reached");
-            await tx.vaultCredential.create({
-              data: {
-                id,
-                userId: device.userId,
-                spaceId: null,
-                name,
-                title: input.title,
-                origin: input.origin,
-                auth: { type: "login" },
-                ciphertext,
-              },
-            });
-            await tx.$executeRaw`
+              if (!live.length)
+                throw new ClientError(
+                  "UNAUTHORIZED",
+                  "This computer is not connected to the account",
+                );
+              const items = await tx.vaultCredential.count({
+                where: { userId: device.userId, spaceId: null },
+              });
+              if (items >= VAULT_ITEM_LIMIT)
+                throw new ClientError("CONFLICT", "Credential limit reached");
+              await tx.vaultCredential.create({
+                data: {
+                  id,
+                  userId: device.userId,
+                  spaceId: null,
+                  name,
+                  title: input.title,
+                  origin: input.origin,
+                  auth: { type: "login" },
+                  ciphertext,
+                },
+              });
+              await tx.$executeRaw`
               INSERT INTO dozo_device_logins ("deviceId", handle, "credentialId")
               VALUES (${device.id}, ${input.handle}, ${id})`;
-          }),
-        ),
-      );
-      return { name, created: true };
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      // The same handle saved by a request that raced this one, or the name taken meanwhile.
-      const raced = await linkedName(prisma, device.id, input.handle);
-      if (raced) return { name: raced, created: false };
-      if (attempt === NAME_ATTEMPTS) throw error;
-    }
-  }
+            }),
+          ),
+        );
+        return { name, created: true };
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        // The same handle saved by a request that raced this one, or the name taken meanwhile.
+        const raced = await linkedName(prisma, device.id, input.handle);
+        if (raced) return { name: raced, created: false };
+        throw error;
+      }
+    },
+    { attempts: NAME_ATTEMPTS, delayMs: 0, retryable: isUniqueViolation },
+  );
 }
 
 /**
