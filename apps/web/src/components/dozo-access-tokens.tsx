@@ -155,7 +155,8 @@ function CreateToken({
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  const bots = useQuery(queries.bots.list.queryOptions());
+  // Only the member's own bots: a token never reaches another member's bot in a shared Space.
+  const bots = useQuery(queries.dozoAccessTokens.ownBots.queryOptions());
   const [name, setName] = useState("");
   const [botId, setBotId] = useState("");
   const [lasting, setLasting] = useState(false);

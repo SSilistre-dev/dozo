@@ -74,6 +74,11 @@ export function dozoAdminPlansRoutes(ctx: RouterContext, payments: DozoPaymentLe
         set: quota.computerHours !== null,
       },
       computerHoursEditable: hasComputer,
+      computers: {
+        value: quota.computers ?? code.computers,
+        terms: code.computers,
+        set: quota.computers !== null,
+      },
       members,
     };
   }
@@ -111,13 +116,19 @@ export function dozoAdminPlansRoutes(ctx: RouterContext, payments: DozoPaymentLe
     setQuota: admin.dozoAdmin.plans.setQuota.handler(async ({ context, input }) => {
       if (input.computerHours !== undefined && !planHasComputer(input.tier))
         throw new ClientError("BAD_REQUEST", "This plan has no computer");
+      if (input.computers !== undefined && codePlanLimits(input.tier).computers === undefined)
+        throw new ClientError("BAD_REQUEST", "This plan counts no computers");
       const { before, after } = await changePlanQuota(
         prisma,
         input.tier,
-        { sharedSpaceMb: input.sharedSpaceMb, computerHours: input.computerHours },
+        {
+          sharedSpaceMb: input.sharedSpaceMb,
+          computerHours: input.computerHours,
+          computers: input.computers,
+        },
         context.actor.userId,
       );
-      for (const quota of ["sharedSpaceMb", "computerHours"] as const)
+      for (const quota of ["sharedSpaceMb", "computerHours", "computers"] as const)
         if (before[quota] !== after[quota])
           getLogger().info("dozo.admin.plan_quota", {
             "admin.id": context.actor.userId,

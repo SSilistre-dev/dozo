@@ -101,5 +101,23 @@ out="$(cd "$REPO" && DOZO_UNIT_SRC="$U" "$HERE/gate.sh" unit 2>&1)"; rc=$?
 { [ "$rc" = 2 ] && printf '%s' "$out" | grep -q 'the committed tree has [0-9]* (a deleted test'; } \
   || bad "four fork test files against a committed tree with more did not fail the unit step (exit $rc): $(printf '%s' "$out" | tail -3)"
 
-[ "$FAILED" = 0 ] && echo "[build.test] ok: stage overlay, dc env cleaning, lock owner start time, fork test count"
+# ---- unit-trees: lists whose each working copy is, never removes, only reads the volume ----
+mkdir -p "$TMP/bin" "$TMP/live-stage/src"
+cat > "$TMP/bin/docker" <<FAKE
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" > "$TMP/docker.args"
+printf 'aaaaaaaaaaaa\\t2048\\t$TMP/live-stage/src\\nbbbbbbbbbbbb\\t1024\\t$TMP/gone-stage/src\\ncccccccccccc\\t512\\t\\n'
+FAKE
+chmod +x "$TMP/bin/docker"
+out="$(PATH="$TMP/bin:$PATH" "$HERE/unit-trees.sh" list 2>&1)"; rc=$?
+[ "$rc" = 0 ] || bad "unit-trees.sh exited $rc: $out"
+printf '%s\n' "$out" | grep -q '^aaaaaaaaaaaa .*live ' || bad "a tree whose staged copy exists is not live: $out"
+printf '%s\n' "$out" | grep -q '^bbbbbbbbbbbb .*dead ' || bad "a tree whose staged copy is gone is not dead: $out"
+printf '%s\n' "$out" | grep -q '^cccccccccccc .*unknown ' || bad "a tree without an owner note is not unknown: $out"
+[ "$(printf '%s\n' "$out" | grep -c '^remove: ')" = 1 ] && printf '%s\n' "$out" | grep -q '^remove: .*/cache/trees/bbbbbbbbbbbb ' \
+  || bad "only the dead tree should get a remove command: $out"
+grep -q -- ':/cache:ro' "$TMP/docker.args" || bad "unit-trees.sh must mount the volume read-only: $(cat "$TMP/docker.args")"
+PATH="$TMP/bin:$PATH" "$HERE/unit-trees.sh" wipe >/dev/null 2>&1; [ "$?" = 64 ] || bad "unit-trees.sh accepted an unknown command"
+
+[ "$FAILED" = 0 ] && echo "[build.test] ok: stage overlay, dc env cleaning, lock owner start time, fork test count, unit tree owners"
 exit "$FAILED"

@@ -70,8 +70,10 @@ describePostgres("plan quotas (PostgreSQL)", () => {
         { computerHours: 9 },
         adminId,
       );
-      expect(before).toEqual({ sharedSpaceMb: 300, computerHours: null });
-      expect(after).toEqual({ sharedSpaceMb: 300, computerHours: 9 });
+      expect(before).toEqual({ sharedSpaceMb: 300, computerHours: null, computers: null });
+      expect(after).toEqual({ sharedSpaceMb: 300, computerHours: 9, computers: null });
+      const counted = await changePlanQuota(within(tx), "pro", { computers: 2 }, adminId);
+      expect(counted.after).toEqual({ sharedSpaceMb: 300, computerHours: 9, computers: 2 });
       // A UTC wall clock, as Prisma writes a column of this kind, in any database time zone.
       const [row] = await tx.$queryRaw<Array<{ updatedAt: Date }>>`
         SELECT "updatedAt" FROM "dozo_plan_quotas" WHERE "tier" = 'pro'`;
@@ -79,7 +81,7 @@ describePostgres("plan quotas (PostgreSQL)", () => {
 
       const limits = await readPlanLimits(tx);
       expect(limits.pro).toEqual({
-        computers: 1,
+        computers: 2,
         sharedSpaceBytes: 300 * MB,
         computerAllowanceCents: computerHoursCents(9),
       });
@@ -95,6 +97,7 @@ describePostgres("plan quotas (PostgreSQL)", () => {
       expect(events.map((event) => event.metadata)).toEqual([
         { setting: "plan_quota", tier: "pro", quota: "sharedSpaceMb", from: null, to: 300 },
         { setting: "plan_quota", tier: "pro", quota: "computerHours", from: null, to: 9 },
+        { setting: "plan_quota", tier: "pro", quota: "computers", from: null, to: 2 },
       ]);
     });
   });

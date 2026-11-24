@@ -11,7 +11,12 @@ import { createRouterContext } from "./routes/context.js";
 
 // Runs on the branded tree only: Free, Premium and Premium Plus exist once the rules are applied.
 
-type QuotaRow = { tier: string; sharedSpaceMb: number | null; computerHours: number | null };
+type QuotaRow = {
+  tier: string;
+  sharedSpaceMb: number | null;
+  computerHours: number | null;
+  computers?: number | null;
+};
 
 /**
  * Two members: Ada owns a Premium organization, the admin owns a Free one. The quota rows and the
@@ -61,16 +66,17 @@ function setup(quotas: QuotaRow[] = [], ledger?: DozoPaymentLedger) {
       if (text.includes("INSERT")) {
         const [tier] = values as [string];
         if (!rows.some((row) => row.tier === tier))
-          rows.push({ tier, sharedSpaceMb: null, computerHours: null });
+          rows.push({ tier, sharedSpaceMb: null, computerHours: null, computers: null });
       } else if (text.includes("UPDATE")) {
-        const [sharedSpaceMb, computerHours, , tier] = values as [
+        const [sharedSpaceMb, computerHours, computers, , tier] = values as [
+          number | null,
           number | null,
           number | null,
           string,
           string,
         ];
         rows = rows.map((row) =>
-          row.tier === tier ? { tier, sharedSpaceMb, computerHours } : row,
+          row.tier === tier ? { tier, sharedSpaceMb, computerHours, computers } : row,
         );
       }
       return 1;
@@ -148,6 +154,7 @@ describe("the plans procedures", () => {
       computer: null,
       computerHoursEditable: false,
       sharedSpaceMb: { value: 500, terms: 500, set: false },
+      computers: { value: null, terms: null, set: false },
     });
     expect(premium).toMatchObject({
       name: BYOK_TIERS.pro.name,
@@ -159,6 +166,7 @@ describe("the plans procedures", () => {
         year: `pro-year-${BYOK_TIERS.pro.annualPriceCents}`,
       },
       computerHoursEditable: true,
+      computers: { value: 1, terms: 1, set: false },
     });
     expect(premium?.computer).toEqual({
       vcpus: expect.any(Number),
@@ -182,7 +190,9 @@ describe("the plans procedures", () => {
     const { as, events, rows } = setup();
     const { plans } = await as("admin").plans.setQuota({ tier: "max", computerHours: 12 });
     expect(plans[2]?.computerHours).toMatchObject({ value: 12, set: true });
-    expect(rows()).toEqual([{ tier: "max", sharedSpaceMb: null, computerHours: 12 }]);
+    expect(rows()).toEqual([
+      { tier: "max", sharedSpaceMb: null, computerHours: 12, computers: null },
+    ]);
     expect(events).toEqual([
       expect.objectContaining({
         type: "deployment.settings.changed",
@@ -193,6 +203,31 @@ describe("the plans procedures", () => {
     // Null returns it to the plan's terms.
     const cleared = await as("admin").plans.setQuota({ tier: "max", computerHours: null });
     expect(cleared.plans[2]?.computerHours.set).toBe(false);
+  });
+
+  it("save the computers per person, and show Premium Plus's terms beside an admin's value", async () => {
+    const { as, events } = setup();
+    const { plans } = await as("admin").plans.setQuota({ tier: "max", computers: 4 });
+    expect(plans[2]?.computers).toEqual({ value: 4, terms: 3, set: true });
+    expect(events).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ quota: "computers", tier: "max", from: null, to: 4 }),
+      }),
+    ]);
+    const cleared = await as("admin").plans.setQuota({ tier: "max", computers: null });
+    expect(cleared.plans[2]?.computers).toEqual({ value: 3, terms: 3, set: false });
+  });
+
+  it("refuse a computer count on Free, which counts none, and out of bounds", async () => {
+    const { as, prisma } = setup();
+    await expect(
+      as("admin").plans.setQuota({ tier: "standard", computers: 2 }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    for (const computers of [0, 51])
+      await expect(as("admin").plans.setQuota({ tier: "pro", computers })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
   });
 
   it("refuse computer hours on Free, which has no computer, and save nothing", async () => {
