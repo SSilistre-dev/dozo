@@ -12007,13 +12007,14 @@
     {
       "file": "packages/adapters/src/index.ts",
       "find": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./web-limits.js\";",
-      "replace": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./dozo-learning-apply.js\";\nexport * from \"./dozo-learning-review.js\";\nexport * from \"./dozo-learning-store.js\";\nexport * from \"./web-limits.js\";",
+      "replace": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./dozo-learning-apply.js\";\nexport * from \"./dozo-learning-review.js\";\nexport * from \"./dozo-learning-review.prompt.js\";\nexport * from \"./dozo-learning-store.js\";\nexport * from \"./web-limits.js\";",
       "requires": [
         "packages/adapters/src/dozo-learning-apply.ts",
         "packages/adapters/src/dozo-learning-review.ts",
+        "packages/adapters/src/dozo-learning-review.prompt.ts",
         "packages/adapters/src/dozo-learning-store.ts"
       ],
-      "reason": "bot learning: the API reads, sets and undoes through the adapters package"
+      "reason": "bot learning: the API reads, sets and undoes through the adapters package; the judged evaluation in testkit builds the review's own prompt"
     },
     {
       "file": "packages/contracts/src/rpc.ts",
@@ -12081,8 +12082,8 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
-      "replace": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learn from chats\"\nmsgstr \"Sohbetlerden öğren\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learned\"\nmsgstr \"Öğrenilenler\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Changed since\"\nmsgstr \"Sonradan değişti\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
-      "reason": "bot learning: the Turkish copy of the learning switch, the heading of the learned lines and a line changed since (Undo is upstream's)"
+      "replace": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learn from chats\"\nmsgstr \"Sohbetlerden öğren\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learned\"\nmsgstr \"Öğrenilenler\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Changed since\"\nmsgstr \"Sonradan değişti\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Off\"\nmsgstr \"Kapalı\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
+      "reason": "bot learning: the Turkish copy of the learning setting, its Off choice (Ask first and Auto are upstream's), the heading of the learned lines and a line changed since (Undo is upstream's)"
     },
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
@@ -12092,6 +12093,15 @@
         "apps/web/src/pages/dozo-learning-section.tsx"
       ],
       "reason": "bot learning: the Memory section gets the bot's owner, the only one shown the learning switch (the server refuses anyone else)"
+    },
+    {
+      "file": "packages/adapters/src/teaching-session.ts",
+      "find": "async function emitSkillDraftMessages(\n  deps: TeachingSessionDeps,\n  actor: Actor,",
+      "replace": "export async function emitSkillDraftMessages(\n  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, \"notify\"> },\n  actor: Actor,",
+      "requires": [
+        "packages/adapters/src/dozo-learning-skill.ts"
+      ],
+      "reason": "bot learning: a skill a review suggests is posted with teaching's own draft card and its one-card-per-skill guard; it needs only the database and the thread's notify"
     },
     {
       "file": "packages/core/src/index.ts",

@@ -850,6 +850,42 @@ On the server on your own computer, point a local client at
 `http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
 the app window opens.
 
+## Bot learning
+
+A bot learns from its owner's own direct chat in a Space with no other member or guest, set per
+bot under its Memory: Off (the default, no call, job or row), Ask first, or Auto. Code:
+`packages/adapters/src/dozo-learning-*.ts`, prompt `dozo-learning-review.prompt.ts`.
+
+- **When:** a review starts once ten of the owner's turns wait, or fifteen minutes after the last
+  one if three wait; at most six a bot a day, one at a time per bot (`withLease`), one tool-less
+  call on the owner's chat-summary model (the bot's own after it fails), recorded as setup usage.
+- **What it reads:** the owner's own messages (pasted text over 2,000 characters left out), the
+  bot's replies only from turns that read nothing beyond the turn, the notes, the names of the
+  bot's skills, and what the owner turned down. Saved secrets are hidden as in a run. Turns that
+  read the phone, came by a token, or that anyone but the owner started are never recorded.
+- **Notes (Auto only):** facts, preferences and corrections about the owner, written to the bot's
+  memory, each listed under Learned to undo; a line the owner undid or edited is not written again.
+- **Skills (Ask first and Auto):** at most one suggestion a review, a draft taught skill posted
+  with teaching's draft card in the bot's chat. Nothing is saved until the owner saves it.
+  Deleting the draft (or the skill later) turns its name down for good. While one is unanswered
+  no other is suggested. A suggestion named as a skill the bot already has, or as one turned down
+  (any case or spacing), is dropped: it never becomes an update of an existing skill, which the
+  owner edits instead. An answer that breaks the contract (a line with angle brackets, a heading,
+  a control character, fewer than two or more than eight steps) uses nothing.
+- **What is left open:** text the owner pastes into their own message (under 2,000 characters)
+  is read as theirs. Against an instruction hidden in it there is only the review's prompt, the
+  answer's shape and the owner reading the card, which shows the whole skill before Save. An
+  unanswered draft blocks every later suggestion for that bot until the owner saves or deletes it.
+- **Judged evaluation:** `packages/testkit/src/evals/dozo-learning-review-eval.ts` holds the
+  reviewed examples (a lesson, none, a skill, an injection, someone else's details; every person
+  invented), the versioned rubric (`dozo-learning-review-v1`) and its calibration labels. Offline
+  tests use a scripted model. A live run asks models only with `--live`: `pnpm exec tsx
+  packages/testkit/src/cli/dozo-learning-eval.ts --live --connection <model.json> [--pricing
+  <file>] [--judge-connection <model.json> --judge-pricing <file>]`. It writes
+  `test-report/evals/dozo-learning-review.json` with the review's and the judge's cost apart. A
+  judge that disagrees with a label grades nothing; a judge error is unqualified, never a pass.
+- **Mobile:** see the mobile learning setting and the suggestion card (next pull request).
+
 ## After outside content
 
 A run reads outside content when a tool brings in text someone else may have written (a page, a

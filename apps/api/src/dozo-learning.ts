@@ -49,15 +49,11 @@ export function dozoLearningRoutes(ctx: RouterContext) {
           available(bot),
           listLearningChanges(deps.prisma, input.botId, DOZO_LEARNING_CHANGES_SHOWN),
         ]);
-        return {
-          mode: mode === "auto" ? ("auto" as const) : ("off" as const),
-          available: open,
-          changes,
-        };
+        return { mode, available: open, changes };
       }),
       setMode: authed.dozoLearning.setMode.handler(async ({ context, input }) => {
         const bot = await ownBot(context.actor, input.botId);
-        if (input.mode === "auto" && !(await available(bot)))
+        if (input.mode !== "off" && !(await available(bot)))
           throw new DozoLearningSharedSpaceError();
         await setLearningMode(deps.prisma, bot, input.mode);
         return { mode: input.mode };

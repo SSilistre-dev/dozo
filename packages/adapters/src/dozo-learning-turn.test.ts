@@ -38,7 +38,7 @@ const sqlOf = (call: unknown[]) => (call[0] as string[]).join("?");
 const NOW = new Date("2027-01-16T12:00:00.000Z");
 
 type Options = {
-  mode?: "off" | "auto" | null;
+  mode?: "off" | "ask" | "auto" | null;
   pending?: number;
   token?: boolean;
   /** Outside content reached the run's model. */
@@ -161,6 +161,13 @@ describe("dozoRecordLearningTurn", () => {
       });
       expect(few.start).not.toHaveBeenCalled();
     }
+  });
+
+  it("in Ask records the owner's turn as in Auto, for the review that suggests skills", async () => {
+    const ask = harness({ mode: "ask" });
+    await dozoRecordLearningTurn(ask.ctx, ask.start);
+    expect(sqlOf(ask.executeRaw.mock.calls[0]!)).toContain("INSERT INTO dozo_learning_turns");
+    expect(ask.enqueueIn).toHaveBeenCalledOnce();
   });
 
   it("records the turn but queues no review while fewer than three wait", async () => {
