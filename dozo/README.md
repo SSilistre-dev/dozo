@@ -415,6 +415,19 @@ the server's revision, and the ids and times of the sender's own failed runs in 
 sent, and the server sends only the runs it showed. Nothing is sent without the person pressing
 Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
 
+Screenshots: a report can carry up to 3 pictures (PNG, JPEG or WebP, 3 MB each and 8 MB together;
+a file picker, a paste into the note or a drop on the dialog on the web and desktop, the photo
+library on mobile). The server accepts a picture only when its own bytes are one of those kinds
+(never a GIF or SVG), refuses more than 40 million pixels, and draws it again in the same format,
+turned upright, scaled to at most 2560 px on a side and with all metadata (location, device, time)
+left out. The pictures leave the server only as attachments of the mail to the operator (the SMTP
+and HTTP mail adapters carry `attachments`): they are not stored, not given a link and not logged,
+and a refused picture counts against the same hourly limits. The body limit of the API's RPC
+(16 MiB) carries three pictures as base64; the proxy has no lower limit. With no mail provider the
+web dialog downloads the pictures next to `feedback.txt` as chosen, nothing is uploaded, and mobile
+offers none (the share sheet carries text only). Larger screenshots are not scaled down in the
+browser: they are refused with the same short message.
+
 Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
 it an address. There is no anonymous path to the hosted service from a local server.
 

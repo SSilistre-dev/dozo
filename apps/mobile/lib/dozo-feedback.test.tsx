@@ -16,6 +16,7 @@ const ui = vi.hoisted(() => ({
   alert: vi.fn(),
   share: vi.fn(),
   back: vi.fn(),
+  pick: vi.fn(),
   platform: { OS: "android", Version: 34 as string | number },
   header: undefined as Header | undefined,
   params: {} as { threadId?: string; messageId?: string },
@@ -88,6 +89,7 @@ vi.mock("./api", () => ({
   rpc: ui.rpc,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./pick-attachments", () => ({ pickFromLibrary: ui.pick }));
 vi.mock("./routine", () => ({ deviceTimeZone: () => "Europe/Berlin" }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
@@ -113,9 +115,28 @@ vi.mock("../components/settings-group", () => ({
       {footer ? <pre data-footer="">{footer}</pre> : null}
     </ul>
   ),
-  SettingsRow: ({ title, detail }: { title: string; detail?: string }) => (
+  SettingsRow: ({
+    title,
+    detail,
+    value,
+    onPress,
+    accessibilityLabel,
+  }: {
+    title: string;
+    detail?: string;
+    value?: string;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => (
     <li>
-      {title}
+      {onPress ? (
+        <button type="button" aria-label={accessibilityLabel} onClick={onPress}>
+          {title}
+          {value ? <small>{value}</small> : null}
+        </button>
+      ) : (
+        title
+      )}
       {detail ? <small>{detail}</small> : null}
     </li>
   ),
@@ -143,6 +164,7 @@ vi.mock("../components/settings-group", () => ({
 
 import DozoFeedback from "../app/(settings)/dozo-feedback";
 import { mobileDiagnostics } from "./dozo-feedback";
+import { pickFeedbackImages } from "./dozo-feedback-images";
 import { queryClient } from "./query";
 
 let answers: Record<string, unknown>;
@@ -190,7 +212,7 @@ beforeEach(() => {
     if (value instanceof Error) throw value;
     return typeof value === "function" ? value(input) : value;
   });
-  for (const mock of [ui.alert, ui.share, ui.back]) mock.mockReset();
+  for (const mock of [ui.alert, ui.share, ui.back, ui.pick]) mock.mockReset();
   ui.share.mockResolvedValue({ action: "sharedAction" });
   ui.platform.OS = "android";
   ui.header = undefined;
@@ -351,5 +373,92 @@ describe("what the app says about itself", () => {
     const { mobileDiagnostics: again } = await import("./dozo-feedback");
     expect(again().timeZone).toBe("UTC");
     vi.doUnmock("./routine");
+  });
+});
+
+const attachment = (name: string, mimeType = "image/png") => ({
+  id: name,
+  name,
+  mimeType,
+  contentBase64: "AAAA",
+});
+const picked = (...files: ReturnType<typeof attachment>[]) =>
+  ui.pick.mockResolvedValueOnce({ attachments: files, skipped: [] });
+const addRow = () => button("Add image");
+const removeRows = () =>
+  container.querySelectorAll<HTMLButtonElement>('[aria-label="Remove image"]');
+
+describe("pictures on mobile", () => {
+  it("adds them from the photo library with the attachment picker's own limits, and sends them", async () => {
+    answers["dozoFeedback/status"] = status();
+    answers["dozoFeedback/send"] = { sent: true };
+    await render(<DozoFeedback />);
+    await settle(() => expect(note()).not.toBeNull());
+    picked(attachment("a.png"), attachment("b.jpg", "image/jpeg"));
+    await act(async () => addRow()!.click());
+    await settle(() => expect(removeRows()).toHaveLength(2));
+    expect(ui.pick).toHaveBeenCalledWith(0, 3 * 1024 * 1024, 3);
+    expect(container.querySelector("[data-footer]")!.textContent).toBe(
+      "--\nFrom: ada@example.test\nImages: 2",
+    );
+    await act(async () => removeRows()[0]!.click());
+    expect(removeRows()).toHaveLength(1);
+    await write("Look");
+    await act(async () => button("Send")!.click());
+    await settle(() => expect(calls("dozoFeedback/send")).toHaveLength(1));
+    expect(calls("dozoFeedback/send")[0]![1]).toEqual({
+      message: "Look",
+      images: ["data:image/jpeg;base64,AAAA"],
+    });
+  });
+
+  it("stops offering to add at three", async () => {
+    answers["dozoFeedback/status"] = status();
+    await render(<DozoFeedback />);
+    await settle(() => expect(note()).not.toBeNull());
+    picked(attachment("1.png"), attachment("2.png"), attachment("3.png"));
+    await act(async () => addRow()!.click());
+    await settle(() => expect(removeRows()).toHaveLength(3));
+    expect(addRow()).toBeUndefined();
+  });
+
+  it("says so when a choice was left out, or the library could not be opened", async () => {
+    answers["dozoFeedback/status"] = status();
+    await render(<DozoFeedback />);
+    await settle(() => expect(note()).not.toBeNull());
+    picked(attachment("a.gif", "image/gif"), attachment("b.png"));
+    await act(async () => addRow()!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Couldn't use that image"));
+    expect(removeRows()).toHaveLength(1);
+    ui.alert.mockReset();
+    ui.pick.mockResolvedValueOnce({
+      attachments: [],
+      skipped: [{ name: "c", reason: "over 3 MB" }],
+    });
+    await act(async () => addRow()!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Couldn't use that image"));
+    ui.alert.mockReset();
+    ui.pick.mockRejectedValueOnce(new Error("denied"));
+    await act(async () => addRow()!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Couldn't use that image"));
+  });
+
+  it("offers none when the report is shared as text", async () => {
+    answers["dozoFeedback/status"] = status({ mode: "save", address: "team@example.test" });
+    await render(<DozoFeedback />);
+    await settle(() => expect(note()).not.toBeNull());
+    expect(addRow()).toBeUndefined();
+  });
+
+  it("keeps PNG, JPEG and WebP only", async () => {
+    picked(
+      attachment("a.png"),
+      attachment("b.heic", "image/heic"),
+      attachment("c.webp", "image/webp"),
+    );
+    const { images, refused } = await pickFeedbackImages(1);
+    expect(images.map((image) => image.name)).toEqual(["a.png", "c.webp"]);
+    expect(refused).toBe(true);
+    expect(ui.pick).toHaveBeenCalledWith(1, 3 * 1024 * 1024, 3);
   });
 });
