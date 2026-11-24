@@ -9,13 +9,14 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
-use tauri::{
-    AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
-};
+use tauri::{State, WebviewWindow};
+#[cfg(unix)]
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tokio::sync::oneshot;
 
 use crate::words::text;
 
+#[cfg(unix)]
 const WINDOW: &str = "agent";
 
 /// The question on screen: its text, and where its answer goes.
