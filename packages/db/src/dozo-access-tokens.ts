@@ -30,6 +30,16 @@ function utc<T extends Date | null>(date: T): T extends Date ? string : null {
   return (date ? date.toISOString() : null) as T extends Date ? string : null;
 }
 
+/**
+ * Whether the member's token is still one `findDozoAccessToken` would find, as a condition for a
+ * larger statement. Run it as the system: revocations are read from the security log.
+ */
+export function dozoAccessTokenStillValid(tokenId: string, member: Member): Prisma.Sql {
+  return Prisma.sql`EXISTS (SELECT 1 FROM dozo_access_tokens t
+    WHERE t.id = ${tokenId} AND t."userId" = ${member.userId} AND t."spaceId" = ${member.spaceId}
+      AND ${STILL_VALID})`;
+}
+
 /** How many tokens one member may hold in one Space. */
 export const DOZO_ACCESS_TOKEN_LIMIT = 20;
 
