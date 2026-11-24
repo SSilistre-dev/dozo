@@ -98,7 +98,7 @@ fi
 U="$TMP/unit-src"; mkdir -p "$U/apps/web" "$U/packages/x"
 for n in 1 2 3 4; do : > "$U/apps/web/dozo-t$n.test.ts"; done
 out="$(cd "$REPO" && DOZO_UNIT_SRC="$U" "$HERE/gate.sh" unit 2>&1)"; rc=$?
-{ [ "$rc" = 2 ] && printf '%s' "$out" | grep -q 'the committed tree has [0-9]* (a deleted test'; } \
+{ [ "$rc" = 2 ] && grep -q 'the committed tree has [0-9]* (a deleted test' <<<"$out"; } \
   || bad "four fork test files against a committed tree with more did not fail the unit step (exit $rc): $(printf '%s' "$out" | tail -3)"
 
 # ---- unit-trees: lists whose each working copy is, never removes, only reads the volume ----
@@ -111,10 +111,10 @@ FAKE
 chmod +x "$TMP/bin/docker"
 out="$(PATH="$TMP/bin:$PATH" "$HERE/unit-trees.sh" list 2>&1)"; rc=$?
 [ "$rc" = 0 ] || bad "unit-trees.sh exited $rc: $out"
-printf '%s\n' "$out" | grep -q '^aaaaaaaaaaaa .*live ' || bad "a tree whose staged copy exists is not live: $out"
-printf '%s\n' "$out" | grep -q '^bbbbbbbbbbbb .*dead ' || bad "a tree whose staged copy is gone is not dead: $out"
-printf '%s\n' "$out" | grep -q '^cccccccccccc .*unknown ' || bad "a tree without an owner note is not unknown: $out"
-[ "$(printf '%s\n' "$out" | grep -c '^remove: ')" = 1 ] && printf '%s\n' "$out" | grep -q '^remove: .*/cache/trees/bbbbbbbbbbbb ' \
+grep -q '^aaaaaaaaaaaa .*live ' <<<"$out" || bad "a tree whose staged copy exists is not live: $out"
+grep -q '^bbbbbbbbbbbb .*dead ' <<<"$out" || bad "a tree whose staged copy is gone is not dead: $out"
+grep -q '^cccccccccccc .*unknown ' <<<"$out" || bad "a tree without an owner note is not unknown: $out"
+[ "$(grep -c '^remove: ' <<<"$out")" = 1 ] && grep -q '^remove: .*/cache/trees/bbbbbbbbbbbb ' <<<"$out" \
   || bad "only the dead tree should get a remove command: $out"
 grep -q -- ':/cache:ro' "$TMP/docker.args" || bad "unit-trees.sh must mount the volume read-only: $(cat "$TMP/docker.args")"
 PATH="$TMP/bin:$PATH" "$HERE/unit-trees.sh" wipe >/dev/null 2>&1; [ "$?" = 64 ] || bad "unit-trees.sh accepted an unknown command"
