@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useDesktopNotificationAsk } from "./dozo-desktop-notify";
 import { useDesktopBadge as useBridgeBadge } from "./use-desktop-badge";
 
 /** The count a title starts with, as `titleWithCount` writes it: `(3) Dozo`. */
@@ -18,6 +19,7 @@ export function titleWithCount(title: string, count: number): string {
  */
 export function useDesktopBadge(count: number) {
   useBridgeBadge(count);
+  useDesktopNotificationAsk();
   useEffect(() => {
     document.title = titleWithCount(document.title, count);
   }, [count]);
