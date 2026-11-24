@@ -170,7 +170,7 @@ command was added and `capabilities/local.json` is unchanged.
 
 The frame follows the web app's theme (light, dark and the named themes). The page cannot call the
 app, so the colour travels the way the unread count does: in the desktop app's window only, the
-web app puts its applied background (the page's `theme-color`) in front of the title as `#0e0e10`
+web app puts its applied background (the page's `theme-color`) at the end of the title as ` #0e0e10` (last, so an app released before this one still reads the unread count from the start of the title)
 (`apps/web/src/lib/dozo-desktop-badge.ts`), and `src/titlebar.rs` reads it for the server's origin
 only: a six-digit hex colour, nothing else, nothing sent back. The window's tone (light or dark,
 by the colour's luma) and its own surface colour follow it. A title with no colour leaves the frame

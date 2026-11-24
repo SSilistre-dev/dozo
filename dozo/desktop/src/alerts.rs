@@ -52,7 +52,7 @@ pub fn answer(
 /// origin, and none anywhere else (the local screens, an address on its way to the browser).
 pub fn count_for(page: Option<&Url>, server: Option<&Url>, title: &str) -> u32 {
     if on_server(page, server) {
-        unread_count(crate::titlebar::split_title(title).1)
+        unread_count(title)
     } else {
         0
     }
@@ -368,12 +368,12 @@ mod tests {
     }
 
     #[test]
-    fn a_colour_in_front_of_the_title_does_not_hide_the_count() {
+    fn a_colour_at_the_end_of_the_title_does_not_hide_the_count() {
         let server = url("https://dozo.example.com/");
         let count = |title: &str| count_for(Some(&server), Some(&server), title);
-        assert_eq!(count("#0e0e10 (3) Dozo"), 3);
-        assert_eq!(count("#0e0e10 Dozo"), 0);
-        assert_eq!(count("#0e0e10 (x) Dozo"), 0);
+        assert_eq!(count("(3) Dozo #0e0e10"), 3);
+        assert_eq!(count("Dozo #0e0e10"), 0);
+        assert_eq!(count("(x) Dozo #0e0e10"), 0);
     }
 
     #[test]
