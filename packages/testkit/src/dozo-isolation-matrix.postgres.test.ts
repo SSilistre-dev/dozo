@@ -611,6 +611,16 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(failures(outcomes)).toEqual([]);
       expect(admin, "a member or guest changed who is in S, or A's keys").toEqual([]);
       expect(calls, "the owner's ringing calls in S, settled by a member or guest").toEqual([]);
+      // A member may edit a memory document by design; the sweep's edit must land on a document of
+      // its own, or `memory/exportMarkdown` and `memory/list` show the canary only if they read
+      // before that edit.
+      const memory = await world.db.memoryDocument.findUniqueOrThrow({
+        where: { id: S.ids.documentId! },
+      });
+      expect(
+        S.canaries.filter((value) => S.kinds?.[value] === "memory" && memory.content.includes(value)),
+        "S's memory document, after a member's and guest's sweep",
+      ).toHaveLength(1);
       expect(
         await world.db.spaceMember.count({ where: { spaceId: S.spaceId, userId: A.userId } }),
       ).toBe(1);
