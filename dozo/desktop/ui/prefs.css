@@ -117,3 +117,82 @@ main {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+/* The logins of the password manager, under the switches while it is on. */
+#logins {
+  margin-top: 20px;
+}
+#logins h2 {
+  padding: 0 4px 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+#logins .list {
+  list-style: none;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+#logins .list li + li {
+  border-top: 1px solid var(--line);
+}
+#logins button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+#logins button:hover {
+  background: var(--hover);
+}
+#logins button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+#logins button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#logins .site {
+  color: var(--muted);
+  font-size: 13px;
+}
+#logins .plain {
+  padding: 6px 4px;
+  min-height: 0;
+  width: auto;
+  color: var(--muted);
+}
+#login-note {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+#logins .linked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 14px;
+}
+#logins .info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#logins .linked .plain {
+  flex: none;
+  width: auto;
+  min-height: 0;
+}

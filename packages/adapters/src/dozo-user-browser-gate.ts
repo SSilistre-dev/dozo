@@ -4,7 +4,7 @@ import { runAsSystem } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
-import { deviceOffers } from "./dozo-device-capabilities.js";
+import { deviceHasPasswords, deviceOffers } from "./dozo-device-capabilities.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted } from "./run-context.js";
@@ -19,6 +19,8 @@ import { USER_COMPUTER_SHELL_TOOL } from "./user-computer-tools.js";
 export type Route = {
   owner: string;
   deviceId: string;
+  /** The computer fills the logins linked to its password manager (dozo-device-fill.ts). */
+  passwords: boolean;
   devices: NonNullable<RunContext["deps"]["userDevices"]>;
 };
 
@@ -37,7 +39,7 @@ export async function userBrowserRoute(ctx: RunContext): Promise<Route | undefin
     devices.connected(owner),
   )) as DeclaredUserDevice | null | undefined;
   return device && deviceOffers(device).browser
-    ? { owner, devices, deviceId: device.deviceId }
+    ? { owner, devices, deviceId: device.deviceId, passwords: deviceHasPasswords(device) }
     : undefined;
 }
 

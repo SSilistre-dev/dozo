@@ -18,6 +18,11 @@ fn main() {
         "reset_password",
         "prefs_list",
         "prefs_pick",
+        "logins_candidates",
+        "logins_link",
+        "logins_remove",
+        "fill_question",
+        "fill_answer",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands))
         .expect("tauri-build failed");

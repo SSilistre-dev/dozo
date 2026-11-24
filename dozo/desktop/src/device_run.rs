@@ -18,6 +18,8 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep_until};
 
+use crate::password_links::Passwords;
+
 /// One frame or request plus its small envelope, in either direction (upstream's limit).
 pub const MAX_MESSAGE_BYTES: usize = 12 * 1024 * 1024 + 4096;
 const DEFAULT_TIMEOUT_MS: u64 = 5 * 60_000;
@@ -146,6 +148,8 @@ pub struct Runner {
     calls: AtomicUsize,
     owned: Mutex<Vec<Owned>>,
     browsers: crate::browser::Browsers,
+    /// The person's linked logins (`password_links.rs`), for `pageBrowserFillLogin`.
+    passwords: Arc<crate::password_links::Passwords>,
 }
 
 /// Released when a call ends, however it ends.
@@ -159,15 +163,32 @@ impl Drop for Slot<'_> {
 impl Runner {
     /// `root` holds each bot's own folder; `home` is the person's home folder, where commands
     /// may also run.
+    #[cfg(test)]
     pub fn new(root: PathBuf, home: PathBuf) -> Arc<Self> {
         let browsers = crate::browser::Browsers::new(root.join("browser-profiles"));
         Self::with_browsers(root, home, browsers)
     }
 
+    #[cfg(test)]
     pub fn with_browsers(
         root: PathBuf,
         home: PathBuf,
         browsers: crate::browser::Browsers,
+    ) -> Arc<Self> {
+        Self::assemble(root, home, browsers, Passwords::new(None, None))
+    }
+
+    /// A runner whose bots may fill the person's linked logins.
+    pub fn with_passwords(root: PathBuf, home: PathBuf, passwords: Arc<Passwords>) -> Arc<Self> {
+        let browsers = crate::browser::Browsers::new(root.join("browser-profiles"));
+        Self::assemble(root, home, browsers, passwords)
+    }
+
+    pub fn assemble(
+        root: PathBuf,
+        home: PathBuf,
+        browsers: crate::browser::Browsers,
+        passwords: Arc<Passwords>,
     ) -> Arc<Self> {
         let runner = Arc::new(Self {
             root,
@@ -175,6 +196,7 @@ impl Runner {
             calls: AtomicUsize::new(0),
             owned: Mutex::new(Vec::new()),
             browsers,
+            passwords,
         });
         let held = Arc::downgrade(&runner);
         runner.browsers.set_on_pause(Box::new(move |hold| {
@@ -203,6 +225,16 @@ impl Runner {
         if let Some(name) = request.get("botName").and_then(Value::as_str) {
             self.browsers.remember_name(key, name);
         }
+    }
+
+    /// The person's linked logins.
+    pub fn passwords(&self) -> &Arc<Passwords> {
+        &self.passwords
+    }
+
+    /// Whether the person's password manager is on here and found: declared to servers.
+    pub fn passwords_declared(&self) -> bool {
+        self.passwords.declared()
     }
 
     /// The bots whose browser this computer keeps, by key, with their names.
@@ -393,7 +425,7 @@ impl Runner {
             }
             // Not offered until the app declares it (`browser::DECLARED`): a server that asks
             // anyway gets what an unoffered method gets, and no browser starts.
-            "pageBrowser" | "pageBrowserSignIn" | "pageBrowserCleared"
+            "pageBrowser" | "pageBrowserSignIn" | "pageBrowserCleared" | "pageBrowserFillLogin"
                 if !crate::browser::DECLARED =>
             {
                 return reply.error(NOT_HERE).await;
@@ -421,6 +453,29 @@ impl Runner {
                 let command = request.get("command").unwrap_or(&Value::Null);
                 match self.browsers.handle(&key, command).await {
                     Ok(value) => Ok(value),
+                    Err(error) => return reply.error(&error).await,
+                }
+            }
+            // The value comes from the person's password manager and goes straight into the page:
+            // the answer says only that it was filled, or why not (`browser_fill.rs`).
+            "pageBrowserFillLogin" => {
+                self.remember_name(&key, request);
+                if !running(&home) {
+                    return reply.error("Local computer stopped").await;
+                }
+                let Some(fill) = parse_fill(request) else {
+                    return reply.error(INVALID).await;
+                };
+                // A request that ends meanwhile (the server cancelled it, or the connection went)
+                // drops the fill, and with it the question the person is being asked: it closes
+                // and counts as Cancel.
+                let mut cancel = reply.cancel.clone();
+                let filled = tokio::select! {
+                    filled = self.browsers.fill_login(&key, &fill, &self.passwords) => filled,
+                    _ = cancelled(&mut cancel) => return,
+                };
+                match filled {
+                    Ok(()) => Ok(json!({ "filled": true })),
                     Err(error) => return reply.error(&error).await,
                 }
             }
@@ -649,6 +704,31 @@ fn parse(request: &Value) -> Option<(&str, &str, Option<&str>)> {
         Some(run) => Some(run.as_str().filter(|run| valid_id(run, 256))?),
     };
     Some((method, bot, run))
+}
+
+/// `pageBrowserFillLogin`'s fields: the node, the site, the handle and which value.
+fn parse_fill(request: &Value) -> Option<crate::browser::Fill> {
+    use crate::password_manager::Part;
+    let field = match request.get("field")?.as_str()? {
+        "username" => Part::Username,
+        "password" => Part::Password,
+        "code" => Part::Code,
+        _ => return None,
+    };
+    Some(crate::browser::Fill {
+        node: request.get("ref")?.as_u64()?,
+        origin: request
+            .get("origin")?
+            .as_str()
+            .filter(|origin| valid_id(origin, 2048))?
+            .to_owned(),
+        handle: request
+            .get("handle")?
+            .as_str()
+            .filter(|handle| valid_id(handle, 64))?
+            .to_owned(),
+        field,
+    })
 }
 
 fn valid_id(value: &str, max: usize) -> bool {

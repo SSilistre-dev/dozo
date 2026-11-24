@@ -23,6 +23,8 @@ export const DEVICE_CAPABILITIES = [
   "reminders",
   "calendar-write",
   "reminders-write",
+  /** Logins whose values stay in a password manager on the computer (dozo-device-login.ts). */
+  "passwords",
 ] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
 /**
@@ -39,7 +41,12 @@ const PHONE_CAPABILITIES: readonly DeviceCapability[] = [
 ];
 /** Capabilities only an iPhone has: Android has no system reminders store, whatever it declares. */
 const IOS_ONLY_CAPABILITIES: readonly DeviceCapability[] = ["reminders", "reminders-write"];
-const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = ["shell", "screen", "browser"];
+const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = [
+  "shell",
+  "screen",
+  "browser",
+  "passwords",
+];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
 export type DeclaredUserDevice = UserDevice & { capabilities?: readonly DeviceCapability[] };
@@ -173,6 +180,11 @@ export function deviceOffers(device: DeclaredUserDevice): {
     // A browser of the bot's own there (dozo-user-browser.ts).
     browser: device.capabilities.includes("browser"),
   };
+}
+
+/** Whether a computer from the hub declared that it fills linked logins from its password manager. */
+export function deviceHasPasswords(device: DeclaredUserDevice): boolean {
+  return !isPhonePlatform(device.platform) && Boolean(device.capabilities?.includes("passwords"));
 }
 
 /**
