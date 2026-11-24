@@ -174,6 +174,8 @@ function context(
           updateMany: async () => ({ count: 1 }),
         },
         run: { findUnique: async () => ({ status: "running" }) },
+        // No card of this run was answered with Allow for this run (dozo-screen-run.ts).
+        message: { findMany: async () => [] },
         // The token mark (dozo-token-marks.ts) is the only raw read on this path.
         $queryRaw: async () => [{ sourced: run === "token" }],
       },
