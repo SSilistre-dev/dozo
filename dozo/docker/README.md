@@ -196,7 +196,8 @@ gets its own working copy with its own `node_modules` in `/cache/trees/<12 hex o
 tree's absolute path>` (`unit-tree.sh`; reinstalled in place when the lockfile changes). Two
 checkouts can run the unit step at once and each tests its own files; before this, both synced into
 one fixed directory, so a run could lose its coverage files or pass on the other branch's sources.
-A copy costs about 0.5 GB on top of the one store (about 3 GB), because `node_modules` hard-links
+Two `gate.sh unit` runs on the same tree (or one beside a running `make qa`) still share that tree's copy: only `qa` takes the stage lock.
+A copy costs about 0.4 GB on top of the one store (about 3 GB), because `node_modules` hard-links
 into the store (same volume); a cold run installs everything, an unchanged lockfile skips that.
 `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the host.
 
