@@ -479,8 +479,16 @@ export async function seedExtras(
         tokenHash: `iso-${rand()}`,
       },
     });
+    // Connected for as long as the sweep runs: a computer counts as connected while its heartbeat is
+    // recent (75 seconds), and nothing here beats it, so a sweep that takes minutes (a busy CI)
+    // would otherwise find it gone before the owner's own calls.
     await system.userDeviceConnection.create({
-      data: { deviceId: device.id, connectionId: randomUUID(), address: "http://iso-api" },
+      data: {
+        deviceId: device.id,
+        connectionId: randomUUID(),
+        address: "http://iso-api",
+        heartbeatAt: new Date(Date.now() + 24 * 60 * 60_000),
+      },
     });
     await system.$executeRaw`
       INSERT INTO dozo_device_capabilities ("deviceId", capabilities)
