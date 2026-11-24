@@ -45,13 +45,14 @@ pub fn tone(color: Color) -> Theme {
 /// The luma from which a surface counts as light.
 const LIGHT_FROM: u32 = 140;
 
-/// What the window's frame shows for the window's own page: the page's colour on the server's
-/// origin, and the fallback anywhere else.
-pub fn colour_for(on_server: bool, title: &str) -> Color {
+/// What the window's frame changes to for the window's own page: the page's colour on the server's
+/// origin, the fallback anywhere else (the local screens), and nothing for a server's page that
+/// gives none, so a title that lost its colour for a moment leaves the frame as it was.
+pub fn colour_for(on_server: bool, title: &str) -> Option<Color> {
     if on_server {
-        split_title(title).0.unwrap_or(FALLBACK)
+        split_title(title).0
     } else {
-        FALLBACK
+        Some(FALLBACK)
     }
 }
 
@@ -128,9 +129,10 @@ mod tests {
     fn the_server_decides_and_nothing_else_does() {
         assert_eq!(
             colour_for(true, "#ffffff (2) Dozo"),
-            Color(255, 255, 255, 255)
+            Some(Color(255, 255, 255, 255))
         );
-        assert_eq!(colour_for(false, "#ffffff (2) Dozo"), FALLBACK);
-        assert_eq!(colour_for(true, "(2) Dozo"), FALLBACK);
+        assert_eq!(colour_for(false, "#ffffff (2) Dozo"), Some(FALLBACK));
+        assert_eq!(colour_for(false, "Dozo"), Some(FALLBACK));
+        assert_eq!(colour_for(true, "(2) Dozo"), None);
     }
 }

@@ -986,7 +986,9 @@ fn main() {
                         let count = alerts::count_for(page.as_ref(), chosen(&app).as_ref(), &title);
                         alerts::show_unread(&window, count);
                         let on_server = alerts::on_server(page.as_ref(), chosen(&app).as_ref());
-                        titlebar::show(&window, titlebar::colour_for(on_server, &title));
+                        if let Some(colour) = titlebar::colour_for(on_server, &title) {
+                            titlebar::show(&window, colour);
+                        }
                     }
                 })
                 // Leaving the server (Change Server, the connection screens) clears the badge
