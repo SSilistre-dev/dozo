@@ -1,8 +1,9 @@
 import {
   cancelCliLogin,
   cliHomeConnection,
+  isAgentProvider,
   readCliTools,
-  recordAgentConnection,
+  saveAgentConnection,
   sendCliLoginCode,
   startCliAccountLogin,
 } from "@rakazo/adapters";
@@ -29,14 +30,22 @@ export function dozoCliAccountsRoutes(ctx: RouterContext) {
           consent: input.consent === true,
           termsConsent: input.termsConsent === true,
         });
-        await persistModelCredential(
-          deps,
-          context.actor,
-          { ...connection, credentialId: null, keepExistingDefault: true, signal: context.signal },
-          codexCatalog,
-        );
+        const save = () =>
+          persistModelCredential(
+            deps,
+            context.actor,
+            {
+              ...connection,
+              credentialId: null,
+              keepExistingDefault: true,
+              signal: context.signal,
+            },
+            codexCatalog,
+          );
         // An agent's mode is turned on by connecting it, after the person agreed (adapters).
-        await recordAgentConnection(deps.prisma, connection.provider);
+        if (isAgentProvider(connection.provider))
+          await saveAgentConnection(deps.prisma, context.actor.userId, connection.provider, save);
+        else await save();
         changed(context.actor.userId);
         return tools(context.actor.userId);
       }),

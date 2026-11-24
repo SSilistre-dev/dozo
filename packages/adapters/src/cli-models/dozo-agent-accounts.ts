@@ -3,7 +3,8 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { defaultCatalogModelId } from "../model-selection.js";
 import type { AgentDriver } from "./dozo-agent.js";
-import { AGENT_OWN_MODEL, agentDataFolder } from "./dozo-agent.js";
+import { AGENT_OWN_MODEL, agentDataFolder, enabledAgentProviders } from "./dozo-agent.js";
+import { agentModeConnections } from "./dozo-agent-modes.js";
 import type { LocalCliHost } from "./dozo-cli-driver.js";
 import { cliAccountRef } from "./dozo-cli-driver.js";
 import { availableAgentDrivers } from "./dozo-cli-providers.js";
@@ -41,6 +42,28 @@ export class AgentUnavailableError extends ClientError {
   }
 }
 
+/**
+ * Which of the agents the person has connected with its mode on (the setting, or the file kept
+ * from before it). A connection with no mode is not one: connecting finishes it.
+ */
+export async function agentConnected(
+  prisma: PrismaClient,
+  userId: string,
+  providers: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<Set<string>> {
+  const rows = await prisma.userModelCredential.findMany({
+    where: { userId, provider: { in: providers } },
+    select: { provider: true, id: true },
+  });
+  if (!rows.length) return new Set();
+  const byFile = enabledAgentProviders(env);
+  const byMode = await agentModeConnections(prisma);
+  return new Set(
+    rows.filter((row) => byFile.has(row.provider) || byMode.has(row.id)).map((row) => row.provider),
+  );
+}
+
 /** The agents this computer offers, each read fresh: installed, and connected or not. */
 export async function readAgentTools(
   prisma: PrismaClient,
@@ -49,13 +72,10 @@ export async function readAgentTools(
 ): Promise<AgentToolView[]> {
   const drivers = availableAgentDrivers();
   if (!drivers.length) return [];
-  const connected = new Set(
-    (
-      await prisma.userModelCredential.findMany({
-        where: { userId, provider: { in: drivers.map((driver) => driver.provider) } },
-        select: { provider: true },
-      })
-    ).map((row) => row.provider),
+  const connected = await agentConnected(
+    prisma,
+    userId,
+    drivers.map((driver) => driver.provider),
   );
   return Promise.all(
     drivers.map(async (driver) => {

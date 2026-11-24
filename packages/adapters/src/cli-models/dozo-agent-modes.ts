@@ -27,21 +27,53 @@ export async function agentModeEnabled(
   return rows.length > 0;
 }
 
-/** Turns an agent's mode on or off. Only a boolean for a known agent: nothing else is stored. */
-export async function setAgentMode(db: Db, provider: string, enabled: boolean): Promise<void> {
+/** Turns an agent's mode off, or on for the connection the person made (which owns the row). */
+export async function setAgentMode(
+  db: Db,
+  provider: string,
+  enabled: boolean,
+  credentialId?: string,
+): Promise<void> {
   if (typeof enabled !== "boolean") throw new TypeError("An agent's mode is on or off.");
   if (!knownAgent(provider)) throw new TypeError("This is not an agent Dozo knows.");
-  if (enabled)
-    await db.$executeRaw`
-      INSERT INTO dozo_agent_modes (provider) VALUES (${provider})
-      ON CONFLICT (provider) DO UPDATE SET "updatedAt" = CURRENT_TIMESTAMP`;
-  else await db.$executeRaw`DELETE FROM dozo_agent_modes WHERE provider = ${provider}`;
+  if (!enabled) {
+    await db.$executeRaw`DELETE FROM dozo_agent_modes WHERE provider = ${provider}`;
+    return;
+  }
+  if (typeof credentialId !== "string" || !credentialId)
+    throw new TypeError("An agent's mode is turned on for a connection.");
+  await db.$executeRaw`
+    INSERT INTO dozo_agent_modes (provider, "credentialId") VALUES (${provider}, ${credentialId})
+    ON CONFLICT (provider) DO UPDATE SET "credentialId" = EXCLUDED."credentialId",
+      "updatedAt" = CURRENT_TIMESTAMP`;
 }
 
+/** The connections whose agent has its mode on by the setting. */
+export async function agentModeConnections(db: Db): Promise<Set<string>> {
+  const rows = await db.$queryRaw<Array<{ credentialId: string }>>`
+    SELECT "credentialId" FROM dozo_agent_modes`;
+  return new Set(rows.map((row) => row.credentialId));
+}
+
+/** Whether `provider` is an agent Dozo knows: the only connections this module makes. */
+export const isAgentProvider = knownAgent;
+
 /**
- * Called once a connection is saved: connecting an agent, which asks the person to agree first, is
- * what turns its mode on. Any other provider's connection leaves the setting alone.
+ * Saves an agent's connection and turns its mode on, once the person agreed and the agent passed
+ * its check. The connection is saved first; if turning the mode on then fails, the next attempt
+ * finds that connection with no mode, takes it over and finishes, so nothing is left hidden.
+ * Removing the connection removes the mode (the table's foreign key).
  */
-export async function recordAgentConnection(db: Db, provider: string): Promise<void> {
-  if (knownAgent(provider)) await setAgentMode(db, provider, true);
+export async function saveAgentConnection(
+  db: Db & Pick<PrismaClient, "userModelCredential">,
+  userId: string,
+  provider: string,
+  save: () => Promise<{ id: string }>,
+): Promise<void> {
+  const existing = await db.userModelCredential.findFirst({
+    where: { userId, provider },
+    select: { id: true },
+  });
+  const id = existing?.id ?? (await save()).id;
+  await setAgentMode(db, provider, true, id);
 }

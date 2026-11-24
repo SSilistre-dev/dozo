@@ -38,10 +38,11 @@ function deps(connected: string[] = []) {
         findMany: async ({ where }: { where: { provider?: { in?: string[] } } }) =>
           connected
             .filter((provider) => !where.provider?.in || where.provider.in.includes(provider))
-            .map((provider) => ({ provider, secretId: "s", userId: "ada" })),
+            .map((provider) => ({ provider, id: `c-${provider}`, secretId: "s", userId: "ada" })),
         count: async ({ where }: { where: { provider: string } }) =>
           connected.filter((provider) => provider === where.provider).length,
       },
+      $queryRaw: async () => [],
       secret: { findFirst: async () => null },
     } as unknown as PrismaClient,
     secretStore: { load: async () => "" },
