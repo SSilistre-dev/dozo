@@ -25,7 +25,7 @@ copy of the theme logic, so it paints in its theme; the header button switches i
 travels in the page's address and in its links to the site's other pages. Nothing is stored, so the
 privacy pages' one-cookie statement stays true. The home page's own script is `landing.js`.
 
-Legal pages: `privacy/`, `terms/` and `refunds/`, one `index.html` each per language, linked from
+Legal pages: `privacy/` and `terms/`, one `index.html` each per language, linked from
 every footer. `delete-account/` is built the same way (the stores require a web page that explains
 account deletion) and is linked from the privacy page, not the footer. `support/` is the stores'
 Support URL: the same template, but indexable and listed in `sitemap.xml`; it points to the contact
@@ -48,8 +48,8 @@ Search and answer engines: the site is open to them. `robots.txt` allows every c
 AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages and the two
 support pages with their `hreflang` alternates. The legal pages and the deletion page stay `noindex` (plain boilerplate with no search value;
 crawlers still follow their links) and are not in the sitemap, like the 404 pages. `llms.txt` is a
-short factual summary for answer engines: its prices are held to the page by the test. Each home
-page carries one JSON-LD block (Organization, WebSite, SoftwareApplication with the page's prices).
+short factual summary for answer engines. Each home
+page carries one JSON-LD block (Organization, WebSite, SoftwareApplication). The page names no price or plan: nothing is sold on it.
 It is a data block, so the CSP's `script-src 'self'` does not apply to it. No FAQ or rating markup:
 the page has neither. `www.dozo.bot` redirects permanently to `dozo.bot` in `site.nginx.conf`. A
 fixed `canonical` on every page covers `?theme=` and `?lang=` addresses.
@@ -63,20 +63,8 @@ Closed pre-release state (lifted):
   `Dozo-Windows-x64-setup.exe`, `Dozo-Linux-x86_64.AppImage`), so a new release needs no edit here; renaming an asset breaks them.
   The "not signed yet" note (Windows and Linux; macOS is signed) is in the one `<p>` in that block,
   once per language: edit that line when a package is signed.
-- Plans: the "Plans." section shows the three hosted plans as cards, one under the other on a
-  phone, with self-hosting as one row under them. Each card holds both the monthly and the yearly
-  price; the Monthly / Yearly switch (`landing.js`, yearly first) shows one and sets `period=` on the
-  paid cards' sign-up links, which also carry `plan=premium` or `plan=premium_plus`. Without the
-  script both prices show. Premium has the ink frame. The prices, the yearly saving, computer
-  hours, file storage and each computer's vCPUs and memory are read from the code by
-  `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing.ts`,
-  `dozo-plans.ts`, and the default `RAKAZO_COMPUTER_SIZES` in `dozo/deploy/compose.deploy.yml`), and
-  it fails when a page disagrees. No discount, tax line or other number: write one only once the
-  owner has set it and the code enforces it.
-- The dragon behind the plans (`.scales`) is decoration, drawn once per language page: the logo
-  mark as its head, in the mark's red, kept faint. Its body path is generated, not hand-drawn:
-  redraw it whole if the shape changes. The plan cards are slightly translucent so it shows
-  through; keep text contrast at 4.5 or more when changing either opacity.
+- Closing section (`#more`): self-hosting as one row, then the "Desktop app." block. No price, plan or
+  checkout link belongs on the page.
 - The demo scenes avoid plan and pricing words, so nothing in them reads as Dozo's own offer.
 - The page claims only what ships. The local-model panel is gone because the catalog is empty
   (`dozo/README.md`, "Status and known limits"); bring it back when models are listed.

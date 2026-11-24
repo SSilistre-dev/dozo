@@ -1,11 +1,10 @@
-import type { PlanLimitCopy, PlanLimitNotice, SignInProvider } from "@rakazo/contracts";
+import type { SignInProvider } from "@rakazo/contracts";
 import {
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
   MISSING_MODEL_RUN_ERROR,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
 } from "@rakazo/core";
-import { planLimitCopy } from "@rakazo/i18n/run-error";
 
 /**
  * The App Store build (`dozo/mobile/build.sh archive`), fixed when the bundle is made. It sells
@@ -13,35 +12,6 @@ import { planLimitCopy } from "@rakazo/i18n/run-error";
  * (App Review 3.1.1). A plan bought elsewhere still works; the app only stops offering one.
  */
 export const storeBuild = process.env.EXPO_PUBLIC_DOZO_STORE_BUILD === "1";
-
-/**
- * The plan-limit sentences, with those that point at a purchase replaced by one that does not:
- * the limit is still named, and deleting files stays the way out of a full shared space.
- */
-export function storePlanLimitCopy(copy: PlanLimitCopy, store = storeBuild): PlanLimitCopy {
-  if (!store) return copy;
-  return {
-    ...copy,
-    computerNotInPlanAskOwner: copy.computerNotInPlan,
-    sharedSpaceFull: copy.sharedSpaceFullTop,
-    sharedSpaceFullUpgrade: copy.sharedSpaceFullTop,
-    sharedSpaceFullAskOwner: copy.sharedSpaceFullTop,
-  };
-}
-
-/** The plan-limit copy the app shows, in the UI's language. */
-export function mobilePlanLimitCopy(store = storeBuild): PlanLimitCopy {
-  return storePlanLimitCopy(planLimitCopy(), store);
-}
-
-/** A plan-limit notice without its upgrade in the store build; a retry stays. */
-export function storePlanLimitNotice<T extends PlanLimitNotice | null>(
-  notice: T,
-  store = storeBuild,
-): T {
-  if (!store || notice?.action?.kind !== "upgrade") return notice;
-  return { ...notice, action: null };
-}
 
 /** Run failures whose advice is to buy credits or a plan in Billing. */
 const PURCHASE_RUN_ERRORS = [

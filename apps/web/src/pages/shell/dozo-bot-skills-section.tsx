@@ -1,11 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { planHasNoComputer } from "@rakazo/contracts";
 import { Button, Label, Popover, PopoverContent, PopoverTrigger, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement, useRef, useState } from "react";
-import { useBilling } from "../../components/SubscriptionGate";
 import { DeleteSkill } from "../../components/teach/dozo-delete-skill";
 import { enqueueTeachComputerInput } from "../../components/teach/teach-computer-input-chain";
 import { runsOnUserMachine } from "../../lib/computer-sandbox";
@@ -18,23 +16,16 @@ import { SavedValuesReview } from "./dozo-saved-values-review";
 /**
  * The bot panel's skills: the ones taught and saved, and Teach a task. Starting opens the bot's
  * computer the way the panel's own Wake does, which loads the recording and shows its chrome.
- * `computer` is the panel's computer section; without it, or on a plan with no computer or a
- * computer on the person's own machine, there is nothing to teach on and nothing shows.
- * Where the deployment bills, nothing shows either until its plan is known.
+ * `computer` is the panel's computer section; without it, or with a computer on the person's
+ * own machine, there is nothing to teach on and nothing shows.
  */
 export function DozoBotSkillsSection({ bot, computer }: { bot: Bot; computer: ReactNode }) {
-  const billing = useBilling().status;
-  const me = useQuery(useSpaceQueries().me.queryOptions()).data;
   const panel =
     isValidElement<ComponentProps<typeof ComputerPanel>>(computer) &&
     computer.type === ComputerPanel
       ? computer.props
       : null;
-  // No status means no billing, or a lookup that failed: only the first may teach unchecked.
-  const planKnown = me !== undefined && (billing !== null || !me.billingEnabled);
-  if (!panel || !planKnown || planHasNoComputer(billing) || runsOnUserMachine(panel.computer)) {
-    return null;
-  }
+  if (!panel || runsOnUserMachine(panel.computer)) return null;
   return <SkillsSection botId={bot.id} onOpen={panel.onOpen} />;
 }
 

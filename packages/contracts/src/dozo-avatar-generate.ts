@@ -6,13 +6,12 @@ export const DOZO_AVATAR_PROMPT_MAX_CHARS = 300;
 
 /** Why generating an avatar is not on offer to this person right now. */
 export const DozoAvatarGenerateReasonSchema = /* @__PURE__ */ (() =>
-  z.enum(["unavailable", "plan", "limit"]))();
+  z.enum(["unavailable", "limit"]))();
 export type DozoAvatarGenerateReason = z.infer<typeof DozoAvatarGenerateReasonSchema>;
 
 /**
  * Whether the server can draw an avatar from a description for the caller. `unavailable`: no image
- * service is connected. `plan`: the image service is paid for by the operator and the caller's
- * plan does not include it. `limit`: today's allowance is used up.
+ * service is connected. `limit`: today's allowance is used up.
  */
 export const DozoAvatarGenerateStatusSchema = /* @__PURE__ */ (() =>
   z.object({
@@ -39,8 +38,6 @@ export type DozoAvatarGenerateResult = z.infer<typeof DozoAvatarGenerateResultSc
 export const DOZO_AVATAR_GENERATE_ERRORS = {
   /** NOT_FOUND: no image service is connected. */
   unavailable: "avatar_generate_unavailable",
-  /** FORBIDDEN: the caller's plan does not include it. */
-  plan: "avatar_generate_plan",
   /** TOO_MANY_REQUESTS: today's allowance is used up. */
   limit: "avatar_generate_limit",
   /** CONFLICT: this person already has one being drawn. */

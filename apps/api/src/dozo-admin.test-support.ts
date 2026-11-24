@@ -29,42 +29,11 @@ export function user(id: string, email: string, day: number, more: Partial<User>
 // biome-ignore lint/suspicious/noExplicitAny: a Prisma double reads loosely typed filters
 type Where = any;
 
-type Subscription = {
-  status: string;
-  byokTier: string | null;
-  trialEndsAt?: Date | null;
-  currentPeriodEndsAt?: Date | null;
-  cancelAtPeriodEnd?: boolean;
-};
-type Grant = { tier: string; endsAt: Date; grantedById: string | null; note: string | null };
-
 function world(users: User[]) {
   // Everyone owns an organization of their own, except Bob, who has none.
   const memberships = users
     .filter((row) => row.id !== "bob")
     .map((row) => ({ userId: row.id, organizationId: `org-${row.id}`, role: "owner" }));
-  const organizations = new Map<
-    string,
-    { billing: Subscription | null; grant: Grant | null; freeUntil?: Date | null }
-  >();
-  for (const membership of memberships)
-    organizations.set(membership.organizationId, { billing: null, grant: null });
-  const organization = (id: string) => {
-    const row = organizations.get(id);
-    return (
-      row && {
-        id,
-        billing: row.billing && {
-          trialEndsAt: null,
-          currentPeriodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          ...row.billing,
-        },
-        dozoPlanGrant: row.grant && { tier: row.grant.tier, endsAt: row.grant.endsAt },
-        modelCredits: row.freeUntil === undefined ? null : { byokFreeUntil: row.freeUntil },
-      }
-    );
-  };
   let sessions = [
     {
       id: "s-1",
@@ -122,39 +91,9 @@ function world(users: User[]) {
     { id: "bot-5", name: "Local", userId: "admin", spaceId: "space-admin", computerId: "pc-own" },
     { id: "bot-6", name: "Asleep", userId: "admin", spaceId: "space-admin", computerId: "pc-off" },
   ];
-  // Every fixture organization is live, so the live condition always holds.
-  const organizationMatches = (id: string, where: Where): boolean => {
-    const row = organizations.get(id);
-    if (!row) return false;
-    if (where.AND) return where.AND.every((part: Where) => organizationMatches(id, part));
-    if (where.OR) return where.OR.some((part: Where) => organizationMatches(id, part));
-    if (where.billing)
-      return (
-        row.billing !== null &&
-        where.billing.status.in.includes(row.billing.status) &&
-        where.billing.byokTier.in.includes(row.billing.byokTier)
-      );
-    if (where.dozoPlanGrant)
-      return (
-        row.grant !== null &&
-        where.dozoPlanGrant.tier.in.includes(row.grant.tier) &&
-        row.grant.endsAt > where.dozoPlanGrant.endsAt.gt
-      );
-    return true;
-  };
   const matches = (row: User, where: Where = {}): boolean => {
     if (where.NOT && matches(row, where.NOT)) return false;
     if (where.AND && !where.AND.every((part: Where) => matches(row, part))) return false;
-    if (where.members) {
-      const { role, organization } = where.members.some;
-      const owns = memberships.some(
-        (membership) =>
-          membership.userId === row.id &&
-          membership.role.includes(role.contains) &&
-          organizationMatches(membership.organizationId, organization),
-      );
-      if (!owns) return false;
-    }
     if (typeof where.id === "string" && row.id !== where.id) return false;
     if (where.id?.in && !where.id.in.includes(row.id)) return false;
     if (where.OR && !where.OR.some((part: Where) => matches(row, part))) return false;
@@ -208,37 +147,13 @@ function world(users: User[]) {
         ),
       ),
     },
-    organization: {
-      findMany: vi.fn(async ({ where }: Where) =>
-        [...organizations]
-          .filter(([id]) => where.id.in.includes(id))
-          .map(([id]) => organization(id)),
-      ),
-      findUnique: vi.fn(async ({ where }: Where) => organization(where.id) ?? null),
-    },
     deploymentSettings: { findUnique: vi.fn(async () => settings) },
-    // No admin set a plan quota: the plans hold their terms.
-    dozoPlanQuota: { findMany: vi.fn(async () => []) },
     spaceMember: {
       findMany: vi.fn(async ({ where }: Where) =>
         spaces.filter((row) => row.userId === where.userId).map(({ space }) => ({ space })),
       ),
     },
-    dozoPlanGrant: {
-      upsert: vi.fn(async ({ where, update }: Where) => {
-        const row = organizations.get(where.organizationId);
-        if (row) row.grant = { ...update };
-      }),
-      deleteMany: vi.fn(async ({ where }: Where) => {
-        const row = organizations.get(where.organizationId);
-        const count = row?.grant ? 1 : 0;
-        if (row) row.grant = null;
-        return { count };
-      }),
-    },
-    $queryRaw: vi.fn(async (sql: TemplateStringsArray | { sql: string }, keys: string[]) => {
-      // The files an organization keeps are summed with a query object, not a template.
-      if ("sql" in sql) return [{ used: String(3 * 1024 * 1024) }];
+    $queryRaw: vi.fn(async (sql: TemplateStringsArray, keys: string[]) => {
       if (sql.join("").includes("dozo_site_settings")) return site;
       return sql.join("").includes('"createdAt"')
         ? [...bans].map(([value, createdAt]) => ({ value, createdAt }))
@@ -334,7 +249,6 @@ function world(users: User[]) {
   return {
     prisma,
     sessions: () => sessions,
-    organizations,
     bans,
     site,
     memberships,
@@ -357,10 +271,8 @@ export function setup(
   wiring = true,
   sandboxId?: string,
 ) {
-  const { prisma, sessions, organizations, bans, site, memberships, settings, computers, devices } =
-    world(users);
+  const { prisma, sessions, bans, site, memberships, settings, computers, devices } = world(users);
   const disconnect = vi.fn(async () => undefined);
-  const planChanged = vi.fn(async (_organizationId: string) => undefined);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
   const steps: string[] = [];
@@ -406,7 +318,6 @@ export function setup(
           directoryProvisioning: false,
           signupsEnabled: "false",
           auth,
-          planChanged,
         })
       : {}),
   } as unknown as RouterDeps;
@@ -422,14 +333,12 @@ export function setup(
     return createRouterClient(dozoAdminRoutes(ctx), { context: { actor } }).dozoAdmin;
   };
   return {
-    planChanged,
     prisma,
     sessions,
     users,
     ctx,
     as,
     removePush,
-    organizations,
     bans,
     site,
     deletion,
@@ -440,12 +349,3 @@ export function setup(
     disconnect,
   };
 }
-
-const DAY = 24 * 60 * 60 * 1000;
-export const inDays = (days: number) => new Date(Date.now() + days * DAY);
-/** What the list says of a grant in force that ends at `at`. */
-export const granted = (at: Date | string) => ({
-  source: "granted",
-  at: new Date(at).toISOString(),
-  renews: false,
-});

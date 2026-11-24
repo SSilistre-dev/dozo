@@ -1,5 +1,4 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { formatFileSize } from "@rakazo/core";
 import { Badge, Button, buttonVariants, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
@@ -8,7 +7,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { DozoPlanAction } from "./dozo-admin-plan";
 import { Row, Rows } from "./dozo-admin-rows";
 
 type Change =
@@ -50,21 +48,6 @@ export function DozoAdminAccount({ ownId }: { ownId: string }) {
     },
     onFailed: (error) => toastError(t`Could not change the account`, error),
   });
-  /** The subscription's state in words; one this page does not know reads as inactive. */
-  const subscriptionStatus = (status: string) => {
-    switch (status) {
-      case "trialing":
-        return t`Subscription on trial`;
-      case "active":
-        return t`Subscription active`;
-      case "past_due":
-        return t`Subscription payment due`;
-      case "canceled":
-        return t`Subscription cancelled`;
-      default:
-        return t`Subscription inactive`;
-    }
-  };
   const date = (value: string) =>
     new Date(value).toLocaleDateString(i18n.locale, { dateStyle: "medium" });
 
@@ -94,20 +77,7 @@ export function DozoAdminAccount({ ownId }: { ownId: string }) {
 
   const user = account.data;
   const own = user.id === ownId;
-  const { billing, storage } = user;
   const joined = date(user.createdAt);
-  const dates = [
-    billing?.status ? subscriptionStatus(billing.status) : null,
-    billing?.trialEndsAt ? t`Trial ends ${date(billing.trialEndsAt)}` : null,
-    billing?.currentPeriodEndsAt
-      ? billing.cancelAtPeriodEnd
-        ? t`Ends ${date(billing.currentPeriodEndsAt)}`
-        : t`Renews ${date(billing.currentPeriodEndsAt)}`
-      : null,
-    user.freeUntil ? t`Free period until ${date(user.freeUntil)}` : null,
-    user.plan.grantedUntil ? t`Granted until ${date(user.plan.grantedUntil)}` : null,
-  ].filter((value): value is string => value !== null);
-
   return (
     <>
       {back}
@@ -183,32 +153,6 @@ export function DozoAdminAccount({ ownId }: { ownId: string }) {
             )}
           </div>
         )}
-      </section>
-
-      <section className="space-y-3">
-        <SectionHeading>
-          <Trans>Plan</Trans>
-        </SectionHeading>
-        <div className="flex flex-wrap items-center gap-3">
-          <DozoPlanAction user={user} />
-        </div>
-        {dates.length > 0 ? (
-          <p
-            data-testid="admin-account-dates"
-            className="flex flex-wrap gap-x-3 text-body-sm text-muted-foreground"
-          >
-            {dates.map((value) => (
-              <span key={value}>{value}</span>
-            ))}
-          </p>
-        ) : null}
-        {storage ? (
-          <p data-testid="admin-account-storage" className="text-body-sm text-muted-foreground">
-            <Trans>
-              {formatFileSize(storage.usedBytes)} of {formatFileSize(storage.limitBytes)} used
-            </Trans>
-          </p>
-        ) : null}
       </section>
 
       {user.spaces.length > 0 ? (

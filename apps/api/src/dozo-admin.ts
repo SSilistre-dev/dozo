@@ -1,6 +1,5 @@
 import { createRouterClient } from "@orpc/server";
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
-import type { DozoPaymentLedger } from "@rakazo/adapters";
 import { sandboxKindCapabilities, sandboxKindsWhere } from "@rakazo/adapters";
 import type { AccountDeletionAuth } from "@rakazo/auth";
 import {
@@ -16,14 +15,10 @@ import {
 import type { DozoAdminUsersSort } from "@rakazo/contracts";
 import { ClientError, MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import {
-  IsolationError,
-  ownedOrganizationId,
   readSiteSettings,
   recordAuditEvent,
   recordSecurityEvent,
-  revokePlanGrant,
   runAsSystem,
-  setPlanGrant,
   signupsOpenFrom,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -31,10 +26,6 @@ import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
 import { dozoAdminAccessRoutes } from "./dozo-admin-access.js";
 import { readAccount } from "./dozo-admin-account.js";
-import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
-import { dozoAdminFunnelRoutes } from "./dozo-admin-funnel.js";
-import { onTier, plansOf } from "./dozo-admin-members.js";
-import { dozoAdminPlansRoutes } from "./dozo-admin-plans.js";
 import { dozoEventsRoutes } from "./dozo-events.js";
 import { dozoTeachRoutes } from "./dozo-teach.js";
 import { dozoUsageRoutes } from "./dozo-usage.js";
@@ -54,24 +45,6 @@ const USERS_ORDER = {
   oldest: [{ createdAt: "asc" }, { id: "asc" }],
   email: [{ email: "asc" }, { id: "asc" }],
 } as const satisfies Record<DozoAdminUsersSort, object[]>;
-/** How far ahead an admin can end a granted plan. */
-const DOZO_ADMIN_PLAN_MAX_YEARS = 5;
-
-/** The end of a granted plan: required, in the future and within `DOZO_ADMIN_PLAN_MAX_YEARS`. */
-function grantEnd(value: string | undefined, now: Date): Date {
-  if (!value) throw new ClientError("BAD_REQUEST", "An end date is required");
-  const endsAt = new Date(value);
-  const latest = new Date(now);
-  latest.setUTCFullYear(latest.getUTCFullYear() + DOZO_ADMIN_PLAN_MAX_YEARS);
-  if (endsAt <= now) throw new ClientError("BAD_REQUEST", "The end date must be in the future");
-  if (endsAt > latest)
-    throw new ClientError(
-      "BAD_REQUEST",
-      `The end date must be within ${DOZO_ADMIN_PLAN_MAX_YEARS} years`,
-    );
-  return endsAt;
-}
-
 /** What the admin routes need from the server that the router's own dependencies do not carry. */
 export interface DozoAdminWiring {
   devices: DeviceStore;
@@ -83,10 +56,6 @@ export interface DozoAdminWiring {
   auth: AccountDeletionAuth;
   /** The fanout that tells open apps a site setting changed; absent, nobody is told. */
   realtime?: RealtimeFanout;
-  /** What the billing page reads payments from; absent when no payment provider is configured. */
-  payments?: DozoPaymentLedger;
-  /** Queues the mail before a granted plan ends; absent when the server sends no billing mail. */
-  planChanged?: (organizationId: string) => Promise<void>;
 }
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -172,7 +141,6 @@ export function dozoAdminRoutes(ctx: RouterContext) {
     dozoAdmin: {
       users: admin.dozoAdmin.users.handler(({ input }) =>
         runAsSystem("list accounts for the admin page", async () => {
-          const now = new Date();
           const query = input.query?.trim();
           const where = {
             ...accounts,
@@ -180,10 +148,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
             ...(input.status
               ? { deactivatedAt: input.status === "suspended" ? { not: null } : null }
               : {}),
-            // Its own conditions, so none of them replaces one of the account filter's.
-            ...(input.plan ? { AND: [onTier(input.plan, now)] } : {}),
           };
-          const filtered = Boolean(query || input.status || input.plan);
+          const filtered = Boolean(query || input.status);
           const [rows, matching] = await Promise.all([
             prisma.user.findMany({
               where,
@@ -198,7 +164,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           ]);
           const page = rows.slice(0, DOZO_ADMIN_USERS_PAGE);
           const mine = { userId: { in: page.map((user) => user.id) } };
-          const [site, banned, total, sessions, bots, computers, planOf] = await Promise.all([
+          const [site, banned, total, sessions, bots, computers] = await Promise.all([
             readSiteSettings(prisma),
             bannedEntries(
               prisma,
@@ -216,11 +182,6 @@ export function dozoAdminRoutes(ctx: RouterContext) {
               where: { ...mine, ...hosted },
               _count: { _all: true },
             }),
-            plansOf(
-              prisma,
-              page.map((user) => user.id),
-              now,
-            ),
           ]);
           const lastSeen = new Map(sessions.map((row) => [row.userId, row._max.updatedAt]));
           const botCount = new Map(bots.map((row) => [row.userId, row._count._all]));
@@ -238,7 +199,6 @@ export function dozoAdminRoutes(ctx: RouterContext) {
               bots: botCount.get(user.id) ?? 0,
               runningComputers: computerCount.get(user.id) ?? 0,
               suspended: Boolean(user.deactivatedAt),
-              plan: planOf(user.id),
               banned: banKeys(user.email).some((key) => banned.has(key)),
             })),
             nextCursor: rows[DOZO_ADMIN_USERS_PAGE]?.id ?? null,
@@ -248,7 +208,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
 
       user: admin.dozoAdmin.user.handler(async ({ input }) => {
         const account = await runAsSystem("read an account for the admin page", () =>
-          readAccount(prisma, accounts, input.userId, new Date()),
+          readAccount(prisma, accounts, input.userId),
         );
         return { ...account, admin: await isAdmin(deps, input.userId) };
       }),
@@ -259,7 +219,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         await runAsSystem("rename an account from the admin page", () =>
           prisma.user.update({ where: { id: input.userId }, data: { name: input.name } }),
         );
-        // In the account's own audit log, as a granted plan is: the admin only as an opaque id.
+        // In the account's own audit log: the admin only as an opaque id.
         await recordAuditEvent({
           action: "user.renamed",
           actor: { type: "system", label: "Operator" },
@@ -337,73 +297,6 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           suspended: input.suspended,
         });
         return { suspended: input.suspended };
-      }),
-
-      /**
-       * Gives the account's own organization a plan by hand, or ends the one it was given. The
-       * subscription sync never touches it and a grant ends by its own date. Both are audited.
-       */
-      setPlan: admin.dozoAdmin.setPlan.handler(async ({ context, input }) => {
-        const now = new Date();
-        const grant = input.tier ? { tier: input.tier, endsAt: grantEnd(input.endsAt, now) } : null;
-        const target = await runAsSystem(
-          "find an account's organization for the admin page",
-          async () => {
-            const user = await prisma.user.findFirst({
-              where: { ...accounts, id: input.userId },
-              select: { id: true, email: true },
-            });
-            if (!user) throw new ClientError("NOT_FOUND", "Account not found");
-            const organizationId = await ownedOrganizationId(prisma, user.id).catch((error) => {
-              if (error instanceof IsolationError)
-                throw new ClientError("NOT_FOUND", "Account has no organization of its own");
-              throw error;
-            });
-            return { user, organizationId };
-          },
-        );
-        const { organizationId } = target;
-        // Setting a plan always changes it; ending one changes it only when there was one.
-        const changed = await runAsSystem("change a granted plan for the admin page", async () => {
-          if (!grant) return revokePlanGrant(prisma, organizationId);
-          await setPlanGrant(prisma, {
-            organizationId,
-            ...grant,
-            grantedById: context.actor.userId,
-            note: input.note,
-          });
-          return true;
-        });
-        // The mail before the end is queued after, and never fails the change: it reports its own
-        // failures, and the hourly sweep queues a reminder that is missing.
-        if (changed) await wiring?.planChanged?.(organizationId);
-        // The organization reads its own audit log, so the event carries neither the admin's
-        // email nor the internal note (which stays on the grant row), only the admin's opaque id:
-        // a new grant overwrites the row's `grantedById` and ending one deletes the row, so this
-        // is the lasting record of who did it. It is a second write because the audit primitive
-        // opens its own transaction and takes none.
-        if (changed)
-          await recordAuditEvent({
-            action: grant ? "plan.granted" : "plan.grant_ended",
-            actor: { type: "system", label: "Operator" },
-            organizationId,
-            target: { type: "user", id: target.user.id },
-            metadata: {
-              adminId: context.actor.userId,
-              tier: grant?.tier ?? null,
-              endsAt: grant?.endsAt.toISOString() ?? null,
-            },
-          });
-        getLogger().info("dozo.admin.plan", {
-          "admin.id": context.actor.userId,
-          "user.id": input.userId,
-          "plan.tier": grant?.tier ?? null,
-          "plan.ends_at": grant?.endsAt.toISOString() ?? null,
-        });
-        const planOf = await runAsSystem("read a plan for the admin page", () =>
-          plansOf(prisma, [input.userId], new Date()),
-        );
-        return { plan: planOf(input.userId) };
       }),
 
       bans: admin.dozoAdmin.bans.handler(async () => ({
@@ -574,9 +467,6 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
 
-      billing: dozoAdminBillingRoutes(ctx, wiring?.payments),
-      funnel: dozoAdminFunnelRoutes(ctx),
-      plans: dozoAdminPlansRoutes(ctx, wiring?.payments),
       accessGrants: dozoAdminAccessRoutes(ctx),
     },
   };

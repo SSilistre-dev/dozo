@@ -6,8 +6,7 @@ const api = vi.hoisted(() => ({ track: vi.fn(), me: vi.fn() }));
 vi.mock("./rpc", () => ({ rpc: { me: api.me, dozoEvents: { track: api.track } } }));
 
 import { forgetEventServer } from "./dozo-event-sender";
-import { reportSignupStarted, reportUpgradeViewed } from "./dozo-events";
-import { savePlanIntent } from "./dozo-plan-intent";
+import { reportSignupStarted } from "./dozo-events";
 import { markSignupStarted } from "./dozo-signup-start";
 
 beforeEach(() => {
@@ -16,22 +15,6 @@ beforeEach(() => {
   api.track.mockReset().mockResolvedValue({ ok: true });
 });
 afterEach(() => window.localStorage.clear());
-
-it("says where the paid plans were shown from", async () => {
-  reportUpgradeViewed(false);
-  reportUpgradeViewed(true);
-  savePlanIntent({ tier: "pro", period: "month" });
-  reportUpgradeViewed(true);
-  // Required to go on is the paywall, a landing pick or not.
-  reportUpgradeViewed(false);
-  await vi.waitFor(() => expect(api.track).toHaveBeenCalledTimes(4));
-  expect(api.track.mock.calls.map(([event]) => event.source)).toEqual([
-    "paywall",
-    "app",
-    "landing",
-    "paywall",
-  ]);
-});
 
 it("reports the sign-up form's start once, and nothing without one", async () => {
   reportSignupStarted();
@@ -46,7 +29,8 @@ it("reports the sign-up form's start once, and nothing without one", async () =>
 
 it("reports nothing to a server without analytics", async () => {
   api.me.mockResolvedValue({ productEvents: false });
-  reportUpgradeViewed(true);
+  markSignupStarted();
+  reportSignupStarted();
   await vi.waitFor(() => expect(api.me).toHaveBeenCalled());
   await api.me.mock.results[0]!.value;
   expect(api.track).not.toHaveBeenCalled();

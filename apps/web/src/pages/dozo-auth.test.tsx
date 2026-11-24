@@ -81,7 +81,6 @@ vi.mock("./Auth", () => ({
   },
 }));
 
-import { readPlanIntent } from "../lib/dozo-plan-intent";
 import { takeSignupStarted } from "../lib/dozo-signup-start";
 import { AuthPage } from "./dozo-auth";
 
@@ -342,55 +341,6 @@ it("saves a language chosen on the page through the app's own preference", async
   });
   expect(mocks.setUiLocale).toHaveBeenCalledExactlyOnceWith("tr");
   expect(language()?.value).toBe("tr");
-});
-
-const intent = () => readPlanIntent();
-
-it.each([
-  ["premium", "year", { tier: "pro", period: "year" }],
-  ["premium_plus", "month", { tier: "max", period: "month" }],
-])(
-  "keeps plan %j billed every %j in this browser and drops both from the address",
-  async (plan, period, kept) => {
-    window.localStorage.clear();
-    mocks.capabilities.mockResolvedValue({ signupsOpen: true });
-    await open(`/sign-up?plan=${plan}&period=${period}&next=%2Fapp`);
-    expect(where()).toBe("/sign-up?next=%2Fapp");
-    expect(shown()).toBe("up");
-    expect(intent()).toEqual(kept);
-  },
-);
-
-it.each([
-  "plan=free&period=year",
-  "plan=pro&period=year",
-  "plan=%3Cscript%3E&period=month",
-  "period=year",
-  "plan=",
-])("keeps nothing for %j and only drops it from the address", async (query) => {
-  window.localStorage.clear();
-  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
-  await open(`/sign-up?${query}&next=%2Fapp`);
-  expect(where()).toBe("/sign-up?next=%2Fapp");
-  expect(intent()).toBeNull();
-});
-
-it("keeps the plan and the language together, dropping all three parameters once", async () => {
-  window.localStorage.clear();
-  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
-  await open("/sign-up?lang=tr&plan=premium&period=year");
-  expect(mocks.setUiLocale).toHaveBeenCalledWith("tr");
-  expect(where()).toBe("/sign-up");
-  expect(language()?.value).toBe("tr");
-  expect(intent()).toEqual({ tier: "pro", period: "year" });
-});
-
-it("keeps the plan when registration is closed and sign-in shows instead", async () => {
-  window.localStorage.clear();
-  mocks.capabilities.mockResolvedValue({ signupsOpen: false });
-  await open("/sign-up?plan=premium_plus&period=year");
-  expect(where()).toBe("/sign-in");
-  expect(intent()).toEqual({ tier: "max", period: "year" });
 });
 
 it("names sign-up and sign-in in the tab's title, and gives the title back on leaving", async () => {

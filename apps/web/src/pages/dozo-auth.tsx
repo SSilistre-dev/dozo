@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
-import { planIntentFromParams, savePlanIntent } from "../lib/dozo-plan-intent";
 import { markSignupStarted } from "../lib/dozo-signup-start";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import type { UiLocale } from "../lib/ui-locale";
@@ -37,9 +36,7 @@ import { HostedSignIn } from "./dozo-hosted-login";
  * answer shows that the server could not be reached, with a way to ask again, never a password
  * form its endpoints may no longer answer; and sign-in waits for the answer instead of flashing one.
  *
- * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
- * for an hour in this browser (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
- * the same way. The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
+ * The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
  *
  * Where the server signs in with an emailed code, sign-in starts with the address alone and then
  * the code (dozo-code-sign-in.tsx, at `/sign-in`); upstream's password form stays one step away at
@@ -51,7 +48,7 @@ const ownComputer = () => ["127.0.0.1", "[::1]"].includes(window.location.hostna
 
 function withoutLinkParams(current: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(current);
-  for (const key of ["lang", "plan", "period"]) next.delete(key);
+  next.delete("lang");
   return next;
 }
 
@@ -62,15 +59,6 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   const asked = params.get("lang");
   const wanted = UI_LOCALES.find((code) => code === asked);
   const [locale, setLocale] = useState<UiLocale>(getActiveUiLocale);
-  const plan = params.get("plan");
-  const period = params.get("period");
-  useEffect(() => {
-    if (plan === null && period === null) return;
-    const intent = planIntentFromParams(plan, period);
-    if (intent) savePlanIntent(intent);
-    // A language in the address is dropped later, and these leave with it in one change.
-    if (asked === null) setParams(withoutLinkParams, { replace: true });
-  }, [plan, period, asked, setParams]);
   useEffect(() => {
     if (asked === null) return;
     let active = true;

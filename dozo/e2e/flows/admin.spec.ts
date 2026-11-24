@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { adminBrowser, newAccount, reportBilling, rpcAs } from "./accounts";
+import { adminBrowser, newAccount, reportBilling } from "./accounts";
 import { expect, test } from "./flow";
 
 /**
@@ -24,9 +24,6 @@ const SECTIONS: [path: string, label: string][] = [
   ["/admin", "Members"],
   ["/admin/plugins", "Plugins"],
   ["/admin/settings", "Site settings"],
-  ["/admin/plans", "Plans"],
-  ["/admin/billing", "Billing"],
-  ["/admin/funnel", "Funnel"],
 ];
 
 test("every section opens inside the admin page, its navigation kept", async ({
@@ -52,7 +49,7 @@ test("every section opens inside the admin page, its navigation kept", async ({
   await expect(nav.getByText("Free access", { exact: true })).toHaveCount(0);
 });
 
-test("members: search, filter, give a plan, take it back, suspend, delete", async ({
+test("members: search, filter, suspend, delete", async ({
   browser,
   guard,
 }) => {
@@ -63,26 +60,6 @@ test("members: search, filter, give a plan, take it back, suspend, delete", asyn
   // Search narrows the list to the one account.
   await page.getByPlaceholder("Search by email").fill(email);
   await expect(page.getByTestId("admin-users").getByRole("listitem")).toHaveCount(1);
-  await expect(row(page, email)).toContainText("Free");
-  // Give Premium until a week from now.
-  await row(page, email).getByRole("button", { name: "Set plan" }).click();
-  const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog")).last();
-  await dialog.getByLabel("Plan").selectOption("pro");
-  const end = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
-  await dialog.getByLabel("End date").fill(end);
-  await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(row(page, email)).toContainText("Premium");
-  // The plan filter finds it on Premium, and not on Free.
-  await page.getByLabel("Plan", { exact: true }).selectOption("pro");
-  await expect(row(page, email)).toBeVisible();
-  await page.getByLabel("Plan", { exact: true }).selectOption("standard");
-  await expect(row(page, email)).toHaveCount(0);
-  await page.getByLabel("Plan", { exact: true }).selectOption("");
-  // Take the granted plan back.
-  await row(page, email).getByRole("button", { name: "Set plan" }).click();
-  await dialog.getByLabel("Plan").selectOption("none");
-  await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(row(page, email)).not.toContainText("Premium");
   // Suspend; the status filter shows it as suspended.
   await row(page, email).getByRole("button", { name: "Suspend", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Suspend" }).click();
@@ -122,33 +99,6 @@ test("site settings: an announcement is saved, every member sees it, then it is 
     .catch(() => undefined);
   await page.reload();
   await expect(page.getByText(text)).toHaveCount(0);
-});
-
-test("plans: a quota is changed and put back", async ({ browser, guard }) => {
-  const page = await adminAt(browser, "/admin/plans");
-  guard.follow(page);
-  const field = page.getByLabel("Shared space in MB for Premium", { exact: true });
-  // An unset quota shows the plan's terms as its placeholder.
-  const before = await field.inputValue();
-  const shown = before || ((await field.getAttribute("placeholder")) ?? "0");
-  const changed = String(Number(shown) + 1);
-  await field.fill(changed);
-  await field.press("Enter");
-  await field.blur();
-  await expect
-    .poll(async () => {
-      const { plans } = await rpcAs<{
-        plans: { tier: string; sharedSpaceMb: { value: number } }[];
-      }>(page, "dozoAdmin/plans/list");
-      return String(plans.find((plan) => plan.tier === "pro")?.sharedSpaceMb.value);
-    })
-    .toBe(changed);
-  await page.reload();
-  await expect(field).toHaveValue(changed);
-  // Back to the plan's terms.
-  await rpcAs(page, "dozoAdmin/plans/setQuota", { tier: "pro", sharedSpaceMb: null });
-  await page.reload();
-  await expect(field).toHaveValue(before);
 });
 
 test("free access: a grant is made, edited and deleted (grants faked: no billing here)", async ({
@@ -223,26 +173,4 @@ test("free access: a grant is made, edited and deleted (grants faked: no billing
   await page.getByRole("menuitem", { name: "Delete" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText(email)).toHaveCount(0);
-});
-
-test("billing summary and funnel: the counts and the periods", async ({ browser, guard }) => {
-  const page = await adminAt(browser, "/admin/billing");
-  guard.follow(page);
-  await expect(page.getByText(/\d+ members/)).toBeVisible();
-  await expect(page.getByText("Premium Plus")).toBeVisible();
-  // This stack does not bill: free access, which only a billing server has, is not listed.
-  const nav = page.getByRole("navigation", { name: "Admin" });
-  await expect(nav.getByText("Plans", { exact: true })).toBeVisible();
-  await expect(nav.getByText("Free access", { exact: true })).toHaveCount(0);
-  await nav.getByText("Funnel", { exact: true }).click();
-  await expect(page.getByText("Signed up")).toBeVisible();
-  // Nor the funnel's paid step: nobody can pay here.
-  await expect(page.getByTestId("funnel").getByRole("listitem")).toHaveCount(4);
-  for (const period of ["30 days", "90 days", "7 days"]) {
-    await page.getByRole("button", { name: period }).click();
-    await expect(page.getByRole("button", { name: period })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  }
 });

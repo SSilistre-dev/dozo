@@ -17,9 +17,6 @@ const SECTIONS: [path: string, label: string][] = [
   ["/admin/access", "Ücretsiz erişim"],
   ["/admin/plugins", "Eklentiler"],
   ["/admin/settings", "Site ayarları"],
-  ["/admin/plans", "Planlar"],
-  ["/admin/billing", "Faturalandırma"],
-  ["/admin/funnel", "Huni"],
 ];
 
 test("admin bölümleri salt okunur açılır", async ({ page }) => {
@@ -37,6 +34,6 @@ test("admin bölümleri salt okunur açılır", async ({ page }) => {
     await expect(page.getByText(/yüklenemedi|Couldn't load/i)).toHaveCount(0);
   }
   // The pages show real members: leave a neutral screen for the closing picture.
-  await page.goto("/admin/plans");
+  await page.goto("/admin/settings");
   await expect(page.getByRole("navigation", { name: "Yönetim" })).toBeVisible();
 });

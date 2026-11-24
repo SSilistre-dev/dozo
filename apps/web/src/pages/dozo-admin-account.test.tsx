@@ -46,10 +46,6 @@ vi.mock("../lib/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error && error.message ? error.message : fallback,
 }));
-// The plan and its dialog have their own test file.
-vi.mock("./dozo-admin-plan", () => ({
-  DozoPlanAction: ({ user }: { user: Account }) => <span data-testid="plan">{user.plan.tier}</span>,
-}));
 vi.mock("../components/ConfirmDialog", () => ({
   ConfirmDialog: (props: {
     title: ReactNode;
@@ -114,15 +110,6 @@ const ada: Account = {
   suspended: false,
   banned: false,
   admin: false,
-  plan: { tier: "pro", grantedUntil: "2027-02-01T23:59:59.000Z", ends: null },
-  billing: {
-    status: "active",
-    trialEndsAt: null,
-    currentPeriodEndsAt: "2026-12-01T00:00:00.000Z",
-    cancelAtPeriodEnd: false,
-  },
-  freeUntil: "2026-12-10T00:00:00.000Z",
-  storage: { usedBytes: 3 * 1024 * 1024, limitBytes: 2 * 1024 * 1024 * 1024 },
   spaces: [
     { id: "space-ada", name: "Home", owned: true },
     { id: "space-team", name: "Team", owned: false },
@@ -160,10 +147,6 @@ const bare: Account = {
   email: "bob@example.test",
   name: "Bob",
   emailVerified: false,
-  plan: { tier: "standard", grantedUntil: null, ends: null },
-  billing: null,
-  freeUntil: null,
-  storage: null,
   spaces: [],
   bots: [],
   computers: [],
@@ -239,18 +222,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows who it is, its plan's dates, its files, and where and how it works", async () => {
+it("shows who it is, and where and how it works", async () => {
   await open();
   expect(api.user).toHaveBeenCalledWith({ userId: "ada" });
   expect(container.querySelector("h2")?.textContent).toBe("Ada");
   expect(shown("admin-account-identity")?.textContent).toBe(
     "ada@example.testEmail verifiedJoined Jan 3, 2026",
   );
-  expect(shown("plan")?.textContent).toBe("pro");
-  expect(shown("admin-account-dates")?.textContent).toBe(
-    "Subscription activeRenews Dec 1, 2026Free period until Dec 10, 2026Granted until Feb 1, 2027",
-  );
-  expect(shown("admin-account-storage")?.textContent).toBe("3 MB of 2 GB used");
   expect(texts("admin-account-spaces")).toEqual(["HomeOwn", "TeamInvited"]);
   expect(texts("admin-account-bots")).toEqual(["Scout"]);
   expect(texts("admin-account-computers")).toEqual([
@@ -266,56 +244,16 @@ it("shows who it is, its plan's dates, its files, and where and how it works", a
   expect(container.querySelector('a[href="/admin"]')?.textContent).toBe("Members");
 });
 
-it("leaves out what an account does not have, and says a trial or a cancelled period ends", async () => {
+it("leaves out what an account does not have", async () => {
   await open(bare);
   expect(shown("admin-account-identity")?.textContent).toContain("Email not verified");
   for (const testId of [
-    "admin-account-dates",
-    "admin-account-storage",
     "admin-account-spaces",
     "admin-account-bots",
     "admin-account-computers",
     "admin-account-sessions",
   ])
     expect(shown(testId)).toBeNull();
-  await act(async () => root.unmount());
-  root = createRoot(container);
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  await open({
-    ...bare,
-    billing: {
-      status: "trialing",
-      trialEndsAt: "2026-04-01T00:00:00.000Z",
-      currentPeriodEndsAt: "2026-04-01T00:00:00.000Z",
-      cancelAtPeriodEnd: true,
-    },
-  });
-  expect(shown("admin-account-dates")?.textContent).toBe(
-    "Subscription on trialTrial ends Apr 1, 2026Ends Apr 1, 2026",
-  );
-});
-
-it("says the subscription's state in words, whatever state it is in", async () => {
-  const dates = async (status: string) => {
-    api.user.mockResolvedValue({
-      ...bare,
-      billing: { status, trialEndsAt: null, currentPeriodEndsAt: null, cancelAtPeriodEnd: false },
-    });
-    await act(async () => client.invalidateQueries());
-    await vi.waitFor(() => expect(api.user).toHaveBeenLastCalledWith({ userId: "bob" }));
-    return vi.waitFor(() => {
-      const text = shown("admin-account-dates")?.textContent;
-      if (!text?.includes(expected[status] ?? "")) throw new Error(text);
-      return text;
-    });
-  };
-  const expected: Record<string, string> = {
-    past_due: "Subscription payment due",
-    canceled: "Subscription cancelled",
-    incomplete: "Subscription inactive",
-  };
-  await open(bare);
-  for (const status of Object.keys(expected)) expect(await dates(status)).toBe(expected[status]);
 });
 
 it("marks a suspended or banned account, and offers restoring a suspended one at once", async () => {

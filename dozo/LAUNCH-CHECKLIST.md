@@ -40,8 +40,8 @@ stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder add
 - [ ] **Welcome-mail hero image** (can follow). The mail goes without one: the art is in
       `dozo/brand/assets/mail/welcome.png`, but nothing hosts it on the landing site. To use it, host it
       there and add an anchored rule linking it.
-- [ ] **Privacy policy, terms and refund pages** (blocks launch: awaiting a lawyer's review). Written
-      and linked: `dozo/landing/privacy/`, `terms/` and `refunds/`, in English and Turkish, and two
+- [ ] **Privacy policy and terms pages** (blocks launch: awaiting a lawyer's review). Written
+      and linked: `dozo/landing/privacy/` and `terms/`, in English and Turkish, and two
       rules in `dozo/brand/brand.json` point the app's privacy and terms links at them (upstream's
       `AI_PRIVACY_URL` and the mobile paywall's terms link). Still open, all the owner's: a lawyer's
       review, above all of what the pages leave out on purpose (governing law and court, a postal
@@ -76,12 +76,11 @@ stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder add
       is a rule change.
 - [ ] **Billing, OAuth and listing names** (blocks launch if the feature is on). Create our Stripe
       products, prices and names (upstream billing code is `apps/api/src/billing.ts`; use env
-      configuration, never code edits). The plans and the one place their prices change:
-      `dozo/README.md`, Hosted plans. Set our names in OAuth consent screens, the Slack, Discord and
+      configuration, never code edits). Set our names in OAuth consent screens, the Slack, Discord and
       Telegram apps and the OpenRouter listing. Owner's decision: the product is source available
       (Elastic License 2.0 for the fork's own files, see `dozo/NOTICE`), free to run on your own
-      server, and also a hosted SaaS that runs on our servers; payment is not live yet, so the landing page shows
-      the plans without prices (`dozo/landing/README.md`).
+      server, and also a hosted SaaS that runs on our servers; the fork has no plans or prices of its
+      own, and the landing page names none (`dozo/landing/README.md`).
 - [ ] **Android build name** (blocks launch if the Android build is offered). Publish the APK as
       `dozo.apk` under the release tag the download URL names.
 - [ ] **Third-party catalog branding** (decision). The xAI/Grok plugin catalog and import text name

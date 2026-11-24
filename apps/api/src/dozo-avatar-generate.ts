@@ -4,7 +4,6 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import {
   DOZO_MEDIA_USAGE_PROVIDER,
   dozoReserveMediaUsage,
-  operatorPaysFor,
   validateGeneratedMedia,
 } from "@rakazo/adapters";
 import type { Actor, DozoAvatarGenerateReason } from "@rakazo/contracts";
@@ -30,8 +29,6 @@ const FRAMING = "Square profile picture, one centered subject, plain background,
 
 export type DozoAvatarGenerateWiring = {
   mediaGeneration?: MediaGenerationProvider;
-  /** Whether the server bills: only then does the plan decide who may use the image service. */
-  billingEnabled: boolean;
 };
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -47,12 +44,6 @@ const REFUSALS: Record<DozoAvatarGenerateReason, () => ClientError> = {
       "NOT_FOUND",
       "Avatars can't be drawn here",
       DOZO_AVATAR_GENERATE_ERRORS.unavailable,
-    ),
-  plan: () =>
-    new ClientError(
-      "FORBIDDEN",
-      "Drawing avatars isn't included in this plan",
-      DOZO_AVATAR_GENERATE_ERRORS.plan,
     ),
   limit: () =>
     new ClientError(
@@ -91,10 +82,9 @@ async function asFailure<T>(work: () => Promise<T> | T): Promise<T> {
  * saved here, so a picture the person does not use changes nothing. The description is never
  * logged, put in an error or kept in a usage record.
  *
- * The operator pays for each picture, so: Free on a billing server is refused (the plan rule a
- * bot's own image tool follows), `DOZO_AVATAR_GENERATE_PER_DAY` in any sliding 24 hours per person
- * is counted from the usage records (which every instance shares), and a person has one picture
- * being drawn at a time, held by a lease across instances. The count is read under that lease, so
+ * The operator pays for each picture, so `DOZO_AVATAR_GENERATE_PER_DAY` in any sliding 24 hours
+ * per person is counted from the usage records (which every instance shares), and a person has one
+ * picture being drawn at a time, held by a lease across instances. The count is read under that lease, so
  * two at once cannot both slip past the limit. A picture's one record is written before the
  * service is called and its write is not swallowed: a call that cannot be counted does not start,
  * and one that is cancelled, times out or fails still counts, since the service may have been
@@ -112,11 +102,8 @@ export function dozoAvatarGenerateRoutes(
   const provider = wiring?.mediaGeneration;
 
   /** Whether the server can draw for this person at all, before today's count. */
-  async function refusal(actor: Actor): Promise<"unavailable" | "plan" | null> {
-    if (!wiring || !provider?.capabilities.images) return "unavailable";
-    return (await operatorPaysFor({ billingEnabled: wiring.billingEnabled, prisma }, actor))
-      ? null
-      : "plan";
+  function refusal(): "unavailable" | null {
+    return !wiring || !provider?.capabilities.images ? "unavailable" : null;
   }
 
   // Usage rows are Space-owned, so a count across a person's Spaces is named system work; it
@@ -164,14 +151,14 @@ export function dozoAvatarGenerateRoutes(
     dozoAvatarGenerate: {
       status: authed.dozoAvatarGenerate.status.handler(async ({ context }) => {
         const reason =
-          (await refusal(context.actor)) ??
+          refusal() ??
           ((await drawnToday(context.actor)) >= DOZO_AVATAR_GENERATE_PER_DAY ? "limit" : null);
         return { available: reason === null, reason };
       }),
 
       generate: authed.dozoAvatarGenerate.generate.handler(async ({ context, input, signal }) => {
         const { actor } = context;
-        const reason = await refusal(actor);
+        const reason = refusal();
         if (reason || !provider) throw REFUSALS[reason ?? "unavailable"]();
         const deadline = deadlineSignal(options.deadlineMs ?? GENERATE_DEADLINE_MS, signal);
         try {

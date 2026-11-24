@@ -88,7 +88,7 @@ function sameShape(actual, expected, file) {
 const find = (page, name, where) =>
   page.tags.filter((tag) => tag.name === name && where(tag.attrs));
 // Every language has the same pages: the landing page and, each in its own directory, the legal pages.
-const pages = ["", "privacy/", "terms/", "refunds/", "delete-account/", "support/"];
+const pages = ["", "privacy/", "terms/", "delete-account/", "support/"];
 const english = Object.fromEntries(
   ["404.html", ...pages.map((page) => `${page}index.html`)].map((file) => [
     file,
@@ -148,13 +148,12 @@ for (const lang of ["en", ...languages]) {
         ]),
         file,
       );
-      // The app opens in the language of the page that linked it; a paid plan's card also names
-      // the plan and the period the page shows first.
+      // The app opens in the language of the page that linked it.
       for (const link of find(page, "a", (a) => a.href?.startsWith("https://app.dozo.bot/"))) {
         assert.match(
           link.attrs.href,
           new RegExp(
-            `^https://app\\.dozo\\.bot/sign-(in|up)\\?lang=${lang}(&plan=(premium|premium_plus)&period=year)?$`,
+            `^https://app\\.dozo\\.bot/sign-(in|up)\\?lang=${lang}$`,
           ),
           file,
         );
@@ -168,71 +167,14 @@ for (const lang of ["en", ...languages]) {
   });
 }
 
-// The plan cards are written by hand on each page; the code that charges and limits them is the source.
-test("every language shows the plans the code sells and links sign-up from each one", () => {
-  const source = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
-  const billing = source("packages/contracts/src/billing.ts");
-  const plans = source("packages/contracts/src/dozo-plans.ts");
-  const sizes = source("dozo/deploy/compose.deploy.yml").match(
-    /RAKAZO_COMPUTER_SIZES:-([^}]*)\}/,
-  )[1];
-  const hourly = Number(
-    billing.match(/SANDBOX_HOURLY_COST_MICROS = ([\d_]+);/)[1].replaceAll("_", ""),
-  );
-  const tier = (id) => billing.match(new RegExp(`\\b${id}: \\{([^}]*)\\}`))[1];
-  const number = (terms, key) => Number(terms.match(new RegExp(`${key}: (\\d+)`))[1]);
-  const space = (name) => {
-    const [, size, unit] = plans.match(
-      new RegExp(`const ${name} = \\{[^}]*?sharedSpaceBytes: (\\d+) \\* (1024 \\* )?MB`),
-    );
-    return unit ? `${size} GB` : `${size} MB`;
-  };
-  const paid = (id, plan) => {
-    const terms = tier(id);
-    const [month, year] = [
-      number(terms, "monthlyPriceCents") / 100,
-      number(terms, "annualPriceCents") / 100,
-    ];
-    const [, cpus, memory] = sizes.match(
-      new RegExp(`\\b${terms.match(/computerSize: "(\w+)"/)[1]}=(\\d+):(\\d+)`),
-    );
-    const hours = (number(terms, "computerAllowanceCents") * 10_000) / hourly;
-    return {
-      prices: [month, year / 12, year],
-      facts: [`${cpus} vCPU`, `${memory} GB RAM`, String(hours), space(plan)],
-    };
-  };
-  const expected = [paid("pro", "premium"), paid("max", "premiumPlus")];
-  // The yearly saving the switch names: the smaller of the two, rounded down.
-  const saving = Math.min(
-    ...expected.map(({ prices: [month, , year] }) => Math.floor((1 - year / (month * 12)) * 100)),
-  );
+// Nothing is sold: no page shows a price, a plan or a refund policy.
+test("no page names a price, a plan or a refund policy", () => {
   for (const lang of ["en", ...languages]) {
-    const file = `${lang === "en" ? "" : `${lang}/`}index.html`;
-    const html = read(file);
-    assert.match(
-      html.match(/<span class="save">(.*?)<\/span>/)[1],
-      new RegExp(`\\b${saving}\\b`),
-      file,
-    );
-    const [free, ...cards] = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
-    assert.match(free, new RegExp(`href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}"`), file);
-    assert.ok(free.includes(space("free")), file);
-    cards.forEach((card, index) => {
-      const prices = card
-        .match(/<p class="price">.*?<p class="bill">.*?<\/p>/)[0]
-        .match(/\d+/g)
-        .map(Number);
-      assert.deepEqual(prices, expected[index].prices, file);
-      for (const fact of expected[index].facts) assert.ok(card.includes(fact), `${file}: ${fact}`);
-      assert.match(
-        card,
-        new RegExp(
-          `href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}&plan=${["premium", "premium_plus"][index]}&period=year"`,
-        ),
-        file,
-      );
-    });
+    for (const page of pages) {
+      const file = `${lang === "en" ? "" : `${lang}/`}${page}index.html`;
+      const html = read(file);
+      assert.doesNotMatch(html, /class="(tier|price|period)\b|\$\d|\d \$|refunds\/|id="plans"/, file);
+    }
   }
 });
 

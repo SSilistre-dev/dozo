@@ -68,10 +68,8 @@ test("legal and 404 pages stay out of the index and out of the sitemap", () => {
   for (const file of [
     "privacy/index.html",
     "terms/index.html",
-    "refunds/index.html",
     "tr/privacy/index.html",
     "tr/terms/index.html",
-    "tr/refunds/index.html",
     "404.html",
     "tr/404.html",
   ]) {
@@ -95,7 +93,7 @@ test("each home page has its own title and description, and states what Dozo is"
   }
 });
 
-test("JSON-LD: Organization, WebSite and SoftwareApplication, with the page's own prices", () => {
+test("JSON-LD: Organization, WebSite and SoftwareApplication, and no offers", () => {
   for (const [lang, file] of Object.entries(pages)) {
     const data = jsonLd(file);
     assert.equal(data["@context"], "https://schema.org");
@@ -109,24 +107,15 @@ test("JSON-LD: Organization, WebSite and SoftwareApplication, with the page's ow
     );
     // Nothing the page does not show: no ratings, reviews or FAQ.
     assert.doesNotMatch(JSON.stringify(data), /aggregateRating|"review"|FAQPage/);
-    const tiers = [...read(file).matchAll(/<article class="tier[^"]*"><h3>([^<]*)<\/h3>.*?<b>(?:\$(\d+)|(\d+) \$)<\/b>/g)];
-    assert.equal(tiers.length, 3);
-    assert.deepEqual(
-      byType.SoftwareApplication.offers.map((o) => [o.name, o.price, o.priceCurrency]),
-      tiers.map(([, name, usd, tr]) => [name, usd ?? tr, "USD"]),
-    );
+    assert.equal(byType.SoftwareApplication.offers, undefined, `${file} names a price`);
   }
 });
 
-test("llms.txt states the plans the page shows and calls Dozo source available", () => {
+test("llms.txt names no plan or price and calls Dozo source available", () => {
   const llms = read("llms.txt");
   assert.match(llms, /^# Dozo$/m);
   assert.match(llms, /source available/i);
   assert.doesNotMatch(llms.replace(/It is not open source\./, ""), /open[- ]source/i);
-  const html = read("index.html");
-  const prices = (s) => [...s.matchAll(/\$\d+/g)].map((m) => m[0]);
-  const plans = llms.slice(llms.indexOf("## Plans"), llms.indexOf("## Apps"));
-  const shown = new Set(prices(html.slice(html.indexOf('id="plans"'))));
-  for (const price of new Set(prices(plans))) assert.ok(shown.has(price), `${price} is not on the page`);
+  assert.doesNotMatch(llms, /\$\d|## Plans|refund/i);
   for (const url of llms.match(/https:\/\/[^\s)]+/g)) assert.doesNotMatch(url, /[.,]$/);
 });

@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
-import type { PlanLimitNotice, SignInProvider } from "@rakazo/contracts";
-import { planLimitCopy } from "@rakazo/i18n/run-error";
+import type { SignInProvider } from "@rakazo/contracts";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-// Runs on the branded tree: the plan-limit copy exists once the brand rules apply.
 
 vi.mock("expo-router", () => ({
   Redirect: ({ href }: { href: string }) => <a href={href}>chats</a>,
@@ -14,10 +11,7 @@ vi.mock("expo-router", () => ({
 
 import { DozoStoreGate } from "../components/dozo-store-gate";
 import {
-  mobilePlanLimitCopy,
   storeBuild,
-  storePlanLimitCopy,
-  storePlanLimitNotice,
   storeRunErrorDetails,
   storeSignInProviders,
 } from "./dozo-store-build";
@@ -26,54 +20,6 @@ describe("the store build flag", () => {
   it("is off unless the bundle was made with EXPO_PUBLIC_DOZO_STORE_BUILD=1", () => {
     expect(process.env.EXPO_PUBLIC_DOZO_STORE_BUILD).toBeUndefined();
     expect(storeBuild).toBe(false);
-  });
-});
-
-describe("plan-limit sentences", () => {
-  const copy = planLimitCopy();
-  // The sentences only: `upgradeTo` is a new function on every call.
-  const sentences = (value: object) => JSON.parse(JSON.stringify(value));
-
-  it("off: every sentence as written, the upgrade ones included", () => {
-    expect(storePlanLimitCopy(copy, false)).toBe(copy);
-    expect(sentences(mobilePlanLimitCopy(false))).toEqual(sentences(copy));
-  });
-
-  it("on: no sentence points at a purchase; the limit and the way out by deleting stay", () => {
-    const store = storePlanLimitCopy(copy, true);
-    expect(sentences(mobilePlanLimitCopy(true))).toEqual(sentences(store));
-    expect(store.computerNotInPlanAskOwner).toBe("Your plan doesn't include a computer.");
-    for (const key of ["sharedSpaceFull", "sharedSpaceFullUpgrade", "sharedSpaceFullAskOwner"])
-      expect(store[key as keyof typeof store]).toBe(
-        "Shared space is full. Delete files to make room.",
-      );
-    const texts = Object.values(store).filter((value) => typeof value === "string");
-    const offered = new Set(["Upgrade", copy.planNotOffered]);
-    for (const sentence of texts.filter((text) => !offered.has(text)))
-      expect(sentence).not.toMatch(/upgrade|plan\./i);
-  });
-});
-
-describe("plan-limit notices", () => {
-  const upgrade: PlanLimitNotice = {
-    code: "computer_not_in_plan" as PlanLimitNotice["code"],
-    text: "Your plan doesn't include a computer.",
-    action: { kind: "upgrade", label: "Upgrade", startsPaidPlan: true },
-  };
-  const retry: PlanLimitNotice = {
-    code: "computers_busy" as PlanLimitNotice["code"],
-    text: "All computers are busy. Try again shortly.",
-    action: { kind: "retry", label: "Try again" },
-  };
-
-  it("off: the upgrade stays", () => {
-    expect(storePlanLimitNotice(upgrade, false)).toBe(upgrade);
-  });
-
-  it("on: the sentence without its upgrade; a retry and no notice stay as they are", () => {
-    expect(storePlanLimitNotice(upgrade, true)).toEqual({ ...upgrade, action: null });
-    expect(storePlanLimitNotice(retry, true)).toBe(retry);
-    expect(storePlanLimitNotice(null, true)).toBeNull();
   });
 });
 

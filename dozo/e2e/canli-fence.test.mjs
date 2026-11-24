@@ -86,15 +86,12 @@ test("the reads the admin pages make pass; writes and unknown procedures are ref
   for (const read of [
     "dozoAdmin/bans",
     "dozoAdmin/users",
-    "dozoAdmin/billing/summary",
     "accessGrants/list",
   ])
     assert.equal(fenceVerdict(`/rpc/${read}`).pass, true, read);
   for (const write of [
     "dozoAdmin/ban",
     "dozoAdmin/unban",
-    "dozoAdmin/setPlan",
-    "dozoAdmin/plans/setQuota",
     "billing/portal",
   ])
     assert.equal(fenceVerdict(`/rpc/${write}`).pass, false, write);

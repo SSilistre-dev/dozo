@@ -45,8 +45,8 @@ describePostgres("drawing an avatar (PostgreSQL)", () => {
     await db?.pool.end();
   });
 
-  /** A person with their own organization and one Space; `paying` gives it a live subscription. */
-  async function person(paying = false): Promise<Actor> {
+  /** A person with their own organization and one Space. */
+  async function person(): Promise<Actor> {
     const id = `avatar-generate-${randomUUID()}`;
     users.push(id);
     const createdAt = new Date();
@@ -57,10 +57,6 @@ describePostgres("drawing an avatar (PostgreSQL)", () => {
     await system.member.create({
       data: { id: `m-${id}`, organizationId: id, userId: id, role: "owner", createdAt },
     });
-    if (paying)
-      await system.billingAccount.create({
-        data: { organizationId: id, customerId: `cus-${id}`, status: "active" },
-      });
     return { ...(await space(id, id)), email: `${id}@example.test`, isDeploymentOwner: false };
   }
 
@@ -110,7 +106,6 @@ describePostgres("drawing an avatar (PostgreSQL)", () => {
   function client(
     actor: Actor,
     options: {
-      billingEnabled?: boolean;
       provider?: { generateImage: (input: never, context: never) => Promise<GeneratedMedia> };
     } = {},
   ) {
@@ -119,10 +114,7 @@ describePostgres("drawing an avatar (PostgreSQL)", () => {
       prisma,
       events: { notify: () => undefined, publishSpaceChange: () => undefined },
       env: {},
-      ...dozoAvatarGenerateWiring({
-        mediaGeneration: provider,
-        billingEnabled: options.billingEnabled ?? false,
-      }),
+      ...dozoAvatarGenerateWiring({ mediaGeneration: provider }),
     } as unknown as RouterDeps);
     return createRouterClient(dozoAvatarGenerateRoutes(ctx), { context: { actor } })
       .dozoAvatarGenerate;
@@ -174,28 +166,6 @@ describePostgres("drawing an avatar (PostgreSQL)", () => {
     await expect(client(ada).status()).resolves.toMatchObject({ reason: "limit" });
     // ... and it is not Bob's.
     await expect(client(bob).status()).resolves.toEqual({ available: true, reason: null });
-  });
-
-  it("refuses an organization that exists but does not pay, and lets one that does", async () => {
-    const free = await person();
-    const paying = await person(true);
-    await expect(client(free, { billingEnabled: true }).status()).resolves.toEqual({
-      available: false,
-      reason: "plan",
-    });
-    await expect(
-      client(free, { billingEnabled: true }).generate({ prompt: "a fox" }),
-    ).rejects.toMatchObject({ kind: "FORBIDDEN", code: DOZO_AVATAR_GENERATE_ERRORS.plan });
-    expect(await ownRows(free)).toHaveLength(0);
-    await expect(client(paying, { billingEnabled: true }).status()).resolves.toEqual({
-      available: true,
-      reason: null,
-    });
-    // A server that does not bill offers it to everyone.
-    await expect(client(free, { billingEnabled: false }).status()).resolves.toEqual({
-      available: true,
-      reason: null,
-    });
   });
 
   it("counts a try that failed, one the service answered badly, and one cancelled", async () => {

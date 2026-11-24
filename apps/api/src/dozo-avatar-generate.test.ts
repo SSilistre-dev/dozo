@@ -99,8 +99,6 @@ type Setup = {
   provider?: Partial<Pick<MediaGenerationProvider, "capabilities">> | null;
   /** Usage records the person already has today. */
   used?: number;
-  /** A server that bills, and what the person's organization pays with. */
-  plan?: "free" | "paid" | "self-hosted";
   deadlineMs?: number;
 };
 
@@ -112,7 +110,7 @@ const generateImage =
   vi.fn<(input: { prompt: string }, context: AdapterContext) => Promise<GeneratedMedia>>();
 let sink: TestSink;
 
-function prismaFor(plan: NonNullable<Setup["plan"]>) {
+function prismaFor() {
   const tx = {
     usageRecord: {
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
@@ -129,20 +127,10 @@ function prismaFor(plan: NonNullable<Setup["plan"]>) {
       if (usageWriteFails) throw new Error("database down");
       return work(tx);
     },
-    space: { findUnique: vi.fn(async () => ({ organizationId: "org-1" })) },
-    member: { findUnique: vi.fn(async () => (plan === "paid" ? { role: "owner" } : null)) },
-    organization: {
-      findUnique: vi.fn(async () => ({
-        billing: { status: "active" },
-        modelCredits: null,
-        dozoPlanGrant: null,
-      })),
-    },
   };
 }
 
 function routes(setup: Setup = {}) {
-  const plan = setup.plan ?? "self-hosted";
   count.mockImplementation(async () => (setup.used ?? 0) + usageRows.length);
   const provider =
     setup.provider === null
@@ -153,12 +141,9 @@ function routes(setup: Setup = {}) {
           ...setup.provider,
           generateImage,
         } as unknown as MediaGenerationProvider);
-  const wiring: DozoAvatarGenerateWiring = {
-    mediaGeneration: provider,
-    billingEnabled: plan !== "self-hosted",
-  };
+  const wiring: DozoAvatarGenerateWiring = { mediaGeneration: provider };
   const deps = {
-    prisma: prismaFor(plan),
+    prisma: prismaFor(),
     ...dozoAvatarGenerateWiring(wiring),
   } as unknown as RouterDeps;
   return dozoAvatarGenerateRoutes(createRouterContext(deps), {
@@ -206,8 +191,8 @@ describe("status", () => {
     });
   });
 
-  it("is available to an organization that pays", async () => {
-    await expect(caller(routes({ plan: "paid" })).dozoAvatarGenerate.status()).resolves.toEqual({
+  it("is available when an image service is connected", async () => {
+    await expect(caller(routes()).dozoAvatarGenerate.status()).resolves.toEqual({
       available: true,
       reason: null,
     });
@@ -227,13 +212,6 @@ describe("status", () => {
     expect(count).not.toHaveBeenCalled();
   });
 
-  it("says plan on Free", async () => {
-    await expect(caller(routes({ plan: "free" })).dozoAvatarGenerate.status()).resolves.toEqual({
-      available: false,
-      reason: "plan",
-    });
-  });
-
   it("says limit once today's allowance is used", async () => {
     const used = (n: number) => caller(routes({ used: n })).dozoAvatarGenerate.status();
     await expect(used(DOZO_AVATAR_GENERATE_PER_DAY - 1)).resolves.toMatchObject({
@@ -247,7 +225,7 @@ describe("status", () => {
 
   it("is unavailable when the server was built without the wiring", async () => {
     const bare = dozoAvatarGenerateRoutes(
-      createRouterContext({ prisma: prismaFor("free") } as unknown as RouterDeps),
+      createRouterContext({ prisma: prismaFor() } as unknown as RouterDeps),
     );
     await expect(caller(bare).dozoAvatarGenerate.status()).resolves.toEqual({
       available: false,
@@ -259,7 +237,6 @@ describe("status", () => {
 describe("generate: refusals", () => {
   it.each([
     ["no image service", { provider: null }, "NOT_FOUND", DOZO_AVATAR_GENERATE_ERRORS.unavailable],
-    ["Free", { plan: "free" as const }, "FORBIDDEN", DOZO_AVATAR_GENERATE_ERRORS.plan],
     [
       "today's allowance used",
       { used: DOZO_AVATAR_GENERATE_PER_DAY },

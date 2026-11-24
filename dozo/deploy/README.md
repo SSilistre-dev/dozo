@@ -131,7 +131,7 @@ Keep `ENCRYPTION_KEY` and the two database passwords for the life of the data: s
 are encrypted with the first, and Postgres takes its passwords only when its volume is first
 created. Every other upstream setting (`docs/self-host-configuration.md`) can be added the same
 way. Model keys, sign-in providers and email are deliberately not set: the owner connects a model
-in the app. Billing is live on the hosted version.
+in the app. Billing is upstream's own and stays off unless its payment secrets are set.
 
 Mobile app ids (optional; each is left out until the owner has it). Without them the server
 answers 404 for the association files and the app offers no passkey, as today:
@@ -498,9 +498,8 @@ team computer outside the compose project. What bounds them:
   in the api log. The stack's own network has a fixed subnet so it takes none; the fix on the host
   is `docker network prune` for networks nothing uses, or more pools (`default-address-pools` in
   the daemon's settings, which needs a Docker restart).
-- `RAKAZO_COMPUTER_SIZES` is what each plan's computer gets, as `size=vCPUs:GB`: `large` is
-  Premium, `xlarge` is Premium Plus, and `standard` is a computer without a paid plan's size,
-  which is not sold here (Free has no hosted computer). The default, set in `compose.deploy.yml`,
+- `RAKAZO_COMPUTER_SIZES` is what each of upstream's own-model tiers' computers gets, as `size=vCPUs:GB`: `large` is
+  tier `pro`, `xlarge` is tier `max`, and `standard` is a computer with no tier's size. The default, set in `compose.deploy.yml`,
   is `standard=2:1.5,large=2:2,xlarge=4:4`. The api and the worker read
   it: Billing shows these numbers and every start sends them to the supervisor, so what is shown
   is what is applied. A stopped computer moves to its plan's size on its next start (an upgrade,
@@ -543,9 +542,9 @@ team computer outside the compose project. What bounds them:
   their Spaces; this layer sets `2`. It counts computers that exist, running or not, and is
   checked when a bot is made, restored or given its own computer, never at a start. Bots in one
   Space share one computer, kept for the Space's owner, so a member's bot there counts for the
-  owner; a bot switched to its own computer is one more. It counts on every plan, Free included.
+  owner; a bot switched to its own computer is one more.
   At `2` a person has a second Space, or one bot with its own computer, and can hold two
-  computers' memory at once: 4 GB of the total on Premium, 8 GB on Premium Plus. At `1` nobody
+  computers' memory at once: 4 GB of the total at `large`, 8 GB at `xlarge`. At `1` nobody
   holds more than one, and the first bot in a second Space is refused. Past the cap the person
   reads "User computer limit (2) reached". `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps the containers
   of one Space, stopped ones included (the supervisor refuses a new one with 429). Neither counts

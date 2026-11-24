@@ -1,6 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ByokTier, DozoAdminUsersSort } from "@rakazo/contracts";
-import { BYOK_TIERS } from "@rakazo/contracts";
+import type { DozoAdminUsersSort } from "@rakazo/contracts";
 import {
   Badge,
   Button,
@@ -22,7 +21,6 @@ import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
 import { DozoAdminAccount } from "./dozo-admin-account";
 import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
-import { DozoPlanAction } from "./dozo-admin-plan";
 import { Row, Rows } from "./dozo-admin-rows";
 import { NotFoundPage } from "./dozo-not-found";
 import { WindowChrome } from "./WindowChrome";
@@ -97,7 +95,6 @@ function Loading() {
 }
 
 const SORTS: readonly DozoAdminUsersSort[] = ["newest", "oldest", "email"];
-const PLANS: readonly ByokTier[] = ["standard", "pro", "max"];
 type Status = "active" | "suspended";
 
 type Action =
@@ -117,9 +114,8 @@ function AdminPanel({ ownId }: { ownId: string }) {
   const [search, setSearch] = useState("");
   const query = useDeferredValue(search.trim());
   const [sort, setSort] = useState<DozoAdminUsersSort>("newest");
-  const [plan, setPlan] = useState<ByokTier | "">("");
   const [status, setStatus] = useState<Status | "">("");
-  const filtered = Boolean(query || plan || status);
+  const filtered = Boolean(query || status);
   // Read once, and again whenever the window comes back: nothing here is polled.
   const users = useInfiniteQuery(
     queries.dozoAdmin.users.infiniteOptions({
@@ -127,7 +123,6 @@ function AdminPanel({ ownId }: { ownId: string }) {
         ...(query ? { query } : {}),
         ...(cursor ? { cursor } : {}),
         ...(sort === "newest" ? {} : { sort }),
-        ...(plan ? { plan } : {}),
         ...(status ? { status } : {}),
       }),
       initialPageParam: null as string | null,
@@ -284,18 +279,6 @@ function AdminPanel({ ownId }: { ownId: string }) {
         />
         <div className="flex flex-wrap gap-2">
           <NativeSelect
-            aria-label={t`Plan`}
-            value={plan}
-            onChange={(event) => setPlan(event.target.value as ByokTier | "")}
-          >
-            <NativeSelectOption value="">{t`All plans`}</NativeSelectOption>
-            {PLANS.map((tier) => (
-              <NativeSelectOption key={tier} value={tier}>
-                {BYOK_TIERS[tier].name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-          <NativeSelect
             aria-label={t`Status`}
             value={status}
             onChange={(event) => setStatus(event.target.value as Status | "")}
@@ -348,7 +331,6 @@ function AdminPanel({ ownId }: { ownId: string }) {
                 </>
               }
             >
-              <DozoPlanAction user={user} />
               {user.banned ? (
                 <Badge variant="outline">
                   <Trans>Banned</Trans>

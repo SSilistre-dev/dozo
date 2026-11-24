@@ -45,23 +45,4 @@ export const DOZO_ADMIN_NAV: readonly DozoAdminSection[] = [
       import("./dozo-admin-settings").then((module) => module.DozoAdminSettingsPage),
     ),
   },
-  {
-    path: "plans",
-    label: msg`Plans`,
-    page: lazyComponent(() => import("./dozo-admin-plans").then((module) => module.DozoAdminPlans)),
-  },
-  {
-    path: "billing",
-    label: msg`Billing`,
-    page: lazyComponent(() =>
-      import("./dozo-admin-billing").then((module) => module.DozoAdminBilling),
-    ),
-  },
-  {
-    path: "funnel",
-    label: msg`Funnel`,
-    page: lazyComponent(() =>
-      import("./dozo-admin-funnel").then((module) => module.DozoAdminFunnel),
-    ),
-  },
 ];

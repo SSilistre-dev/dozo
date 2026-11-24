@@ -1,16 +1,9 @@
 import { createRouterClient } from "@orpc/server";
-import {
-  accountDeactivated,
-  hasBillingAccess,
-  IsolationError,
-  ownedOrganizationId,
-  recordSecurityEvent,
-} from "@rakazo/db";
+import { accountDeactivated, recordSecurityEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DOZO_ADMIN_USERS_PAGE, dozoAdminRoutes, spendingLimitRoutes } from "./dozo-admin.js";
 import type { User } from "./dozo-admin.test-support.js";
-import { inDays, people, setup, user } from "./dozo-admin.test-support.js";
-import { LIVE_BILLING_STATUSES, ownedOrganizations } from "./dozo-admin-members.js";
+import { people, setup, user } from "./dozo-admin.test-support.js";
 import { audit, host, stops } from "./dozo-admin-mocks.test-support.js";
 
 vi.mock("./routes/computer.js", async () =>
@@ -45,13 +38,6 @@ describe("who may use the admin procedures", () => {
       refused,
     );
     await expect(client.stopComputer({ computerId: "pc-ada" })).rejects.toMatchObject(refused);
-    await expect(
-      client.setPlan({ userId: "bob", tier: "max", endsAt: "2999-01-01T00:00:00.000Z" }),
-    ).rejects.toMatchObject(refused);
-    await expect(client.setPlan({ userId: "ada", tier: null })).rejects.toMatchObject(refused);
-    expect(prisma.dozoPlanGrant.upsert).not.toHaveBeenCalled();
-    expect(prisma.dozoPlanGrant.deleteMany).not.toHaveBeenCalled();
-    expect(prisma.organization.findMany).not.toHaveBeenCalled();
     expect(audit.events).toEqual([]);
     await expect(client.bans()).rejects.toMatchObject(refused);
     await expect(client.ban({ value: "bob@example.test" })).rejects.toMatchObject(refused);
@@ -61,7 +47,6 @@ describe("who may use the admin procedures", () => {
     await expect(client.user({ userId: "bob" })).rejects.toMatchObject(refused);
     await expect(client.rename({ userId: "bob", name: "Robert" })).rejects.toMatchObject(refused);
     await expect(client.endSessions({ userId: "ada" })).rejects.toMatchObject(refused);
-    await expect(client.users({ plan: "max" })).rejects.toMatchObject(refused);
     expect(prisma.user.findFirst).not.toHaveBeenCalled();
     expect(prisma.user.update).not.toHaveBeenCalled();
     expect(prisma.session.deleteMany).not.toHaveBeenCalled();
@@ -112,7 +97,6 @@ describe("listing accounts", () => {
       // Not the one on her own machine, nor the stopped one.
       runningComputers: 1,
       suspended: false,
-      plan: { tier: "standard", grantedUntil: null, ends: null },
       banned: false,
     });
     expect(result.users[0]).toMatchObject({ lastSeenAt: null, bots: 0, runningComputers: 0 });
@@ -505,36 +489,6 @@ describe("sorting and filtering the list", () => {
     expect((await as("admin").users({ query: "example" })).matching).toBe(4);
   });
 
-  it("filters by the plan in force, by the same rule as the list", async () => {
-    const { as, organizations } = setup();
-    const ada = organizations.get("org-ada");
-    const admin = organizations.get("org-admin");
-    const squatter = organizations.get("org-squatter");
-    if (!ada || !admin || !squatter) throw new Error("fixture");
-    ada.billing = { status: "active", byokTier: "pro" };
-    admin.grant = { tier: "max", endsAt: inDays(3), grantedById: "admin", note: null };
-    // A lapsed subscription and an ended grant are Free.
-    squatter.billing = { status: "canceled", byokTier: "max" };
-    squatter.grant = { tier: "max", endsAt: inDays(-1), grantedById: "admin", note: null };
-    expect(await ids(as, { plan: "pro" })).toEqual(["ada"]);
-    expect(await ids(as, { plan: "max" })).toEqual(["admin"]);
-    expect(await ids(as, { plan: "standard" })).toEqual(["bob", "squatter"]);
-    const result = await as("admin").users({ plan: "max", query: "ada" });
-    expect(result).toMatchObject({ users: [], matching: 0, total: 4 });
-  });
-
-  it("counts an account that owns several organizations at its highest plan", async () => {
-    const { as, organizations, memberships } = setup();
-    // Bob, who owned none, now owns a paying organization; Ada owns one too, beside her own.
-    for (const userId of ["bob", "ada"])
-      memberships.push({ userId, organizationId: "org-paid", role: "owner" });
-    // Owning is what counts: a member of a paying organization is not on its plan.
-    memberships.push({ userId: "squatter", organizationId: "org-paid", role: "member" });
-    organizations.set("org-paid", { billing: { status: "active", byokTier: "max" }, grant: null });
-    expect(await ids(as, { plan: "max" })).toEqual(["bob", "ada"]);
-    expect(await ids(as, { plan: "standard" })).toEqual(["squatter", "admin"]);
-  });
-
   it("filters in the list's own query, and counts only when something narrows it", async () => {
     const { as, prisma } = setup();
     await as("admin").users({});
@@ -542,47 +496,12 @@ describe("sorting and filtering the list", () => {
     expect(prisma.user.count).toHaveBeenCalledTimes(1);
     expect((await as("admin").users({})).matching).toBe(4);
     prisma.user.count.mockClear();
-    prisma.member.findMany.mockClear();
-    prisma.organization.findMany.mockClear();
-    await as("admin").users({ plan: "standard" });
+    await as("admin").users({ status: "active" });
     expect(prisma.user.count).toHaveBeenCalledTimes(2);
-    // The plans of the page's accounts, nothing more: no organization is read to filter.
-    expect(prisma.member.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.organization.findMany).toHaveBeenCalledTimes(1);
-    // The account filter keeps its own conditions beside the plan's.
+    // The account filter keeps its own conditions beside the status.
     const [query] = prisma.user.findMany.mock.lastCall ?? [];
     const { where } = query as { where: Record<string, unknown> };
     expect(where).toMatchObject({ NOT: { email: { endsWith: expect.any(String) } } });
-    expect(where.AND).toHaveLength(1);
-  });
-
-  it("filters only on the statuses that give a plan", () => {
-    for (const status of [
-      "trialing",
-      "active",
-      "past_due",
-      "canceled",
-      "incomplete",
-      "incomplete_expired",
-      "unpaid",
-      "paused",
-    ])
-      expect(LIVE_BILLING_STATUSES.includes(status)).toBe(hasBillingAccess(status));
-  });
-
-  it("finds each account's own organization as the one-account lookup does", async () => {
-    const { prisma, memberships } = setup();
-    memberships.push({ userId: "bob", organizationId: "org-later", role: "member" });
-    memberships.push({ userId: "ada", organizationId: "org-later", role: "admin,owner" });
-    const ids = ["admin", "squatter", "ada", "bob"];
-    const batch = await ownedOrganizations(prisma as never, ids);
-    for (const userId of ids)
-      expect(batch.get(userId)).toBe(
-        await ownedOrganizationId(prisma as never, userId).catch((error) => {
-          if (error instanceof IsolationError) return undefined;
-          throw error;
-        }),
-      );
   });
 
   it("reads a page in the same number of queries whatever its size", async () => {
@@ -607,14 +526,8 @@ describe("sorting and filtering the list", () => {
 });
 
 describe("one account in full", () => {
-  it("shows who it is, its plan and dates, where it works and its latest sign-ins", async () => {
-    const { as, organizations, settings } = setup();
-    const row = organizations.get("org-ada");
-    if (!row) throw new Error("fixture");
-    const period = inDays(20);
-    row.billing = { status: "active", byokTier: "pro", currentPeriodEndsAt: period };
-    row.freeUntil = inDays(-2);
-    settings.modelCreditsEnabled = true;
+  it("shows who it is, where it works and its latest sign-ins", async () => {
+    const { as } = setup();
     const account = await as("admin").user({ userId: "ada" });
     expect(account).toEqual({
       id: "ada",
@@ -625,20 +538,6 @@ describe("one account in full", () => {
       suspended: false,
       banned: false,
       admin: false,
-      plan: {
-        tier: "pro",
-        grantedUntil: null,
-        ends: { source: "subscription", at: period.toISOString(), renews: true },
-      },
-      billing: {
-        status: "active",
-        trialEndsAt: null,
-        currentPeriodEndsAt: period.toISOString(),
-        cancelAtPeriodEnd: false,
-      },
-      // An ended free period is not shown.
-      freeUntil: null,
-      storage: { usedBytes: 3 * 1024 * 1024, limitBytes: 2 * 1024 * 1024 * 1024 },
       spaces: [
         { id: "space-ada", name: "Home", owned: true },
         { id: "space-admin", name: "Team", owned: false },
@@ -687,7 +586,7 @@ describe("one account in full", () => {
     });
   });
 
-  it("says an admin is one, a banned address is banned, and an account without an organization is on Free", async () => {
+  it("says an admin is one, a banned address is banned, and an account without an organization has no Spaces", async () => {
     const { as, users } = setup();
     expect(await as("admin").user({ userId: "admin" })).toMatchObject({ admin: true });
     await as("admin").ban({ value: "bob@example.test" });
@@ -697,36 +596,21 @@ describe("one account in full", () => {
       banned: true,
       suspended: true,
       emailVerified: false,
-      plan: { tier: "standard", grantedUntil: null, ends: null },
-      billing: null,
-      freeUntil: null,
-      storage: null,
       spaces: [],
       sessions: [],
     });
   });
 
-  it("shows a trial with no period yet, and a computer that has not run", async () => {
-    const { as, organizations, computers } = setup();
-    const row = organizations.get("org-ada");
+  it("shows a computer that has not run", async () => {
+    const { as, computers } = setup();
     const computer = computers.find((candidate) => candidate.id === "pc-off");
-    if (!row || !computer) throw new Error("fixture");
-    const trial = inDays(7);
-    row.billing = { status: "trialing", byokTier: "max", trialEndsAt: trial };
+    if (!computer) throw new Error("fixture");
     (computer as { runningSince: Date | null }).runningSince = null;
     const account = await as("admin").user({ userId: "ada" });
-    expect(account.billing).toEqual({
-      status: "trialing",
-      trialEndsAt: trial.toISOString(),
-      currentPeriodEndsAt: null,
-      cancelAtPeriodEnd: false,
-    });
     expect(account.computers.find((candidate) => candidate.id === "pc-off")).toMatchObject({
       running: false,
       runningSince: null,
     });
-    // Billing off: files have no limit to show.
-    expect(account.storage).toBeNull();
   });
 
   it("answers not found for an unknown account and an internal chat-app row", async () => {

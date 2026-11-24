@@ -105,30 +105,6 @@ export async function rpcAs<T>(page: Page, procedure: string, body: unknown = nu
   return parsed.json as T;
 }
 
-type PlanRow = {
-  tier: "standard" | "pro" | "max";
-  name: string;
-  monthlyPriceCents: number | null;
-  annualPriceCents: number | null;
-  computerHours: { value: number | null };
-};
-
-/** The plans as the server holds them (names, prices, hours), read with the admin's session. */
-export async function serverPlans(browser: Browser): Promise<PlanRow[]> {
-  const { context, page } = await adminBrowser(browser);
-  try {
-    return (await rpcAs<{ plans: PlanRow[] }>(page, "dozoAdmin/plans/list")).plans;
-  } finally {
-    await context.close();
-  }
-}
-
-/**
- * The stack has no payment provider, so the billing answers are faked in this browser only: the
- * server's own plans (names and prices read from it, never invented here) on a Free account that
- * may subscribe. A checkout is recorded and answered with the address a person lands on when they
- * leave the payment page without paying (`?billing=canceled`).
- */
 /** The account as a server that bills reports it (`billingEnabled`); the rest of `me` is real. */
 export async function reportBilling(page: Page) {
   const patchMe = async (route: Route) => {
@@ -142,57 +118,4 @@ export async function reportBilling(page: Page) {
   };
   await page.route("**/rpc/me", patchMe);
   await page.route("**/rpc/bootstrap", patchMe);
-}
-
-export async function fakeBilling(page: Page, plans: PlanRow[]) {
-  const checkouts: unknown[] = [];
-  await reportBilling(page);
-  const sizes: Record<string, string> = { pro: "large", max: "xlarge" };
-  await page.route("**/rpc/billing/status", (route) =>
-    route.fulfill({
-      json: {
-        json: {
-          funding: "byok",
-          balanceUsd: 0,
-          byokPriceCents: null,
-          byokTier: "standard",
-          byokTiers: plans
-            .filter((plan) => plan.tier !== "standard" && plan.monthlyPriceCents)
-            .map((plan) => ({
-              tier: plan.tier,
-              name: plan.name,
-              monthlyPriceCents: plan.monthlyPriceCents,
-              annualPriceCents: plan.annualPriceCents,
-              computerSize: sizes[plan.tier],
-              computerHours: plan.computerHours.value ?? 0,
-            })),
-          byokFreeUntil: null,
-          access: true,
-          canManage: true,
-          trialAvailable: false,
-          trialDays: 0,
-          state: "none",
-          price: null,
-          seats: 1,
-          trialEndsAt: null,
-          currentPeriodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          hasCustomer: false,
-          computerHoursLeft: 0,
-          computerHoursResetAt: null,
-          referral: null,
-        },
-      },
-    }),
-  );
-  await page.route("**/rpc/billing/checkout", async (route) => {
-    checkouts.push((route.request().postDataJSON() as { json?: unknown }).json);
-    await route.fulfill({ json: { json: { url: `${BASE}/app?billing=canceled` } } });
-  });
-  return { checkouts };
-}
-
-/** The money the plan card shows for an amount in cents: `$49`, `$468`. */
-export function dollars(cents: number | null) {
-  return `$${((cents ?? 0) / 100).toFixed(0)}`;
 }

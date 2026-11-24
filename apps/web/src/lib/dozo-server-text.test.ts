@@ -6,7 +6,6 @@ import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import {
   knownServerText,
   NO_COMPUTER_HOURS,
-  planLimitCopy,
   SERVER_SENTENCE_PREFIXES,
   SERVER_SENTENCES,
   SIGN_IN_LABELS,
@@ -44,8 +43,6 @@ afterEach(() => {
 it("says the English before any language is active, never throwing", () => {
   vi.spyOn(i18n, "locale", "get").mockReturnValue("");
   expect(knownServerText("Admins only")).toBe("Admins only");
-  expect(planLimitCopy().upgradeTo("Premium")).toBe("Upgrade to Premium");
-  expect(planLimitCopy().upgrade).toBe("Upgrade");
 });
 
 it("has a Turkish line for every sentence it knows", () => {

@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { forgetEventServer, sendEvent } from "./dozo-event-sender";
 
-const event = { name: "upgrade_viewed", source: "app" } as const;
+const event = { name: "signup_started", startedAt: "2026-11-19T12:00:00.000Z" } as const;
 
 function client(productEvents: boolean | undefined) {
   return {

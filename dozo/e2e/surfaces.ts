@@ -52,7 +52,7 @@ export const NOT_REACHABLE: { what: string; reason: string }[] = [
   {
     what: "a real payment provider, paywall, wallet, messaging and computer provider settings",
     reason:
-      "the billing, wallet and messaging providers are not configured: billing's screens are scenarios with the server's answers faked in the browser (flows/billing.spec.ts) and the payment page is make canli's; the other pages are opened with their flags faked, so only their own copy is scanned",
+      "the billing, wallet and messaging providers are not configured: the payment page is make canli's; the other pages are opened with their flags faked, so only their own copy is scanned",
   },
   { what: "mobile app", reason: "out of scope (Expo app)" },
 ];
