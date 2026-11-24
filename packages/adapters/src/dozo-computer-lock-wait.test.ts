@@ -2,7 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import type * as DbModule from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { ComputerBusyError } from "./computer-lifecycle.js";
 import { requeueBehindComputerLock } from "./dozo-computer-lock-wait.js";
