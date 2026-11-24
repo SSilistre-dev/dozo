@@ -94,7 +94,7 @@ const pages: Record<string, DevicePage> = {
 };
 
 /** A run whose bot works in the user's own browser, on a page seeded above. */
-function userRun(options: { failing?: boolean } = {}) {
+function userRun(options: { failing?: boolean; empty?: boolean; offline?: boolean } = {}) {
   const device = fakeDeviceBrowser(pages);
   const requests: string[] = [];
   const ctx = {
@@ -110,7 +110,8 @@ function userRun(options: { failing?: boolean } = {}) {
         attempt: { count: async () => 1 },
       },
       userDevices: {
-        connected: async () => ({ deviceId: "d1", capabilities: ["shell", "browser"] }),
+        connected: async () =>
+          options.offline ? null : { deviceId: "d1", capabilities: ["shell", "browser"] },
         async *request(_owner: string, request: { method: string; command?: never }) {
           if (request.method !== "pageBrowser") {
             yield { cleared: false };
@@ -118,6 +119,10 @@ function userRun(options: { failing?: boolean } = {}) {
           }
           requests.push(String((request.command as { method?: string } | undefined)?.method));
           if (options.failing) throw new Error("the connection dropped");
+          if (options.empty) {
+            yield {};
+            return;
+          }
           yield await device(request.command as never);
         },
       },
@@ -189,6 +194,21 @@ describe("which presses are form submits, in the user's own browser", () => {
 
   it("counts each press as a submit when the page cannot be read", async () => {
     expect((await submits([click(REF.link), click(REF.send)], { failing: true })).count).toBe(2);
+  });
+
+  it("counts each press as a submit when the page's answer holds no document", async () => {
+    const run = userRun({ empty: true });
+    const actions = [click(REF.link), click(REF.send)];
+    expect(await dozoPageSubmits(run.ctx, "browser_act", { actions })).toBe(2);
+  });
+
+  it("falls back to the computer's answer when the user's computer has no browser to reach", async () => {
+    const actions = [click(REF.send)];
+    dozoNotePageSubmits("browser_act", { actions }, 1);
+    const offline = userRun({ offline: true });
+    expect(await dozoPageSubmits(offline.ctx, "browser_act", { actions })).toBe(1);
+    const ownerless = { ...userRun().ctx, source: {} } as unknown as RunContext;
+    expect(await dozoPageSubmits(ownerless, "browser_act", { actions })).toBe(1);
   });
 
   it("finds elements inside frames and shadow trees, and no form of an unlinked id", () => {
