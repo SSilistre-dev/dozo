@@ -77,7 +77,7 @@ export function DozoLearningSection({
                 <Trans>Off</Trans>
               </NativeSelectOption>
               <NativeSelectOption value="ask">
-                <Trans>Ask first</Trans>
+                <Trans id="Ask first">Ask first</Trans>
               </NativeSelectOption>
               <NativeSelectOption value="auto">
                 <Trans>Auto</Trans>
