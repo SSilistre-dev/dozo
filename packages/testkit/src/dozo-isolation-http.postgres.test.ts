@@ -1,26 +1,22 @@
 // Cross-tenant isolation beyond the RPC procedures: every raw HTTP route the app registers, the bot
 // API and its MCP endpoint, the account export link, paired computers, live streams and what the
 // sign-in endpoints tell about an address. The world, canaries and snapshot are the RPC matrix's
-// (dozo-isolation.test-support.ts); a canary in a foreign caller's answer or its headers, a P or
-// S id in its headers, or a changed row of P or S, is a leak, and a leak stays red.
+// (dozo-isolation-world.test-support.ts); a canary in a foreign caller's answer or its headers, a
+// P or S id in its headers, or a changed row of P or S, is a leak, and a leak stays red.
 import { EmailEmulator } from "@rakazo/adapters";
 import { unzipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationWorld, Person, Target } from "./dozo-isolation.test-support.js";
 import {
-  buildIsolationWorld,
   canary,
   confirmIdentity,
   findCanaries,
   ISOLATION_LOGINS,
-  joinWithInvite,
   ORIGIN,
   readAnswer,
   rpc,
   sendAndWait,
   signup,
-  snapshot,
-  snapshotDiff,
   startIsolationApp,
 } from "./dozo-isolation.test-support.js";
 import type {
@@ -54,6 +50,8 @@ import {
   HTTP_ROUTE_EXEMPTIONS,
   ROUTE_DATA,
 } from "./dozo-isolation-http-exemptions.js";
+import { snapshot, snapshotDiff } from "./dozo-isolation-snapshot.test-support.js";
+import { buildIsolationWorld, joinWithInvite } from "./dozo-isolation-world.test-support.js";
 import { asSystem } from "./system-db.js";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
