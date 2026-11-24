@@ -20,15 +20,23 @@ const firstLines = (text, n = 6) =>
     .filter((line) => line.trim())
     .slice(0, n)
     .join("\n    ");
-// Files that skip in the unit run because another run gives them what they need: every
-// *.postgres.test.ts file (the Postgres run) and the relay test (dozo/desktop/tests/relay_e2e.sh).
-const needsOtherRun = (file) => /\.postgres\.test\.tsx?$|dozo-user-browser\.relay\.test\.ts$/.test(file);
+const norm = (path) => clean(path).replace(/\\/g, "/");
+// Files that skip in the unit run because another run gives them what they need: exactly the set
+// the Postgres run runs (postgres-tests.sh finds dozo-*.postgres.test.ts under apps and packages;
+// a test checks that line) and the relay test (dozo/desktop/tests/relay_e2e.sh). Whole path
+// segments only: a Postgres test anywhere else, or a .tsx one, runs in neither job.
+const postgresRunFile = (file) => /(^|\/)(apps|packages)\/(.+\/)?dozo-[^/]*\.postgres\.test\.ts$/.test(norm(file));
+const needsOtherRun = (file) =>
+  postgresRunFile(file) || /(^|\/)packages\/adapters\/src\/dozo-user-browser\.relay\.test\.ts$/.test(norm(file));
 const isSkipped = (status) => status === "skipped" || status === "pending" || status === "todo";
 
 /** Returns { lines, ok, summary } for a parsed Vitest JSON report. */
 export function verdict(mode, report, { zone = "", expected = [] } = {}) {
   const lines = [];
-  const files = report.testResults ?? [];
+  if (!Array.isArray(report?.testResults)) {
+    return { lines: ["the report has no testResults list"], ok: false, summary: `${mode}: unreadable report` };
+  }
+  const files = report.testResults;
   const tests = files.flatMap((file) =>
     (file.assertionResults ?? []).map((test) => ({ file: file.name, test })),
   );
@@ -48,10 +56,15 @@ export function verdict(mode, report, { zone = "", expected = [] } = {}) {
     }
   }
   if (mode === "postgres") {
-    const ran = new Set(files.map((file) => basename(file.name)));
+    // By path: three names exist in two directories each, and a basename match would let the
+    // sibling stand in for a file that did not run.
+    const names = files.map((file) => norm(file.name));
     for (const path of expected) {
-      if (!ran.has(basename(path))) lines.push(`file did not run: ${path}`);
+      if (!names.some((name) => name === path || name.endsWith(`/${path}`)))
+        lines.push(`file did not run: ${path}`);
     }
+    if (files.length !== expected.length)
+      lines.push(`${files.length} files ran, ${expected.length} expected`);
     for (const file of files) {
       if ((file.assertionResults ?? []).length === 0)
         lines.push(`file ran no test: ${where(file.name)}`);

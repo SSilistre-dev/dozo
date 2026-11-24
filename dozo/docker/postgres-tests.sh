@@ -45,10 +45,10 @@ files=$(cd "$STAGE/src" && find apps packages \( -name node_modules -prune \) -o
 # The expected count comes from the committed tree, not a number kept here: a file the stage lost
 # would otherwise just not run.
 n=$(printf '%s\n' "$files" | grep -c .)
-want=$(git -C "$ROOT" ls-tree -r --name-only "${DOZO_STAGE_REF:-HEAD}" -- apps packages | grep -Ec '/dozo-[^/]*\.postgres\.test\.ts$' || true)
-if [ "$want" -ge 1 ]; then
-  [ "$n" -ge "$want" ] || die "$n Postgres test files on the stage, the committed tree has $want"
-fi
+list=$(git -C "$ROOT" ls-tree -r --name-only "${DOZO_STAGE_REF:-HEAD}" -- apps packages) || die "git ls-tree failed: the committed Postgres test files cannot be counted"
+want=$(printf '%s\n' "$list" | grep -Ec '/dozo-[^/]*\.postgres\.test\.ts$' || true)
+[ "$want" -ge 1 ] || die "the committed tree has no dozo-*.postgres.test.ts files"
+[ "$n" -ge "$want" ] || die "$n Postgres test files on the stage, the committed tree has $want"
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 docker network create "$NET" >/dev/null
