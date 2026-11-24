@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "agent",
+  "description": "The question an agent on this computer asks before it goes on (ui/agent.html): what it shows, and the answer. Only that window's own page, and, like the app's other screens, no `remote` entry.",
+  "windows": ["agent"],
+  "permissions": ["allow-agent-question", "allow-agent-answer"]
+}

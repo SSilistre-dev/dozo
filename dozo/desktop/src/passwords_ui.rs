@@ -86,7 +86,7 @@ impl FillQuestion {
 /// Passes the window's answer on to whoever asked, until nobody waits for it any more (the
 /// receiver was dropped: the request was cancelled or timed out). A window that goes without an
 /// answer is Cancel.
-async fn relay(mut asked: oneshot::Sender<bool>, page: oneshot::Receiver<bool>) {
+pub(crate) async fn relay(mut asked: oneshot::Sender<bool>, page: oneshot::Receiver<bool>) {
     tokio::select! {
         () = asked.closed() => {}
         allow = page => {
