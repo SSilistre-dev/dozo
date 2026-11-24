@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { ComputerLimitError, ensureComputerRecord } from "./computers.js";
 import {
+  assertOwnComputerAllowed,
   computerLimitFor,
   computerLimitRefusal,
   SHARED_COMPUTER_LIMIT_CODE,
@@ -13,6 +14,7 @@ import {
 
 type Row = {
   id: string;
+  spaceId: string;
   userId: string;
   scope: "team" | "dedicated";
   scopeKey: string;
@@ -20,8 +22,9 @@ type Row = {
 };
 type Where = {
   id?: string;
+  spaceId?: string;
+  scope?: string | { not: string };
   userId?: string;
-  scope?: { not: string };
   bots?: { some: { archivedAt: null; id?: { not: string } } };
 };
 
@@ -31,7 +34,11 @@ function fakeDb(rows: Row[]) {
     row.bots.some((bot) => bot.archivedAt === null && bot.id !== some.id?.not);
   const matches = (where: Where) => (row: Row) =>
     (where.userId === undefined || row.userId === where.userId) &&
-    (where.scope === undefined || row.scope !== where.scope.not) &&
+    (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+    (where.scope === undefined ||
+      (typeof where.scope === "string"
+        ? row.scope === where.scope
+        : row.scope !== where.scope.not)) &&
     (where.bots === undefined || live(row, where.bots.some));
   return {
     $queryRaw: vi.fn(async () => [{ lock: "1" }]),
@@ -51,6 +58,7 @@ const bot = (id: string, archived = false) => ({ id, archivedAt: archived ? new 
 const sharedTeam = (): Row[] => [
   {
     id: "team-1",
+    spaceId: "space-1",
     userId: "user-1",
     scope: "team",
     scopeKey: "team:space-1:user-1",
@@ -59,6 +67,7 @@ const sharedTeam = (): Row[] => [
 ];
 const ownComputer = (): Row => ({
   id: "own-1",
+  spaceId: "space-1",
   userId: "user-1",
   scope: "dedicated",
   scopeKey: "bot:b9",
@@ -120,12 +129,26 @@ describe("the computer limit with every bot on one shared Team Computer", () => 
   });
 });
 
+describe("a bot's own computer in a Space without a Team Computer", () => {
+  it("keeps the archive advice: the person's Team Computer is in another Space", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const error = await ensureComputerRecord(fakeDb(sharedTeam()), {
+      ...asking,
+      spaceId: "space-2",
+      mode: "dedicated",
+      botId: "b4",
+    }).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(ComputerLimitError);
+    expect((error as ComputerLimitError).code).toBe(PLAN_LIMIT_CODES.computerLimit);
+  });
+});
+
 describe("computerLimitRefusal", () => {
   const fallback = new ComputerLimitError(1);
 
   it("asks only about computers the bot's person still backs, other than the bot's own", async () => {
     const db = fakeDb([ownComputer()]);
-    await computerLimitRefusal(db, { mode: "dedicated", userId: "user-1", botId: "b9" }, 1, fallback);
+    await computerLimitRefusal(db, { mode: "dedicated", spaceId: "space-1", userId: "user-1", botId: "b9" }, 1, fallback);
     expect(db.computer.count).toHaveBeenCalledWith({
       where: {
         userId: "user-1",
@@ -138,7 +161,7 @@ describe("computerLimitRefusal", () => {
   it("is the fallback for a team request, without a query", async () => {
     const db = fakeDb([]);
     await expect(
-      computerLimitRefusal(db, { mode: "team", userId: "user-1" }, 1, fallback),
+      computerLimitRefusal(db, { mode: "team", spaceId: "space-1", userId: "user-1" }, 1, fallback),
     ).resolves.toBe(fallback);
     expect(db.computer.count).not.toHaveBeenCalled();
   });
@@ -202,5 +225,62 @@ describe("computerLimitFor: the plan's count", () => {
     expect(await computerLimitFor(missing, { spaceId: "gone" })).toBe(7);
     expect(await computerLimitFor({ computer: {} }, { spaceId: "s" })).toBe(7);
     expect(await computerLimitFor({ $queryRaw: async () => [], computer: {} }, {})).toBe(7);
+  });
+});
+
+/** The computer table of `fakeDb` on a database that bills, with the Space on a plan. */
+function planned(tier: string | null, rows: Row[] = []) {
+  const quota = fakeDb(rows);
+  const plan = planDb({ tier });
+  return { ...plan, computer: { ...plan.computer, ...quota.computer } } as unknown as PrismaClient;
+}
+
+describe("a plan with one computer is the Team Computer", () => {
+  const own = { ...asking, mode: "dedicated" as const, botId: "b4" };
+
+  it("refuses a bot's own computer on Premium with the Team Computer's way out", async () => {
+    const error = await ensureComputerRecord(planned("pro"), own).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(SharedComputerLimitError);
+    expect((error as SharedComputerLimitError).code).toBe(PLAN_LIMIT_CODES.computerLimitShared);
+  });
+
+  it("still opens the Team Computer on Premium", async () => {
+    await expect(
+      ensureComputerRecord(planned("pro"), { ...asking, mode: "team" }),
+    ).resolves.toBeDefined();
+  });
+
+  it("lets Premium Plus have its own, up to three", async () => {
+    await expect(ensureComputerRecord(planned("max"), own)).resolves.toBeDefined();
+    const two: Row[] = [
+      { ...ownComputer(), id: "o1", scopeKey: "bot:o1", bots: [bot("o1")] },
+      { ...ownComputer(), id: "o2", scopeKey: "bot:o2", bots: [bot("o2")] },
+      { ...ownComputer(), id: "o3", scopeKey: "bot:o3", bots: [bot("o3")] },
+    ];
+    const error = await ensureComputerRecord(planned("max", two), own).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ComputerLimitError);
+  });
+
+  it("leaves a Premium bot's existing own computer alone: only a new one is refused", async () => {
+    const existing = ownComputer();
+    const db = planned("pro", [existing]);
+    await expect(
+      ensureComputerRecord(db, { ...own, botId: "b9" }),
+    ).resolves.toBeDefined();
+    expect(db.computer.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: {} }));
+    await expect(ensureComputerRecord(planned("pro", [existing]), own)).rejects.toBeInstanceOf(
+      SharedComputerLimitError,
+    );
+  });
+
+  it("holds no one to it without plans: Free, or a server that does not bill", async () => {
+    await expect(ensureComputerRecord(planned(null), own)).resolves.toBeDefined();
+    const unbilled = planDb({ bills: false, tier: "pro" });
+    await expect(
+      assertOwnComputerAllowed(unbilled, { mode: "dedicated", spaceId: "space-1" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertOwnComputerAllowed({ computer: {} }, { mode: "dedicated", spaceId: "space-1" }),
+    ).resolves.toBeUndefined();
   });
 });

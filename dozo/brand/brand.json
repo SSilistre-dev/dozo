@@ -1087,7 +1087,7 @@
     {
       "file": "packages/db/src/computers.ts",
       "find": "import { withTransactionRetry } from \"./transaction-retry.js\";\n\n",
-      "replace": "import { withTransactionRetry } from \"./transaction-retry.js\";\nimport { computerLimitFor, computerLimitRefusal } from \"./dozo-computer-limit.js\";\n\n",
+      "replace": "import { withTransactionRetry } from \"./transaction-retry.js\";\nimport { assertOwnComputerAllowed, computerLimitFor, computerLimitRefusal } from \"./dozo-computer-limit.js\";\n\n",
       "requires": [
         "packages/db/src/dozo-computer-limit.ts"
       ],
@@ -3261,6 +3261,15 @@
       "find": "super(\"BAD_REQUEST\", \"Space limit reached\");",
       "replace": "super(\"BAD_REQUEST\", \"Space limit reached\", \"space_limit_reached\");",
       "reason": "plan limits: the Space count refusal carries a stable code, so clients show their own sentence (a test holds it equal to PLAN_LIMIT_CODES.spaceLimit)"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  if (!existing) {\n    // When setBotComputer",
+      "replace": "  if (!existing) {\n    await assertOwnComputerAllowed(tx, input);\n    // When setBotComputer",
+      "requires": [
+        "packages/db/src/dozo-computer-limit.ts"
+      ],
+      "reason": "plan limits: a plan with one computer (Premium) is the Team Computer, so a new computer of a bot's own is refused there; an existing one is left alone"
     },
     {
       "file": "packages/db/src/computers.ts",

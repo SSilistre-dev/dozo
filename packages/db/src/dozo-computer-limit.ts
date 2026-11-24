@@ -18,12 +18,13 @@ export class SharedComputerLimitError extends ClientError {
 
 /**
  * The refusal for a bot that asked for a computer of its own at the limit. When every computer
- * the person has in use is a shared Team Computer, archiving a bot frees nothing: the bot can use
- * the Team Computer instead. Otherwise `fallback`, whose advice (archive a bot) frees a computer.
+ * the person has in use is a shared Team Computer, and the Space the bot is in has one, archiving
+ * a bot frees nothing: the bot can use that Team Computer instead. Otherwise `fallback`, whose
+ * advice (archive a bot) frees a computer.
  */
 export async function computerLimitRefusal(
   tx: Pick<PrismaClient, "computer" | "$queryRaw">,
-  input: { mode: string; userId: string; botId?: string },
+  input: { mode: string; spaceId: string; userId: string; botId?: string },
   limit: number,
   fallback: ClientError,
 ): Promise<ClientError> {
@@ -42,7 +43,12 @@ export async function computerLimitRefusal(
       },
     }),
   );
-  return own === 0 ? new SharedComputerLimitError(limit) : fallback;
+  if (own > 0) return fallback;
+  // A Team Computer in another Space is no way out for a bot here.
+  const teamHere = await runAsSystemInTransaction(tx, reason, () =>
+    tx.computer.count({ where: { spaceId: input.spaceId, scope: "team" } }),
+  );
+  return teamHere > 0 ? new SharedComputerLimitError(limit) : fallback;
 }
 
 type PlanReads = Pick<
@@ -90,6 +96,16 @@ async function planComputers(
   return (await readPlanLimits(db))[tier].computers;
 }
 
+/** The plan's count where the client can read plans (a test double of the computer table cannot). */
+function planCountOf(
+  reads: Partial<PlanReads>,
+  where: { spaceId?: string | undefined; computerId?: string | undefined },
+): Promise<number | undefined> {
+  return reads.deploymentSettings && reads.space && reads.computer && reads.dozoPlanQuota
+    ? planComputers(reads as PlanReads, where)
+    : Promise.resolve(undefined);
+}
+
 /**
  * Computers one person may have in use across their Spaces, or 0 for no cap. The plan in force for
  * the Space sets it (Premium one, Premium Plus three). An admin's site limit stays an upper bound
@@ -105,10 +121,24 @@ export async function computerLimitFor(
   if (typeof reads.$queryRaw !== "function") return resolveMaxComputersPerUser();
   const admin = (await readSiteSettings(reads as Pick<PrismaClient, "$queryRaw">))
     .maxComputersPerUser;
-  const plan =
-    reads.deploymentSettings && reads.space && reads.computer && reads.dozoPlanQuota
-      ? await planComputers(reads as PlanReads, where)
-      : undefined;
+  const plan = await planCountOf(reads, where);
   if (plan === undefined) return admin ?? resolveMaxComputersPerUser();
   return admin ? Math.min(plan, admin) : plan;
+}
+
+/**
+ * A plan with one computer (Premium) is the Team Computer its bots share: a bot of it gets no
+ * computer of its own, whatever the count. Refuses a new own computer there, saying the way out is
+ * the Team Computer. It runs only for a computer that does not exist yet: a person who already has
+ * a bot's own computer on such a plan keeps it, and nothing is moved or removed. A server without
+ * plans, Free and Premium Plus are not held to it.
+ */
+export async function assertOwnComputerAllowed(
+  db: object,
+  input: { mode: string; spaceId: string },
+): Promise<void> {
+  if (input.mode !== "dedicated") return;
+  const reads = db as Partial<PlanReads>;
+  if ((await planCountOf(reads, { spaceId: input.spaceId })) === 1)
+    throw new SharedComputerLimitError(1);
 }
