@@ -2,6 +2,14 @@ import { createRouterClient } from "@orpc/server";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const drawing = vi.hoisted(() => ({ encode: vi.fn() }));
+vi.mock("@rakazo/adapters", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@rakazo/adapters")>();
+  drawing.encode.mockImplementation(actual.encodeFeedbackImage);
+  return { ...actual, encodeFeedbackImage: drawing.encode };
+});
+
 import {
   DOZO_FEEDBACK_PER_HOUR,
   DOZO_FEEDBACK_PER_USER_HOUR,
@@ -48,6 +56,7 @@ beforeEach(() => {
     { id: "run-1", createdAt: new Date("2026-11-19T09:30:00.000Z") },
   ]);
   send.mockReset().mockResolvedValue(undefined);
+  drawing.encode.mockClear();
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -325,6 +334,8 @@ describe("pictures", () => {
       caller(built).dozoFeedback.send({ message: "One more", images: [one] }),
     ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
     expect(send).toHaveBeenCalledTimes(DOZO_FEEDBACK_PER_USER_HOUR);
+    // Over the limit no picture is drawn at all: the limit is counted first.
+    expect(drawing.encode).toHaveBeenCalledTimes(DOZO_FEEDBACK_PER_USER_HOUR);
     // A refused picture takes a turn too, so refusals cannot be retried without limit.
     await expect(
       caller(built, { ...actor, userId: "user-3" }).dozoFeedback.send({
@@ -332,5 +343,19 @@ describe("pictures", () => {
         images: ["data:image/png;base64,AAAA"],
       }),
     ).rejects.toMatchObject(refused);
+  });
+
+  it("refuses pictures that together come out larger than the limit once drawn again", async () => {
+    const one = url("png", await png());
+    const large = {
+      filename: "a.png",
+      contentType: "image/png",
+      content: "A".repeat(4 * 1024 * 1024),
+    };
+    for (let index = 0; index < 3; index++) drawing.encode.mockResolvedValueOnce(large);
+    await expect(
+      caller().dozoFeedback.send({ message: "Look", images: [one, one, one] }),
+    ).rejects.toMatchObject(refused);
+    expect(send).not.toHaveBeenCalled();
   });
 });

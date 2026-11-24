@@ -39,10 +39,14 @@ async function feedbackImages(values: readonly string[]) {
   const bytes = values.reduce((sum, value) => sum + (value.length * 3) / 4, 0);
   if (bytes > DOZO_FEEDBACK_IMAGES_MAX_BYTES) throw new FeedbackImageError();
   const images = await Promise.all(values.map((value, index) => encodeFeedbackImage(value, index)));
-  return images.map((image) => {
+  const drawn = images.map((image) => {
     if (!image) throw new FeedbackImageError();
     return image;
   });
+  // A picture can come out larger than it went in, and the mail has its own size limit.
+  const sent = drawn.reduce((sum, image) => sum + (image.content.length * 3) / 4, 0);
+  if (sent > DOZO_FEEDBACK_IMAGES_MAX_BYTES) throw new FeedbackImageError();
+  return drawn;
 }
 
 /** The operator's inbox for feedback (`DOZO_FEEDBACK_EMAIL`); unset or not an address, none. */
