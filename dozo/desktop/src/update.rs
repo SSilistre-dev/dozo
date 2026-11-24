@@ -1,8 +1,8 @@
-//! Automatic updates. At launch and once a day the app asks the release manifest
-//! (`plugins.updater` in tauri.conf.json) for a newer version, downloads it in the background and
-//! keeps it only when its signature checks out against the public key built into the app. Then one
-//! menu item offers to restart into it; nothing installs until the user picks it. A failure of
-//! any step goes to `updates.log` in the app's log folder and changes nothing.
+//! Automatic updates. A minute after launch and then once a day the app asks the release
+//! manifest (`plugins.updater` in tauri.conf.json) for a newer version, downloads it in the
+//! background and keeps it only when its signature checks out against the public key built into
+//! the app. Then one menu item offers to restart into it; nothing installs until the user picks
+//! it. A failure of any step goes to `updates.log` in the app's log folder and changes nothing.
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -17,6 +17,11 @@ use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 pub const MENU_ID: &str = "update";
 /// The id of the one-item menu that holds it, so it is added once.
 pub const MENU_HOLDER_ID: &str = "update-menu";
+/// The first check waits this long after launch, so a whole update is not downloaded while the
+/// first page is still loading.
+const FIRST_CHECK_DELAY: Duration = Duration::from_secs(60);
+/// The checks after it are looked at this often, and run once a day.
+const TICK: Duration = Duration::from_secs(60 * 60);
 /// The log is cut to a fresh file past this size, keeping one older file.
 const LOG_LIMIT: u64 = 64 * 1024;
 
@@ -34,14 +39,25 @@ pub fn label(locale: Option<&str>) -> &'static str {
     }
 }
 
-/// Checks now and then once a day, on a thread of its own. `ready` runs once an update is
-/// downloaded and verified and says whether it could be offered; one that could not is dropped,
-/// so the next check runs.
+/// How long to wait before looking: the first check comes a minute after launch, the later ones
+/// are looked at once an hour.
+fn pause(last: Option<SystemTime>) -> Duration {
+    if last.is_none() {
+        FIRST_CHECK_DELAY
+    } else {
+        TICK
+    }
+}
+
+/// Checks a minute after launch, then once a day, on a thread of its own. `ready` runs once an
+/// update is downloaded and verified and says whether it could be offered; one that could not is
+/// dropped, so the next check runs.
 pub fn watch(app: AppHandle, ready: fn(&AppHandle) -> bool) {
     const DAY: Duration = Duration::from_secs(24 * 60 * 60);
     std::thread::spawn(move || {
         let mut last: Option<SystemTime> = None;
         loop {
+            std::thread::sleep(pause(last));
             // Wall-clock time, so a day spent asleep still counts as a day.
             let due = last.is_none_or(|at| at.elapsed().unwrap_or(DAY) >= DAY);
             let waiting = app.state::<Pending>().0.lock().unwrap().is_some();
@@ -70,7 +86,6 @@ pub fn watch(app: AppHandle, ready: fn(&AppHandle) -> bool) {
                     Err(error) => log(&app, &format!("check failed: {error}")),
                 }
             }
-            std::thread::sleep(Duration::from_secs(60 * 60));
         }
     });
 }
@@ -323,6 +338,12 @@ mod tests {
                 > LOG_LIMIT
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_first_check_waits_a_minute_and_the_later_ones_look_hourly() {
+        assert_eq!(pause(None), Duration::from_secs(60));
+        assert_eq!(pause(Some(SystemTime::now())), Duration::from_secs(3600));
     }
 
     #[test]
