@@ -9,9 +9,9 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
-use tauri::{State, WebviewWindow};
 #[cfg(unix)]
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{State, WebviewWindow};
 use tokio::sync::oneshot;
 
 use crate::words::text;
