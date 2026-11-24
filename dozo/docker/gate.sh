@@ -174,7 +174,7 @@ syntax_check() { # $1 = script
 # `olc` runs its independent steps side by side (each in a subshell with its output in a file) and
 # prints them in the order they started, so the gate takes as long as its slowest step, not the sum.
 # A step's failures travel back in a file, since a subshell cannot add to FAILS. No check is dropped.
-OLC_STEPS=(syntax compose deploylock buildlimit tunnel nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
+OLC_STEPS=(syntax compose deploylock buildlimit deployship tunnel nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
 OLC_NODE_STEPS=(nodecheck brandtests e2ehelpers mobilecfg deps cli verdict threadsowner bundle rules leak)
 olc_job_end() { # $1 = step name, last line of its subshell: hands its failures to the parent
   # Written whole to a temporary file and moved into place: a failed write (full disk) leaves no
@@ -231,6 +231,12 @@ olc() {
   if out=$(bash dozo/deploy/deploy-build-limit.test.sh 2>&1); then echo "[olc] build limit ok (dozo/deploy/deploy-build-limit.test.sh)"
   else printf '%s\n' "$out"; fail "build limit (dozo/deploy/deploy-build-limit.test.sh)"; fi
     olc_job_end buildlimit) > "$OLC_TMP/buildlimit.out" 2>&1 &
+  # Building here and sending to the host: only missing layers sent, ids checked, refusals before
+  # any build, cut and damaged transfers, local cleanup, lock order in deploy.sh (stub docker).
+  ( FAILS=()
+  if out=$(bash dozo/deploy/deploy-ship.test.sh 2>&1); then echo "[olc] deploy ship ok (dozo/deploy/deploy-ship.test.sh)"
+  else printf '%s\n' "$out"; fail "deploy ship (dozo/deploy/deploy-ship.test.sh)"; fi
+    olc_job_end deployship) > "$OLC_TMP/deployship.out" 2>&1 &
   # The opt-in Cloudflare Tunnel step of the installer: its refusals, .env writes, no token in any
   # output, and the overlay against upstream's compose file (offline, docker stub, about a second).
   ( FAILS=()
