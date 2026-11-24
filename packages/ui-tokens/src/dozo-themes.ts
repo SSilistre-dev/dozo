@@ -173,6 +173,18 @@ const TOKENS: Record<keyof DozoThemePalette, (keyof WebColorTokens)[]> = {
   faintForeground: ["faintForeground"],
 };
 
+/** The dialog is the card in dark and the popover in light, as in the theme file. */
+const DIALOG_FROM = { dark: "card", light: "popover" } as const satisfies Record<
+  ResolvedAppearance,
+  keyof DozoThemePalette
+>;
+
+/** Neutral in light: an ink bubble (settings-v2.html); in dark the theme's own bubble already is. */
+const NEUTRAL_LIGHT_BUBBLE = {
+  chatUser: "foreground",
+  chatUserForeground: "background",
+} as const satisfies Partial<Record<keyof WebColorTokens, keyof WebColorTokens>>;
+
 const themeVar = (key: keyof DozoThemePalette) =>
   `--dozo-theme-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 
@@ -213,20 +225,44 @@ export function renderDozoThemesCss(): string {
     "  );",
     `  ${cssVariableName("primaryDisabled")}: color-mix(in srgb, var(${ink}) 32%, transparent);`,
     "}",
-    // The dialog is the card in dark and the popover in light, as in the theme file.
     `${selector("dark")} {`,
-    `  ${cssVariableName("dialog")}: var(${themeVar("card")});`,
+    `  ${cssVariableName("dialog")}: var(${themeVar(DIALOG_FROM.dark)});`,
     "}",
     `${selector("light")} {`,
-    `  ${cssVariableName("dialog")}: var(${themeVar("popover")});`,
+    `  ${cssVariableName("dialog")}: var(${themeVar(DIALOG_FROM.light)});`,
     "}",
   );
-  // Neutral in light: an ink bubble (settings-v2.html); in dark the theme's own bubble already is.
-  lines.push(
-    `html[data-theme="light"][data-bubble="neutral"] {`,
-    `  ${cssVariableName("chatUser")}: var(${cssVariableName("foreground")});`,
-    `  ${cssVariableName("chatUserForeground")}: var(${cssVariableName("background")});`,
-    "}",
-  );
+  lines.push(`html[data-theme="light"][data-bubble="neutral"] {`);
+  for (const [token, from] of Object.entries(NEUTRAL_LIGHT_BUBBLE)) {
+    lines.push(
+      `  ${cssVariableName(token as keyof WebColorTokens)}: var(${cssVariableName(from)});`,
+    );
+  }
+  lines.push("}");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * A theme on the phone: `base` (the phone's Light or Dark palette) with every token the web's
+ * stylesheet paints from the theme's palette painted the same way, from the same table. A token
+ * the base does not have (the web's hover and disabled steps) is left out.
+ */
+export function dozoThemeTokens<T extends object>(base: T, theme: DozoTheme): T {
+  const painted: Record<string, string> = {};
+  for (const [key, tokens] of Object.entries(TOKENS)) {
+    for (const token of tokens) painted[token] = theme.palette[key as keyof DozoThemePalette];
+  }
+  painted.dialog = theme.palette[DIALOG_FROM[theme.tone]];
+  const own = Object.fromEntries(Object.entries(painted).filter(([token]) => token in base));
+  return { ...base, ...own };
+}
+
+/** Message color set to Neutral: your own bubble in light is the ink; in dark it is the theme's own. */
+export function dozoNeutralBubbleTokens<T extends object>(tokens: T, tone: ResolvedAppearance): T {
+  if (tone === "dark") return tokens;
+  const source = tokens as Record<string, string>;
+  const ink = Object.fromEntries(
+    Object.entries(NEUTRAL_LIGHT_BUBBLE).map(([token, from]) => [token, source[from]]),
+  );
+  return { ...tokens, ...ink };
 }

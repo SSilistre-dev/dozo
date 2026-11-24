@@ -141,7 +141,7 @@ function context(
     run?: Run;
     userId?: string;
     alwaysAllow?: boolean;
-    /** The member picked no approval model, only backups (no injected reviewer either). */
+    /** The member picked no approval model, only a backup (no injected reviewer either). */
     backupsOnly?: boolean;
     /** The run's task prompt. */
     task?: string;
@@ -429,7 +429,8 @@ describe("a command on the bot's computer, by default", () => {
     expect(seen.reviews).toEqual([]);
   });
 
-  it("asks when no approval model would judge it, backups only", async () => {
+  // The backups judge it (dozo-judge-reviewer.test.ts); this one's connection cannot be found, so none answers.
+  it("asks when only backup models are set and none of them answers", async () => {
     expect(await outcome(COMMANDS.write, { mode: "auto", backupsOnly: true })).toBe("card");
     expect(await outcome(COMMANDS.write, { mode: "auto", backupsOnly: true, read: true })).toBe(
       "card",

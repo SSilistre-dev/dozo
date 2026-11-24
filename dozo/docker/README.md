@@ -285,7 +285,9 @@ harness does (owner login for migrations, `rakazo_app` for the tests), copies it
 workers, each file on its own copy of that database (`COPY_TEST_DATABASE`, as upstream's harness):
 a test that changes a whole table never meets another file's rows. The local server's Postgres can take the zone of the person's machine, so fork SQL must
 answer the same in every zone (`dozo/AGENTS.md`, Recurring mistakes). A skipped test fails the run:
-every file runs only with a database, so a skip means it was never reached. Not part of `olc` or
+every file runs only with a database, so a skip means it was never reached. The isolation
+matrix's code proofs (`verifiedByCode` on an `unreached` exemption) are quoted from the branded
+tree the tests run on, so a few match only there, after the brand rules. Not part of `olc` or
 `qa`; the workflow `dozo-postgres-tests` runs it on every pull request (about 5 minutes). Last line
 `POSTGRES: PASS (<n> files in <zones>)` or `POSTGRES: FAIL (...)`; exit 0, 2 failed, 64 usage. Logs
 and one JSON report per zone are in `<stage>/postgres-tests/`.
