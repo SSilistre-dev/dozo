@@ -42,8 +42,14 @@ function table(initial: string[] = [], credentials: Record<string, string> = {})
     user: { count: async () => 1 },
     deploymentSettings: { findUnique: async () => null },
     userModelCredential: {
-      findMany: async ({ where }: { where: { provider: { in: string[] } } }) =>
-        [...connections].filter(([provider]) => where.provider.in.includes(provider)).map(([provider, id]) => ({ provider, id, secretId: "s" })),
+      findMany: async ({ where }: { where: { provider: string | { in: string[] } } }) =>
+        [...connections]
+          .filter(([provider]) =>
+            typeof where.provider === "string"
+              ? provider === where.provider
+              : where.provider.in.includes(provider),
+          )
+          .map(([provider, id]) => ({ provider, id, secretId: "s", userId: "ada" })),
       findFirst: async ({ where }: { where: { provider: string } }) => {
         const id = connections.get(where.provider);
         return id ? { id } : null;

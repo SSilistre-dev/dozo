@@ -81,7 +81,15 @@ function deps(
         count: async ({ where }: { where: { id?: string } }) =>
           where.id ? Number(where.id !== "stranger") : (options.people ?? 1),
       },
-      userModelCredential: { findMany: vi.fn(async () => options.connections ?? []) },
+      userModelCredential: {
+        // Each reader asks for the providers it means: the models', or the agents'.
+        findMany: vi.fn(async ({ where }: { where?: { provider?: { in?: string[] } } } = {}) =>
+          (options.connections ?? []).filter(
+            (row) => !where?.provider?.in || where.provider.in.includes(row.provider),
+          ),
+        ),
+      },
+      $queryRaw: async () => [],
       secret: {
         findFirst: async ({ where }: { where: { id: string } }) =>
           where.id in secrets ? { id: where.id, ciphertext: `c-${where.id}` } : null,

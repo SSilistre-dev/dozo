@@ -123,6 +123,7 @@ describe("CLI account routes", () => {
   it("turns an agent's mode on by connecting it, and no other tool's", async () => {
     await client("ada").connect({ provider: "tool-a" });
     expect(executed).toEqual([]);
+    fake.persist.mockClear();
     fake.connection.mockResolvedValue({ ...CONNECTION, provider: "codex-agent" });
     await client("ada").connect({ provider: "codex-agent", consent: true });
     expect(executed).toHaveLength(1);
