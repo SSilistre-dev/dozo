@@ -97,7 +97,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "computer/downloadFile": ["file"],
   "computer/readFile": ["file"],
   "computer/updates": ["bot"],
-  "dozoAccessTokens/create": ["bot"],
   "dozoChatExport/markdown": [
     "artifact",
     "attachment",
