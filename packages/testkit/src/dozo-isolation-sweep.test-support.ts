@@ -16,7 +16,7 @@ import {
 } from "./dozo-isolation-exemptions.js";
 import type { Procedure, Resolve } from "./dozo-isolation-inputs.test-support.js";
 import { generateInputs, mixedVariants, withOwn } from "./dozo-isolation-inputs.test-support.js";
-import { seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
 
 const CONCURRENCY = 8;
 /** Only this answers without a session. */
@@ -490,6 +490,7 @@ export async function waitingRunKept(
     target.spaceId,
   );
   if (own.status !== 200) problems.push(`the owner could not cancel it: ${own.status}`);
+  await releaseWaitingRun(world.db, target);
   return problems;
 }
 

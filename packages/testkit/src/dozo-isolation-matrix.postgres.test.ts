@@ -18,7 +18,7 @@ import {
   namesKey,
   namesTarget,
 } from "./dozo-isolation-inputs.test-support.js";
-import { seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
 import { snapshot, snapshotDiff } from "./dozo-isolation-snapshot.test-support.js";
 import type { Call, Caller, Outcome } from "./dozo-isolation-sweep.test-support.js";
 import {
@@ -691,6 +691,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       console.log(
         `${prefix} control: procedures naming P ${naming.size}, owner-reached ${reached.size}, not reached ${naming.size - reached.size}`,
       );
+      await releaseWaitingRun(world.db, P);
       expect(found).toEqual(expect.arrayContaining(CONTROL_PATHS));
       expect(unseen, "canaries no read of the owner shows, so no scan can find them").toEqual([]);
       expect

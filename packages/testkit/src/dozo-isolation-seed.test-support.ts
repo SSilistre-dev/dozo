@@ -609,13 +609,33 @@ export async function seedExtras(
 }
 
 /**
- * A run queued on the target's second bot, made fresh: the app's own reconciler starts waiting work
- * within half a minute, so a test that names one seeds it right before and cancels it right after.
+ * A run queued on the target's second bot, made fresh, and kept waiting the way the product's own
+ * waiting runs are: another run of the bot holds its computer. The recovery scan leaves a queued run
+ * whose bot's computer lease belongs to another run (`findRunRecoveryBlockers`,
+ * packages/adapters/src/run-recovery.ts), and a start that does reach it finds the computer taken
+ * and puts the run back to waiting (`startClaimedAttempt`, packages/adapters/src/run-attempt.ts).
+ * The lease reaches less than two lease lengths ahead, so it is not taken for an abandoned
+ * takeover hold, and it names no run, so it is the holder's alone to release: `releaseWaitingRun`.
  */
 export async function seedWaitingRun(db: PrismaClient, owner: Person, target: Target) {
   const system = asSystem(db);
   const { spaceId, ids } = target;
   const botId = ids.secondBotId!;
+  const { computerId } = await system.bot.findUniqueOrThrow({
+    where: { id: botId },
+    select: { computerId: true },
+  });
+  if (!computerId) throw new Error("the target's second bot has no computer");
+  const holder = {
+    runId: "iso-computer-holder",
+    fence: 1,
+    expiresAt: new Date(Date.now() + 9 * 60_000),
+  };
+  await system.computerExecutionLease.upsert({
+    where: { computerId_botId: { computerId, botId } },
+    create: { computerId, botId, ...holder },
+    update: holder,
+  });
   const thread = await system.thread.findUniqueOrThrow({ where: { botId } });
   const task = await system.task.create({
     data: {
@@ -640,6 +660,13 @@ export async function seedWaitingRun(db: PrismaClient, owner: Person, target: Ta
   });
   ids.waitingRunId = run.id;
   return run.id;
+}
+
+/** Lets go of the computer `seedWaitingRun` held, so later work of the bot starts as usual. */
+export async function releaseWaitingRun(db: PrismaClient, target: Target) {
+  await asSystem(db).computerExecutionLease.deleteMany({
+    where: { botId: target.ids.secondBotId!, runId: "iso-computer-holder" },
+  });
 }
 
 /**
