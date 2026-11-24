@@ -23,6 +23,9 @@ ship_repos="dozo/supervisor rakazo/computer dozo/app"
 ship_keep=3
 ship_label=dozo.deploy.build=local
 ship_skip=""
+# A capture that may fail starts with `trap - ERR`: bash 3.2 (macOS) runs the ERR trap inside a
+# command substitution even when the caller tests its status, which would print a second, wrong
+# failure line before the caller's own.
 
 ship_validate() {
   ship_mode=${DOZO_DEPLOY_BUILD:-local}
@@ -61,23 +64,59 @@ HOST
 
 ship_facts=""
 ship_host_facts() {
-  ship_facts=$(remote bash -s <<<"$(ship_facts_script)") || die "could not read the host's Docker (ssh or docker failed)"
-  [ "$(printf '%s\n' "$ship_facts" | tail -n 1)" = done ] || die "the host's answer about its images was cut short"
+  ship_facts=$(trap - ERR; remote bash -s <<<"$(ship_facts_script)") || die "could not read the host's Docker (ssh or docker failed)"
+  [ "$(tail -n 1 <<<"$ship_facts")" = done ] || die "the host's answer about its images was cut short"
   case $(ship_fact free) in '' | *[!0-9]*) die "the host did not say how much room its Docker has" ;; esac
 }
-ship_fact() { printf '%s\n' "$ship_facts" | sed -n "s/^$1 //p" | head -n 1; }
-# ship_host_has <tag>: the host holds all three images of the tag.
+# From a here-string, never `printf | grep -q`: a reader that stops at the first match ends the
+# pipe early, and with pipefail the writer's SIGPIPE turns a match into a miss.
+ship_fact() { sed -n "/^$1 /{s/^$1 //p;q;}" <<<"$ship_facts"; }
+# ship_host_has <tag>: the host holds all three images of the tag. The host holds a tag only from a
+# build there, or from a load here whose ids were then checked: `docker load` tags an image after
+# all of its layers are in, each checked against its digest, and ship_send removes the tags again
+# when the check fails. A half or damaged load leaves no tag.
 ship_host_has() {
   local repo
   for repo in $ship_repos; do
-    printf '%s\n' "$ship_facts" | grep -q "^image $repo:$1 " || return 1
+    if ! grep -q "^image $repo:$1 " <<<"$ship_facts"; then return 1; fi
   done
 }
+# ship_local_has <tag>: this machine holds the three images of the tag, built by this script from
+# the same staged tree ($ship_input). The tag alone would also match a build of another tree for
+# the same commit (another brand input, an older version of this script's stage).
 ship_local_has() {
   local repo
   for repo in $ship_repos; do
-    [ "$(docker image inspect -f '{{index .Config.Labels "dozo.deploy.build"}}' "$repo:$1" 2>/dev/null)" = local ] || return 1
+    if [ "$(trap - ERR; docker image inspect -f '{{index .Config.Labels "dozo.deploy.build"}} {{index .Config.Labels "dozo.deploy.input"}}' \
+      "$repo:$1" 2>/dev/null)" != "local $ship_input" ]; then
+      return 1
+    fi
   done
+}
+
+# The digest of everything the build reads: every file of the staged, branded tree and the theme,
+# with its path. Sorted with LC_ALL=C so the order never depends on the locale.
+ship_input=""
+ship_input_sum() {
+  local sum=(sha256sum)
+  command -v sha256sum >/dev/null || sum=(shasum -a 256)
+  (cd "$stage" && find src theme.json -type f -print0 | LC_ALL=C sort -z | xargs -0 "${sum[@]}") |
+    "${sum[@]}" | cut -d' ' -f1
+}
+
+# ship_order_check <running tag> <tag>: under the lock, before anything on the host changes.
+# Refuses to put a commit over a running one it does not contain: a deploy that took longer to
+# build must not replace a newer release another deploy has put in the meantime. Nothing running
+# (a first deploy) and the same commit pass; a running commit this checkout does not know stops
+# the run, since the order cannot be told. `rollback` is the way back on purpose and is not checked.
+# Needs $repo.
+ship_order_check() {
+  local running=$1 tag=$2 commit
+  [ -n "$running" ] && [ "$running" != "$tag" ] || return 0
+  commit=$(trap - ERR; git -C "$repo" rev-parse --verify --quiet "$running^{commit}") ||
+    die "the host runs $running, which this checkout does not know: fetch, then deploy again (nothing was replaced; to go back on purpose: deploy.sh rollback <tag>)"
+  git -C "$repo" merge-base --is-ancestor "$commit" "$tag" ||
+    die "the host already runs $running, which $tag does not contain (a newer or another line of work); nothing was replaced. Deploy a commit that contains it, or go back on purpose with deploy.sh rollback $tag"
 }
 
 # ship_build <tag>: before the lock (nothing on the host changes). Builds the three images here,
@@ -92,7 +131,7 @@ ship_build() {
     return 0
   fi
   want=$(ship_fact platform) store=$(ship_fact store)
-  here_platform=$(docker version -f '{{.Server.Os}}/{{.Server.Arch}}') || die "the local Docker does not answer"
+  here_platform=$(trap - ERR; docker version -f '{{.Server.Os}}/{{.Server.Arch}}') || die "the local Docker does not answer"
   # Building for another CPU runs every step under emulation: slow, and never tried for this
   # stack. Building on the host stays available for that case.
   [ "$here_platform" = "$want" ] ||
@@ -103,6 +142,7 @@ ship_build() {
   # gzip spends a minute on; and it is many times faster on layers that are not.
   command -v zstd >/dev/null || die "zstd is not installed here (needed to send the images), or set DOZO_DEPLOY_BUILD=host"
   [ "$(ship_fact zstd)" = yes ] || die "zstd is not installed on the host (needed to receive the images), or set DOZO_DEPLOY_BUILD=host"
+  ship_input=$(trap - ERR; ship_input_sum) && [ -n "$ship_input" ] || die "could not read the staged tree"
   if ship_local_has "$tag"; then
     say "the images of $tag are here from an earlier run, not built again"
     return 0
@@ -110,7 +150,7 @@ ship_build() {
   say "build the images here ($want)"
   base=$(date +%s)
   # Chained with &&: `set -e` does not apply inside a command whose status is tested.
-  local flags=(-q --platform "$want" --provenance=false --label "$ship_label")
+  local flags=(-q --platform "$want" --provenance=false --label "$ship_label" --label "dozo.deploy.input=$ship_input")
   {
     (cd "$stage/src" &&
       docker build "${flags[@]}" -f infra/sandboxes/supervisor/Dockerfile -t "dozo/supervisor:$tag" . &&
@@ -134,8 +174,8 @@ ship_prune_local() {
     sort -r | awk '{ print $NF }' | grep -E '^[0-9a-f]{12}$' | grep -vxF "$tag" |
     tail -n +"$ship_keep" | while read -r old; do
       for repo in $ship_repos; do
-        [ "$(docker image inspect -f '{{index .Config.Labels "dozo.deploy.build"}}' "$repo:$old" 2>/dev/null)" = local ] &&
-          docker image rm "$repo:$old" >/dev/null 2>&1
+        [ "$(trap - ERR; docker image inspect -f '{{index .Config.Labels "dozo.deploy.build"}}' "$repo:$old" 2>/dev/null)" = local ] &&
+          docker image rm "$repo:$old" >/dev/null 2>&1 || true
       done
     done || true
 }
@@ -145,26 +185,36 @@ ship_prune_local() {
 # the host. Reads manifest.json and each image's config (rootfs.diff_ids) from the archive.
 ship_plan() {
   local dir=$1 entries host
-  host=$(printf '%s\n' "$2" | sed -n 's/^image [^ ]* [^ ]* //p' | jq -sc '.')
-  entries=$(jq -c '.[]' "$dir/manifest.json" | while read -r entry; do
-    jq -c --argjson e "$entry" '{layers: $e.Layers, diffs: .rootfs.diff_ids}' \
-      "$dir/$(printf '%s' "$entry" | jq -r '.Config')"
-  done | jq -sc '.')
+  host=$(sed -n 's/^image [^ ]* [^ ]* //p' <<<"$2" | jq -sc '.') || return 1
+  entries=$(ship_entries "$dir") || return 1
   jq -nr --argjson host "$host" --argjson entries "$entries" '
     def present($d; $i): any($host[]; .[0:$i + 1] == $d[0:$i + 1]);
     [ $entries[] | . as $e | range(0; $e.layers | length) | {path: $e.layers[.], skip: present($e.diffs; .)} ]
     | group_by(.path) | map(select(all(.skip)) | .[0].path) | .[]'
 }
 
+# ship_entries <archive dir>: a JSON array, one {ref, config, layers, diffs} per image of
+# manifest.json with the layers its config lists. Fails on anything it cannot read, and unless
+# it finds the three images with as many layer files as layers.
+ship_entries() {
+  local dir=$1 entry config out=""
+  jq -e 'type == "array"' "$dir/manifest.json" >/dev/null 2>&1 || return 1
+  while read -r entry; do
+    config=$(jq -r '.Config' <<<"$entry") || return 1
+    out+=$(jq -c --argjson e "$entry" --arg c "${config##*/}" \
+      '{ref: $e.RepoTags[0], config: $c, layers: $e.Layers, diffs: .rootfs.diff_ids}' "$dir/$config") || return 1
+    out+=$'\n'
+  done < <(jq -c '.[]' "$dir/manifest.json")
+  jq -sce 'length == 3 and all(.[]; (.layers | length) == (.diffs | length) and (.ref | type) == "string")' \
+    <<<"$out" >/dev/null || return 1
+  jq -sc '.' <<<"$out"
+}
+
 # ship_expected <archive dir>: `<repo>:<tag> sha256:<config digest> <layers as JSON>` for each image.
 ship_expected() {
-  local dir=$1
-  jq -c '.[]' "$dir/manifest.json" | while read -r entry; do
-    local config ref
-    config=$(printf '%s' "$entry" | jq -r '.Config')
-    ref=$(printf '%s' "$entry" | jq -r '.RepoTags[0]')
-    printf '%s sha256:%s %s\n' "$ref" "${config##*/}" "$(jq -c '.rootfs.diff_ids' "$dir/$config")"
-  done
+  local entries
+  entries=$(ship_entries "$1") || return 1
+  jq -r '.[] | "\(.ref) sha256:\(.config) \(.diffs | tojson)"' <<<"$entries"
 }
 
 # ship_send <tag>: under the lock. Sends the images the host lacks and checks what it then holds.
@@ -172,40 +222,54 @@ ship_expected() {
 # load cut short adds no tag, and the next run sends again over whatever a partial load left.
 ship_send() {
   local tag=$1 dir list keep need archive size free repo want got base
-  [ -z "$ship_skip" ] || return 0
+  # Asked again under the lock: another deploy may have removed or added the images since.
   ship_host_facts
   if ship_host_has "$tag"; then
-    say "host: the images of $tag are there, nothing to send"
+    [ -n "$ship_skip" ] || say "host: the images of $tag are there, nothing to send"
     return 0
   fi
+  [ -z "$ship_skip" ] ||
+    die "the images of $tag are no longer on the host (removed since this run asked); nothing was replaced, deploy again"
   dir=$stage/images
   rm -rf "$dir"
   mkdir -p "$dir"
   # shellcheck disable=SC2086
   docker save $(for repo in $ship_repos; do printf '%s:%s ' "$repo" "$tag"; done) | tar -x -C "$dir" ||
     die "could not save the images of $tag"
-  keep=$(ship_plan "$dir" "$ship_facts") || die "could not read the saved images"
+  keep=$(trap - ERR; ship_plan "$dir" "$ship_facts") || die "could not read the saved images"
   list=$stage/images.list
   (cd "$dir" && find . -type f | sed 's#^\./##' | sort) | grep -vxF -f <(printf '%s\n' "$keep") >"$list" || true
   size=$(cd "$dir" && tr '\n' '\0' <"$list" | xargs -0 wc -c | awk '$2 != "total" { s += $1 } END { print s + 0 }')
-  # The load writes the archive's layers once to a temporary folder and once to the store.
+  # The load writes the archive once to a temporary folder, and the store holds its layers
+  # unpacked: an estimate, taken as three times their packed size, plus 1 GiB.
   free=$(ship_fact free)
-  need=$((2 * size + 1073741824))
+  need=$((4 * size + 1073741824))
   [ "${free:-0}" -ge "$need" ] ||
-    die "the host has $((${free:-0} / 1048576)) MiB free for Docker and loading these images needs $((need / 1048576)) MiB (nothing was sent)"
+    die "the host has $((${free:-0} / 1048576)) MiB free for Docker and loading these images needs about $((need / 1048576)) MiB, an estimate with the layers unpacked (nothing was sent)"
   base=$(date +%s)
   archive=$stage/images.tar.zst
   (cd "$dir" && tar -cf - -T "$list") | zstd -q -T0 -3 >"$archive" || die "could not pack the images of $tag"
-  say "host: sending $(($(wc -c <"$archive") / 1048576)) MiB ($((size / 1048576)) MiB unpacked; $(printf '%s\n' "$keep" | grep -c . || true) layers are there already)"
+  say "host: sending $(($(wc -c <"$archive") / 1048576)) MiB ($((size / 1048576)) MiB before packing; $(printf '%s\n' "$keep" | grep -c . || true) layers are there already)"
   remote "bash -c 'set -o pipefail; zstd -dcq | docker load -q >/dev/null'" <"$archive" ||
-    die "sending or loading the images failed (nothing on the host was replaced; the next deploy sends them again)"
+    die "sending or loading the images failed (nothing on the host was replaced; the next deploy sends them again). If it fails the same way each time, the host's Docker may refuse an archive without the layers it has: set DOZO_DEPLOY_BUILD=host"
   say "host: packed, sent and loaded in $(($(date +%s) - base))s"
+  # Read whole first: from a process substitution its failure, or no line at all, would go unseen
+  # and leave nothing to compare.
+  local expected
+  expected=$(trap - ERR; ship_expected "$dir") && [ "$(trap - ERR; grep -c . <<<"$expected")" = 3 ] ||
+    die "could not read the three images from the saved archive to check them; nothing was replaced"
   ship_host_facts
   while read -r repo want; do
-    got=$(printf '%s\n' "$ship_facts" | sed -n "s#^image $repo ##p")
-    [ "$got" = "$want" ] ||
-      die "the host's $repo is not the image built here (wanted $want, found ${got:-nothing}); nothing was replaced"
-  done < <(ship_expected "$dir")
+    got=$(sed -n "s#^image $repo ##p" <<<"$ship_facts")
+    if [ "$got" != "$want" ]; then
+      # Untagged again, so no later run takes them for checked images. A tag a container still
+      # uses is refused by Docker and named here.
+      # shellcheck disable=SC2046
+      remote "docker image rm $(for r in $ship_repos; do printf '%s:%s ' "$r" "$tag"; done) >/dev/null 2>&1" ||
+        say "WARNING: could not remove every tag of $tag on the host; remove them before deploying $tag again"
+      die "the host's $repo is not the image built here (wanted $want, found ${got:-nothing}); its tags of $tag were removed and nothing was replaced"
+    fi
+  done <<<"$expected"
   say "host: the ids of the three images match the ones built here"
   rm -rf "$dir" "$list" "$archive"
 }

@@ -356,6 +356,10 @@ env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
 # Built here before the lock is taken, so a long build does not hold the host.
 [ "$ship_mode" = host ] || ship_build "$tag"
 lock_take "deploy-${tag:0:9}"
+# What the panel runs now, read under the lock: an older commit never goes over a newer one.
+running=$(compose_json | jq -r '.env // ""' | sed -n 's/^DOZO_IMAGE_TAG=//p') ||
+  die "could not read the running release from the panel (nothing was replaced)"
+ship_order_check "$running" "$tag"
 
 if [ "$ship_mode" = host ]; then
   say "copy the branded tree to the host"
