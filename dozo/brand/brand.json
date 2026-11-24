@@ -11914,6 +11914,60 @@
       "reason": "bot learning: a skill a review suggests is posted with teaching's own draft card and its one-card-per-skill guard; it needs only the database and the thread's notify"
     },
     {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "import { BotAvatar } from \"../components/bot-avatar\";\nimport { BotContextCards } from \"../components/bot-context-cards\";",
+      "replace": "import { BotAvatar } from \"../components/bot-avatar\";\nimport { DozoLearningSetting } from \"../components/dozo-learning-setting\";\nimport { BotContextCards } from \"../components/bot-context-cards\";",
+      "requires": [
+        "apps/mobile/components/dozo-learning-setting.tsx"
+      ],
+      "reason": "bot learning on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "              <BotContextCards key={`${botId}-memory`} botId={botId} section=\"memory\" />\n            ) : null}",
+      "replace": "              <>\n                <BotContextCards key={`${botId}-memory`} botId={botId} section=\"memory\" />\n                <DozoLearningSetting botId={botId} ownerId={bot?.userId} />\n              </>\n            ) : null}",
+      "requires": [
+        "apps/mobile/components/dozo-learning-setting.tsx"
+      ],
+      "reason": "bot learning on mobile: under the bot's memory, its owner picks Off, Ask first or Auto in a native menu, as on the web; the row reads and saves on its own, so the screen around it is unchanged"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "import { McpAppCard } from \"./mcp-app-card\";\nimport type { MessageRowActions } from \"./message-row\";",
+      "replace": "import { McpAppCard } from \"./mcp-app-card\";\nimport { DozoSkillDraftCard } from \"./dozo-skill-draft-card\";\nimport type { MessageRowActions } from \"./message-row\";",
+      "requires": [
+        "apps/mobile/components/thread/dozo-skill-draft-card.tsx"
+      ],
+      "reason": "skill drafts on mobile: the import of the two rules below"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "  return isSpecialMessageBlock(block) || block.kind === \"page\" || block.kind === \"app\";",
+      "replace": "  return (\n    isSpecialMessageBlock(block) ||\n    block.kind === \"page\" ||\n    block.kind === \"app\" ||\n    block.kind === \"skill_draft\"\n  );",
+      "requires": [
+        "apps/mobile/components/thread/dozo-skill-draft-card.tsx"
+      ],
+      "reason": "skill drafts on mobile: a skill draft (taught, or a learning review's suggestion) is drawn as its own card, where upstream drew nothing"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "      return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;\n    if (first.kind === \"app\")",
+      "replace": "      return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;\n    if (first.kind === \"skill_draft\")\n      return <DozoSkillDraftCard key={`skill-${first.skillId}`} block={first} />;\n    if (first.kind === \"app\")",
+      "requires": [
+        "apps/mobile/components/thread/dozo-skill-draft-card.tsx"
+      ],
+      "reason": "skill drafts on mobile: the card with its steps, Save and Delete"
+    },
+    {
+      "file": "apps/mobile/lib/message-presentation.ts",
+      "find": "      block.kind === \"mcp_approval\" ||\n      block.kind === \"import_setup\",\n  );\n}\n\nexport type MessagePresentationSegment",
+      "replace": "      block.kind === \"mcp_approval\" ||\n      block.kind === \"skill_draft\" ||\n      block.kind === \"import_setup\",\n  );\n}\n\nexport type MessagePresentationSegment",
+      "requires": [
+        "apps/mobile/components/thread/dozo-skill-draft-card.tsx"
+      ],
+      "reason": "skill drafts on mobile: the card's buttons own the taps that land on it, as the other cards with buttons do"
+    },
+    {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./agent-import/index.js\";\nexport * from \"./agent-skill.js\";",
       "replace": "export * from \"./agent-import/index.js\";\nexport * from \"./dozo-lasting-write-approval.js\";\nexport * from \"./agent-skill.js\";",
