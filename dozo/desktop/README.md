@@ -10,6 +10,17 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   computer" below). The choice is saved and can be changed from
   the menu (Dozo, Change Server…) or from Settings.
 - A server that cannot be reached gives a screen with Try again and Change server, not a blank page.
+- A chosen server (not the one on this computer) is the window's first page: no bundled page
+  before it (`src/start.rs`). The web view says nothing of a load that failed, so the app watches
+  for the page's document to start arriving: none within 20 seconds, or within 2 seconds of a
+  failed connection probe (which can itself take about 4 seconds per address), sends the window
+  back to the bundled page, which connects and shows the screen above as it always did. A page
+  that is arriving is never cancelled, however slow, and the watch ends when the window is sent to
+  a screen of the app (Change Server). With no server chosen, or the one on this computer (it
+  waits for its start), the window opens on the bundled page. Known limits: a window whose server
+  accepts connections but never answers is blank until the 20 seconds pass; and behind a proxy
+  (the probe ignores it), a server that takes longer than the probe plus those 2 seconds to send
+  its first byte is loaded twice.
 - Standard macOS menus (About, Settings…, Change Server…, Reload, Quit, and the Edit menu's
   shortcuts). The window comes back at its last size and position.
 - Settings (Dozo, Settings…, Cmd+,; Ctrl+, on Windows and Linux): one window that lists what the
@@ -549,7 +560,9 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   `src/stack.rs`). `DOZO_SERVER_MANIFEST`, at build time or in the environment, names another: an
   `https://`, `http://` or `file://` address, or a path (tests and development).
 - Start: Postgres (made on the first start), the migrations, then the API, the worker and the web
-  server; ready once `/health` and the web page answer 200 (at most two minutes). The window then
+  server; ready once `/health` and the web page answer 200 (at most two minutes). Postgres and the
+  server are asked every 0.1 second; Postgres is asked with a start-up message on its port, not
+  with `pg_isready`, because a plain connect succeeds while it is still starting up. The window then
   opens the web address and keeps it as the chosen server. One line shows where it is
   (Downloading 42%, Preparing, Starting); a failure shows one sentence and Try again. Details go to
   `logs/manager.log`.
@@ -862,7 +875,7 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
 
 ## Updates
 
-- At launch and then once a day the app reads
+- A minute after launch (so the first page loads first) and then once a day the app reads
   `https://github.com/SSilistre-dev/dozo/releases/latest/download/latest.json`, downloads a newer
   version in the background and keeps it only if its signature checks out against the public key
   in `tauri.conf.json` and was made for the version the manifest names (`requireSignedVersion`).

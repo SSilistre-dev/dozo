@@ -9023,11 +9023,11 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
-      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
+      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate, dozoHostedCommandHold, dozoHostedReviewFacts } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "command rules: the import of the two rules below"
+      "reason": "command rules: the import of the rules below"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -9036,7 +9036,7 @@
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an allow passes it), and asks when it changes something once the member turned that on; the default stays upstream's. Inside the token gate, so a run a token's text reached still asks"
+      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an exact allow passes it where outside text started the run). Inside the token gate, so a run a token's text reached still asks"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -9046,6 +9046,85 @@
         "packages/adapters/src/dozo-command-gate.ts"
       ],
       "reason": "command rules: closes the call above, and a command refused by a block rule is refused as blocked, not as needing approval"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const requiresApprovalByDefault =\n    request.heldForApproval ||\n    paying ||",
+      "replace": "  // A command on the bot's computer that does more than read, and no allow rule covers, is gated.\n  const dozoHostedHold = await dozoHostedCommandHold(ctx, name, args);\n  const requiresApprovalByDefault =\n    request.heldForApproval ||\n    dozoHostedHold !== undefined ||\n    paying ||",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: by default a command on the bot's computer that does more than read and that no allow rule covers is consequential, so Auto review judges it, Ask asks and Never ask runs it, as upstream gates any tool that changes something; it also fails closed when the review errors"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const reviewable = mode === \"auto\" && !mandatoryInAnyRun;\n",
+      "replace": "  const reviewable = mode === \"auto\" && !mandatoryInAnyRun && dozoHostedHold !== \"person\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: such a command in a run outside text started, or once the member asked for commands on the bot's computer to ask, goes to a person, never the approval model"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const checkerConfigured =\n    reviewable &&\n    (Boolean(injectedReview) ||",
+      "replace": "  const checkerConfigured =\n    reviewable &&\n    // A held command needs a model that will judge it; with none (only backups, no primary) it asks.\n    (dozoHostedHold === undefined || Boolean(injectedReview || checker)) &&\n    (Boolean(injectedReview) ||",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: a held command on the bot's computer is judged only by a model the review below actually runs; when none would run (no primary model, backups only), it asks instead of passing unreviewed"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "      ...(review.memoryWrite ? { memoryWrite: true } : {}),\n    };",
+      "replace": "      ...(review.memoryWrite ? { memoryWrite: true } : {}),\n      ...(await dozoHostedReviewFacts(ctx, name)),\n    };",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: the approval model is told when a command on the bot's computer comes from a run that took in outside content"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  memoryWrite?: boolean;\n}\n\nexport interface AutoReviewResult {",
+      "replace": "  memoryWrite?: boolean;\n  /**\n   * The run took in outside content (pages, files, command output, messages) before this action,\n   * which the reviewer does not see and which may have chosen it.\n   */\n  outsideContent?: boolean;\n  /** The run's task is someone else's text (another bot, a ticket), not the owner's words. */\n  taskFromOutside?: boolean;\n}\n\nexport interface AutoReviewResult {",
+      "requires": [],
+      "reason": "command rules: the review request's fields for a run that took in outside content, and for a task that is not the owner's words"
+    },
+    {
+      "file": "packages/adapters/src/auto-review.prompt.ts",
+      "find": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\n\nconst MAX_TASK_CHARS",
+      "replace": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport { dozoShellReviewLines } from \"./dozo-outside-review.prompt.js\";\n\nconst MAX_TASK_CHARS",
+      "requires": [
+        "packages/adapters/src/dozo-outside-review.prompt.ts"
+      ],
+      "reason": "command rules: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/auto-review.prompt.ts",
+      "find": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    \"Reason must be",
+      "replace": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    ...dozoShellReviewLines(input),\n    \"Reason must be",
+      "requires": [
+        "packages/adapters/src/dozo-outside-review.prompt.ts"
+      ],
+      "reason": "command rules: the reviewer's prompt for a command on the bot's computer: data sent out asks, and it says when outside content came in or the task is not the owner's"
+    },
+    {
+      "file": "packages/adapters/src/auto-review.prompt.ts",
+      "find": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\">,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: \"Should this bot action run without asking its owner first?\",",
+      "replace": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\"> & Partial<Pick<AutoReviewRequest, \"toolName\" | \"outsideContent\" | \"taskFromOutside\">>,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: [\"Should this bot action run without asking its owner first?\", ...dozoShellReviewLines({ ...input, toolName: input.toolName ?? \"\" })].join(\" \"),",
+      "requires": [
+        "packages/adapters/src/dozo-outside-review.prompt.ts"
+      ],
+      "reason": "command rules: the same for a checker asked one question"
+    },
+    {
+      "file": "packages/adapters/src/executor-login-redaction.test.ts",
+      "find": "  provisionComputer: async () => COMPUTER,\n}));\n\nconst USERNAME",
+      "replace": "  provisionComputer: async () => COMPUTER,\n}));\n\n// The member allows the test's commands on the bot's computer exactly: in a routine's run any other\n// command that does more than read asks (packages/adapters/src/dozo-command-gate.ts).\nvi.mock(\"@rakazo/db\", async (importOriginal) => ({\n  ...(await importOriginal<object>()),\n  readDozoCommandRules: async () =>\n    [[\"deploy\"], [\"deploy\", \"again\"], [\"read-filled-fields\"]].map((words) => ({\n      words,\n      cwd: \"\",\n      effect: \"allow\",\n      computer: \"hosted\",\n    })),\n}));\n\nconst USERNAME",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: a fixture for upstream's test, whose routine run runs commands the fork does not read as reads; with them allowed exactly it still tests what the output hides"
     },
     {
       "file": "packages/adapters/src/routine-watch.ts",
