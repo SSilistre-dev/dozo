@@ -14,7 +14,7 @@ import {
   trustDozoBot,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { dozoTokenReachesBot } from "./dozo-token-bots.js";
+import { dozoTokenOwnBots, dozoTokenReachesBot } from "./dozo-token-bots.js";
 import { requireIdentityConfirmation } from "./identity-confirmation.js";
 import type { RouterContext } from "./routes/context.js";
 import { resolveThreadTarget } from "./thread-target.js";
@@ -49,6 +49,9 @@ export function dozoAccessTokensRoutes(ctx: RouterContext) {
             listDozoAccessTokens(deps.prisma, context.actor),
           )
         ).map(accessTokenDto),
+      ),
+      ownBots: authed.dozoAccessTokens.ownBots.handler(({ context }) =>
+        dozoTokenOwnBots(deps.prisma, context.actor),
       ),
       create: authed.dozoAccessTokens.create.handler(async ({ context, input }) => {
         // A token outlives the session that makes it, so that session must have just confirmed it is
