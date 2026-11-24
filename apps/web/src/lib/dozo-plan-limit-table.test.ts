@@ -233,6 +233,28 @@ describe("the other limits", () => {
     expect(planLimitText({ code: "computer_limit_reached" }, copy("en"))).toBe(
       "Computer limit reached. Archive a bot to free one.",
     );
+    expect(planLimitText({ code: "computer_limit_shared" }, copy("en"))).toBe(
+      "Computer limit reached. This bot can use the Team Computer.",
+    );
+    expect(planLimitText({ code: "computer_limit_shared" }, copy("tr"))).toBe(
+      "Bilgisayar sınırına ulaşıldı. Bu bot Takım Bilgisayarını kullanabilir.",
+    );
+    // Premium: the Team Computer first, Premium Plus beside it for a bot of its own; nothing above it.
+    const premium = billing({ byokTier: "pro", state: "active" });
+    expect(planLimitNotice("computer_limit_shared", premium, copy("en"))?.action).toEqual({
+      kind: "upgrade",
+      label: "Upgrade to Premium Plus",
+      startsPaidPlan: false,
+    });
+    expect(
+      planLimitNotice("computer_limit_shared", { ...premium, canManage: false }, copy("en"))
+        ?.action,
+    ).toBeNull();
+    expect(
+      planLimitNotice("computer_limit_shared", billing({ byokTier: "max", state: "active" }), copy("en"))
+        ?.action,
+    ).toBeNull();
+    expect(planLimitNotice("computer_limit_shared", null, copy("en"))?.action).toBeNull();
     expect(planLimitText({ code: "space_limit_reached" }, copy("en"))).toBe(
       "Space limit reached. Delete a Space to add another.",
     );
