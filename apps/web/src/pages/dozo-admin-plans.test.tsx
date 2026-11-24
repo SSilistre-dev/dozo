@@ -75,6 +75,7 @@ const free: DozoAdminPlanRow = {
   sharedSpaceMb: quota(500),
   computerHours: quota(0),
   computerHoursEditable: false,
+  computers: { value: null, terms: null, set: false },
   members: 7,
 };
 const premium: DozoAdminPlanRow = {
@@ -88,6 +89,7 @@ const premium: DozoAdminPlanRow = {
   sharedSpaceMb: quota(2048),
   computerHours: quota(100),
   computerHoursEditable: true,
+  computers: quota(1),
   members: 1,
 };
 
@@ -177,6 +179,9 @@ it("shows each plan's price, keys, machine and members, and Free without a compu
   expect(freeText).toContain("7 members");
   expect(freeText).not.toContain("vCPU");
   expect(labelled("Computer hours a month for Free")).toBeNull();
+  // Free counts no computers, so there is nothing to set; Premium shows its terms.
+  expect(labelled("Computers per person for Free")).toBeNull();
+  expect(labelled("Computers per person for Premium")?.placeholder).toBe("1");
   expect(labelled("Shared space in MB for Free")?.placeholder).toBe("500");
   // Nothing edited, nothing to save, nothing differs from the landing page.
   expect(button("Save")).toBeUndefined();
@@ -188,6 +193,24 @@ it("saves only the quota that was edited", async () => {
   await type("Computer hours a month for Premium", "120");
   await act(async () => button("Save")?.click());
   expect(api.setQuota).toHaveBeenCalledWith({ tier: "pro", computerHours: 120 });
+});
+
+it("saves the computers per person, and returns them to the terms when emptied", async () => {
+  await open();
+  await type("Computers per person for Premium", "2");
+  await act(async () => button("Save")?.click());
+  expect(api.setQuota).toHaveBeenCalledWith({ tier: "pro", computers: 2 });
+  api.list.mockResolvedValue({
+    plans: [free, { ...premium, computers: { value: 2, terms: 1, set: true } }],
+  });
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render();
+  await vi.waitFor(() => expect(labelled("Computers per person for Premium")?.value).toBe("2"));
+  expect(plan("pro")?.textContent).toContain("Landing says 1 computer");
+  await type("Computers per person for Premium", "");
+  await act(async () => button("Save")?.click());
+  expect(api.setQuota).toHaveBeenLastCalledWith({ tier: "pro", computers: null });
 });
 
 it("returns an emptied quota to the plan's terms", async () => {

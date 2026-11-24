@@ -94,5 +94,14 @@ The choice is per device, like Light and Dark: upstream's `rakazo.uiAppearance` 
 tone and `dozo.uiTheme` its name; `apps/web/public/dozo-boot.js` sets `data-skin` before first paint
 only when the two agree, so an unknown or older name falls back to plain Light or Dark. Message
 color (`dozo.uiBubble`) gives your own bubble and the send button the open bot's colour (the
-default) or the theme's neutral bubble, an ink bubble in light. Mobile does not read these yet and
-stays on Light and Dark.
+default) or the theme's neutral bubble, an ink bubble in light.
+
+The phone reads the same two choices under the same names, kept per device in the secure store
+(`apps/mobile/lib/dozo-theme-store.ts`), and paints a theme over its phone palette with
+`dozoThemeTokens` from the same `dozo-themes.ts`, which uses the table the stylesheet is rendered
+from. The phone's Light and Dark are upstream's own and stay as they are when no theme is chosen.
+A name that is gone, or whose tone is not the stored Light or Dark, starts plain. There is no
+account copy: the server has no field for it. Its contrast is held in
+`dozo-themes-mobile-contrast.test.ts`: the phone's plain Light reads secondary text at 4.2:1 on a
+grouped row (upstream's value, left alone) and its Bot color bubble holds white text at 3:1, as
+upstream's bubble does.

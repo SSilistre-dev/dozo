@@ -309,12 +309,18 @@ describe("backing up the account into one sealed file", () => {
     expect(source.pulled).toBeLessThanOrEqual(3);
   });
 
-  it("asks for matching passwords of at least 8 characters before anything is fetched", async () => {
+  it("asks for matching passwords of at least 12 characters before anything is fetched", async () => {
     await render();
     await click(byTestId("dozo-backup-create"));
     await type("Password", "short");
     await type("Confirm password", "short");
     expect(submit().disabled).toBe(true);
+    await type("Password", "x".repeat(11));
+    await type("Confirm password", "x".repeat(11));
+    expect(submit().disabled).toBe(true);
+    await type("Password", "x".repeat(12));
+    await type("Confirm password", "x".repeat(12));
+    expect(submit().disabled).toBe(false);
     await type("Password", PASSWORD);
     await type("Confirm password", `${PASSWORD}!`);
     await click(submit());
@@ -398,6 +404,21 @@ describe("restoring the account from a sealed file", () => {
     expect(api.recheck).toHaveBeenCalledWith(200);
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(byTestId("success")).not.toBeNull();
+  });
+
+  it("still opens an older backup sealed with an 8-character password", async () => {
+    api.fetch.mockResolvedValue(new Response(null, { status: 200 }));
+    await render();
+    await pick(await sealedFile("eight8ch"));
+    await type("Password", "eight8c");
+    expect(submit().disabled).toBe(true);
+    await type("Password", "eight8ch");
+    expect(submit().disabled).toBe(false);
+    await click(submit());
+    await vi.waitFor(() => expect(api.onImported).toHaveBeenCalled(), { timeout: 20_000 });
+    expect(await bodyBytes((api.fetch.mock.calls[0] as [string, RequestInit])[1].body)).toEqual(
+      ZIP,
+    );
   });
 
   it("keeps a done restore done when the refresh after it fails, and says so in the console", async () => {

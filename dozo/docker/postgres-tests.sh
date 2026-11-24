@@ -6,8 +6,9 @@
 # Run it on a branded stage:
 #   dozo/docker/build.sh stage && dozo/docker/build.sh brand && dozo/docker/postgres-tests.sh
 # DOZO_PG_ZONES (default "UTC Europe/Istanbul America/Los_Angeles"), DOZO_STAGE_DIR, DOZO_NODE_IMAGE,
-# DOZO_POSTGRES_IMAGE. Logs: <stage>/postgres-tests/. The pnpm store is kept in the volume
-# dozo-postgres-tests-store. Last line POSTGRES: PASS|FAIL. Exit 0, 2 failed, 64 usage.
+# DOZO_POSTGRES_IMAGE, DOZO_PG_STORE (volume name). Logs: <stage>/postgres-tests/. The pnpm store is kept in the volume
+# dozo-postgres-tests-store. The database is always given, so a skipped test, a file that did not run
+# and a run of zero tests all fail (test-verdict.mjs). Last line POSTGRES: PASS|FAIL. Exit 0, 2 failed, 64 usage.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +19,7 @@ NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 PG_IMAGE="${DOZO_POSTGRES_IMAGE:-postgres:18-alpine}"
 ZONES="${DOZO_PG_ZONES:-UTC Europe/Istanbul America/Los_Angeles}"
 OUT="$STAGE/postgres-tests"
-STORE=dozo-postgres-tests-store
+STORE="${DOZO_PG_STORE:-dozo-postgres-tests-store}"
 RUN_ID="pgt-$$"
 NET="dozo-$RUN_ID"
 DB="dozo-$RUN_ID-db"
@@ -41,6 +42,13 @@ command -v docker >/dev/null || die "docker not found"
   || die "no branded stage: run dozo/docker/build.sh stage and dozo/docker/build.sh brand first"
 files=$(cd "$STAGE/src" && find apps packages \( -name node_modules -prune \) -o -type f -name 'dozo-*.postgres.test.ts' -print | sort)
 [ -n "$files" ] || die "no dozo-*.postgres.test.ts files on the stage"
+# The expected count comes from the committed tree, not a number kept here: a file the stage lost
+# would otherwise just not run.
+n=$(printf '%s\n' "$files" | grep -c .)
+list=$(git -C "$ROOT" ls-tree -r --name-only "${DOZO_STAGE_REF:-HEAD}" -- apps packages) || die "git ls-tree failed: the committed Postgres test files cannot be counted"
+want=$(printf '%s\n' "$list" | grep -Ec '/dozo-[^/]*\.postgres\.test\.ts$' || true)
+[ "$want" -ge 1 ] || die "the committed tree has no dozo-*.postgres.test.ts files"
+[ "$n" -ge "$want" ] || die "$n Postgres test files on the stage, the committed tree has $want"
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 docker network create "$NET" >/dev/null
@@ -51,7 +59,7 @@ docker run -d --rm --name "$DB" --network "$NET" --cpus 1 --memory 1g \
 
 # shellcheck disable=SC2016,SC2086  # the script is expanded by the container's shell
 docker run --init --rm --name "$NODE" --network "$NET" --cpus 3 --memory 6g \
-  -v "$STAGE/src:/src:ro" -v "$STORE:/store" -v "$OUT:/out" -e CI=1 -e DB="$DB" -e ZONES="$ZONES" \
+  -v "$STAGE/src:/src:ro" -v "$STORE:/store" -v "$OUT:/out" -v "$HERE/test-verdict.mjs:/verdict.mjs:ro" -e CI=1 -e DB="$DB" -e ZONES="$ZONES" \
   -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/store/corepack -e OWNER="$(id -u):$(id -g)" \
   "$NODE_IMAGE" sh -c '
     set -e
@@ -99,13 +107,13 @@ docker run --init --rm --name "$NODE" --network "$NET" --cpus 3 --memory 6g \
         --reporter=json --outputFile.json="/out/$name.json" "$@" >"/out/$name.log" 2>&1; then
         :
       else rc=2; fi
-      # Every file runs only with a database: a skipped test means the run did not reach it.
-      node -e "
-        const r = require(process.argv[1]);
-        const skipped = r.numPendingTests + r.numTodoTests;
-        console.log(\`[postgres] << \${process.argv[2]}: \${r.numPassedTests} passed, \${r.numFailedTests} failed, \${skipped} skipped\`);
-        if (r.numPassedTests === 0 || r.numFailedTests > 0 || skipped > 0) process.exit(2);" \
-        "/out/$name.json" "$zone" || { rc=2; grep -E "FAIL|AssertionError|Error:|expected" "/out/$name.log" | head -40; }
+      # Every file runs only with a database: a skipped or missing file, a file with no test, no
+      # passing test or a failed test is red, and the first error line shows without colour codes
+      # (test-verdict.mjs, tested offline by gate.sh olc).
+      node /verdict.mjs postgres "/out/$name.json" "$zone" "$@" || {
+        rc=2
+        sed "s/\x1b\[[0-9;]*[A-Za-z]//g" "/out/$name.log" | grep -E "Error|FAIL|expected" | head -40 || true
+      }
     done
     exit $rc' _ $files || die "a test failed or did not run (logs in $OUT)"
 echo "POSTGRES: PASS ($(printf '%s\n' "$files" | grep -c .) files in $(printf '%s ' $ZONES))"

@@ -14,6 +14,10 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  SEALED_MIN_PASSWORD_LENGTH,
+  SEALED_OPEN_MIN_PASSWORD_LENGTH,
+} from "@rakazo/core/dozo-sealed-file";
 import type { BackupEntry, Kdf } from "./dozo-local-backup-format.js";
 import {
   BackupFormatError,
@@ -48,7 +52,6 @@ import {
 
 const USAGE = 64;
 const FAILED = 2;
-const MIN_PASSWORD = 8;
 const FOLDERS = ["data", "relay"];
 const MANIFEST = "backup.json";
 const DUMP = "database.dump";
@@ -70,10 +73,11 @@ export class BackupRefused extends LocalRefused<
   "newer" | "not-empty" | "no-server" | "no-backup-data"
 > {}
 
-async function readPassword(stdin: NodeJS.ReadableStream): Promise<string> {
+/** A new backup takes the longer password; a restore still opens one sealed with a shorter one. */
+async function readPassword(stdin: NodeJS.ReadableStream, min: number): Promise<string> {
   const line = await readLine(stdin);
-  if (line !== undefined && line.length >= MIN_PASSWORD) return line;
-  throw new UsageError(`give a password of at least ${MIN_PASSWORD} characters on standard input`);
+  if (line !== undefined && line.length >= min) return line;
+  throw new UsageError(`give a password of at least ${min} characters on standard input`);
 }
 
 async function knownMigrations(serverDir: string): Promise<Set<string>> {
@@ -291,7 +295,10 @@ export async function localBackupMain(argv: string[], io: BackupIo): Promise<num
     }
     if (!values.home) throw new UsageError("--home <server folder> is required");
     const home = path.resolve(values.home);
-    const password = await readPassword(io.stdin);
+    const password = await readPassword(
+      io.stdin,
+      command === "create" ? SEALED_MIN_PASSWORD_LENGTH : SEALED_OPEN_MIN_PASSWORD_LENGTH,
+    );
     if (command === "create") await create(file, home, password, io);
     else await restore(file, home, password, io);
     return 0;

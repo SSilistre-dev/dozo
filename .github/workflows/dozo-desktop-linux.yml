@@ -12,6 +12,8 @@ on:
   pull_request:
     paths:
       - dozo/desktop/**
+      # The agent wire examples the desktop app's tests include.
+      - packages/adapters/src/dozo-agent-device-fixtures/**
       - .github/workflows/dozo-desktop-linux.yml
 
 permissions:

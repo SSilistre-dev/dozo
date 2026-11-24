@@ -120,14 +120,16 @@ async fn session(
         return Ended::Stopped;
     };
     request.headers_mut().insert("authorization", bearer);
-    let declared = capabilities(
-        crate::browser::DECLARED,
-        options.runner.browser_available(),
-        options.runner.passwords_declared(),
+    let agents = options.runner.agent_ids().await;
+    request.headers_mut().insert(
+        CAPABILITIES_HEADER,
+        capabilities_header(
+            crate::browser::DECLARED,
+            options.runner.browser_available(),
+            options.runner.passwords_declared(),
+            &agents,
+        ),
     );
-    request
-        .headers_mut()
-        .insert(CAPABILITIES_HEADER, HeaderValue::from_static(declared));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE_BYTES))
         .max_frame_size(Some(MAX_MESSAGE_BYTES));
@@ -195,15 +197,33 @@ async fn session(
     ended
 }
 
-/// What this computer offers: commands, and the bot's own browser where the app has one
-/// (`browser::DECLARED`) and a browser is installed.
-fn capabilities(declared: bool, available: bool, passwords: bool) -> &'static str {
-    match (declared && available, passwords) {
-        (true, true) => "shell,browser,passwords",
-        (true, false) => "shell,browser",
-        (false, true) => "shell,passwords",
-        (false, false) => "shell",
+/// What this computer offers: commands, the bot's own browser where the app has one
+/// (`browser::DECLARED`) and a browser is installed, the password manager when it is on and its
+/// program found, and `agent:<id>` for each agent the person allowed that is installed
+/// (`device_agent.rs`).
+fn capabilities(declared: bool, available: bool, passwords: bool, agents: &[&str]) -> String {
+    let mut words = vec!["shell".to_owned()];
+    if declared && available {
+        words.push("browser".to_owned());
     }
+    if passwords {
+        words.push("passwords".to_owned());
+    }
+    words.extend(agents.iter().map(|id| format!("agent:{id}")));
+    words.join(",")
+}
+
+/// The header: what this computer offers. A word it cannot carry leaves the plain header, never
+/// none.
+pub(crate) fn capabilities_header(
+    declared: bool,
+    available: bool,
+    passwords: bool,
+    agents: &[&str],
+) -> HeaderValue {
+    HeaderValue::from_str(&capabilities(declared, available, passwords, agents))
+        .or_else(|_| HeaderValue::from_str(&capabilities(declared, available, passwords, &[])))
+        .unwrap_or_else(|_| HeaderValue::from_static("shell"))
 }
 
 /// Acts on one server message; `Some` when it revokes this computer.
@@ -332,13 +352,24 @@ mod tests {
     /// installed; Windows declares commands alone and has no browser.
     #[test]
     fn the_browser_is_declared_only_where_the_app_has_one() {
-        assert_eq!(capabilities(true, true, false), "shell,browser");
-        assert_eq!(capabilities(true, false, false), "shell");
-        assert_eq!(capabilities(false, true, false), "shell");
+        assert_eq!(capabilities(true, true, false, &[]), "shell,browser");
+        assert_eq!(capabilities(true, false, false, &[]), "shell");
+        assert_eq!(capabilities(false, true, false, &[]), "shell");
         // The password manager is declared on its own terms: on, and the program found.
-        assert_eq!(capabilities(true, true, true), "shell,browser,passwords");
-        assert_eq!(capabilities(true, false, true), "shell,passwords");
-        assert_eq!(capabilities(false, false, true), "shell,passwords");
+        assert_eq!(
+            capabilities(true, true, true, &[]),
+            "shell,browser,passwords"
+        );
+        assert_eq!(capabilities(true, false, true, &[]), "shell,passwords");
+        assert_eq!(capabilities(false, false, true, &[]), "shell,passwords");
+        assert_eq!(
+            capabilities(true, true, false, &["antigravity-agent"]),
+            "shell,browser,agent:antigravity-agent"
+        );
+        assert_eq!(
+            capabilities(false, false, true, &["a", "b"]),
+            "shell,passwords,agent:a,agent:b"
+        );
         #[cfg(windows)]
         {
             const { assert!(!crate::browser::DECLARED) };
@@ -441,8 +472,9 @@ mod tests {
                             let declared = request.headers().get(CAPABILITIES_HEADER);
                             // The browser only where the app has one and one is installed.
                             let available = crate::browser::find().is_some();
-                            let expected = capabilities(crate::browser::DECLARED, available, false);
-                            assert_eq!(declared.unwrap(), expected);
+                            let expected =
+                                capabilities(crate::browser::DECLARED, available, false, &[]);
+                            assert_eq!(declared.unwrap(), expected.as_str());
                             return Ok(response);
                         }
                         let mut refused = ErrorResponse::new(None);

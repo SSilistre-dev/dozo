@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DOZO_THEMES, dozoTheme, renderDozoThemesCss } from "./dozo-themes.js";
-import { cssVariableName } from "./index.js";
+import {
+  DOZO_THEMES,
+  dozoNeutralBubbleTokens,
+  dozoTheme,
+  dozoThemeTokens,
+  renderDozoThemesCss,
+} from "./dozo-themes.js";
+import { cssVariableName, darkTokens, lightTokens } from "./index.js";
 
 const css = readFileSync(new URL("../../ui-web/src/dozo-themes.css", import.meta.url), "utf8");
 
@@ -50,5 +56,59 @@ describe("named themes", () => {
     expect(dozoTheme("yoru")?.tone).toBe("dark");
     expect(dozoTheme("neon")).toBeUndefined();
     expect(dozoTheme(null)).toBeUndefined();
+  });
+});
+
+describe("a theme on the phone", () => {
+  const sumi = dozoTheme("sumi") as NonNullable<ReturnType<typeof dozoTheme>>;
+  const washi = dozoTheme("washi") as NonNullable<ReturnType<typeof dozoTheme>>;
+
+  it("paints every token the stylesheet paints from the same palette entry", () => {
+    const tokens = dozoThemeTokens(darkTokens, sumi);
+    const { palette } = sumi;
+    expect(tokens.background).toBe(palette.background);
+    expect(tokens.primaryForeground).toBe(palette.background);
+    expect(tokens.card).toBe(palette.card);
+    expect(tokens.muted).toBe(palette.card);
+    expect(tokens.popover).toBe(palette.popover);
+    expect(tokens.chatUser).toBe(palette.popover);
+    expect(tokens.primary).toBe(palette.foreground);
+    expect(tokens.sidebar).toBe(palette.sidebar);
+    expect(tokens.mutedForeground).toBe(palette.mutedForeground);
+    expect(tokens.faintForeground).toBe(palette.faintForeground);
+  });
+
+  it("paints the dialog as the card in dark and the popover in light", () => {
+    expect(dozoThemeTokens(darkTokens, sumi).dialog).toBe(sumi.palette.card);
+    expect(dozoThemeTokens(lightTokens, washi).dialog).toBe(washi.palette.popover);
+  });
+
+  it("leaves status and link colours, borders and tokens the base lacks alone", () => {
+    const tokens = dozoThemeTokens(darkTokens, sumi);
+    for (const token of [
+      "destructive",
+      "link",
+      "success",
+      "warning",
+      "border",
+      "unread",
+    ] as const) {
+      expect(tokens[token]).toBe(darkTokens[token]);
+    }
+    expect(Object.keys(tokens).sort()).toEqual(Object.keys(darkTokens).sort());
+  });
+
+  it("does not change the palette it is given", () => {
+    const before = { ...lightTokens };
+    dozoThemeTokens(lightTokens, washi);
+    expect(lightTokens).toEqual(before);
+  });
+
+  it("makes the neutral bubble the ink in light and leaves dark to the theme's own", () => {
+    const light = dozoNeutralBubbleTokens(dozoThemeTokens(lightTokens, washi), "light");
+    expect(light.chatUser).toBe(washi.palette.foreground);
+    expect(light.chatUserForeground).toBe(washi.palette.background);
+    const dark = dozoThemeTokens(darkTokens, sumi);
+    expect(dozoNeutralBubbleTokens(dark, "dark")).toBe(dark);
   });
 });

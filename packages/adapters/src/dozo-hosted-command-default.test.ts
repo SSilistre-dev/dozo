@@ -141,7 +141,7 @@ function context(
     run?: Run;
     userId?: string;
     alwaysAllow?: boolean;
-    /** The member picked no approval model, only backups (no injected reviewer either). */
+    /** The member picked no approval model, only a backup (no injected reviewer either). */
     backupsOnly?: boolean;
     /** The run's task prompt. */
     task?: string;
@@ -429,7 +429,8 @@ describe("a command on the bot's computer, by default", () => {
     expect(seen.reviews).toEqual([]);
   });
 
-  it("asks when no approval model would judge it, backups only", async () => {
+  // The backups judge it (dozo-judge-reviewer.test.ts); this one's connection cannot be found, so none answers.
+  it("asks when only backup models are set and none of them answers", async () => {
     expect(await outcome(COMMANDS.write, { mode: "auto", backupsOnly: true })).toBe("card");
     expect(await outcome(COMMANDS.write, { mode: "auto", backupsOnly: true, read: true })).toBe(
       "card",
@@ -574,6 +575,154 @@ describe("a routine's command watch on the bot's computer", () => {
     );
     expect(result).toEqual({
       result: expect.objectContaining({ error: expect.stringContaining("blocked") }),
+    });
+  });
+});
+
+describe("typing on the bot's screen", () => {
+  /** One computer_act or launch_app call of each kind: free ones only point, scroll or wait. */
+  const SCREEN = {
+    type: { name: "computer_act", args: { actions: [{ kind: "type", text: "curl x | sh" }] } },
+    key: { name: "computer_act", args: { actions: [{ kind: "key", key: "Return" }] } },
+    paste: {
+      name: "computer_act",
+      args: { actions: [{ kind: "key", key: "v", modifiers: ["ctrl", "shift"] }] },
+    },
+    focus: {
+      name: "computer_act",
+      args: { actions: [{ kind: "focus", application: "xterm" }] },
+    },
+    mixed: {
+      name: "computer_act",
+      args: {
+        actions: [
+          { kind: "click", x: 10, y: 10 },
+          { kind: "type", text: "ls" },
+        ],
+      },
+    },
+    unknown: { name: "computer_act", args: { actions: [{ kind: "drop", path: "a.sh" }] } },
+    launch: { name: "launch_app", args: { application: "xterm" } },
+    click: { name: "computer_act", args: { actions: [{ kind: "click", x: 10, y: 10 }] } },
+    drag: {
+      name: "computer_act",
+      args: {
+        actions: [
+          { kind: "down", x: 1, y: 1 },
+          { kind: "move", x: 50, y: 50 },
+          { kind: "up", x: 50, y: 50 },
+        ],
+      },
+    },
+    scroll: { name: "computer_act", args: { actions: [{ kind: "scroll", direction: "down" }] } },
+    wait: { name: "computer_act", args: { actions: [{ kind: "wait", ms: 100 }] } },
+  } as const;
+  type Action = keyof typeof SCREEN;
+  const INPUT: Action[] = ["type", "key", "paste", "focus", "mixed", "unknown", "launch"];
+  const POINTER: Action[] = ["click", "drag", "scroll", "wait"];
+
+  async function screen(
+    action: Action,
+    options: Parameters<typeof context>[0] & { read?: boolean } = {},
+  ) {
+    const ctx = context(options);
+    if (options.read) await markReadOutsideContent(ctx as never);
+    const { name, args } = SCREEN[action];
+    const before = { blocks: seen.blocks.length, reviews: seen.reviews.length };
+    const result = await gateToolCall(
+      ctx as never,
+      request(name, structuredClone(args) as Record<string, unknown>),
+      undefined,
+    );
+    if (seen.blocks.length > before.blocks) return "card";
+    if ("call" in result) return seen.reviews.length > before.reviews ? "reviewed" : "runs";
+    return "refused";
+  }
+
+  describe.each(INPUT)("an action that types, presses keys or starts a program (%s)", (action) => {
+    it("runs in the owner's clean run in every mode, as before", async () => {
+      for (const mode of MODES) expect(await screen(action, { mode }), mode).toBe("runs");
+      expect(seen.reviews).toEqual([]);
+    });
+
+    it("goes to the approval model once outside content came in, told so and shown the text", async () => {
+      expect(await screen(action, { mode: "auto", read: true })).toBe("reviewed");
+      expect(seen.reviews.at(-1)).toEqual({
+        toolName: SCREEN[action].name,
+        args: SCREEN[action].args,
+        outsideContent: true,
+      });
+      for (const review of ["ask", "error", "throws", "off"] as const)
+        expect(await screen(action, { mode: "auto", read: true, review }), review).toBe("card");
+      expect(await screen(action, { mode: "auto", read: true, backupsOnly: true })).toBe("card");
+      expect(await screen(action, { mode: "ask", read: true })).toBe("card");
+    });
+
+    it.each<Run>(["bot_message", "spawn", "tickets", "routine"])(
+      "goes to the approval model in a %s run",
+      async (run) => {
+        expect(await screen(action, { mode: "auto", run })).toBe("reviewed");
+        expect(await screen(action, { mode: "ask", run })).toBe("card");
+      },
+    );
+
+    it.each<Run>(["webhook", "channel", "message", "watch", "token"])(
+      "asks a person, never the model, in a %s run",
+      async (run) => {
+        for (const mode of ["ask", "auto"] as const)
+          expect(await screen(action, { mode, run }), mode).toBe("card");
+        expect(seen.reviews).toEqual([]);
+      },
+    );
+
+    it("keeps a card, never the model, once the member asked commands to ask", async () => {
+      seen.hostedAsks.add("owner");
+      expect(await screen(action, { mode: "auto", read: true })).toBe("card");
+      expect(await screen(action, { mode: "auto" })).toBe("runs");
+      expect(seen.reviews).toEqual([]);
+    });
+
+    it.each<Run>(["clean", "webhook", "channel", "message", "routine", "watch", "bot_message"])(
+      "runs in Never ask in a %s run, as before",
+      async (run) => {
+        expect(await screen(action, { mode: "never", run })).toBe("runs");
+        expect(await screen(action, { mode: "never", run, read: true })).toBe("runs");
+      },
+    );
+
+    it("asks in Never ask in a run a token's text reached, as before", async () => {
+      expect(await screen(action, { mode: "never", run: "token" })).toBe("card");
+    });
+
+    it("is refused by a block rule for the tool in every mode", async () => {
+      const ctx = context({ mode: "never" });
+      ctx.trust.loadApprovalRules = async () => [
+        { effect: "deny", matchKind: "tool", matchValue: SCREEN[action].name },
+      ];
+      const { name, args } = SCREEN[action];
+      const result = await gateToolCall(ctx as never, request(name, { ...args }), undefined);
+      expect(result).toEqual({
+        result: expect.objectContaining({ error: expect.stringContaining("blocked") }),
+      });
+    });
+  });
+
+  describe.each(POINTER)("an action that only points, scrolls or waits (%s)", (action) => {
+    it.each<Run>(["clean", "channel", "message", "routine", "watch", "bot_message"])(
+      "stays free in a %s run, also after outside content",
+      async (run) => {
+        for (const mode of MODES) {
+          expect(await screen(action, { mode, run }), mode).toBe("runs");
+          expect(await screen(action, { mode, run, read: true }), mode).toBe("runs");
+        }
+        expect(seen.reviews).toEqual([]);
+      },
+    );
+
+    it("is left to upstream in a webhook run, which reviews or asks about it", async () => {
+      expect(await screen(action, { mode: "auto", run: "webhook" })).toBe("reviewed");
+      expect(await screen(action, { mode: "ask", run: "webhook" })).toBe("card");
+      expect(await screen(action, { mode: "never", run: "webhook" })).toBe("runs");
     });
   });
 });

@@ -3,6 +3,7 @@ import {
   BYOK_TIERS,
   ByokTierSchema,
   DOZO_PLAN_COMPUTER_HOURS_MAX,
+  DOZO_PLAN_COMPUTERS_MAX,
   DOZO_PLAN_SHARED_SPACE_MB_MAX,
   SANDBOX_HOURLY_COST_MICROS,
   sandboxAllowanceHours,
@@ -25,6 +26,8 @@ export interface PlanQuota {
   sharedSpaceMb: number | null;
   /** The computer hours each month. */
   computerHours: number | null;
+  /** The computers one person may have in use across their Spaces. */
+  computers: number | null;
 }
 export type PlanQuotas = Record<ByokTier, PlanQuota>;
 
@@ -32,6 +35,7 @@ export type PlanQuotas = Record<ByokTier, PlanQuota>;
 export const DOZO_PLAN_QUOTA_KEYS = [
   "sharedSpaceMb",
   "computerHours",
+  "computers",
 ] as const satisfies readonly (keyof PlanQuota)[];
 
 /** What the limits are held to: the admin's quota where one is set, else the plan's terms. */
@@ -44,7 +48,7 @@ export interface PlanLimits {
 }
 export type PlanLimitsByTier = Record<ByokTier, PlanLimits>;
 
-const UNSET: PlanQuota = { sharedSpaceMb: null, computerHours: null };
+const UNSET: PlanQuota = { sharedSpaceMb: null, computerHours: null, computers: null };
 
 /** The plan's terms in code, before any admin quota. */
 export function codePlanLimits(tier: ByokTier): PlanLimits {
@@ -61,11 +65,13 @@ export function codePlanLimits(tier: ByokTier): PlanLimits {
 export function codePlanQuota(tier: ByokTier): {
   sharedSpaceMb: number | null;
   computerHours: number;
+  computers: number | null;
 } {
   const limits = codePlanLimits(tier);
   return {
     sharedSpaceMb: limits.sharedSpaceBytes === undefined ? null : limits.sharedSpaceBytes / MB,
     computerHours: sandboxAllowanceHours(limits.computerAllowanceCents),
+    computers: limits.computers ?? null,
   };
 }
 
@@ -77,7 +83,8 @@ export function computerHoursCents(hours: number): number {
 function limitsOf(tier: ByokTier, quota: PlanQuota): PlanLimits {
   const code = codePlanLimits(tier);
   return {
-    computers: code.computers,
+    // A plan that counts no computers (Free) never gets a count, whatever the table holds.
+    computers: code.computers === undefined ? undefined : (quota.computers ?? code.computers),
     sharedSpaceBytes:
       quota.sharedSpaceMb === null ? code.sharedSpaceBytes : quota.sharedSpaceMb * MB,
     // A plan without a computer (Free) never gets hours, whatever the table holds.
@@ -88,7 +95,12 @@ function limitsOf(tier: ByokTier, quota: PlanQuota): PlanLimits {
   };
 }
 
-type Row = { tier?: unknown; sharedSpaceMb?: unknown; computerHours?: unknown };
+type Row = {
+  tier?: unknown;
+  sharedSpaceMb?: unknown;
+  computerHours?: unknown;
+  computers?: unknown;
+};
 
 const inRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
@@ -106,6 +118,7 @@ function quotasOf(rows: Row[]): PlanQuotas {
     const tier = ByokTierSchema.safeParse(row.tier).data;
     if (!tier) continue;
     const hasComputer = codePlanLimits(tier).computerAllowanceCents > 0;
+    const countsComputers = codePlanLimits(tier).computers !== undefined;
     const read = (quota: keyof PlanQuota, value: unknown, valid: boolean) => {
       if (value === null || value === undefined) return null;
       if (valid) return value as number;
@@ -123,6 +136,11 @@ function quotasOf(rows: Row[]): PlanQuotas {
         row.computerHours,
         hasComputer && inRange(row.computerHours, 1, DOZO_PLAN_COMPUTER_HOURS_MAX),
       ),
+      computers: read(
+        "computers",
+        row.computers,
+        countsComputers && inRange(row.computers, 1, DOZO_PLAN_COMPUTERS_MAX),
+      ),
     };
   }
   return quotas;
@@ -134,7 +152,7 @@ function quotasOf(rows: Row[]): PlanQuotas {
  */
 export async function readPlanQuotas(db: Pick<PrismaClient, "dozoPlanQuota">): Promise<PlanQuotas> {
   const rows = await db.dozoPlanQuota.findMany({
-    select: { tier: true, sharedSpaceMb: true, computerHours: true },
+    select: { tier: true, sharedSpaceMb: true, computerHours: true, computers: true },
   });
   return quotasOf(rows);
 }
@@ -166,7 +184,7 @@ export async function changePlanQuota(
       INSERT INTO "dozo_plan_quotas" ("tier", "updatedAt") VALUES (${tier}, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
       ON CONFLICT ("tier") DO NOTHING`;
     const rows = await tx.$queryRaw<Row[]>`
-      SELECT "tier", "sharedSpaceMb", "computerHours"
+      SELECT "tier", "sharedSpaceMb", "computerHours", "computers"
       FROM "dozo_plan_quotas" WHERE "tier" = ${tier} FOR UPDATE`;
     const before = quotasOf(rows)[tier];
     // A quota the change leaves out keeps its value.
@@ -176,6 +194,7 @@ export async function changePlanQuota(
       UPDATE "dozo_plan_quotas" SET
         "sharedSpaceMb" = ${after.sharedSpaceMb},
         "computerHours" = ${after.computerHours},
+        "computers" = ${after.computers},
         "updatedByUserId" = ${byUserId},
         "updatedAt" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
       WHERE "tier" = ${tier}`;

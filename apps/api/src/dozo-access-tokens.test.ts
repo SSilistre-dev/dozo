@@ -26,8 +26,12 @@ const spies = vi.hoisted(() => ({
   tainted: vi.fn(),
   trust: vi.fn(),
   reaches: vi.fn(),
+  own: vi.fn(),
 }));
-vi.mock("./dozo-token-bots.js", () => ({ dozoTokenReachesBot: spies.reaches }));
+vi.mock("./dozo-token-bots.js", () => ({
+  dozoTokenReachesBot: spies.reaches,
+  dozoTokenOwnBots: spies.own,
+}));
 vi.mock("@rakazo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   dozoBotTokenTainted: spies.tainted,
@@ -179,6 +183,12 @@ describe("settings procedures", () => {
     expect(spies.reaches).toHaveBeenCalledWith(prisma, actor, null, "bot-2");
     expect(spies.create).not.toHaveBeenCalled();
     expect(spies.send).not.toHaveBeenCalled();
+  });
+
+  it("lists only the bots a token could be made for, the member's own", async () => {
+    spies.own.mockResolvedValue([{ id: "bot-1", name: "Chef" }]);
+    expect(await client().dozoAccessTokens.ownBots()).toEqual([{ id: "bot-1", name: "Chef" }]);
+    expect(spies.own).toHaveBeenCalledWith(prisma, actor);
   });
 
   it("refuses a token past the limit and a name that is only spaces", async () => {

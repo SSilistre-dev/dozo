@@ -187,6 +187,9 @@ test("every language shows the plans the code sells and links sign-up from each 
     );
     return unit ? `${size} GB` : `${size} MB`;
   };
+  // How many computers a plan allows one person: the first line of a paid card, and Free has none.
+  const computers = (name) =>
+    Number(plans.match(new RegExp(`const ${name} = \\{[^}]*?computers: (\\d+)`))[1]);
   const paid = (id, plan) => {
     const terms = tier(id);
     const [month, year] = [
@@ -199,6 +202,7 @@ test("every language shows the plans the code sells and links sign-up from each 
     const hours = (number(terms, "computerAllowanceCents") * 10_000) / hourly;
     return {
       prices: [month, year / 12, year],
+      computers: computers(plan),
       facts: [`${cpus} vCPU`, `${memory} GB RAM`, String(hours), space(plan)],
     };
   };
@@ -218,12 +222,21 @@ test("every language shows the plans the code sells and links sign-up from each 
     const [free, ...cards] = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
     assert.match(free, new RegExp(`href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}"`), file);
     assert.ok(free.includes(space("free")), file);
+    // Free has no hosted computer: its card names no size.
+    assert.equal(computers("free"), 0);
+    assert.doesNotMatch(free, /vCPU/, file);
     cards.forEach((card, index) => {
       const prices = card
         .match(/<p class="price">.*?<p class="bill">.*?<\/p>/)[0]
         .match(/\d+/g)
         .map(Number);
       assert.deepEqual(prices, expected[index].prices, file);
+      // The card's first line leads with the number of computers the plan allows.
+      assert.equal(
+        Number(card.match(/<ul><li>(\d+) /)?.[1]),
+        expected[index].computers,
+        `${file}: computers`,
+      );
       for (const fact of expected[index].facts) assert.ok(card.includes(fact), `${file}: ${fact}`);
       assert.match(
         card,

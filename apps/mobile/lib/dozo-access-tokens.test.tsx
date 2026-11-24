@@ -317,7 +317,7 @@ describe("access tokens on mobile", () => {
 
   it("makes a token after the identity check and shows it once, with Copy", async () => {
     answers["dozoAccessTokens/list"] = [];
-    answers["bots/list"] = [
+    answers["dozoAccessTokens/ownBots"] = [
       { id: "b1", name: "Ada" },
       { id: "b2", name: "Bo" },
     ];
@@ -364,7 +364,7 @@ describe("access tokens on mobile", () => {
 
   it("makes a 90 day token for every bot by default, and can be cancelled", async () => {
     answers["dozoAccessTokens/list"] = [];
-    answers["bots/list"] = [];
+    answers["dozoAccessTokens/ownBots"] = [];
     answers["dozoAccessTokens/create"] = { token: "dz_x", accessToken: token() };
     await render(<DozoAccessTokens />);
     await act(async () => button("New token")!.click());
@@ -382,7 +382,7 @@ describe("access tokens on mobile", () => {
 
   it("says when making a token fails and keeps the form", async () => {
     answers["dozoAccessTokens/list"] = [];
-    answers["bots/list"] = [];
+    answers["dozoAccessTokens/ownBots"] = [];
     answers["dozoAccessTokens/create"] = new Error("Not confirmed");
     await render(<DozoAccessTokens />);
     await act(async () => button("New token")!.click());

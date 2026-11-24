@@ -21,6 +21,17 @@ import { writeBackup } from "./dozo-local-backup-format.js";
 
 const PASSWORD = "a long enough password";
 const KDF = { logN: 15, r: 8, p: 1 };
+/**
+ * A backup this command made while 8 characters were enough: of `usedHome` below, sealed with
+ * the password "eight8ch" at the test cost, on server 0.11.0-1 with migrations a and b.
+ */
+const OLDER_BACKUP =
+  "RE9aT0JBSwoBDwgBsG+5BG2RSjuKu8Ez+okIx7OaqZLRIvcCjuL5Fm7Ho0u+tFB+k6DO2e+XiPH+U5wubG209lgddp" +
+  "2WXmr26oxKmAnHahotPfYdpqCTDkML+uo852cVcEBlZXdlQSSQGIob5/zj327X72bYBV0z4VM5IYLhTDe64r2XlxCf" +
+  "+Oa5mDJdGFMDuxaZAnTloSYZa7r4DaNzYc3M5N4rCkNY3bWgKaqLAxMLGyrffI6pIeuCwgpDA6lc8VGL6JD8TMYcVD" +
+  "GW/cnezEBriGYEsRvPjOksltsn+u69BNREgDeHevIM/NhuGF7h4+0ZjWkq6msw/M1g1v81HP4nka/DBiiDjuKcQ4I0" +
+  "UJuD/52hh3Je9Q9x49Gh7F+oli8tzEUTMBjFuRg0GXEPVyTRvVxQVpn1yW4PP3Zkvs9SS+BdQfnUOvgUCX8i77FUOp" +
+  "oqK3Tvi6yEbmakavLHL7D0dcPIIua4bqKKZ9OFhiLn8ptoLOnnlPeb9Zo=";
 
 /**
  * Stand-ins for the bundle's Postgres programs: each logs its arguments, `initdb` makes a data
@@ -265,6 +276,29 @@ describe("local backup command", () => {
     expect(await main(["create", path.join(root, "a.dozo"), "--home", home])).toBe(2);
     expect(last().error).toContain("cannot be stored");
     expect((await readdir(root)).filter((name) => name.endsWith(".partial"))).toEqual([]);
+  });
+
+  it("makes a new backup only with a 12-character password, and still opens an older 8-character one", async () => {
+    const home = path.join(root, "home");
+    await usedHome(home);
+    expect(await main(["create", path.join(root, "11.dozo"), "--home", home], "x".repeat(11))).toBe(
+      64,
+    );
+    expect(last()).toEqual({
+      error: "give a password of at least 12 characters on standard input",
+      reason: "usage",
+    });
+    expect(await readdir(root)).not.toContain("11.dozo");
+    expect(await main(["create", path.join(root, "12.dozo"), "--home", home], "x".repeat(12))).toBe(
+      0,
+    );
+
+    const older = path.join(root, "older.dozo");
+    await writeFile(older, Buffer.from(OLDER_BACKUP, "base64"));
+    const fresh = path.join(root, "fresh");
+    expect(await main(["restore", older, "--home", fresh], "eight8ch")).toBe(0);
+    expect(await readFile(path.join(fresh, "data/uploads/photo.jpg"), "utf8")).toBe("jpeg bytes");
+    expect(await main(["restore", older, "--home", path.join(root, "b")], "eight8c")).toBe(64);
   });
 
   it("answers usage errors with 64", async () => {

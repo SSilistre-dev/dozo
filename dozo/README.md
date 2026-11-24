@@ -264,6 +264,16 @@ as before and never moves to another connection of the pool, and a run stays on 
   switch is turned on again. Mobile has the same switch and time on a connection's page
   (`apps/mobile/components/dozo-model-pool-switch.tsx`), read again on each roster signal.
 
+## Phone: themes and a bot's backup models
+
+- Settings > General > Appearance on the phone is one native menu of System, Light, Dark and the
+  six named themes, with Message color (Bot color or Neutral) under it, kept on the device as on the
+  web (`apps/mobile/components/dozo-appearance-setting.tsx`; details in `dozo/theme/README.md`).
+- A bot's settings, under its model, list the bot's own backup models in order, as the web does
+  (`apps/mobile/components/dozo-bot-backups.tsx`, procedures `dozoBotModelBackups.get` and `set`):
+  add one from the models of your own connections, change, move up or down, remove. They are read
+  again on each roster signal.
+
 ## Editing and regenerating
 
 In a person's own chat with a bot, the More menu offers Edit on their last message and Regenerate
@@ -321,7 +331,28 @@ rows do; an extra chat has its own unread dot.
 On the phone a bot's extra chats are on its profile (reached from the chat's title), under Chats,
 only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
 as read or unread, snooze, pinned, export, archive). New chat is in the profile's "..." menu, and
-names the chat by when it began, as on web. A chat route holds one chat (`DozoChatScope`, from its
+names the chat by when it began, as on web.
+
+The inbox lists them as web's roster does: each open, awake extra chat is its own row under its
+bot's row (`apps/mobile/lib/dozo-inbox-chats.ts`, `components/dozo-inbox-chat-row.tsx`), in line
+with the bot's name, with its name and its own unread dot, never the bot's. The rows come from one
+read of the selected Space's chats (`dozoChats/list` without a bot), not one per bot, and are read
+again on each roster signal, never on a timer; a bot with none, a server without the read, and the
+share picker look as before. The badge and the bot's row count the main chat only, so reading or
+marking an extra chat (a tap, or its sheet: a long press, or the row's action) changes that chat
+alone. A snoozed chat leaves the list until it wakes. Known limits: only the selected Space's bots
+have chat rows (the roster stream is that Space's; another Space's bot shows them once it is
+selected), a bot pinned as a tile on Android shows none (its tile is not a row; its chats are on
+its profile), and the inbox's chat sheet has no Pinned entry (that would read every chat's pins:
+it is on the profile).
+
+The chat's title has a menu beside it (`components/dozo-chat-switcher.tsx`) in a one-to-one chat of
+a bot that is not archived: the bot's main chat and each open extra chat (the open one marked),
+then New chat, as web's header menu. A switch replaces the chat on screen, so going back and forth
+never stacks routes; New chat opens the chat it makes, as on the profile. A route from a
+notification marks the extra chat its thread names.
+
+A chat route holds one chat (`DozoChatScope`, from its
 `chatId`, or from the `threadId` of a notification: the main chat opens at once, with no request,
 when that is the bot's main thread as the inbox or the saved copy knows it; any other thread waits
 for the bot's chat list, and one it cannot place (an unreadable list, or an archived chat while the
@@ -644,8 +675,9 @@ allow rule covers counts as an action that changes something, as upstream counts
   outside content (pages, files, command output, messages) it never sees, or when the task is not
   the owner's words (`packages/adapters/src/dozo-outside-review.prompt.ts`). In Auto review every
   such command is one more review call, with its cost and wait. A model that passes
-  a command does not stop the run, a routine included; one that asks leaves a card. With no model
-  that would judge it (none set, or only backups without a primary), the command asks.
+  a command does not stop the run, a routine included; one that asks leaves a card. With only
+  backup approval models the backups judge it ("The approval model's backups"); with none set, or
+  when none answers, the command asks.
 - An exact allow rule runs the command in every row but the last; a prefix rule only until the run
   takes in outside content. An always-allow rule for the tool runs it, as upstream does for any
   tool. Block rules refuse in every mode.
@@ -660,10 +692,34 @@ allow rule covers counts as an action that changes something, as upstream counts
 - "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
   computer; per account, table `dozo_command_settings`) now means: a card, never the approval
   model, outside Never ask. An account without the setting gets the default above.
-- It covers `shell` only. A script the bot wrote with the file tools is held when the command that
-  runs it is (a script is not a read), but what `write_file` writes, typing into a terminal through
-  screen control, and a command watch's later runs (asked about once, when the routine is made) are
-  not read per command.
+- It covers `shell`, and input on the bot's screen below. A script the bot wrote with the file
+  tools is held when the command that runs it is (a script is not a read), but what `write_file`
+  writes (also into a file an allowed command reads) and a command watch's later runs (asked about
+  once, when the routine is made) are not read per command.
+
+Input on the bot's screen (`screenInputCall` in `packages/adapters/src/dozo-command-gate.ts`):
+`computer_act`'s `type`, `key` and `focus` actions, an action of a kind the server does not know,
+and `launch_app` can run a command, typed into a terminal or started as a program. The server cannot
+tell whether the window with the focus is a terminal (the window title is the screen's own text), so
+it never asks. Such a call is held like a command, without command rules (it has no command to
+match):
+
+| Run | Auto review | Ask | Never ask |
+| --- | --- | --- | --- |
+| The member's own chat before it took in outside content | runs, as before | runs, as before | runs |
+| One that took in outside content (the screen counts: a look at it, or any `computer_act` result), another bot's message, a spawned bot, a ticket, the owner's routine | approval model, shown the text and keys and told outside content came in; a card when it asks, fails or there is none | card | runs |
+| Started by outside text (as above) | card | card | runs (as before) |
+| Reached by a token's text | card | card | card (as before) |
+
+- Clicks, drags, scrolls and waits stay free, as do `computer_observe` and the page browser tools;
+  in a webhook run upstream gates every `computer_act` call as before. "Ask before commands on bot
+  computers" makes the second row a card too. A block or always-allow rule for the tool applies as
+  for any tool.
+- The screen is outside content, so in practice a run takes in outside content with its first look:
+  in Auto review each `computer_act` call that types or presses a key is then one review call, with
+  its cost and wait (a call batches up to 24 actions, so one review covers them), and in Ask one card.
+- Not covered: a paste through a right-click menu with the mouse alone (text copied with the mouse
+  from a page into a terminal) is a click, and stays free.
 - The bot's computer is Linux, so the shell is known there; the reading below stays the one built
   for an unknown shell, which only makes more commands ask.
 
@@ -888,6 +944,19 @@ bot under its Memory: Off (the default, no call, job or row), Ask first, or Auto
   menu. A skill draft (taught or suggested) shows in the chat as a card with its steps, Save and
   Delete; one whose typed values still wait for a decision offers only Delete there, and its steps
   are edited on the web. The learned list and its undo are web only for now.
+
+## The approval model's backups
+
+In Auto review an action that would ask goes to the approval model. A member who picked only backup
+approval models, with no primary of their own and none set for the deployment, has those backups
+judge it in their order, for every tool the approval model judges (an email, an app action, a memory
+save after outside content, a command on the bot's computer) alike. Upstream counted the backups
+when it planned the review but then reviewed only with a primary, so such an action went ahead
+unreviewed. Two anchored rules on `packages/adapters/src/run-tool-gate.ts` hold it: the review runs
+when backups are the only models, and an action planned for review goes ahead only on a verdict that
+passes it, so one no model answered (none set, every backup failing or without its connection)
+leaves a card. Ask and Never ask are unchanged, and a card in a run nobody watches waits like any
+other. Each review is a call to the backup's model, with its cost and wait, as a primary's is.
 
 ## After outside content
 
