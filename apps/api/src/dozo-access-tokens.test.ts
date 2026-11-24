@@ -25,7 +25,9 @@ const spies = vi.hoisted(() => ({
   send: vi.fn(),
   tainted: vi.fn(),
   trust: vi.fn(),
+  reaches: vi.fn(),
 }));
+vi.mock("./dozo-token-bots.js", () => ({ dozoTokenReachesBot: spies.reaches }));
 vi.mock("@rakazo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   dozoBotTokenTainted: spies.tainted,
@@ -71,6 +73,7 @@ const row = {
 beforeEach(() => {
   for (const spy of Object.values(spies)) spy.mockReset();
   spies.send.mockResolvedValue(undefined);
+  spies.reaches.mockResolvedValue(true);
 });
 
 describe("settings procedures", () => {
@@ -159,6 +162,23 @@ describe("settings procedures", () => {
       client().dozoAccessTokens.create({ name: "CI", botId: "bot-2" }),
     ).rejects.toBeInstanceOf(IsolationError);
     expect(spies.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a token for another member's bot, which a token would never reach", async () => {
+    spies.resolve.mockResolvedValue({
+      kind: "bot",
+      botId: "bot-2",
+      bot: { id: "bot-2", name: "Scout" },
+    });
+    spies.reaches.mockResolvedValue(false);
+    const refused = await client()
+      .dozoAccessTokens.create({ name: "CI", botId: "bot-2" })
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(ClientError);
+    expect((refused as ClientError).kind).toBe("NOT_FOUND");
+    expect(spies.reaches).toHaveBeenCalledWith(prisma, actor, null, "bot-2");
+    expect(spies.create).not.toHaveBeenCalled();
+    expect(spies.send).not.toHaveBeenCalled();
   });
 
   it("refuses a token past the limit and a name that is only spaces", async () => {

@@ -9,6 +9,10 @@ Dozo is source available: its own files are under the Elastic License 2.0, the c
 - Each bot has its own computer. You can watch its screen, take control and hand it back.
 - A bot asks before it acts on anything that matters. You approve, edit or deny.
 - Routines run a bot on a schedule. Bots keep memory between chats.
+- A bot can have several chats; you can edit a message or regenerate a reply. Per-bot backup models take over when a model runs out, and a reply from a backup names it.
+- Learning from chats is off until you turn it on; every note it keeps is listed and can be undone.
+- A bot API, a command-line tool and an MCP endpoint reach your bots from scripts and other tools.
+- An account backup is one file locked with a password. An organization can share a skill library and show its logo.
 - Every plan uses your own model connection (your key or your subscription); model costs come from there.
 - The desktop app can run the server on your own computer, so chats and files are stored there; what is sent to a model goes to the provider you chose (a local model stays on the computer).
 

@@ -30,6 +30,8 @@ export interface AcpAgentEntry {
   /** The sign-in step the agent documents for a client without a terminal, if it needs one. */
   authenticate?: (methods: readonly { id?: unknown }[]) => Record<string, unknown> | undefined;
   termsRisk?: true;
+  /** The maker's own page to get the agent from: fixed and https. */
+  downloadUrl: string;
 }
 
 const PROTOCOL_VERSION = 1;
@@ -321,6 +323,7 @@ export function acpAgentDriver(
     name: entry.name,
     command: entry.command,
     ...(entry.termsRisk ? { termsRisk: true as const } : {}),
+    downloadUrl: entry.downloadUrl,
     installed: (host) => onPath(entry.command, host),
     async selfTest(host, workDir) {
       if (!(await onPath(entry.command, host)))

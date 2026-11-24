@@ -1,0 +1,112 @@
+{
+  "valid": [
+    {
+      "type": "started"
+    },
+    {
+      "type": "text",
+      "text": "Here are the files."
+    },
+    {
+      "type": "activity",
+      "text": "Read README.md"
+    },
+    {
+      "type": "toolCall",
+      "callId": "call-1",
+      "name": "memory_search",
+      "args": {
+        "query": "notes"
+      }
+    },
+    {
+      "type": "approvalWaiting",
+      "summary": "Antigravity asks before it goes on (execute)."
+    },
+    {
+      "type": "approvalExpired",
+      "summary": "Antigravity asks before it goes on (execute)."
+    },
+    {
+      "type": "limit",
+      "resetsAt": 1795000000000
+    },
+    {
+      "type": "limit"
+    },
+    {
+      "type": "done"
+    },
+    {
+      "type": "failed",
+      "message": "Antigravity stopped."
+    }
+  ],
+  "invalid": [
+    {
+      "why": "an approval the server could answer",
+      "frame": {
+        "type": "approval",
+        "id": "1",
+        "summary": "x"
+      }
+    },
+    {
+      "why": "a tool call without its id",
+      "frame": {
+        "type": "toolCall",
+        "name": "memory_search",
+        "args": {}
+      }
+    },
+    {
+      "why": "a tool name that is not one",
+      "frame": {
+        "type": "toolCall",
+        "callId": "c",
+        "name": "a b",
+        "args": {}
+      }
+    },
+    {
+      "why": "arguments that are not an object",
+      "frame": {
+        "type": "toolCall",
+        "callId": "c",
+        "name": "t",
+        "args": []
+      }
+    },
+    {
+      "why": "an unknown kind",
+      "frame": {
+        "type": "shell",
+        "argv": ["ls"]
+      }
+    },
+    {
+      "why": "a field the frame does not name",
+      "frame": {
+        "type": "done",
+        "argv": ["ls"]
+      }
+    },
+    {
+      "why": "a tool call that carries more than its arguments",
+      "frame": {
+        "type": "toolCall",
+        "callId": "c",
+        "name": "t",
+        "args": {},
+        "path": "/"
+      }
+    },
+    {
+      "why": "a summary longer than one line may be",
+      "frame": {
+        "type": "approvalWaiting",
+        "summary": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  ]
+}

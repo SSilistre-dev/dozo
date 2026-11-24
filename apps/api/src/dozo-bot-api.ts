@@ -17,6 +17,7 @@ import { dozoApiChats, dozoApiChatTarget } from "./dozo-api-chats.js";
 import type { DozoSettledRun, DozoStreamFrame } from "./dozo-bot-api-stream.js";
 import { DOZO_SETTLED_RUN_STATUSES, dozoRunStream, sseFrame } from "./dozo-bot-api-stream.js";
 import { messageBody } from "./dozo-chat-markdown.js";
+import { dozoTokenBotIds, dozoTokenReachesBot } from "./dozo-token-bots.js";
 import { readBoundedBody } from "./http-body.js";
 import type { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
@@ -70,6 +71,10 @@ export type DozoBotApiDeps = {
   connect: (context: DozoBotApiContext) => DozoBotApiClient;
   /** A run's status, if the run is in the thread; read as the member. */
   runStatus: (actor: Actor, threadId: string, runId: string) => Promise<string | null>;
+  /** The bots the token reaches: its member's own (dozo-token-bots.ts), read as the member. */
+  ownBots: (caller: DozoTokenCaller) => Promise<ReadonlySet<string>>;
+  /** Whether the token reaches this one bot, by the same rule. */
+  ownsBot: (caller: DozoTokenCaller, botId: string) => Promise<boolean>;
   touch: (tokenId: string) => Promise<void>;
   /** Counts one for `key` this minute, shared by every instance; false past `limit`. */
   take: (key: string, limit: number) => Promise<boolean>;
@@ -105,6 +110,12 @@ export function dozoBotApiDeps(
           }),
         )
       )?.status ?? null,
+    ownBots: (caller) =>
+      runAsTenant(caller.actor, () => dozoTokenBotIds(prisma, caller.actor, caller.botId)),
+    ownsBot: (caller, botId) =>
+      runAsTenant(caller.actor, () =>
+        dozoTokenReachesBot(prisma, caller.actor, caller.botId, botId),
+      ),
     touch: (tokenId) =>
       runAsSystem("mark an access token used", () => touchDozoAccessToken(prisma, tokenId)),
     take: (key, limit) =>
@@ -152,7 +163,8 @@ function apiMessage(message: ThreadMessage) {
  * The bot API under /api/v1/dozo: list the bots, send one a message and follow the reply as
  * server-sent events, read the chat, and export it. Every call carries a personal access token as
  * a bearer and runs the app's own procedures as its member, in its Space, so access, approvals
- * and limits are the app's. A token limited to one bot sees only that bot. A call reaches the
+ * and limits are the app's. A token reaches only the bots its member made, as the MCP endpoint
+ * does, never another member's bot in a shared Space; one limited to one bot sees only that bot. A call reaches the
  * bot's main chat, or with `?chat=` one of its open extra chats (dozo-api-chats.ts). OpenAPI:
  * dozo/api/openapi.yaml.
  */
@@ -192,9 +204,13 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   };
 
   /** The bot in the path, when the token may reach it; any other answers as a missing bot. */
-  const botFor = (found: Caller, c: Context) => {
+  const botFor = async (found: Caller, c: Context) => {
     const botId = IdParam.safeParse(c.req.param("botId"));
-    if (!botId.success || (found.botId && found.botId !== botId.data))
+    if (
+      !botId.success ||
+      (found.botId && found.botId !== botId.data) ||
+      !(await deps.ownsBot(found, botId.data))
+    )
       throw new ApiError(404, "Bot not found");
     return botId.data;
   };
@@ -280,10 +296,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   app.get(
     `${DOZO_BOT_API_PREFIX}/bots`,
     route(async (c, found) => {
-      const bots = await found.client.bots.list();
+      const [bots, own] = await Promise.all([found.client.bots.list(), deps.ownBots(found)]);
       return json(c, {
         bots: bots
-          .filter((bot) => !found.botId || bot.id === found.botId)
+          .filter((bot) => own.has(bot.id) && (!found.botId || bot.id === found.botId))
           .map((bot) => ({ id: bot.id, name: bot.name })),
       });
     }),
@@ -292,7 +308,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   app.get(
     `${DOZO_BOT_API_PREFIX}/bots/:botId/chats`,
     route(async (c, found) => {
-      const botId = botFor(found, c);
+      const botId = await botFor(found, c);
       return json(c, { chats: await dozoApiChats(found.client, botId) });
     }),
   );
@@ -300,7 +316,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   app.post(
     `${DOZO_BOT_API_PREFIX}/bots/:botId/messages`,
     route(async (c, found) => {
-      const botId = botFor(found, c);
+      const botId = await botFor(found, c);
       // JSON only: a page on another site cannot send that without asking the browser first.
       if (!c.req.header("content-type")?.toLowerCase().startsWith("application/json"))
         throw new ApiError(415, "Send JSON");
@@ -358,7 +374,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   app.get(
     `${DOZO_BOT_API_PREFIX}/bots/:botId/runs/:runId/events`,
     route(async (c, found) => {
-      const botId = botFor(found, c);
+      const botId = await botFor(found, c);
       const runId = IdParam.safeParse(c.req.param("runId"));
       const after = c.req.header("last-event-id") ?? c.req.query("after");
       const cursor = after === undefined ? undefined : Cursor.safeParse(after);
@@ -388,7 +404,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   app.get(
     `${DOZO_BOT_API_PREFIX}/bots/:botId/messages`,
     route(async (c, found) => {
-      const botId = botFor(found, c);
+      const botId = await botFor(found, c);
       const before = c.req.query("before");
       const cursor = before === undefined ? undefined : Cursor.safeParse(before);
       if (cursor?.success === false || (cursor?.data ?? 0) < 0)
@@ -405,7 +421,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   app.get(
     `${DOZO_BOT_API_PREFIX}/bots/:botId/export`,
     route(async (c, found) => {
-      const botId = botFor(found, c);
+      const botId = await botFor(found, c);
       const query = ExportQuery.safeParse(c.req.query());
       if (!query.success) throw new ApiError(400, "since must be an ISO date");
       const target = await chatFor(found, c, botId);

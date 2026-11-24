@@ -12,6 +12,8 @@ services:
       EMAIL_EMULATOR: "true"
       API_HOST: "127.0.0.1"
       API_PORT: "3101"
+      # In-app feedback goes to this inbox, so the e2e suite can read a report back with its pictures.
+      DOZO_FEEDBACK_EMAIL: feedback@dozo-e2e.test
   api-relay:
     image: ${DOZO_NODE_IMAGE:-node:24.22-slim}
     network_mode: "service:api"

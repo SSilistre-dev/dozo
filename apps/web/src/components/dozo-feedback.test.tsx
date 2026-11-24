@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { DozoFeedbackStatus } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -269,6 +270,128 @@ describe("without mail on the server", () => {
     expect(new TextDecoder().decode(bytes as Uint8Array)).toBe(
       "Local server will not start.\n\n--\nFrom: person@example.test\n",
     );
+  });
+});
+
+const PIXEL =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+const pixelUrl = `data:image/png;base64,${PIXEL}`;
+const picture = (name = "shot.png", type = "image/png") =>
+  new File([Uint8Array.from(atob(PIXEL), (c) => c.charCodeAt(0))], name, { type });
+const fileInput = () =>
+  container.querySelector<HTMLInputElement>(
+    '[data-testid="dozo-feedback-file"]',
+  ) as HTMLInputElement;
+const thumbnails = () => container.querySelectorAll("img");
+/** Waits until that many pictures are shown, letting the file reads and their renders finish. */
+const shows = (count: number) =>
+  vi.waitFor(async () => {
+    await act(() => flush());
+    expect(thumbnails()).toHaveLength(count);
+  });
+/** Picks the files and waits until that many pictures are shown. */
+async function choose(shown: number, ...files: File[]) {
+  await act(async () => {
+    Object.defineProperty(fileInput(), "files", { value: files, configurable: true });
+    fileInput().dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await shows(shown);
+}
+const addButton = () =>
+  [...container.querySelectorAll("button")].find((entry) => entry.textContent === "Add image");
+
+describe("pictures", () => {
+  it("adds them from the picker, shows each small with a way to remove it, and sends them", async () => {
+    await openDialog();
+    expect(addButton()).toBeDefined();
+    await choose(2, picture(), picture("two.png"));
+    expect(thumbnails()).toHaveLength(2);
+    expect(preview()).toBe("--\nFrom: person@example.test\nImages: 2");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Remove image"]')?.click(),
+    );
+    expect(thumbnails()).toHaveLength(1);
+    await type("Look at this");
+    await act(async () => button("Send")?.click());
+    expect(api.send).toHaveBeenCalledWith({ message: "Look at this", images: [pixelUrl] });
+  });
+
+  it("takes a picture pasted into the note, and leaves pasted text alone", async () => {
+    await openDialog();
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    const paste = (files: File[]) => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: { files } });
+      act(() => {
+        textarea.dispatchEvent(event);
+      });
+      return event;
+    };
+    expect(paste([]).defaultPrevented).toBe(false);
+    expect(paste([picture("image.png")]).defaultPrevented).toBe(true);
+    await shows(1);
+  });
+
+  it("takes a picture dropped on the dialog", async () => {
+    await openDialog();
+    const dialog = container.querySelector('[data-testid="dozo-feedback"]') as HTMLElement;
+    const over = new Event("dragover", { bubbles: true, cancelable: true });
+    await act(async () => {
+      dialog.dispatchEvent(over);
+    });
+    expect(over.defaultPrevented).toBe(true);
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", { value: { files: [picture()] } });
+    await act(async () => {
+      dialog.dispatchEvent(drop);
+    });
+    await shows(1);
+  });
+
+  it("says so when a file is not a PNG, JPEG or WebP, and keeps the rest", async () => {
+    await openDialog();
+    await choose(1, picture("a.gif", "image/gif"), picture());
+    expect(thumbnails()).toHaveLength(1);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Couldn't use that image");
+    await choose(2, picture("b.png"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("stops offering to add at three", async () => {
+    await openDialog();
+    await choose(3, picture("1.png"), picture("2.png"), picture("3.png"));
+    expect(addButton()).toBeUndefined();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Remove image"]')?.click(),
+    );
+    expect(addButton()).toBeDefined();
+  });
+
+  it("opens the picker from the button, and ignores a picker closed with nothing", async () => {
+    await openDialog();
+    const click = vi.spyOn(fileInput(), "click");
+    await act(async () => addButton()?.click());
+    expect(click).toHaveBeenCalled();
+    await choose(0);
+    expect(thumbnails()).toHaveLength(0);
+  });
+
+  it("saves them next to the report when the server sends no mail", async () => {
+    api.status.mockResolvedValue({
+      ...sendStatus,
+      mode: "save",
+      address: "inbox@operator.example.test",
+    });
+    await openDialog();
+    await choose(1, picture("shot.png"));
+    await type("Local server will not start.");
+    await act(async () => button("Save")?.click());
+    expect(api.download).toHaveBeenCalledTimes(2);
+    const [text] = api.download.mock.calls[0] ?? [];
+    expect(text).toBe("feedback.txt");
+    const [name, kind, bytes] = api.download.mock.calls[1] ?? [];
+    expect([name, kind]).toEqual(["shot.png", "image/png"]);
+    expect(new TextDecoder("latin1").decode(bytes as Uint8Array)).toContain("PNG");
   });
 });
 

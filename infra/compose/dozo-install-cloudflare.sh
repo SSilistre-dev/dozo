@@ -49,9 +49,16 @@ while (($#)); do
   esac
 done
 
-hostname="$(printf '%s' "$hostname" | tr '[:upper:]' '[:lower:]')"
+# Text handling is pinned to the C locale per command: under tr_TR `tr` maps I to a dotless i and
+# letter ranges skip i/I. The installer runs under it too (inline, so nothing else inherits it):
+# its own sed ranges would otherwise drop every .env name containing i/I from its warning.
+hostname="$(printf '%s' "$hostname" | LC_ALL=C tr 'A-Z' 'a-z')"
 [[ -n "$hostname" ]] || fail "pass the public hostname: --hostname app.example.com"
-[[ "$hostname" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] ||
+matches() { # matches <value> <extended regex>, ranges read as ASCII whatever the caller's locale
+  local LC_ALL=C
+  [[ "$1" =~ $2 ]]
+}
+matches "$hostname" '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$' ||
   fail "--hostname must be a bare hostname such as app.example.com (no scheme, port or path)."
 
 # A name no caller is likely to export, with the export attribute stripped before the first
@@ -64,7 +71,7 @@ if [[ -z "$tunnel_secret_value" && -t 0 ]]; then
   echo
 fi
 [[ -n "$tunnel_secret_value" ]] || fail "set CLOUDFLARE_TUNNEL_TOKEN to the tunnel token."
-[[ "$tunnel_secret_value" =~ ^[A-Za-z0-9+/=_-]+$ ]] || fail "that is not a tunnel token."
+matches "$tunnel_secret_value" '^[A-Za-z0-9+/=_-]+$' || fail "that is not a tunnel token."
 unset CLOUDFLARE_TUNNEL_TOKEN
 
 [[ -f "$INSTALLER" ]] || fail "install-images.sh must be next to this script."
@@ -85,7 +92,7 @@ if [[ -e "$OVERRIDE_FILE" ]] && ! cmp -s "$OVERLAY" "$OVERRIDE_FILE"; then
 fi
 
 # First pass: files and .env with random secrets, nothing started.
-bash "$INSTALLER" ${installer_args[@]+"${installer_args[@]}"} --prepare-only
+LC_ALL=C bash "$INSTALLER" ${installer_args[@]+"${installer_args[@]}"} --prepare-only
 
 cp -- "$OVERLAY" "$OVERRIDE_FILE"
 
@@ -94,7 +101,7 @@ previous_umask="$(umask)"
 umask 077
 temporary_file=$(mktemp "./${ENV_FILE}.tmp.XXXXXX")
 {
-  grep -Ev '^[[:space:]]*(export[[:space:]]+)?(CLOUDFLARE_TUNNEL_TOKEN|RAKAZO_HOST|BETTER_AUTH_URL|WEB_ORIGIN|API_URL)[[:space:]]*=' "$ENV_FILE" || true
+  LC_ALL=C grep -Ev '^[[:space:]]*(export[[:space:]]+)?(CLOUDFLARE_TUNNEL_TOKEN|RAKAZO_HOST|BETTER_AUTH_URL|WEB_ORIGIN|API_URL)[[:space:]]*=' "$ENV_FILE" || true
   printf 'CLOUDFLARE_TUNNEL_TOKEN=%s\n' "$tunnel_secret_value"
   printf 'RAKAZO_HOST=%s\n' "$hostname"
   printf 'BETTER_AUTH_URL=%s\n' "$origin"
@@ -114,5 +121,5 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 # Second pass: pull and start, now with the override and the tunnel settings in place.
-bash "$INSTALLER" --local ${installer_args[@]+"${installer_args[@]}"}
+LC_ALL=C bash "$INSTALLER" --local ${installer_args[@]+"${installer_args[@]}"}
 echo "The app is reachable at ${origin} once the tunnel shows Healthy in the Cloudflare dashboard."

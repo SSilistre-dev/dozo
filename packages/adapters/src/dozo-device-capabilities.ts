@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { ACP_AGENTS } from "./cli-models/acp/dozo-acp-catalog.js";
+import { CODEX_AGENT_PROVIDER_ID } from "./cli-models/codex/dozo-codex-agent.js";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import { isPhonePlatform } from "./dozo-phone-protocol.js";
 import type { UserDevice } from "./user-device-protocol.js";
@@ -49,15 +51,32 @@ const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = [
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
 export type DeclaredUserDevice = UserDevice & { capabilities?: readonly DeviceCapability[] };
 
-/** The declared capabilities in a header value, known ones only, each once; null when absent. */
+/**
+ * A computer whose app runs this agent there (`dozo-agent-device-protocol.ts`): declared only once
+ * the agent was found, its version checked and the person turned it on in the app itself.
+ */
+export type AgentCapability = `agent:${string}`;
+/** The agents a computer may declare, as agent mode's drivers name them (dozo-cli-providers.ts). */
+export function deviceAgentIds(): string[] {
+  return [CODEX_AGENT_PROVIDER_ID, ...ACP_AGENTS.map((entry) => entry.provider)];
+}
+
+/**
+ * The declared capabilities in a header value, known ones only, each once; null when absent. The
+ * agents come after the rest, in the order of `deviceAgentIds`.
+ */
 export function parseDeviceCapabilities(
   header: string | string[] | undefined,
-): DeviceCapability[] | null {
+): Array<DeviceCapability | AgentCapability> | null {
   if (header === undefined) return null;
   const words = (Array.isArray(header) ? header.join(",") : header)
     .split(",")
     .map((word) => word.trim().toLowerCase());
-  return DEVICE_CAPABILITIES.filter((capability) => words.includes(capability));
+  const agents = deviceAgentIds().map((id): AgentCapability => `agent:${id}`);
+  return [
+    ...DEVICE_CAPABILITIES.filter((capability) => words.includes(capability)),
+    ...agents.filter((capability) => words.includes(capability)),
+  ];
 }
 
 /**
@@ -70,7 +89,7 @@ export function parseDeviceCapabilities(
 export async function recordDeviceCapabilities(
   prisma: PrismaClient,
   deviceId: string,
-  capabilities: readonly DeviceCapability[] | null,
+  capabilities: readonly (DeviceCapability | AgentCapability)[] | null,
 ): Promise<void> {
   const declared = [...(capabilities ?? [])];
   await runAsSystem("record a user device's capabilities", () =>

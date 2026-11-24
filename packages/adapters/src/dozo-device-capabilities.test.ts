@@ -217,6 +217,26 @@ describe("a connecting computer's declaration", () => {
     }
   });
 
+  it("saves the agents a computer runs, which add none of a computer's tools", async () => {
+    const { hub, devices, capabilities } = setup();
+    const server = await serve(hub);
+    try {
+      const { ws, opened } = await server.connect({
+        authorization: `Bearer ${TOKEN}`,
+        [DEVICE_CAPABILITIES_HEADER]: "shell,agent:antigravity-agent,agent:unknown",
+      });
+      expect(opened).toBe(true);
+      await vi.waitFor(async () => expect(await devices.connected("user-1")).not.toBeNull());
+      expect(capabilities.get("device-1")).toEqual(["shell", "agent:antigravity-agent"]);
+      const device = await devices.connected("user-1");
+      expect(device?.capabilities).toEqual(["shell"]);
+      expect(deviceOffers(device!)).toEqual({ shell: true, screen: false, browser: false });
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  });
+
   it("is forgotten when the same computer connects again with an app that declares nothing", async () => {
     const { hub, devices, capabilities } = setup();
     capabilities.set("device-1", ["shell", "screen"]);
