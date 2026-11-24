@@ -1,13 +1,17 @@
 import type { DozoCommandComputer } from "@rakazo/core";
 import {
-  approvalModeFromPreference,
   commandRuleCwd,
   matchCommandRules,
   readOnlyCwd,
   readOnlyPipeline,
+  routineWriterIsOwner,
+  runStartedFromOutside,
 } from "@rakazo/core";
-import { readDozoCommandRules, readDozoHostedAsks } from "@rakazo/db";
+import { readDozoCommandRules, readDozoHostedAsks, readRoutineWriter } from "@rakazo/db";
+import { runCameByToken } from "./dozo-token-run.js";
+import { routineTaskInstructions } from "./routine-watch.js";
 import type { RunContext } from "./run-context.js";
+import { isRunTainted } from "./run-context.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
 import { refusal } from "./tool-refusal.js";
 
@@ -18,6 +22,11 @@ const SCHEDULE_TOOL = "schedule_create";
 
 /** Calls a block rule refused, so the refusal says why. */
 const commandBlocks = new WeakSet<Record<string, unknown>>();
+/** Each call's rule match, read once for the hold and the gate. */
+const hostedMatches = new WeakMap<
+  Record<string, unknown>,
+  Promise<ReturnType<typeof matchCommandRules>>
+>();
 /** Calls asked about one by one, so their card asks about the command alone. */
 const commandAsks = new WeakSet<Record<string, unknown>>();
 
@@ -48,15 +57,101 @@ export async function commandRuleMatch(
 }
 
 /**
- * Upstream's plan for a command on the bot's computer, then the member's command rules. A block
- * rule refuses it in every mode. An exact allow rule lets it go ahead where upstream asks only
- * because outside text started the run, as an always-allow rule for the tool would; a prefix rule
- * never does that, and a rule asking for the whole tool still asks. Otherwise nothing changes,
- * unless the member asked for commands on the bot's computer to ask: then, outside Never ask, a
- * command that does more than read and that no allow rule (theirs, or upstream's for the tool)
- * covers asks. A routine's command watch, which runs on the bot's computer later, is refused by a
- * block rule too; upstream asks about it in any other case. A run reached by a token's text is
- * gated after this (dozo-token-run.ts).
+ * Why a command on the bot's computer needs approval, before upstream plans it: nothing for a
+ * command that only reads, that a block rule refuses (the gate refuses it), or that an allow rule
+ * of the member covers; otherwise the gate counts it as consequential, as upstream counts a tool
+ * that changes something. `review` lets the approval model pass it in Auto review (told when the
+ * run took in outside content: dozoHostedReviewFacts); `person` asks a person in every mode but
+ * Never ask: in a run outside text started (dozoRunStartedFromOutside), or when the member asked
+ * for commands on the bot's computer to ask. In a run that took in outside content (isRunTainted:
+ * a page, a file, a command's output, a resumed turn, or a run the owner did not start, their
+ * routine included) only an exact allow rule covers a command, not a prefix rule. An always-allow
+ * rule for the tool and Never ask pass it, as upstream passes any consequential tool.
+ */
+export async function dozoHostedCommandHold(
+  ctx: RunContext,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<"review" | "person" | undefined> {
+  if (name !== HOSTED_SHELL_TOOL) return undefined;
+  if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return undefined;
+  const match = await hostedMatch(ctx, args);
+  if (match === "block" || match === "allow") return undefined;
+  if (match === "allow_prefix" && !(await isRunTainted(ctx))) return undefined;
+  if (
+    (await dozoRunStartedFromOutside(ctx)) ||
+    (await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId))
+  )
+    return "person";
+  return "review";
+}
+
+/**
+ * Whether text from someone other than the run's member started the run or reached it: a webhook
+ * or email, a team chat's channel, a message sent with an access token, an outside message taken
+ * in while it ran, or a routine runStartedFromOutside (dozo-lasting-write-approval.ts) counts as
+ * outside: one a change trigger fired, whose prompt ends with what the watch read, or whose prompt
+ * someone else last wrote. Two departures from that rule, so existing bots keep working: a routine
+ * with no writer on record is taken as its owner's (it predates the record), and every other run
+ * the owner did not start (another bot's message, a spawned bot, a ticket) goes to the approval
+ * model, told its task is not the owner's words (dozoHostedReviewFacts), instead of a card.
+ */
+export async function dozoRunStartedFromOutside(ctx: RunContext): Promise<boolean> {
+  const { run } = ctx;
+  if (run.trigger === "webhook" || ctx.source.messagingChannelRun) return true;
+  if ((await runCameByToken(ctx)) || (await ctx.trust.receivedOutsideMessage())) return true;
+  if (run.trigger !== "routine") return false;
+  return runStartedFromOutside(
+    {
+      trigger: run.trigger,
+      ownerStartedRun: false,
+      nonOwnerChatRun: false,
+      watchFired: routineTaskInstructions(ctx.task.prompt) !== ctx.task.prompt,
+      botOwnerRun: true,
+      readHistory: false,
+    },
+    async () => {
+      if (!run.routineId) return true;
+      const writer = (await readRoutineWriter(ctx.deps.prisma, run.routineId))?.writer;
+      return writer === undefined || routineWriterIsOwner(writer);
+    },
+  );
+}
+
+/**
+ * What the approval model is told about a command on the bot's computer: whether outside content
+ * came in, and whether the run's task is someone else's text rather than the owner's words (a run
+ * the owner did not start, other than their own routine or chat app).
+ */
+export async function dozoHostedReviewFacts(
+  ctx: RunContext,
+  name: string,
+): Promise<{ outsideContent?: true; taskFromOutside?: true }> {
+  if (name !== HOSTED_SHELL_TOOL) return {};
+  const { trigger } = ctx.run;
+  const ownersTask = ctx.source.ownerStartedRun || trigger === "routine" || trigger === "messaging";
+  return {
+    ...((await isRunTainted(ctx)) ? { outsideContent: true as const } : {}),
+    ...(ownersTask ? {} : { taskFromOutside: true as const }),
+  };
+}
+
+function hostedMatch(ctx: RunContext, args: Record<string, unknown>) {
+  const known = hostedMatches.get(args);
+  if (known) return known;
+  const match = commandRuleMatch(ctx, args, "hosted");
+  hostedMatches.set(args, match);
+  return match;
+}
+
+/**
+ * Upstream's plan for a command on the bot's computer, held first by dozoHostedCommandHold, then
+ * the member's command rules. A block rule refuses it in every mode. An exact allow rule lets it go
+ * ahead where upstream asks only because outside text started the run, as an always-allow rule for
+ * the tool would; a prefix rule never does that, and a rule asking for the whole tool still asks.
+ * A routine's command watch, which runs on the bot's computer later, is refused by a block rule
+ * too; upstream asks about it in any other case. A run reached by a token's text is gated after
+ * this (dozo-token-run.ts).
  */
 export async function dozoHostedCommandGate<Plan extends string>(
   ctx: RunContext,
@@ -64,7 +159,7 @@ export async function dozoHostedCommandGate<Plan extends string>(
   args: Record<string, unknown>,
   resolved: { decision: string; source?: string },
   plan: Plan,
-): Promise<Plan | "deny" | "ask" | "allow"> {
+): Promise<Plan | "deny" | "allow"> {
   if (plan === "deny") return plan;
   if (name === SCHEDULE_TOOL) {
     const command = commandWatchFromTool(args.watch);
@@ -74,16 +169,10 @@ export async function dozoHostedCommandGate<Plan extends string>(
     return "deny";
   }
   if (name !== HOSTED_SHELL_TOOL) return plan;
-  const match = await commandRuleMatch(ctx, args, "hosted");
+  const match = await hostedMatch(ctx, args);
   if (match === "block") return "deny";
-  if (plan !== "allow") return match === "allow" && resolved.decision !== "ask" ? "allow" : plan;
-  if (match || resolved.source === "always_allow") return plan;
-  if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
-    return plan;
-  if (!(await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId))) return plan;
-  if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return plan;
-  markCommandAsk(args);
-  return "ask";
+  if (plan === "allow") return plan;
+  return match === "allow" && resolved.decision !== "ask" ? "allow" : plan;
 }
 
 /** The refusal for a call a block rule refused, or nothing for any other call. */

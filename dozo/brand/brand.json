@@ -711,25 +711,25 @@
     {
       "file": "packages/adapter-kit/src/types.ts",
       "find": "  html?: string;\n  headers?: Record<string, string>;\n}\n",
-      "replace": "  html?: string;\n  headers?: Record<string, string>;\n  /** Images the HTML shows as `cid:<contentId>`, carried inside the message. */\n  inline?: InlineEmailImage[];\n}\n\n/** An image sent inside an email, shown where the HTML references its content id. */\nexport interface InlineEmailImage {\n  contentId: string;\n  filename: string;\n  contentType: string;\n  /** Base64. */\n  content: string;\n}\n",
-      "reason": "mail logo: a transactional mail may carry inline images, so the mail header's mark needs no remote image (optional field; every email adapter translates it)"
+      "replace": "  html?: string;\n  headers?: Record<string, string>;\n  /** Images the HTML shows as `cid:<contentId>`, carried inside the message. */\n  inline?: InlineEmailImage[];\n  /** Files that arrive with the message as attachments, such as a person's screenshots. */\n  attachments?: EmailAttachment[];\n}\n\n/** A file sent with an email as an attachment. */\nexport interface EmailAttachment {\n  filename: string;\n  contentType: string;\n  /** Base64. */\n  content: string;\n}\n\n/** An image sent inside an email, shown where the HTML references its content id. */\nexport interface InlineEmailImage {\n  contentId: string;\n  filename: string;\n  contentType: string;\n  /** Base64. */\n  content: string;\n}\n",
+      "reason": "mail logo: a transactional mail may carry inline images, so the mail header's mark needs no remote image (optional field; every email adapter translates it); and it may carry attachments (feedback screenshots; same)"
     },
     {
       "file": "packages/adapters/src/smtp-email.ts",
       "find": "            headers: message.headers,\n          });",
-      "replace": "            headers: message.headers,\n            ...(message.inline?.length\n              ? {\n                  attachments: message.inline.map((image) => ({\n                    cid: image.contentId,\n                    filename: image.filename,\n                    contentType: image.contentType,\n                    content: image.content,\n                    encoding: \"base64\",\n                    contentDisposition: \"inline\" as const,\n                  })),\n                }\n              : {}),\n          });",
-      "reason": "mail logo: SMTP sends a mail's inline images as related parts the HTML references by content id"
+      "replace": "            headers: message.headers,\n            ...(message.inline?.length || message.attachments?.length\n              ? {\n                  attachments: [\n                    ...(message.inline ?? []).map((image) => ({\n                      cid: image.contentId,\n                      filename: image.filename,\n                      contentType: image.contentType,\n                      content: image.content,\n                      encoding: \"base64\",\n                      contentDisposition: \"inline\" as const,\n                    })),\n                    ...(message.attachments ?? []).map((file) => ({\n                      filename: file.filename,\n                      contentType: file.contentType,\n                      content: file.content,\n                      encoding: \"base64\",\n                      contentDisposition: \"attachment\" as const,\n                    })),\n                  ],\n                }\n              : {}),\n          });",
+      "reason": "mail logo: SMTP sends a mail's inline images as related parts the HTML references by content id, and its attachments as attached files"
     },
     {
       "file": "packages/adapters/src/resend-email.ts",
       "find": "    const { from, replyTo, cc, ...rest } = message;",
-      "replace": "    const { from, replyTo, cc, inline, ...rest } = message;",
+      "replace": "    const { from, replyTo, cc, inline, attachments, ...rest } = message;",
       "reason": "mail logo: the inline images leave the fields sent as they are (the rule below translates them)"
     },
     {
       "file": "packages/adapters/src/resend-email.ts",
       "find": "      ...rest,\n    });\n",
-      "replace": "      ...rest,\n      ...(inline?.length\n        ? {\n            attachments: inline.map((image) => ({\n              filename: image.filename,\n              content: image.content,\n              content_type: image.contentType,\n              content_id: image.contentId,\n            })),\n          }\n        : {}),\n    });\n",
+      "replace": "      ...rest,\n      ...(inline?.length || attachments?.length\n        ? {\n            attachments: [\n              ...(inline ?? []).map((image) => ({\n                filename: image.filename,\n                content: image.content,\n                content_type: image.contentType,\n                content_id: image.contentId,\n              })),\n              ...(attachments ?? []).map((file) => ({\n                filename: file.filename,\n                content: file.content,\n                content_type: file.contentType,\n              })),\n            ],\n          }\n        : {}),\n    });\n",
       "reason": "mail logo: the HTTP email adapter sends a mail's inline images as attachments with a content id, which its API shows inline"
     },
     {
@@ -5992,7 +5992,7 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#. js-lingui-explicit-id\n",
-      "replace": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#: apps/web/src/components/dozo-feedback.tsx\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Send feedback\"\nmsgstr \"Geri bildirim gönder\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Feedback\"\nmsgstr \"Geri bildirim\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What happened?\"\nmsgstr \"Ne oldu?\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Include diagnostics\"\nmsgstr \"Tanılama bilgisini ekle\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What's sent\"\nmsgstr \"Gönderilecekler\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Could not send\"\nmsgstr \"Gönderilemedi\"\n\n#. js-lingui-explicit-id\n",
+      "replace": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#: apps/web/src/components/dozo-feedback.tsx\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Send feedback\"\nmsgstr \"Geri bildirim gönder\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Feedback\"\nmsgstr \"Geri bildirim\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What happened?\"\nmsgstr \"Ne oldu?\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Include diagnostics\"\nmsgstr \"Tanılama bilgisini ekle\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What's sent\"\nmsgstr \"Gönderilecekler\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Could not send\"\nmsgstr \"Gönderilemedi\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Add image\"\nmsgstr \"Görsel ekle\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Remove image\"\nmsgstr \"Görseli kaldır\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Couldn't use that image\"\nmsgstr \"Bu görsel kullanılamadı\"\n\n#. js-lingui-explicit-id\n",
       "requires": [
         "apps/web/src/components/dozo-feedback-dialog.tsx"
       ],
@@ -8898,11 +8898,11 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
-      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
+      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate, dozoHostedCommandHold, dozoHostedReviewFacts } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "command rules: the import of the two rules below"
+      "reason": "command rules: the import of the rules below"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -8911,7 +8911,7 @@
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an allow passes it), and asks when it changes something once the member turned that on; the default stays upstream's. Inside the token gate, so a run a token's text reached still asks"
+      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an exact allow passes it where outside text started the run). Inside the token gate, so a run a token's text reached still asks"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -8921,6 +8921,85 @@
         "packages/adapters/src/dozo-command-gate.ts"
       ],
       "reason": "command rules: closes the call above, and a command refused by a block rule is refused as blocked, not as needing approval"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const requiresApprovalByDefault =\n    request.heldForApproval ||\n    paying ||",
+      "replace": "  // A command on the bot's computer that does more than read, and no allow rule covers, is gated.\n  const dozoHostedHold = await dozoHostedCommandHold(ctx, name, args);\n  const requiresApprovalByDefault =\n    request.heldForApproval ||\n    dozoHostedHold !== undefined ||\n    paying ||",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: by default a command on the bot's computer that does more than read and that no allow rule covers is consequential, so Auto review judges it, Ask asks and Never ask runs it, as upstream gates any tool that changes something; it also fails closed when the review errors"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const reviewable = mode === \"auto\" && !mandatoryInAnyRun;\n",
+      "replace": "  const reviewable = mode === \"auto\" && !mandatoryInAnyRun && dozoHostedHold !== \"person\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: such a command in a run outside text started, or once the member asked for commands on the bot's computer to ask, goes to a person, never the approval model"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const checkerConfigured =\n    reviewable &&\n    (Boolean(injectedReview) ||",
+      "replace": "  const checkerConfigured =\n    reviewable &&\n    // A held command needs a model that will judge it; with none (only backups, no primary) it asks.\n    (dozoHostedHold === undefined || Boolean(injectedReview || checker)) &&\n    (Boolean(injectedReview) ||",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: a held command on the bot's computer is judged only by a model the review below actually runs; when none would run (no primary model, backups only), it asks instead of passing unreviewed"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "      ...(review.memoryWrite ? { memoryWrite: true } : {}),\n    };",
+      "replace": "      ...(review.memoryWrite ? { memoryWrite: true } : {}),\n      ...(await dozoHostedReviewFacts(ctx, name)),\n    };",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: the approval model is told when a command on the bot's computer comes from a run that took in outside content"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  memoryWrite?: boolean;\n}\n\nexport interface AutoReviewResult {",
+      "replace": "  memoryWrite?: boolean;\n  /**\n   * The run took in outside content (pages, files, command output, messages) before this action,\n   * which the reviewer does not see and which may have chosen it.\n   */\n  outsideContent?: boolean;\n  /** The run's task is someone else's text (another bot, a ticket), not the owner's words. */\n  taskFromOutside?: boolean;\n}\n\nexport interface AutoReviewResult {",
+      "requires": [],
+      "reason": "command rules: the review request's fields for a run that took in outside content, and for a task that is not the owner's words"
+    },
+    {
+      "file": "packages/adapters/src/auto-review.prompt.ts",
+      "find": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\n\nconst MAX_TASK_CHARS",
+      "replace": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport { dozoShellReviewLines } from \"./dozo-outside-review.prompt.js\";\n\nconst MAX_TASK_CHARS",
+      "requires": [
+        "packages/adapters/src/dozo-outside-review.prompt.ts"
+      ],
+      "reason": "command rules: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/auto-review.prompt.ts",
+      "find": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    \"Reason must be",
+      "replace": "    ...(input.newSite ? NEW_SITE_REVIEW_RULES : []),\n    ...dozoShellReviewLines(input),\n    \"Reason must be",
+      "requires": [
+        "packages/adapters/src/dozo-outside-review.prompt.ts"
+      ],
+      "reason": "command rules: the reviewer's prompt for a command on the bot's computer: data sent out asks, and it says when outside content came in or the task is not the owner's"
+    },
+    {
+      "file": "packages/adapters/src/auto-review.prompt.ts",
+      "find": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\">,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: \"Should this bot action run without asking its owner first?\",",
+      "replace": "  input: Pick<AutoReviewRequest, \"newSite\" | \"memoryWrite\"> & Partial<Pick<AutoReviewRequest, \"toolName\" | \"outsideContent\" | \"taskFromOutside\">>,\n): DecisionQuestion {\n  return {\n    type: \"choice\",\n    instructions: [\"Should this bot action run without asking its owner first?\", ...dozoShellReviewLines({ ...input, toolName: input.toolName ?? \"\" })].join(\" \"),",
+      "requires": [
+        "packages/adapters/src/dozo-outside-review.prompt.ts"
+      ],
+      "reason": "command rules: the same for a checker asked one question"
+    },
+    {
+      "file": "packages/adapters/src/executor-login-redaction.test.ts",
+      "find": "  provisionComputer: async () => COMPUTER,\n}));\n\nconst USERNAME",
+      "replace": "  provisionComputer: async () => COMPUTER,\n}));\n\n// The member allows the test's commands on the bot's computer exactly: in a routine's run any other\n// command that does more than read asks (packages/adapters/src/dozo-command-gate.ts).\nvi.mock(\"@rakazo/db\", async (importOriginal) => ({\n  ...(await importOriginal<object>()),\n  readDozoCommandRules: async () =>\n    [[\"deploy\"], [\"deploy\", \"again\"], [\"read-filled-fields\"]].map((words) => ({\n      words,\n      cwd: \"\",\n      effect: \"allow\",\n      computer: \"hosted\",\n    })),\n}));\n\nconst USERNAME",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: a fixture for upstream's test, whose routine run runs commands the fork does not read as reads; with them allowed exactly it still tests what the output hides"
     },
     {
       "file": "packages/adapters/src/routine-watch.ts",
@@ -11169,11 +11248,12 @@
     {
       "file": "packages/adapters/src/index.ts",
       "find": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./bot-messages.js\";",
-      "replace": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./dozo-organization-logo.js\";\nexport * from \"./bot-messages.js\";",
+      "replace": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./dozo-organization-logo.js\";\nexport * from \"./dozo-feedback-image.js\";\nexport * from \"./bot-messages.js\";",
       "requires": [
-        "packages/adapters/src/dozo-organization-logo.ts"
+        "packages/adapters/src/dozo-organization-logo.ts",
+        "packages/adapters/src/dozo-feedback-image.ts"
       ],
-      "reason": "organization logo: the API checks and re-encodes an uploaded logo through the adapters package, as it does an avatar"
+      "reason": "organization logo and feedback screenshots: the API checks and re-encodes an uploaded logo or a report's picture through the adapters package, as it does an avatar"
     },
     {
       "file": "packages/db/src/index.ts",

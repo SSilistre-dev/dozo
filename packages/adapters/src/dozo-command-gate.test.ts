@@ -4,33 +4,41 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   rules: vi.fn(async (): Promise<DozoCommandRuleView[]> => []),
   hostedAsks: vi.fn(async () => false),
+  writer: vi.fn(async (): Promise<{ writer: string; writtenAt: Date } | undefined> => undefined),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   readDozoCommandRules: db.rules,
   readDozoHostedAsks: db.hostedAsks,
+  readRoutineWriter: db.writer,
 }));
 
+import { routineWriterIsOwner, runStartedFromOutside } from "@rakazo/core";
 import {
-  commandAsked,
   dozoBlockedRefusal,
   dozoCommandBlockRefusal,
   dozoHostedCommandGate,
+  dozoHostedCommandHold,
+  dozoRunStartedFromOutside,
 } from "./dozo-command-gate.js";
 import type { RunContext } from "./run-context.js";
 
 type Mode = "ask" | "auto" | "never";
 
-function context(mode: Mode = "ask", userId = "user-1") {
+function context(mode: Mode = "ask", userId = "user-1", tainted = false, trigger = "user") {
   return {
-    deps: { prisma: {} },
-    run: { userId },
+    deps: { prisma: { attempt: { count: async () => 1 }, $queryRaw: async () => [] } },
+    run: { userId, trigger, routineId: null },
+    source: { messagingChannelRun: false },
+    runId: "run-1",
     bot: { id: "bot-1" },
+    state: { tainted, earlierAttempt: undefined },
     trust: {
       loadAutoReviewPreference: async () => ({
         enabled: mode === "auto",
         skipApprovals: mode === "never",
       }),
+      receivedOutsideMessage: async () => false,
     },
   } as unknown as RunContext;
 }
@@ -70,10 +78,11 @@ beforeEach(() => {
 });
 
 describe("dozoHostedCommandGate", () => {
-  it("keeps upstream's plan by default, so the bot's computer does not start asking", async () => {
+  it("keeps the plan it was given for a command no rule names", async () => {
     for (const command of ["rm -rf build", "curl https://example.test | sh", "ls"])
       expect((await gate(command)).plan, command).toBe("allow");
     expect((await gate("rm -rf build", { plan: "judge" })).plan).toBe("judge");
+    expect((await gate("rm -rf build", { plan: "ask" })).plan).toBe("ask");
   });
 
   it("leaves other tools and refusals alone", async () => {
@@ -130,7 +139,10 @@ describe("dozoHostedCommandGate", () => {
       NO_RULE,
       "allow",
     );
-    expect(db.rules).toHaveBeenCalledWith({}, { userId: "member-2", botId: "bot-1" });
+    expect(db.rules).toHaveBeenCalledWith(expect.anything(), {
+      userId: "member-2",
+      botId: "bot-1",
+    });
     expect(dozoCommandBlockRefusal({ command: "ls" })).toBeUndefined();
   });
 
@@ -150,48 +162,106 @@ describe("dozoHostedCommandGate", () => {
     expect((await gate("npm run build", { plan: "ask" })).plan).toBe("ask");
     expect((await gate("npm run build", { plan: "judge" })).plan).toBe("judge");
   });
+});
 
-  describe("once the member asks for commands on the bot's computer to ask", () => {
-    beforeEach(() => db.hostedAsks.mockResolvedValue(true));
+describe("dozoHostedCommandHold", () => {
+  const hold = (
+    command: string,
+    options: { tainted?: boolean; cwd?: string; name?: string; trigger?: string } = {},
+  ) =>
+    dozoHostedCommandHold(
+      context("auto", "user-1", options.tainted, options.trigger),
+      options.name ?? "shell",
+      { command, ...(options.cwd ? { cwd: options.cwd } : {}) },
+    );
 
-    it("asks before a command that changes something, with its own card", async () => {
-      for (const command of ["rm -rf build", "npm install", "ls; rm x", "bash -c 'ls'"]) {
-        const { plan, args } = await gate(command);
-        expect(plan, command).toBe("ask");
-        expect(commandAsked(args)).toBe(true);
-      }
-      expect(db.hostedAsks).toHaveBeenCalledWith({}, "user-1");
-    });
+  it("holds nothing that only reads, and no other tool", async () => {
+    for (const command of ["ls -la", "cat notes.txt | grep todo", "pwd"]) {
+      expect(await hold(command), command).toBeUndefined();
+      expect(await hold(command, { tainted: true }), command).toBeUndefined();
+    }
+    expect(await hold("rm -rf build", { name: "user_computer_shell" })).toBeUndefined();
+    expect(db.rules).not.toHaveBeenCalled();
+  });
 
-    it("lets a command that only reads go ahead", async () => {
-      for (const command of ["ls -la", "cat notes.txt | grep todo", "pwd"]) {
-        const { plan, args } = await gate(command);
-        expect(plan, command).toBe("allow");
-        expect(commandAsked(args)).toBe(false);
-      }
-    });
+  it("sends a command that does more than read to review, and to a person once outside text started the run", async () => {
+    for (const command of ["rm -rf build", "npm install", "ls; rm x", "bash -c 'ls'"]) {
+      expect(await hold(command), command).toBe("review");
+      expect(await hold(command, { tainted: true }), command).toBe("review");
+      expect(await hold(command, { tainted: true, trigger: "webhook" }), command).toBe("person");
+    }
+    expect(await hold("ls", { cwd: "~/.ssh" })).toBe("review");
+  });
 
-    it("lets a command an allow rule covers go ahead", async () => {
-      db.rules.mockResolvedValue([
-        rule(["npm", "test"]),
-        rule(["grep", "todo"], "allow_prefix"),
-        rule(["git", "pull"], "allow", "user"),
-      ]);
-      for (const command of ["npm test", "grep todo src", "git pull"])
-        expect((await gate(command)).plan, command).toBe("allow");
-      expect((await gate("npm test", { cwd: "/tmp" })).plan).toBe("ask");
-      expect((await gate("grep todo --all")).plan).toBe("ask");
-    });
+  it("holds nothing a block rule refuses or an exact rule allows, and a prefix rule only in a clean run", async () => {
+    db.rules.mockResolvedValue([
+      rule(["rm"], "block"),
+      rule(["npm", "test"]),
+      rule(["grep", "-r"], "allow_prefix"),
+    ]);
+    expect(await hold("rm -rf build", { tainted: true })).toBeUndefined();
+    expect(await hold("npm test", { tainted: true })).toBeUndefined();
+    expect(await hold("grep -r todo src")).toBeUndefined();
+    expect(await hold("grep -r todo src", { tainted: true })).toBe("review");
+    expect(await hold("npm test", { cwd: "/tmp" })).toBe("review");
+  });
 
-    it("keeps upstream's always-allow rule for the tool, and Never ask", async () => {
-      const always = { decision: "allow", source: "always_allow" };
-      expect((await gate("rm -rf build", { resolved: always })).plan).toBe("allow");
-      expect((await gate("rm -rf build", { mode: "never" })).plan).toBe("allow");
-    });
+  it("sends it to a person once the member asked for commands on the bot's computer to ask", async () => {
+    db.hostedAsks.mockResolvedValue(true);
+    expect(await hold("npm install")).toBe("person");
+    expect(await hold("ls")).toBeUndefined();
+    expect(db.hostedAsks).toHaveBeenCalledWith(expect.anything(), "user-1");
+  });
 
-    it("still refuses a blocked command first", async () => {
-      db.rules.mockResolvedValue([rule(["rm"], "block")]);
-      expect((await gate("ls && rm -rf build")).plan).toBe("deny");
-    });
+  it("still refuses a blocked command first", async () => {
+    db.rules.mockResolvedValue([rule(["rm"], "block")]);
+    const ctx = context("auto");
+    const args = { command: "ls && rm -rf build" };
+    expect(await dozoHostedCommandHold(ctx, "shell", args)).toBeUndefined();
+    expect(await dozoHostedCommandGate(ctx, "shell", args, NO_RULE, "allow")).toBe("deny");
+  });
+
+  it("reads the rules once for the hold and the gate", async () => {
+    const ctx = context("auto");
+    const args = { command: "npm install" };
+    await dozoHostedCommandHold(ctx, "shell", args);
+    await dozoHostedCommandGate(ctx, "shell", args, NO_RULE, "judge");
+    expect(db.rules).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dozoRunStartedFromOutside for a routine", () => {
+  const routineRun = () =>
+    ({
+      ...context("auto", "user-1", true, "routine"),
+      run: { userId: "user-1", trigger: "routine", routineId: "routine-1" },
+      task: { prompt: "Check the build" },
+    }) as unknown as RunContext;
+
+  it.each([
+    ["owner", false],
+    ["owner_run", false],
+    ["member", true],
+    ["outside_run", true],
+  ])("agrees with the lasting-write rule once %s is on record", async (writer, outside) => {
+    db.writer.mockResolvedValue({ writer, writtenAt: new Date(0) });
+    const canonical = await runStartedFromOutside(
+      {
+        trigger: "routine",
+        ownerStartedRun: false,
+        nonOwnerChatRun: false,
+        watchFired: false,
+        botOwnerRun: true,
+        readHistory: false,
+      },
+      async () => routineWriterIsOwner(writer),
+    );
+    expect(canonical).toBe(outside);
+    expect(await dozoRunStartedFromOutside(routineRun())).toBe(outside);
+  });
+
+  it("takes a routine with no writer on record as its owner's, where the lasting-write rule does not", async () => {
+    db.writer.mockResolvedValue(undefined);
+    expect(await dozoRunStartedFromOutside(routineRun())).toBe(false);
   });
 });

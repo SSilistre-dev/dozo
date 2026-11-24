@@ -1,0 +1,27 @@
+# Optional: publish the web service through a Cloudflare Tunnel. No inbound port is opened.
+# dozo-install-cloudflare.sh copies this file to docker-compose.override.yml next to
+# docker-compose.images.yml, which install-images.sh already layers on top, and writes the settings
+# below to .env. See docs/dozo-self-host-tunnel.md.
+#
+# A named tunnel, not a quick tunnel: quick tunnels (trycloudflare.com) do not support Server-Sent
+# Events, which the app's live stream uses, and cap in-flight requests at 200.
+#
+# In the tunnel's published application, point the hostname at http://web:5173. The web service
+# proxies /api, /rpc and the screen WebSocket itself; never route to api (:3100).
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.2
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    networks:
+      - app
+    depends_on:
+      - web
