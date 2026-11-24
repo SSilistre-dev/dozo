@@ -758,12 +758,25 @@ async fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
+/// Whether the process ended: on Linux also a zombie, which /proc shows; elsewhere (macOS has no
+/// /proc) when signal 0 finds no such process.
 fn gone(pid: u64) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
-        Ok(stat) => stat
-            .rsplit_once(')')
-            .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z')),
+    #[cfg(target_os = "linux")]
+    {
+        match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Err(_) => true,
+            Ok(stat) => stat
+                .rsplit_once(')')
+                .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z')),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let Ok(pid) = libc::pid_t::try_from(pid) else {
+            return true;
+        };
+        // SAFETY: signal 0 only asks whether the process exists; nothing is sent.
+        unsafe { libc::kill(pid, 0) != 0 }
     }
 }
 

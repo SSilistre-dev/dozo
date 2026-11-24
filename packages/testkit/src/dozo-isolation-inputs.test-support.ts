@@ -78,6 +78,9 @@ const FIELD_KEYS: Record<string, PoolKey> = {
 const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   "threads/declineCall": { callId: "declineCallId" },
   "notifications/declineIncomingCall": { callId: "incomingCallId" },
+  // Not the canary's own document: a member's edit replaces its content, and the read that shows
+  // the canary would then depend on running before it.
+  "memory/update": { documentId: "removableDocumentId" },
   "memory/remove": { documentId: "removableDocumentId" },
   "organizations/rename": { organizationId: "soloOrganizationId" },
   "organizations/remove": { organizationId: "soloOrganizationId" },
