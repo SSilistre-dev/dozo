@@ -391,6 +391,51 @@
   ],
   "anchored": [
     {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "use-event-listener\";\nimport { errorText }",
+      "replace": "use-event-listener\";\nimport { screenAwaited, useScreenWait } from \"./dozo-screen-wait\";\nimport { errorText }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-screen-wait.ts"
+      ],
+      "reason": "screen wait: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "embeddableScreenUrl(screenUrl);\n  const hideScreenLoadError",
+      "replace": "embeddableScreenUrl(screenUrl);\n  const screenWait = useScreenWait(\n    screenAwaited({\n      computerOpen,\n      state: computer?.state,\n      runsOnUserMachine: runsOnUserMachine(computer),\n      booting,\n      embeddedUrl: embeddedScreenUrl,\n      screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),\n      failed: Boolean(screenLoadError || computerError),\n    }),\n  );\n  const hideScreenLoadError",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-screen-wait.ts"
+      ],
+      "reason": "screen wait: an open running computer whose screen read is still out (or never answered) is a wait, not the computer's bare name"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "  const screenFailure =\n    Boolean(screenLoadError) ||\n",
+      "replace": "  const screenFailure =\n    screenWait.timedOut ||\n    Boolean(screenLoadError) ||\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-screen-wait.ts"
+      ],
+      "reason": "screen wait: past the wait the window shows the screen's error with Retry screen"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "    booting || computer?.state === \"booting\" ? (\n",
+      "replace": "    booting || computer?.state === \"booting\" || screenWait.waiting ? (\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-screen-wait.ts"
+      ],
+      "reason": "screen wait: while it lasts the window shows the boot progress"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "resetScreenReconnect();\n            if (computer?.state === \"running\") {",
+      "replace": "resetScreenReconnect();\n            screenWait.restart();\n            if (computer?.state === \"running\") {",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-screen-wait.ts"
+      ],
+      "reason": "screen wait: Retry screen waits again from the start"
+    },
+    {
       "file": "packages/adapters/src/pi-runtime-tools.ts",
       "find": "  };\n}\n\nfunction toAgentTool(",
       "replace": "  };\n}\n\nexport function toAgentTool(",
