@@ -27,6 +27,7 @@ three issue forms the fork replaces whole. Today these are:
   apps/**/dozo-*
   packages/**/dozo-*
   infra/**/dozo-*
+  scripts/**/dozo-*
   packages/db/prisma/migrations/*_dozo_*/**
   .github/README.md
   .github/SECURITY.md

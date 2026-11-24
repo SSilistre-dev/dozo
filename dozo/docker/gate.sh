@@ -497,7 +497,7 @@ unit_tests() {
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
         --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
         --coverage.include="infra/**/dozo-*.ts" \
-        --coverage.exclude="**/*.test.*" --coverage.thresholds.perFile \
+        --coverage.exclude="**/*.test.*" --coverage.exclude="**/*.test-support.*" --coverage.thresholds.perFile \
         --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
