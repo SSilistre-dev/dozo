@@ -11,7 +11,13 @@ import {
   storeBotSecret,
 } from "./bot-secrets.js";
 import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
-import { DEVICE_LOGIN_ONLY, deviceLoginOf, encodeDeviceLogin } from "./dozo-device-login.js";
+import {
+  DEVICE_LOGIN_ONLY,
+  deviceLoginOf,
+  encodeDeviceLogin,
+  rejectDeviceLoginReveal,
+  unlinkDeviceLogin,
+} from "./dozo-device-login.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
 
@@ -289,5 +295,30 @@ describe("a linked login the owner saves a real value over", () => {
     await save(db, "plain");
     await save(db, "plain");
     expect(deleted).toEqual([]);
+  });
+});
+
+describe("the helpers a linked login's reveal and overwrite go through", () => {
+  const linked = encodeDeviceLogin({ deviceId: "device-1", handle: HANDLE });
+
+  it("refuses to reveal a linked login, which has no stored value, and lets any other through", () => {
+    expect(() => rejectDeviceLoginReveal(linked)).toThrow(ClientError);
+    expect(() => rejectDeviceLoginReveal('{"fields":[]}')).not.toThrow();
+  });
+
+  it("unlinks only an item whose old value was a link, and never one it cannot read", async () => {
+    const sql: string[] = [];
+    const tx = {
+      $executeRaw: async (strings: TemplateStringsArray) => {
+        sql.push(strings.join("?"));
+        return 1;
+      },
+    };
+    await unlinkDeviceLogin(tx, "item-1", async () => linked);
+    await unlinkDeviceLogin(tx, "item-2", async () => '{"fields":[]}');
+    await unlinkDeviceLogin(tx, "item-3", async () => {
+      throw new Error("unreadable");
+    });
+    expect(sql).toEqual(['DELETE FROM dozo_device_logins WHERE "credentialId" = ?']);
   });
 });
