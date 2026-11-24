@@ -102,7 +102,8 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 ### Sockets
 
 - One socket per role and channel. A new one replaces the old, which is closed with code `4000`.
-- When the channel is deleted (`DELETE`, or expiry as above) both sockets close with code `4001`.
+- When the channel is deleted (`DELETE`, or expiry as above) both sockets close with code `4001`. An
+  end takes `4001` as final at once: the app forgets the pairing without asking the relay again.
 - The relay sends text messages only of the form `{"type":"peer","present":true|false}`: once on
   open, and whenever the other role connects or goes away. That first message can arrive together
   with the upgrade's answer, so an end listens for messages before it hands the socket on.
@@ -129,6 +130,10 @@ on any record that is not data, and the host's socket code then answers that `he
 session. Neither end times a handshake out itself; the socket's 75-second silence rule does.
 When the relay says the peer went away, both ends drop the session: open requests fail, and the
 caller may send them again once a new handshake is done. New ephemeral keys on every session are the re-keying.
+An end whose established session fails (a record out of order, replayed or failing its tag) closes
+its socket and connects again: the other end, whose own side of the session is still open, would
+otherwise wait on it, and the relay's `peer` message tells it to start over. The reference app
+does this by dropping the socket; the reference host by closing it and reconnecting.
 
 Every binary message starts with a type byte: `1` hello, `2` welcome, `3` data.
 
