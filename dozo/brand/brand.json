@@ -11570,6 +11570,114 @@
       "reason": "bot chats on mobile: upstream test fixture: the bot profile's menu offers New chat and the profile lists the bot's extra chats, which read the server and the roster stream; neither is this test's, and they are tested in dozo-bot-chats.test.tsx and dozo-bot-chats-group.test.tsx"
     },
     {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "import type { InboxItem, InboxSpace, PinnedChat } from \"../lib/inbox-spaces\";",
+      "replace": "import type { DozoInboxItem as InboxItem } from \"../lib/dozo-inbox-chats\";\nimport {\n  dozoInboxItemKey as inboxItemKey,\n  dozoInboxSignal as inboxSignal,\n  useDozoInboxItems,\n} from \"../lib/dozo-inbox-chats\";\nimport type { InboxSpace, PinnedChat } from \"../lib/inbox-spaces\";",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: the import of the rules below; the list's row type, key and unread signal are the ones that know a bot's extra chat rows"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "  inboxItemKey,\n  inboxNeedsCreateHint,\n  inboxSignal,\n",
+      "replace": "  inboxNeedsCreateHint,\n",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: the key and signal come from the wrapper imported above"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "  const listData = useMemo((): InboxItem[] => {",
+      "replace": "  const upstreamListData = useMemo((): InboxItem[] => {",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: upstream's rows, before a bot's extra chats are added under it"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "    snoozeNow,\n  ]);\n  // Snoozed chats stay off the icon until they wake.",
+      "replace": "    snoozeNow,\n  ]);\n  // A bot's extra chats follow its row (one read of the Space's chats); the share picker lists bots only.\n  const listData = useDozoInboxItems(\n    upstreamListData,\n    hasSession && me !== null && !onShareSelect && inboxShown,\n  );\n  // Snoozed chats stay off the icon until they wake.",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: the rows under each bot; the badge and the bot rows below still count main chats only"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "useGlobalSearchParams<{ botId?: string; groupId?: string }>();",
+      "replace": "useGlobalSearchParams<{ botId?: string; groupId?: string; chatId?: string }>();",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: the route's extra chat, so its row is the one shown as open"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "(openParams.botId ?? null)",
+      "replace": "(openParams.chatId ?? openParams.botId ?? null)",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: with an extra chat open its own row is selected, not the bot's row"
+    },
+    {
+      "file": "apps/mobile/components/inbox-render-item.tsx",
+      "find": "import type { InboxItem, InboxSpace } from \"../lib/inbox-spaces\";",
+      "replace": "import type { DozoInboxItem as InboxItem } from \"../lib/dozo-inbox-chats\";\nimport type { InboxSpace } from \"../lib/inbox-spaces\";",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: the row type that knows a bot's extra chat rows"
+    },
+    {
+      "file": "apps/mobile/components/inbox-render-item.tsx",
+      "find": "import { DragSafePressable } from \"./drag-safe-pressable\";\nimport { createHomeStyles }",
+      "replace": "import { DragSafePressable } from \"./drag-safe-pressable\";\nimport { DozoInboxChatRow } from \"./dozo-inbox-chat-row\";\nimport { createHomeStyles }",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-chat-row.tsx"
+      ],
+      "reason": "inbox chats on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/inbox-render-item.tsx",
+      "find": "        />\n      ) : (\n        <BotRow\n",
+      "replace": "        />\n      ) : item.type === \"botChat\" ? (\n        <DozoInboxChatRow bot={item.bot} chat={item.chat} />\n      ) : (\n        <BotRow\n",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-chat-row.tsx"
+      ],
+      "reason": "inbox chats on mobile: a bot's extra chat is its own row under the bot's"
+    },
+    {
+      "file": "apps/mobile/components/chat-route-header.tsx",
+      "find": "import { ChatHeaderTitle } from \"./chat-header-title\";",
+      "replace": "import { DozoChatHeaderTitle as ChatHeaderTitle } from \"./dozo-chat-header-title\";",
+      "requires": [
+        "apps/mobile/components/dozo-chat-header-title.tsx"
+      ],
+      "reason": "chat switcher on mobile: the chat title carries the menu of the bot's chats and New chat"
+    },
+    {
+      "file": "apps/mobile/lib/inbox-render.test.tsx",
+      "find": "vi.mock(\"../components/group-avatar\", () => ({ GroupAvatar: () => null }));\n// Rows in the current space",
+      "replace": "vi.mock(\"../components/group-avatar\", () => ({ GroupAvatar: () => null }));\nvi.mock(\"../components/dozo-inbox-chat-row\", () => ({ DozoInboxChatRow: () => null }));\n// Rows in the current space",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-chat-row.tsx"
+      ],
+      "reason": "inbox chats on mobile: upstream test fixture: a bot's extra chat row reads the server, the router and the sheet, none of which this test provides; dozo-inbox-chat-row.test.tsx covers it"
+    },
+    {
+      "file": "apps/mobile/lib/chat-route-header.test.tsx",
+      "find": "vi.mock(\"../components/chat-header-title\", () => ({ ChatHeaderTitle: () => null }));\nvi.mock(\"../components/sheet-header\"",
+      "replace": "vi.mock(\"../components/chat-header-title\", () => ({ ChatHeaderTitle: () => null }));\nvi.mock(\"../components/dozo-chat-header-title\", () => ({ DozoChatHeaderTitle: () => null }));\nvi.mock(\"../components/sheet-header\"",
+      "requires": [
+        "apps/mobile/components/dozo-chat-header-title.tsx"
+      ],
+      "reason": "chat switcher on mobile: upstream test fixture: the title with its chat menu reads the server and the router; this test only reads the header's options; dozo-chat-header-title.test.tsx covers it"
+    },
+    {
       "file": "packages/contracts/src/rpc.ts",
       "find": "import { dozoAvatarGenerateContract } from \"./dozo-avatar-generate.js\";\n\nconst botId",
       "replace": "import { dozoAvatarGenerateContract } from \"./dozo-avatar-generate.js\";\nexport * from \"./dozo-organization-logo.js\";\nimport { dozoOrganizationLogoContract } from \"./dozo-organization-logo.js\";\n\nconst botId",
