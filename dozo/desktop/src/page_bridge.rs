@@ -362,7 +362,7 @@ fn ask(app: &AppHandle, key: Key) {
         .and_then(|item| item.text().ok())
         .unwrap_or_default();
     let host = crate::chosen(app)
-        .and_then(|server| server.host_str().map(str::to_owned))
+        .map(|server| host(&server))
         .unwrap_or_default();
     let words = text("{host} asks to turn on “{label}”.")
         .replace("{host}", &host)
@@ -385,6 +385,14 @@ fn ask(app: &AppHandle, key: Key) {
             answer(&handle, false);
         }
     });
+}
+
+/// The server as the question names it: its host, and its port when it has one.
+fn host(server: &Url) -> String {
+    let name = server.host_str().unwrap_or_default();
+    server
+        .port()
+        .map_or_else(|| name.to_owned(), |port| format!("{name}:{port}"))
 }
 
 /// The person's answer, or Cancel; only the first one counts, and the window closes with it.
@@ -723,6 +731,13 @@ mod tests {
             assert_eq!(opens(true, Some(&wrong)), None, "{wrong}");
         }
         assert_eq!(opens(true, None), None);
+    }
+
+    #[test]
+    fn the_question_names_the_server_with_its_port() {
+        assert_eq!(host(&url("https://dozo.example.com/")), "dozo.example.com");
+        assert_eq!(host(&url("http://127.0.0.1:5173/")), "127.0.0.1:5173");
+        assert_eq!(host(&url("http://[::1]:5173/")), "[::1]:5173");
     }
 
     #[test]

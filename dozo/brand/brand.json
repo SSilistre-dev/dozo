@@ -9078,8 +9078,14 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
-      "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Open at login\"\nmsgstr \"Açılışta aç\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Keep running in background\"\nmsgstr \"Arka planda çalış\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Push to talk\"\nmsgstr \"Bas ve konuş\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Let bots use this computer\"\nmsgstr \"Botlar bu bilgisayarı kullansın\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Password manager\"\nmsgstr \"Parola yöneticisi\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
-      "reason": "desktop app settings: the Turkish copy of the Computers link and of the desktop app's switches, in the words of its own menu (dozo/desktop/src/words.rs); \"Desktop app\", \"Open\", \"Change server\", \"Logins\" and \"Version\" are upstream's"
+      "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Open at login\"\nmsgstr \"Açılışta aç\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Keep running in background\"\nmsgstr \"Arka planda çalış\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Push to talk\"\nmsgstr \"Bas ve konuş\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Password manager\"\nmsgstr \"Parola yöneticisi\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
+      "reason": "desktop app settings: the Turkish copy of the Computers link and of the desktop app's switches, in the words of its own menu (dozo/desktop/src/words.rs); \"Desktop app\", \"Open\", \"Change server\", \"Logins\", \"Version\" and \"Let bots use this computer\" are upstream's"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Let bots use this computer\"\nmsgstr \"Botların bu bilgisayarı kullanmasına izin ver\"",
+      "replace": "msgid \"Let bots use this computer\"\nmsgstr \"Botlar bu bilgisayarı kullansın\"",
+      "reason": "desktop app settings: upstream's switch label in the words the desktop app's own menu uses (dozo/desktop/src/device.rs), so the section and the menu say the same"
     },
     {
       "file": "packages/core/src/bot-templates.ts",
