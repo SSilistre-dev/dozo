@@ -95,6 +95,7 @@ import {
   useDozoChatMenu,
   useDozoChatName,
   useDozoNewChat,
+  useDozoSpaceChats,
 } from "./dozo-bot-chats";
 import { queryClient } from "./query";
 
@@ -155,6 +156,53 @@ describe("a bot's chat list", () => {
     expect(seen).toBeUndefined();
     expect(api.rpc).not.toHaveBeenCalled();
     expect(api.signalEnabled.current).toBe(false);
+  });
+});
+
+describe("the Space's chats, for the inbox", () => {
+  let seen: DozoBotChat[] | undefined;
+  function All({ enabled }: { enabled: boolean }) {
+    seen = useDozoSpaceChats(enabled);
+    return null;
+  }
+
+  it("reads every bot's open chats in one request, and again on the roster signal", async () => {
+    const other = chat({ id: "chat-9", botId: "bot-2", name: "Other" });
+    api.rpc.mockResolvedValue({ chats: [chat(), other] });
+    await render(createElement(All, { enabled: true }));
+    await vi.waitFor(() => expect(seen).toEqual([chat(), other]));
+    expect(api.rpc).toHaveBeenCalledExactlyOnceWith("dozoChats/list", {});
+    expect(api.signalEnabled.current).toBe(true);
+    api.rpc.mockResolvedValue({ chats: [other] });
+    await act(async () => void (await api.signal.current()));
+    await vi.waitFor(() => expect(seen).toEqual([other]));
+  });
+
+  it("reads nothing, and listens to nothing, while it is not wanted", async () => {
+    await render(createElement(All, { enabled: false }));
+    await settle();
+    expect(seen).toBeUndefined();
+    expect(api.rpc).not.toHaveBeenCalled();
+    expect(api.signalEnabled.current).toBe(false);
+  });
+
+  it("is read again when a chat's sheet changes a chat, so the row follows at once", async () => {
+    let menu!: ReturnType<typeof useDozoChatMenu>;
+    function Both() {
+      seen = useDozoSpaceChats(true);
+      menu = useDozoChatMenu("bot-1");
+      return null;
+    }
+    await render(createElement(Both));
+    await vi.waitFor(() => expect(seen).toEqual([chat()]));
+    api.rpc.mockClear();
+    api.rpc.mockResolvedValue({ chats: [chat({ unread: true })] });
+    act(() => menu.open(chat(), false));
+    sheetActions()
+      .find((action) => action.text === "Mark as Unread")!
+      .onPress();
+    await vi.waitFor(() => expect(seen).toEqual([chat({ unread: true })]));
+    expect(api.rpc).toHaveBeenCalledWith("dozoChats/list", {});
   });
 });
 
