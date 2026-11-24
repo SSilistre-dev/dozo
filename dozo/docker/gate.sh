@@ -485,7 +485,7 @@ unit_tests() {
       # rows and the anchored rules are in upstream words. It parses with the TypeScript 6 this
       # lockfile installs for apps/www (the root TypeScript 7 has no JS parser). A missing guard,
       # test, list or parser is a failure, never a skip; nothing is fetched.
-      g=/guard/dozo/db; ts=/cache/w/apps/www/node_modules/typescript
+      g=/guard/dozo/db; ts=$WORK/apps/www/node_modules/typescript
       for f in module-state-guard.mjs module-state-guard.test.mjs module-state-reviewed.tsv; do
         [ -f "$g/$f" ] || { echo "[unit] module state guard FAILED: dozo/db/$f is missing, so server state is not checked"; exit 2; }
       done
