@@ -9305,7 +9305,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
-      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate, dozoHostedCommandHold, dozoHostedReviewArgs, dozoHostedReviewFacts } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
+      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate, dozoHeldInputOnceOnly, dozoHostedCommandHold, dozoHostedReviewFacts } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
@@ -9370,12 +9370,12 @@
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
-      "find": "          : redactToolArgsForReview(args, ctx.secrets),\n",
-      "replace": "          : dozoHostedReviewArgs(name, redactToolArgsForReview(args, ctx.secrets)),\n",
+      "find": "    onceOnly: asksEveryTime,\n",
+      "replace": "    onceOnly: asksEveryTime || dozoHeldInputOnceOnly(name, args, dozoHostedHold),\n",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
-      "reason": "file writes: the approval model sees a file written on the bot's computer up to a fixed length, told its length and that it was cut, so one long file is one bounded review"
+      "reason": "screen input and file writes: their card offers no Always allow, which would pass the tool for good in every run, also after outside content; a tool rule set in Settings still applies"
     },
     {
       "file": "packages/adapter-kit/src/types.ts",

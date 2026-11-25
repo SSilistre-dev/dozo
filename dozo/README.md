@@ -774,15 +774,19 @@ A file the bot writes on its computer (`write_file`, `heldAsInput` in
 screen looks start a login shell that reads the profile, an allowed command (`npm test`) runs the
 project's scripts, and a git hook, a git setting or a scheduled entry runs too. Which files a
 program reads cannot be told from the path, so no list of paths would hold: every write is held
-like input on the screen, by the same table. The approval model is shown the path and the first
-4,000 characters, told the length when the rest was cut.
+like input on the screen, by the same table. The approval model sees the whole file; a call too
+long for it to see whole (over upstream's 8,000 characters of arguments) asks a person instead.
 
 - A plain file the bot then runs (`sh notes.sh`) is still held at the command. Allow for this run
   covers writes as it covers screen input. `render_plot` writes a picture, not text a program
   runs, and a browser download lands in Downloads; both stay free.
-- Cost: once a run took in outside content (a read file or a command's output counts), each write
-  in Auto review is one more review call, with its cost and wait, and in Ask a card until Allow for
-  this run; the owner's clean run writes as before.
+- A card for input on the screen or a file write offers no Always allow: that rule would pass the
+  tool for good in every run, outside content or not. A tool rule set in Settings still applies.
+- Cost: reading a file or getting a command's output already counts as outside content, so in a
+  typical coding task every write after the first read is held. In Auto review that is one
+  approval-model call per write, with its cost and wait. In Ask it is a card, and after Allow for
+  this run one approval-model call per write. A file too long to review is a card in both. The
+  owner's clean run writes as before.
 
 How a command is read, and what that does not cover:
 

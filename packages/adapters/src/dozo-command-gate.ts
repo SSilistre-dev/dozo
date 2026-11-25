@@ -1,3 +1,4 @@
+import type { AutoReviewRequest } from "@rakazo/adapter-kit";
 import type { DozoCommandComputer } from "@rakazo/core";
 import {
   commandRuleCwd,
@@ -8,6 +9,7 @@ import {
   runStartedFromOutside,
 } from "@rakazo/core";
 import { readDozoCommandRules, readDozoHostedAsks, readRoutineWriter } from "@rakazo/db";
+import { reviewArgsTooLong } from "./auto-review.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import { routineTaskInstructions } from "./routine-watch.js";
 import type { RunContext } from "./run-context.js";
@@ -28,8 +30,6 @@ const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);
  * reads is not knowable from the path, so every write is held like screen input (runInputHold).
  */
 const FILE_WRITE_TOOL = "write_file";
-/** How much of a written file the approval model is shown; past it, it is told the length. */
-const REVIEWED_FILE_CHARS = 4_000;
 /** computer_act's actions that only point, scroll or wait; any other one types or starts a program. */
 const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);
 
@@ -87,7 +87,7 @@ export async function dozoHostedCommandHold(
   name: string,
   args: Record<string, unknown>,
 ): Promise<"review" | "person" | undefined> {
-  if (heldAsInput(name, args)) return runInputHold(ctx);
+  if (heldAsInput(name, args)) return runInputHold(ctx, args);
   if (name !== HOSTED_SHELL_TOOL) return undefined;
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return undefined;
   const match = await hostedMatch(ctx, args);
@@ -129,11 +129,16 @@ export function heldAsInput(name: string, args: Record<string, unknown>): boolea
  * member's own run until outside content comes in. A person is asked in a run outside text started
  * (dozoRunStartedFromOutside), and once the member asked for commands on the bot's computer to
  * ask; any other run that took in outside content (also one the owner did not start) has the
- * approval model judge it, as a command is.
+ * approval model judge it, as a command is. A call too long for the model to see whole (a large
+ * file) asks a person, as upstream's checker would, without the call to it.
  */
-async function runInputHold(ctx: RunContext): Promise<"review" | "person" | undefined> {
+async function runInputHold(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+): Promise<"review" | "person" | undefined> {
   if (await dozoRunStartedFromOutside(ctx)) return "person";
   if (!(await isRunTainted(ctx))) return undefined;
+  if (reviewArgsTooLong({ args } as AutoReviewRequest)) return "person";
   return (await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId)) ? "person" : "review";
 }
 
@@ -189,23 +194,16 @@ export async function dozoHostedReviewFacts(
 }
 
 /**
- * The arguments the approval model sees, already redacted: a written file's first
- * REVIEWED_FILE_CHARS characters with its length and that it was cut, so a long file costs one
- * bounded review; every other call's as they are.
+ * Whether the card for a call needs to offer Always allow: never for one held like input
+ * (heldAsInput). Such a rule passes the tool for good in every run, outside content or not, so one
+ * tap on a card must not set it; a tool rule set in Settings still applies.
  */
-export function dozoHostedReviewArgs(
+export function dozoHeldInputOnceOnly(
   name: string,
   args: Record<string, unknown>,
-): Record<string, unknown> {
-  const { content } = args;
-  if (name !== FILE_WRITE_TOOL || typeof content !== "string") return args;
-  if (content.length <= REVIEWED_FILE_CHARS) return args;
-  return {
-    ...args,
-    content: content.slice(0, REVIEWED_FILE_CHARS),
-    contentLength: content.length,
-    contentCut: true,
-  };
+  hold: string | undefined,
+): boolean {
+  return hold !== undefined && heldAsInput(name, args);
 }
 
 function hostedMatch(ctx: RunContext, args: Record<string, unknown>) {

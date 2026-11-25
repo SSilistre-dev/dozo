@@ -243,8 +243,9 @@ async function outcome(
   return { result: "call" in result ? "runs" : "refused", reviewed };
 }
 
-const OFFERED = ["allow", "allow_run", "always", "deny"];
-const PLAIN = ["allow", "always", "deny"];
+// A card for input held like a command never offers Always allow, which would pass the tool for good.
+const OFFERED = ["allow", "allow_run", "deny"];
+const PLAIN = ["allow", "deny"];
 
 beforeEach(() => {
   seen.blocks.length = 0;
@@ -314,7 +315,8 @@ describe("typing on the bot's screen in Ask, in the member's own run after outsi
     expect(await outcome({ ...shell, read: true, answered: "allow_run" })).toEqual({
       result: "card",
       reviewed: false,
-      answers: PLAIN,
+      // A command's Always allow saves a rule for those words alone, as before.
+      answers: ["allow", "always", "deny"],
     });
   });
 
