@@ -176,7 +176,8 @@ mod tests {
     }
 
     /// The page of a server must not gain the app's commands by being the window's first page: no
-    /// capability may name a remote origin, the same rule `README.md` ("Security") states.
+    /// capability file may name a remote origin, the same rule `README.md` ("Security") states.
+    /// The one grant to a remote origin is made while the app runs (`page_bridge.rs`).
     #[test]
     fn no_capability_reaches_a_remote_page() {
         let mut seen = 0;

@@ -65,10 +65,13 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   changes, never on a timer.
 - The menu items all stay where they were; Cmd+, (Ctrl+,) now opens Settings instead of Change
   Server. Change Server… also brings the app window forward, as it is picked from Settings too.
-- In the app, the web app's settings show a "Desktop app" row (General) and, while no computer of
-  the account is connected, "Connect this computer" (in General's Computers group). Both go to `dozo-app://settings`,
-  which the window answers by opening Settings and nothing else; see Security. In a browser they
-  are not shown: only the app's window sets `window.dozoDesktopShell` before a page loads.
+- In the app, the web app's settings show a "Desktop app" section (General): Open at Login, Keep
+  Running in Background, Push to Talk, Let Bots Use This Computer, the password manager, Change
+  Server and the version, read from the app through its bridge (`src/page_bridge.rs`, see
+  Security) and kept current as they change. An older app without the bridge shows a "Desktop
+  app" row instead and, while no computer of the account is connected, "Connect this computer"
+  (in General's Computers group); both go to `dozo-app://settings`, which opens this window. In a browser none of it is shown: only the app's window sets
+  `window.dozoDesktopShell` before a page loads.
 
 ## The microphone
 
@@ -219,12 +222,43 @@ Known limits:
 
 ## Security
 
-- A page loaded from a server can call nothing in the app. What reaches the app from it is the title
-  (read for the unread count only), the notifications the web view itself shows, and a visit to
-  `dozo-app://settings`, which opens the Settings window (below). The app's commands are under
-  Tauri's ACL (`build.rs`), and its capabilities (`capabilities/*.json`) grant them to the app's own
-  screens, each to its own window. None has a `remote` entry and none must ever get one. The
-  dialog plugin's commands are granted to no page: only the app's Rust code opens its dialogs.
+- A page loaded from a server can call the app only through its bridge (below). Otherwise what
+  reaches the app from it is the title (read for the unread count only), the notifications the
+  web view itself shows, and a visit to `dozo-app://settings`, which opens the Settings window
+  (below). The app's commands are under Tauri's ACL (`build.rs`), and its capabilities
+  (`capabilities/*.json`) grant them to the app's own screens, each to its own window. None has a
+  `remote` entry and none must ever get one. The dialog plugin's commands are granted to no page:
+  only the app's Rust code opens its dialogs.
+- The bridge (`src/page_bridge.rs`, whose `CHANNELS` lists all of it) is three commands for the
+  web app's "Desktop app" section: read the switches and the version, set a switch, open Change
+  Server or the Settings window. A capability file is fixed at build time and the server is chosen
+  while the app runs, so they are granted to one origin while the app runs, the chosen server's,
+  in the app window only, once its page starts loading there. Tauri cannot take a grant back, so
+  each command checks again that it is called from the app window's own page on the origin
+  chosen now; a server left behind is refused. A frame inside the page gets neither Tauri's call
+  key nor the bridge (tested on Linux; on macOS and Windows this rests on the same Tauri rule and
+  is not tested by hand). Input is a closed set of names and a boolean; anything else, a refused
+  caller and a call over the rate limit get the same answer as a call that did nothing, and the
+  switches are sent to the chosen server only. A read left waiting ends when a new read comes or
+  the window's page changes, so none piles up, and opening a window from the page is held to once
+  a second.
+- A page changes at once only Push to Talk (its keys stay fixed; turning it on at most once in 30
+  seconds, so a shortcut another program holds cannot make its message repeat) and the safe way of
+  three switches: Open at Login, Keep Running in Background and Let Bots Use This Computer turned
+  off. It may only ask for the rest: those three turned on (a page kept running out of sight, whose
+  origin may use the microphone, or bots running programs here) and the password manager either
+  way (off removes every linked login). The app asks in a small window of its own
+  (`ui/confirm.html`, `capabilities/confirm.json`, whose commands also check the calling window):
+  Cancel comes first and has the focus, Enter and Escape cancel, Turn On answers only after a
+  moment, the question goes after a minute, one is open at a time and none within 10 seconds of
+  the last, a switch refused is not asked about again for 5 minutes, and an answer counts only
+  while the server that asked is still the chosen one. Turning the computer or the password
+  manager on then asks the menu's own question too. The logins stay in the Settings window; the
+  page never sees them, and never gives an address, a path or a shortcut.
+- Push to Talk on sends nothing by itself: the page hears the keys only while they are held
+  (`pressed` in `src/talk.rs`). The microphone itself is the server origin's whether or not it is
+  on (`src/alerts.rs`); whether a page kept running out of sight may use it is the system's to
+  say, and has not been checked here.
 - Bots reach this computer only after the person allows it in the system dialog, which names the
   server and which no page can answer. The device token is kept in the system keyring, never in
   a file.

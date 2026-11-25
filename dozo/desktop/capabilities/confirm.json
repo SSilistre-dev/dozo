@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "confirm",
+  "description": "The question before a switch a server's page asked for is turned on (ui/confirm.html): what it shows, and the answer. Like the app's other screens it has no `remote` entry.",
+  "windows": ["confirm"],
+  "permissions": ["allow-confirm-question", "allow-confirm-answer"]
+}

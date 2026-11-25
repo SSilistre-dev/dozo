@@ -51,6 +51,9 @@ const fn label_for(os: Os) -> &'static str {
 
 pub const LABEL: &str = label_for(Os::current());
 
+/// The shortcut's keys, as the web app's section names them (`page_bridge.rs`).
+pub const KEYS: &str = keys_for(Os::current());
+
 fn shortcut_for(os: Os) -> Shortcut {
     let command = if os == Os::Macos {
         Modifiers::SUPER

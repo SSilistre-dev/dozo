@@ -23,6 +23,13 @@ fn main() {
         "logins_remove",
         "fill_question",
         "fill_answer",
+        // The bridge of a server's page (page_bridge.rs): granted while the app runs, to the
+        // chosen server's origin only. And the question it may ask (capabilities/confirm.json).
+        "desktop_settings",
+        "desktop_set",
+        "desktop_open",
+        "confirm_question",
+        "confirm_answer",
         "agent_question",
         "agent_answer",
     ]);

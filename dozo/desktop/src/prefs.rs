@@ -41,6 +41,11 @@ impl Default for Changes {
     }
 }
 
+/// Follows what [`changed`] says, for the web app's section of these settings (`page_bridge.rs`).
+pub fn watch(app: &AppHandle) -> watch::Receiver<u64> {
+    app.state::<Changes>().0.subscribe()
+}
+
 /// Something the list shows may have changed (a switch, an item turned on or off).
 pub fn changed(app: &AppHandle) {
     if let Some(changes) = app.try_state::<Changes>() {
@@ -238,7 +243,7 @@ pub fn asked_by_page(app: &AppHandle) {
 }
 
 /// Whether the page shown is one of the chosen server's.
-fn from_server(page: Option<&Url>, server: Option<&Url>) -> bool {
+pub fn from_server(page: Option<&Url>, server: Option<&Url>) -> bool {
     match (page, server) {
         (Some(page), Some(server)) => {
             matches!(page.scheme(), "http" | "https") && page.origin() == server.origin()
