@@ -2,21 +2,20 @@
 
 import type { ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createPageSession } from "../../lib/pages/pages";
+import { createQueryRoot } from "../../lib/query/query-root.test-support";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { useComposerActions } from "./composer/use-composer-actions";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }) };
+  return { useLingui: () => ({ t, i18n: { locale: "en" } }) };
 });
 
 const answer = vi.fn();
-let root: Root;
+let root: ReturnType<typeof createQueryRoot>;
 let latest: ReturnType<typeof useComposerActions>;
 const pageSession = createPageSession();
 const ref = <T,>(current: T) => ({ current });
@@ -61,7 +60,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   answer.mockReset();
   refreshThread.mockClear();
-  root = createRoot(document.createElement("div"));
+  root = createQueryRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
 });
 

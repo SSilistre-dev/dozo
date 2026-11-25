@@ -12,9 +12,21 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("../../lib/query/rpc", () => {
   const rpc = {
-    bots: { emailAddress: vi.fn(async () => null), list: vi.fn(async () => []) },
+    computer: { homeVersions: vi.fn(async () => []) },
+    bots: {
+      get: vi.fn(async () => null),
+      update: vi.fn(),
+      restoreInstructions: vi.fn(),
+      emailAddress: vi.fn(async () => null),
+      list: vi.fn(async () => []),
+    },
     voice: { voices: vi.fn(async () => []) },
-    models: { credentials: vi.fn(async () => []), list: vi.fn(async () => []) },
+    models: {
+      credentials: vi.fn(async () => []),
+      list: vi.fn(async () => []),
+      forRole: vi.fn(async () => []),
+    },
+    dozoBotModelBackups: { get: vi.fn(async () => ({ backups: [] })) },
     me: vi.fn(async () => null),
   };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
@@ -23,7 +35,9 @@ vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values);
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("../../components/billing/SubscriptionGate", () => ({ useBilling: () => ({ status: null }) }));
+vi.mock("../../components/billing/SubscriptionGate", () => ({
+  useBilling: () => ({ status: null }),
+}));
 vi.mock("../../components/pages/PagesList", () => ({ PagesList: () => null }));
 vi.mock("./bots/avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("./dozo-bot-skills-section", () => ({ DozoBotSkillsSection: () => null }));

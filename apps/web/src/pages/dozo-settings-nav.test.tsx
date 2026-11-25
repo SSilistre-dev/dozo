@@ -37,6 +37,7 @@ const ALL = [
   "labs",
   "usage",
   "billing",
+  "spaces",
   "organization",
   "updates",
 ].map(item);
@@ -46,7 +47,7 @@ const ids = (groups: ReturnType<typeof dozoSettingsNavGroups>) =>
 
 it("groups the sections under Account, Bots and App in the design's order", () => {
   expect(ids(dozoSettingsNavGroups(ALL))).toEqual([
-    ["account", ["general", "usage", "billing", "organization"]],
+    ["account", ["general", "spaces", "usage", "billing", "organization"]],
     [
       "bots",
       ["models", "confirmations", "vault", "wallet", "memory", "voice", "messaging", "computer"],
@@ -60,7 +61,7 @@ it("shows only the sections the deployment offers and leaves an empty group out"
     (entry) => !["labs", "updates", "billing", "wallet"].includes(entry.id),
   );
   expect(ids(dozoSettingsNavGroups(offered))).toEqual([
-    ["account", ["general", "usage", "organization"]],
+    ["account", ["general", "spaces", "usage", "organization"]],
     ["bots", ["models", "confirmations", "vault", "memory", "voice", "messaging", "computer"]],
   ]);
 });
@@ -121,13 +122,13 @@ it("labels each group with its heading and keeps upstream's buttons, ids and cur
   expect(vault?.textContent).toBe("Vault");
   act(() => vault?.click());
   expect(onSectionChange).toHaveBeenCalledWith("vault");
-  expect(container.querySelectorAll("button")).toHaveLength(13);
+  expect(container.querySelectorAll("button")).toHaveLength(14);
 });
 
-it("marks General while a space's page is open, and disables every button while a panel is busy", () => {
+it("marks Spaces while a space's page is open, and disables every button while a panel is busy", () => {
   const { container } = render("space" as SettingsSection, true);
   expect(container.querySelector('[aria-current="page"]')?.getAttribute("data-testid")).toBe(
-    "settings-nav-general",
+    "settings-nav-spaces",
   );
   expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
 });

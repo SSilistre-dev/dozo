@@ -13,6 +13,7 @@ const models = vi.hoisted(() => ({
 const waitForModelOAuth = vi.hoisted(() => vi.fn());
 vi.mock("./query/space-rpc", () => ({ useSpaceRpc: () => ({ models }) }));
 vi.mock("./platform/desktop", () => ({
+  analyticsSurface: () => "web",
   desktopBridge: () => undefined,
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
@@ -42,7 +43,7 @@ beforeEach(() => {
   models.cancelOAuth.mockResolvedValue(undefined);
   models.submitOAuthCode.mockResolvedValue(undefined);
   waitForModelOAuth.mockImplementation(
-    (_loginId: string, signal: AbortSignal) =>
+    (_login: unknown, signal: AbortSignal) =>
       new Promise<void>((resolve) =>
         signal.addEventListener("abort", () => resolve(), { once: true }),
       ),
@@ -78,7 +79,7 @@ it("shows connecting from submit until the sign-in ends, checking every second",
   });
   expect(latest.oauthSubmitting).toBe(true);
   expect(waitForModelOAuth).toHaveBeenCalledWith(
-    "login",
+    expect.objectContaining({ loginId: "login" }),
     expect.anything(),
     expect.anything(),
     1000,
@@ -114,7 +115,7 @@ it("keeps the default check interval while no code was pasted", async () => {
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
   expect(waitForModelOAuth).toHaveBeenCalledWith(
-    "login",
+    expect.objectContaining({ loginId: "login" }),
     expect.anything(),
     expect.anything(),
     undefined,

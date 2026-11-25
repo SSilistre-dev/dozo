@@ -74,16 +74,21 @@ function pointer(
   options: { button?: number; buttons?: number } = {},
 ) {
   const buttons = options.buttons ?? (type === "pointerup" ? 0 : 1);
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    button: options.button ?? 0,
+    buttons,
+    // A real browser names the pointer; upstream follows the one that pressed.
+    pointerId: 1,
+  };
   return act(async () => {
     overlay.dispatchEvent(
-      new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        button: options.button ?? 0,
-        buttons,
-      }),
+      typeof PointerEvent === "function"
+        ? new PointerEvent(type, init)
+        : new MouseEvent(type, init),
     );
   });
 }
@@ -99,7 +104,11 @@ it("sends a plain click as one request, at the spot it began", async () => {
   await pointer(overlay, "pointerup", 101, 51);
   await vi.waitFor(() => expect(computerInput).toHaveBeenCalledOnce());
   expect(sent()).toEqual([
-    { botId: "bot-1", kind: "pointer", payload: { x: 200, y: 100, button: "left", type: "click" } },
+    {
+      botId: "bot-1",
+      kind: "pointer",
+      payload: { x: 200, y: 100, button: "left", type: "click", skillId: "skill-1" },
+    },
   ]);
 });
 
@@ -113,9 +122,9 @@ it("sends a right click as one right click, and a double click as two clicks in 
   await pointer(overlay, "pointerup", 20, 20);
   await vi.waitFor(() => expect(computerInput).toHaveBeenCalledTimes(3));
   expect(sent().map((input) => input.payload)).toEqual([
-    { x: 20, y: 20, button: "right", type: "click" },
-    { x: 40, y: 40, button: "left", type: "click" },
-    { x: 40, y: 40, button: "left", type: "click" },
+    { x: 20, y: 20, button: "right", type: "click", skillId: "skill-1" },
+    { x: 40, y: 40, button: "left", type: "click", skillId: "skill-1" },
+    { x: 40, y: 40, button: "left", type: "click", skillId: "skill-1" },
   ]);
 });
 

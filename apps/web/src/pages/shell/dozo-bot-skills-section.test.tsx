@@ -270,9 +270,7 @@ it("shows a recording in progress from the list, and its teacher can stop it", a
   await vi.waitFor(() => expect(row()?.textContent).toContain("Recording: goal s4"));
   api.list.mockResolvedValue([skill("s4", "draft", "")]);
   await click(byText("Stop teaching"));
-  await vi.waitFor(() =>
-    expect(api.stop).toHaveBeenCalledWith({ skillId: "s4" }),
-  );
+  await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith({ skillId: "s4" }));
   await vi.waitFor(() => expect(row()).toBeNull());
 });
 
@@ -440,12 +438,20 @@ it("gets the computer section as the shell builds it: a ComputerPanel that opens
   // passes it would hide the section without an error. The tree under test is the branded one.
   const read = (file: string) => readFileSync(join(import.meta.dirname, file), "utf8");
   const shell = read("../Shell.tsx");
-  expect(shell).toContain('import { ComputerPanel } from "./shell/computer-panel";');
+  expect(shell).toContain('import { ComputerPanel } from "./shell/computers/computer-panel";');
   const built = shell.slice(shell.indexOf("computerPanel={"));
   expect(built).toMatch(/^computerPanel=\{\s*active \? \(\s*<ComputerPanel\b/);
-  expect(built.slice(0, built.indexOf(") : null"))).toMatch(/\n\s*onOpen=\{/);
+  // The shell spreads the controls' panel props, which carry `onOpen`.
+  expect(built.slice(0, built.indexOf(") : null"))).toContain(
+    "{...computerControls.panelProps(active)}",
+  );
+  expect(read("computers/use-computer-controls.tsx")).toMatch(
+    /function panelProps\(bot: Bot\) \{[\s\S]*?\n\s*onOpen: /,
+  );
   const side = read("side-panel.tsx");
   const settings = side.slice(side.indexOf("<BotSettings"));
   expect(settings.slice(0, settings.indexOf("routines="))).toContain("computer={computerPanel}");
-  expect(read("bot-panel.tsx")).toContain("<DozoBotSkillsSection bot={bot} computer={computer} />");
+  expect(read("bots/bot-panel.tsx")).toContain(
+    "<DozoBotSkillsSection bot={bot} computer={computer} />",
+  );
 });

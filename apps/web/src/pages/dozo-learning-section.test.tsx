@@ -31,8 +31,10 @@ vi.mock("../lib/dozo-error-text", () => ({
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
-    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-      strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
+    t: (strings: TemplateStringsArray | { message: string }, ...values: unknown[]) =>
+      "message" in strings
+        ? strings.message
+        : strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));

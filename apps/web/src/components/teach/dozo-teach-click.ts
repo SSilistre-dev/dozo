@@ -60,6 +60,7 @@ function replayPress(target: HTMLElement, press: Press) {
  */
 export function useTeachClick(
   botId: string,
+  skillId: string | undefined,
   overlay: HTMLElement | null,
   screenWidth?: number,
   screenHeight?: number,
@@ -97,7 +98,11 @@ export function useTeachClick(
         pointerId: event.pointerId,
       };
       const rect = from.getBoundingClientRect();
-      setRing({ id: ++rings.current, left: event.clientX - rect.left, top: event.clientY - rect.top });
+      setRing({
+        id: ++rings.current,
+        left: event.clientX - rect.left,
+        top: event.clientY - rect.top,
+      });
     },
     true,
   );
@@ -131,7 +136,13 @@ export function useTeachClick(
     if (!click) return;
     const { x, y, button } = held;
     void enqueueTeachComputerInput(botId, async () => {
-      await rpc.computer.input({ botId, kind: "pointer", payload: { x, y, button, type: "click" } });
+      // Named by its recording, as upstream's inputs are: one still queued when the recording
+      // stops is dropped by the server instead of landing in the next one.
+      await rpc.computer.input({
+        botId,
+        kind: "pointer",
+        payload: { x, y, button, type: "click", ...(skillId ? { skillId } : {}) },
+      });
     });
   }
   useEventListener(overlay, "pointerup", (event) => endPress(event, true), true);
