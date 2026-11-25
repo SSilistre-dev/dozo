@@ -162,7 +162,8 @@ export function createBillingLifecycle(deps: BillingLifecycleDeps) {
         mails.push({
           kind: "payment-failed",
           occasion: `payment-failed:${randomUUID()}`,
-          details: { plan: planName(paidTierOf(account)) ?? "Dozo" },
+          // The plan the failed payment was for: a past-due subscription no longer gives it.
+          details: { plan: planName(paidTierOf({ ...account, status: "active" })) ?? "Dozo" },
           told: { pastDueTold: true },
         });
     } else if (account.status && SETTLED.has(account.status)) notice.pastDueTold = false;

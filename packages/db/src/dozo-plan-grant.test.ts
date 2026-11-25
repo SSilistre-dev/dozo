@@ -79,9 +79,9 @@ describe("the tier in force", () => {
 
 describe("the tier a subscription pays for", () => {
   it("is its own tier while it is live, and nothing otherwise", () => {
-    for (const status of ["trialing", "active", "past_due"])
+    for (const status of ["trialing", "active"])
       expect(paidTierOf({ status, byokTier: "pro" })).toBe("pro");
-    for (const status of ["canceled", "incomplete", null])
+    for (const status of ["past_due", "canceled", "incomplete", null])
       expect(paidTierOf({ status, byokTier: "pro" })).toBeNull();
     expect(paidTierOf({ status: "active", byokTier: null })).toBeNull();
     expect(paidTierOf({ status: "active", byokTier: "unknown" })).toBeNull();
@@ -404,8 +404,8 @@ describe("the computer a past-due subscription gives", () => {
     });
   });
 
-  it("keeps the plan itself, and a grant's allowance", async () => {
-    expect(paidTierOf(billed("past_due"))).toBe("max");
+  it("gives no plan until the payment goes through, and keeps a grant's allowance", async () => {
+    expect(paidTierOf(billed("past_due"))).toBeNull();
     const { prisma } = organization({
       billing: billed("past_due"),
       grant: { tier: "pro", endsAt: later },
