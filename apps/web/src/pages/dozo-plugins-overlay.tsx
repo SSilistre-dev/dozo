@@ -55,7 +55,7 @@ function PluginsOverlaySkeleton({ onClose }: { onClose: () => void }) {
             disabled
             aria-label={t`Search apps`}
             placeholder={t`Search apps`}
-            className="h-11 rounded-xl px-4 md:text-body-lg"
+            size="xl"
           />
         </div>
         <div className="flex-1 overflow-hidden px-8 py-6">

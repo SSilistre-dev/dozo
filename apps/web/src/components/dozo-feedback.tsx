@@ -35,7 +35,8 @@ export function DozoFeedbackItem({ onOpen }: { onOpen: () => void }) {
   return (
     <Button
       variant="ghost"
-      className="h-9 w-full justify-start gap-2.5 font-normal"
+      size="lg"
+      className="w-full justify-start gap-2.5 font-normal"
       onClick={() => {
         onOpen();
         setOpen(true);

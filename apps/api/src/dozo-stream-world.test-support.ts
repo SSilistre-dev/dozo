@@ -24,6 +24,18 @@ import { handleRpcError } from "./rpc-errors.js";
 /** How soon after the next write an ended caller's stream must have ended. */
 export const ENDS_WITHIN_MS = 3_000;
 
+/**
+ * A step that has to fit inside a window the server works to (the session re-check, how soon an
+ * ended stream stops): fails when `windowMs` has passed since `since`. A named check, not a clock
+ * read inside `expect`, because a real server and a real database cannot run on fake timers.
+ */
+export function assertStillWithin(since: number, windowMs: number) {
+  const elapsed = Date.now() - since;
+  if (elapsed >= windowMs) {
+    throw new Error(`${elapsed} ms since the start, past the ${windowMs} ms window`);
+  }
+}
+
 /** An open stream as its client sees it, and how its caller signs out of it. */
 export type Stream = {
   text: string;

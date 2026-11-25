@@ -10,7 +10,7 @@ import {
   dozoLearningLine,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
-import { ClientError, retry } from "@rakazo/core";
+import { byteLength, ClientError, retry } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
@@ -33,7 +33,6 @@ import {
   settleLearningWrite,
 } from "./dozo-learning-store.js";
 import { editMemory } from "./memory/memory-tools.js";
-import { byteLength } from "../../core/src/primitives/utf8.js";
 
 // What a review's answer may change in the bot's notes, how a change and its undo are written
 // so the notes and the list of changes never disagree, and the owner's own edits.

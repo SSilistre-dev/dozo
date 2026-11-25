@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { authClient } from "./auth/auth";
 import { fetchAuthCapabilities } from "./auth/auth-capabilities";
 import { initialBootstrapTarget } from "./bootstrap-target";
@@ -67,7 +68,7 @@ export function startBootReads(pathname: string, desktop: boolean): boolean {
     if (!state.isPending) stop?.();
   });
   // Failure clears the cached request, so the subscription gate asks again.
-  void fetchAuthCapabilities().catch(() => undefined);
+  void bestEffort("read the sign-in options at boot", fetchAuthCapabilities());
   return true;
 }
 
@@ -84,7 +85,7 @@ type BootWindow = Pick<Window, "location" | "setTimeout"> & {
  * failure: the screen loads again when it opens.
  */
 export function whenIdle(view: BootWindow, load: () => Promise<unknown>): void {
-  const run = () => void load().catch(() => undefined);
+  const run = () => void bestEffort("load a screen while idle", load());
   if (view.requestIdleCallback) view.requestIdleCallback(run, { timeout: 5_000 });
   else view.setTimeout(run, 2_000);
 }

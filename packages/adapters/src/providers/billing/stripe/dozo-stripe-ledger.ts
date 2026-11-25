@@ -6,8 +6,8 @@ import type {
   DozoLedgerAccounts,
   DozoLedgerEntry,
   DozoPaymentLedger,
-} from "./dozo-payment-ledger.js";
-import { STRIPE_API_VERSION } from "./providers/billing/stripe/stripe-billing.js";
+} from "../../../dozo-payment-ledger.js";
+import { STRIPE_API_VERSION } from "./stripe-billing.js";
 
 /** Payers read per call; past this the read is partial. */
 export const DOZO_LEDGER_MAX_CUSTOMERS = 200;

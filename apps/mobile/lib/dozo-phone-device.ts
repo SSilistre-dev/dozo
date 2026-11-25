@@ -236,7 +236,8 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
   /** One change at a time, so a switch and a reconnect never interleave their reads and writes. */
   function serial<T>(task: () => Promise<T>): Promise<T> {
     const run = queue.then(task, task);
-    queue = run.catch(() => undefined);
+    // The next task starts on either outcome (`then(task, task)`); the caller gets the failure.
+    queue = run;
     return run;
   }
 

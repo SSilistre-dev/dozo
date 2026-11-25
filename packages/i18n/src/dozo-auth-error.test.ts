@@ -1,9 +1,9 @@
 import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
-import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
+import { messages as tr } from "../locales/tr/messages.po";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { dozoAuthErrorMessage } from "./dozo-auth-error";
-import { authErrorText } from "../../../../packages/i18n/src/user-error";
+import { authErrorText } from "./user-error";
 
 // The wiring tests run on the branded tree only: the brand rules route upstream's
 // `authErrorText` here and add the Turkish copy to the catalog.

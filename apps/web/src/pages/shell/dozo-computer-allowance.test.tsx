@@ -15,7 +15,7 @@ vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: billing.status, showPlans: () => undefined }),
 }));
 
-import { errorText } from "../../../../../packages/i18n/src/user-error";
+import { errorText } from "@rakazo/i18n/user-error";
 import { useComputerAllowance } from "./dozo-computer-allowance";
 
 const offers = [

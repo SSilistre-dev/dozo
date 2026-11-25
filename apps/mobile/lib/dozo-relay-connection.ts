@@ -1,4 +1,5 @@
 import type { RelayAppPairing, RelayPairingOffer } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type {
   RelayClient,
   RelayConnect,
@@ -413,7 +414,9 @@ export async function pairRelay(
       headers: { "content-type": "application/json", origin: "rakazo://" },
       body: JSON.stringify({ json: {} }),
     });
-    const body = (await response.json().catch(() => null)) as { json?: { ok?: unknown } } | null;
+    const body = (await bestEffort("read the health answer", response.json())) as
+      | { json?: { ok?: unknown } }
+      | undefined;
     if (!response.ok || body?.json?.ok !== true) throw new RelayPairingError("not-dozo");
   } catch (error) {
     connection.close();

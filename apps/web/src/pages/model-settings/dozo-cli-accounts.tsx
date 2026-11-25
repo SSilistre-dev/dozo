@@ -59,7 +59,7 @@ function LoginSteps({ tool }: { tool: DozoCliTool }) {
       <Input
         aria-label={t`Code`}
         placeholder={t`Code`}
-        className="h-8 w-40"
+        className="w-40"
         value={code}
         onChange={(event) => setCode(event.target.value)}
       />

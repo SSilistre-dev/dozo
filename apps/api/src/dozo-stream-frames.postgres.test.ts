@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { SharedSpace, Stream } from "./dozo-stream-world.test-support.js";
-import { ENDS_WITHIN_MS, streamWorld } from "./dozo-stream-world.test-support.js";
+import { assertStillWithin, ENDS_WITHIN_MS, streamWorld } from "./dozo-stream-world.test-support.js";
 import { SESSION_RECHECK_MS } from "./routes/shared.js";
 
 const describePostgres =
@@ -57,7 +57,7 @@ describePostgres("a signal stream after its caller stops being allowed (PostgreS
 
       await ending(space, ended);
       await world.deps.boardEvents.notify(space.spaceId, { ticketId: after });
-      expect(Date.now() - openedAt).toBeLessThan(SESSION_RECHECK_MS);
+      assertStillWithin(openedAt, SESSION_RECHECK_MS);
       await endedBefore(ended, stays, (stream) => stream.text.includes(after));
     },
   );
@@ -82,7 +82,7 @@ describePostgres("a signal stream after its caller stops being allowed (PostgreS
       const signals = world.deps.events;
       await signals.publishSpaceChange!(space.spaceId, "runs");
       await signals.publishRosterChange!({ spaceIds: [space.spaceId] });
-      expect(Date.now() - openedAt).toBeLessThan(SESSION_RECHECK_MS);
+      assertStillWithin(openedAt, SESSION_RECHECK_MS);
       await endedBefore(
         ended,
         stays,
@@ -107,7 +107,7 @@ describePostgres("a signal stream after its caller stops being allowed (PostgreS
       await ending(space, ended);
       const ring = (actor: Actor) => world.deps.events.notifyIncomingCalls!(actor.userId);
       await Promise.all([ring(space.member), ring(space.owner)]);
-      expect(Date.now() - openedAt).toBeLessThan(SESSION_RECHECK_MS);
+      assertStillWithin(openedAt, SESSION_RECHECK_MS);
       await endedBefore(ended, stays, (stream) => count(stream, "incoming.calls") > 1);
     },
   );

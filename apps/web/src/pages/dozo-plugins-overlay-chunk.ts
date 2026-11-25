@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { PluginsOverlay } from "./plugins/PluginsOverlay";
 
 let loading: Promise<typeof PluginsOverlay> | undefined;
@@ -17,5 +18,5 @@ export function preloadPluginsOverlay(): Promise<typeof PluginsOverlay> {
 /** For the shell settling, or a pointer or focus arriving on a control that opens the overlay. */
 export function warmPluginsOverlay() {
   // Opening the overlay fetches it again and shows the failure there.
-  preloadPluginsOverlay().catch(() => undefined);
+  void bestEffort("preload the Apps overlay", preloadPluginsOverlay());
 }

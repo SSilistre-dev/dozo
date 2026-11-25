@@ -2,7 +2,7 @@ import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { beforeEach, expect, it } from "vitest";
-import { errorText } from "../../../../packages/i18n/src/user-error";
+import { errorText } from "@rakazo/i18n/user-error";
 
 // The wiring runs on the branded tree only: brand rules route upstream's errorText through the
 // fork's server-refusal copy.

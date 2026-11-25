@@ -3,7 +3,7 @@ import type { ChatAlert } from "@rakazo/contracts";
 import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { Stream } from "./dozo-stream-world.test-support.js";
-import { ENDS_WITHIN_MS, streamWorld } from "./dozo-stream-world.test-support.js";
+import { assertStillWithin, ENDS_WITHIN_MS, streamWorld } from "./dozo-stream-world.test-support.js";
 import { SESSION_RECHECK_MS } from "./routes/shared.js";
 
 const describePostgres =
@@ -54,7 +54,7 @@ describePostgres("a stream after its caller stops being allowed (PostgreSQL)", (
       });
       expect(ended.text, "the ended caller's stream got the message").not.toContain(after);
       expect(ended.ended).toBe(true);
-      expect(Date.now() - writtenAt).toBeLessThan(ENDS_WITHIN_MS);
+      assertStillWithin(writtenAt, ENDS_WITHIN_MS);
       expect(ended.unauthorized).toBe(true);
       expect(stays.ended).toBe(false);
     },

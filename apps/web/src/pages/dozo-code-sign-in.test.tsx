@@ -115,7 +115,7 @@ vi.mock("./auth/Auth", () => ({
 vi.mock("./dozo-signup-terms", () => ({ DozoSignupTerms: () => <p>terms</p> }));
 
 import type { SignInProvider } from "@rakazo/contracts";
-import { authErrorText } from "../../../../packages/i18n/src/user-error";
+import { authErrorText } from "@rakazo/i18n/user-error";
 import { DozoCodeSignIn, dozoCodeDigits, RESEND_AFTER_MS } from "./dozo-code-sign-in";
 import { DozoEmailCodeLink, dozoCodeSignInAvailable } from "./dozo-email-code-link";
 

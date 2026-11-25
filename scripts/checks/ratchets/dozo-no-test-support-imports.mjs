@@ -12,6 +12,8 @@ export const include = ["{apps,packages,infra}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,c
 export const exclude = [
   "**/*.{test,spec}.*",
   "**/*.test-support.*",
+  // Upstream names some test helpers with a hyphen (apps/api/src/router-test-support.ts).
+  "**/*-test-support.*",
   "**/{test,tests,__tests__,e2e,testing}/**",
   "**/vitest.*",
   "**/playwright.*",

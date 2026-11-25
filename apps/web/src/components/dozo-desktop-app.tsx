@@ -1,4 +1,5 @@
 import { Trans } from "@lingui/react/macro";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, buttonVariants, Label, Switch } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
@@ -106,7 +107,8 @@ function useDesktopSettings(bridge: DesktopBridge) {
       let seen: DesktopSettings | null = null;
       // Each answer comes when something changed; the app is never asked on a timer.
       while (active) {
-        const next: DesktopSettings | null = await bridge.settings(seen).catch(() => null);
+        const next: DesktopSettings | null =
+          (await bestEffort("read the desktop settings", bridge.settings(seen))) ?? null;
         if (!active) return;
         if (!next) {
           // Refused: what is shown stays, and before anything was shown the old row stands in.

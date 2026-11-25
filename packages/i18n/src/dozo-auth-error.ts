@@ -7,7 +7,7 @@ import { authErrorMessage, MIN_PASSWORD_LENGTH } from "@rakazo/core";
  * `authErrorMessage`): the auth codes it leaves to the server's English words get copy of their
  * own, request validation still names the field, and anything else is the caller's copy. The
  * server's message is never shown; it goes to the console for whoever is debugging.
- * `apps/mobile/lib/dozo-auth-error.ts` holds the same table for the mobile app.
+ * Web and mobile both reach it through the shared `user-error.ts`.
  */
 export function dozoAuthErrorMessage(body: unknown, copy: AuthErrorCopy): string {
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};

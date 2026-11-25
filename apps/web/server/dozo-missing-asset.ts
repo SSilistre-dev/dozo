@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { missingAssetMiddleware as upstreamMissingAssetMiddleware } from "../server/missing-asset.js";
+import { missingAssetMiddleware as upstreamMissingAssetMiddleware } from "./missing-asset.js";
 
 /** A built asset's name carries its content hash, so a copy never goes stale. */
 export const IMMUTABLE_ASSET = "public, max-age=31536000, immutable";
