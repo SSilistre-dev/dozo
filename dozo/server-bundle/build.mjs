@@ -35,7 +35,7 @@ const TRIM = [
 // The bundle's version is upstream's with this revision after it: a change to what the fork adds
 // (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
 // Raise it with every such change; the release tag is server-v<version>.
-const REVISION = 7;
+const REVISION = 8;
 const AGENT = "dozo-relay-agent.mjs";
 // Windows only: the links of the bundle, which an archive made there cannot carry (pnpm makes
 // junctions), as { "<link>": "<target, relative to the link's folder>" }, forward slashes. The
