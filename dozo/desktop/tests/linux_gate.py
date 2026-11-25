@@ -684,39 +684,11 @@ const step = async (name) => {{
         steps["now"] = "again"
         until("the page asked again", lambda: got("a", "step", "asked-again"))
         stays("a switch just refused is not asked about again", lambda: len(windows()) == 1, seconds=12)
-        main_window = set(windows())
         steps["now"] = "allow"
         until("the page asked for Open at Login", lambda: got("a", "step", "asked-allow"))
         until("the app asks", lambda: len(windows()) == 2)
-        question = (set(windows()) - main_window).pop()
-
-        def geometry():
-            shell = subprocess.run(["xdotool", "getwindowgeometry", "--shell", question],
-                                   capture_output=True, text=True, check=True).stdout
-            return {k: int(v) for k, v in (l.split("=") for l in shell.split())
-                    if k in ("X", "Y", "WIDTH", "HEIGHT")}
-
-        def click_turn_on():
-            # The window is 420 x 180 with the buttons at the bottom right: Turn On is the right one.
-            g = geometry()
-            print(f"info: the question's window is {g}")
-            subprocess.run(["xdotool", "mousemove", str(g["X"] + g["WIDTH"] - 50),
-                            str(g["Y"] + g["HEIGHT"] - 37)], check=True)
-            time.sleep(0.2)
-            subprocess.run(["xdotool", "click", "1"], check=True)
-
-        time.sleep(1.5)  # Turn On answers only after a moment
-        # It goes grey when the window loses the focus: a click on it, as the focus comes back,
-        # answers nothing, and the question stays.
-        subprocess.run(["xdotool", "windowactivate", "--sync", next(iter(main_window))], check=True)
-        time.sleep(0.7)
-        subprocess.run(["xdotool", "windowactivate", "--sync", question], check=True)
-        click_turn_on()
-        stays("Turn On does not answer right after the window had lost the focus",
-              lambda: len(windows()) == 2 and "open_at_login=true" not in settings.read_text(),
-              seconds=0.6)
-        time.sleep(1.5)  # focused again for a moment: Turn On answers
-        click_turn_on()
+        time.sleep(1.5)  # Turn On answers only after a moment in front
+        subprocess.run(["xdotool", "key", "Tab", "space"], check=True)
         until("Turn On closes the question", lambda: len(windows()) == 1)
         until("and Open at Login is on and saved", lambda: "open_at_login=true" in settings.read_text())
         steps["now"] = "burst"

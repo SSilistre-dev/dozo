@@ -261,9 +261,7 @@ Known limits:
   caller and a call over the rate limit get the same answer as a call that did nothing, and the
   switches are sent to the chosen server only. A read left waiting ends when a new read comes or
   the window's page changes, so none piles up, and opening a window from the page is held to once
-  a second for each window (Change Server and Settings do not take each other's turn). On Linux
-  `tests/linux_gate.py` also checks that Turn On does not answer right after the question's window
-  lost the focus and does once it has had it for a moment; macOS and Windows do not try that.
+  a second for each window (Change Server and Settings do not take each other's turn).
 - A page changes at once only Push to Talk (its keys stay fixed; turning it on at most once in 30
   seconds, so a shortcut another program holds cannot make its message repeat) and the safe way of
   three switches: Open at Login, Keep Running in Background and Let Bots Use This Computer turned
