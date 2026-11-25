@@ -197,6 +197,17 @@ impl Cli {
     /// Runs the program with `args` and answers what it printed on stdout, at most `cap` bytes.
     /// Never on a shell, never with more environment than `CLI_ENV`.
     async fn run(&self, args: &[&str], cap: usize) -> Result<Secret, Failure> {
+        self.run_until(args, cap, tokio::time::sleep(self.timeout))
+            .await
+    }
+
+    /// `run`, given up as locked when `deadline` comes first (tests bring the deadline themselves).
+    async fn run_until(
+        &self,
+        args: &[&str],
+        cap: usize,
+        deadline: impl Future<Output = ()>,
+    ) -> Result<Secret, Failure> {
         let mut command = Command::new(&self.program);
         command
             .args(args)
@@ -245,16 +256,20 @@ impl Cli {
             let status = child.wait().await.map_err(|_| Failure::Failed)?;
             Ok((out, status))
         };
-        let outcome = tokio::time::timeout(self.timeout, work).await;
+        let outcome = tokio::select! {
+            biased;
+            done = work => Some(done),
+            () = deadline => None,
+        };
         let (out, status) = match outcome {
-            Ok(Ok(done)) => done,
-            Ok(Err(failure)) => {
+            Some(Ok(done)) => done,
+            Some(Err(failure)) => {
                 group.end();
                 let _ = child.kill().await;
                 errors.abort();
                 return Err(failure);
             }
-            Err(_) => {
+            None => {
                 group.end();
                 let _ = child.kill().await;
                 errors.abort();
@@ -592,35 +607,46 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(3));
     }
 
-    /// Whether the process is running: a process that ended and is not yet reaped is not.
-    #[cfg(target_os = "linux")]
-    fn running(pid: u32) -> bool {
-        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
-            !stat
-                .rsplit(')')
-                .next()
-                .unwrap_or("")
-                .trim_start()
-                .starts_with('Z')
-        })
-    }
-
+    /// The program starts a child that holds the write end of a named pipe until it dies; the
+    /// test ends the wait itself once the child is up, so no clock decides what is exercised.
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn a_timeout_ends_what_the_program_started_too() {
-        let mut fake = Fake::new(
+        use std::os::unix::ffi::OsStrExt;
+        use tokio::net::unix::pipe;
+        let fake = Fake::new(
             "tree",
-            "sleep 30 &\necho $! > \"$(dirname \"$0\")/child\"\nsleep 30",
+            "sh -c 'echo started >&3; exec sleep 30' 3>\"$(dirname \"$0\")/alive\" &\nexec sleep 30",
         );
-        fake.cli.timeout = Duration::from_millis(300);
-        let read = fake.cli.read(ITEM, VAULT, Part::Password).await;
+        let path = fake.dir.join("alive");
+        let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: mkfifo only creates a named pipe in this test's own folder.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        // Opened before the program runs (without blocking), so the child's open does not wait.
+        let mut alive = pipe::OpenOptions::new().open_receiver(&path).unwrap();
+        let (fire, deadline) = tokio::sync::oneshot::channel::<()>();
+        let run = fake.cli.run_until(&["item"], MAX_VALUE_OUTPUT, async {
+            let _ = deadline.await;
+        });
+        let started = async {
+            let mut said = [0u8; 8];
+            let heard = tokio::time::timeout(Duration::from_secs(10), alive.read_exact(&mut said));
+            assert!(
+                matches!(heard.await, Ok(Ok(_))),
+                "the program's child never started"
+            );
+            assert_eq!(&said, b"started\n");
+            fire.send(()).unwrap();
+        };
+        let (read, ()) = tokio::join!(run, started);
         assert_eq!(read.unwrap_err(), Failure::Locked);
-        let child: u32 = std::fs::read_to_string(fake.dir.join("child"))
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        assert!(!running(child), "the program's child outlived the timeout");
+        // End of file comes once the last holder of the write end, the child, has died.
+        let mut rest = Vec::new();
+        let ended = tokio::time::timeout(Duration::from_secs(10), alive.read_to_end(&mut rest));
+        assert!(
+            matches!(ended.await, Ok(Ok(0))),
+            "the program's child outlived the timeout"
+        );
     }
 
     #[cfg(unix)]
