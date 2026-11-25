@@ -51,6 +51,7 @@ packages/adapters/src/cli-models/dozo-agent-rpc.ts	module	const PASSTHROUGH = ne
 packages/adapters/src/cli-models/dozo-agent-rpc.ts	class AgentProcess	private pending = new Map<	run	requests of one agent process by id; the process belongs to one live run
 packages/adapters/src/cli-models/dozo-agent-rpc.ts	class AgentProcess	private listeners = new Set<(message: RpcMessage) => void>();	run	listeners of one agent process; the process belongs to one live run
 packages/adapters/src/cli-models/dozo-agent.ts	module	const live = new Map<string, LiveRun>();	run	live agent by runId in this process; run ids are unique per run and every read uses the caller's own runId
+packages/adapters/src/cli-models/dozo-agent.ts	module	const unreadableReported = new Set<string>();	global-safe	the server's own agent-file path already reported once, so the log says it once; no person data
 packages/adapters/src/cli-models/dozo-agent.ts	fn runAgent	let paused = false;	local	per-call local, dies with the call
 packages/adapters/src/cli-models/dozo-cli-driver.ts	module	const accountScope = new AsyncLocalStorage<CliTurn>();	run	per-async-context turn account set by withCliAccount; no value outside the turn's own call tree
 packages/adapters/src/cli-models/dozo-cli-login.ts	module	const sessions = new Map<string, Session>();	user	CLI sign-ins keyed by userId+provider; a view is read only with the caller's own userId

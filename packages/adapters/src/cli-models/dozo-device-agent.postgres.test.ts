@@ -132,10 +132,11 @@ describePostgres("an agent on the person's own computer (PostgreSQL)", () => {
     // The server turned the agent on (the file in its data folder).
     const dataDir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
     writeFileSync(join(dataDir, "dozo-agent-tools"), `${AGENT}\n`);
-    process.env.DATA_DIR = dataDir;
+    vi.stubEnv("DATA_DIR", dataDir);
   });
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await system?.organization.deleteMany({ where: { id: { in: users } } });
     await system?.user.deleteMany({ where: { id: { in: users } } });
     await db?.pool.end();

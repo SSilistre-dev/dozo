@@ -198,25 +198,38 @@ export async function startIsolationApp(
   // agent code reads from DATA_DIR): for this world's life only, then DATA_DIR is as it was.
   writeFileSync(path.join(dataDir, "dozo-agent-tools"), "codex-agent\n");
   const earlierDataDir = process.env.DATA_DIR;
+  const restore = () => {
+    if (earlierDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = earlierDataDir;
+    rmSync(dataDir, { recursive: true, force: true });
+  };
   process.env.DATA_DIR = dataDir;
-  const { createApp } = await import("@rakazo/api/app");
-  const handles = await createApp({
-    databaseUrl,
-    encryptionKey: "offline-isolation-encryption-key",
-    dataDir,
-    sandboxProvider: "fake",
-    agentRuntime: "scripted",
-    wakeupDriver: "memory",
-    signupsEnabled: "true",
-    ...overrides,
-  });
+  let handles: IsolationHandles;
+  try {
+    const { createApp } = await import("@rakazo/api/app");
+    handles = await createApp({
+      databaseUrl,
+      encryptionKey: "offline-isolation-encryption-key",
+      dataDir,
+      sandboxProvider: "fake",
+      agentRuntime: "scripted",
+      wakeupDriver: "memory",
+      signupsEnabled: "true",
+      ...overrides,
+    });
+  } catch (error) {
+    // A setup that stops halfway leaves nothing behind.
+    restore();
+    throw error;
+  }
   return {
     handles,
     async cleanup() {
-      await handles.stop();
-      if (earlierDataDir === undefined) delete process.env.DATA_DIR;
-      else process.env.DATA_DIR = earlierDataDir;
-      rmSync(dataDir, { recursive: true, force: true });
+      try {
+        await handles.stop();
+      } finally {
+        restore();
+      }
     },
   };
 }
