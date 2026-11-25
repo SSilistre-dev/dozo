@@ -468,6 +468,12 @@
   ],
   "anchored": [
     {
+      "file": "scripts/checks/bundle-size.budgets.json",
+      "find": "  \"web-startup\": 860,\n",
+      "replace": "  \"web-startup\": 880,\n",
+      "reason": "web startup budget: upstream measures 841.5 kB of its 860; the fork's first-page code (bot avatars and their art, logo, sidebar bot chats, sync error text) and about 4.8 kB of CSS that one stylesheet cannot split add about 31.8 kB net after every other fork surface loads lazily (dozo-lazy-surfaces.tsx), so the branded tree measures 873.3 kB"
+    },
+    {
       "file": "packages/adapters/src/computers/sandbox/sandbox-allowance.test.ts",
       "find": "    expect(await limit(\"active\", \"ultra\")).toBe(120_000_000);\n",
       "replace": "    expect(await limit(\"active\", \"max\")).toBe(120_000_000);\n",
