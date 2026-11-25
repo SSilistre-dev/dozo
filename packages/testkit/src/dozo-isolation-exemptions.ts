@@ -81,13 +81,12 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "sharedmemory",
   ],
   "bots/duplicate": ["bot", "botdescription", "instructionsnext"],
-  "bots/get": ["bot", "botdescription", "instructions", "instructionsnext", "routineprompt"],
+  "bots/get": ["bot", "botdescription", "instructions", "instructionsnext"],
   "bots/list": [
     "waitbot",
     "bot",
     "botdescription",
     "instructionsnext",
-    "routineprompt",
     "secondbot",
   ],
   "bots/update": ["bot", "botdescription", "instructions", "instructionsnext"],
@@ -248,6 +247,24 @@ export type SometimesShared = {
  * table above (always shown) or nowhere (never shown).
  */
 export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly SometimesShared[]>> = {
+  "bots/get": [
+    {
+      kinds: ["routineprompt"],
+      shownWhen:
+        "The same roster row as `bots/update` below: its `preview` is the newest visible text message of the bot's chat (`botThreadPreviews`, packages/db/src/bots/bot-previews.ts), read by `repos.getBot` in the `bots.get` handler. It carries the routine's prompt while the bot's reply to a routine run (`on it ... i handled: <prompt>`, the scripted runtime) is that newest message.",
+      hiddenWhen:
+        "The read comes before the routine run has replied or after a newer visible message (another run's reply, a send of the sweep): which of the two a read meets depends on how fast the runs of the file's earlier tests finish, so a slower machine can miss it in every read of the sweep.",
+    },
+  ],
+  "bots/list": [
+    {
+      kinds: ["routineprompt"],
+      shownWhen:
+        "The same roster row as `bots/update` below: its `preview` is the newest visible text message of the bot's chat (`botThreadPreviews`, packages/db/src/bots/bot-previews.ts), read by `repos.listBots` in the `bots.list` handler. It carries the routine's prompt while the bot's reply to a routine run (`on it ... i handled: <prompt>`, the scripted runtime) is that newest message.",
+      hiddenWhen:
+        "The read comes before the routine run has replied or after a newer visible message (another run's reply, a send of the sweep): which of the two a read meets depends on how fast the runs of the file's earlier tests finish, so a slower machine can miss it in every read of the sweep.",
+    },
+  ],
   "bots/update": [
     {
       kinds: ["routineprompt"],
