@@ -468,6 +468,51 @@
   ],
   "anchored": [
     {
+      "file": "packages/core/src/account/browser-signup-attribution.ts",
+      "find": "import { getDomain } from \"tldts\";\n",
+      "replace": "import type { DozoGetDomain } from \"./dozo-signup-domain.js\";\nimport { withSignupDomain } from \"./dozo-signup-domain.js\";\n\nexport { signupCookiesWritten } from \"./dozo-signup-domain.js\";\n",
+      "reason": "web startup: the public suffix list (tldts, about 40 kB) loads after first paint through dozo-signup-domain.ts, which keeps the same cookies and values and lets the sign-up request wait for the write",
+      "requires": [
+        "packages/core/src/account/dozo-signup-domain.ts"
+      ]
+    },
+    {
+      "file": "packages/core/src/account/browser-signup-attribution.ts",
+      "find": "}): void {\n  try {\n    const { document } = browser;\n",
+      "replace": "}): void {\n  withSignupDomain((getDomain) => writeSignupAttribution(browser, getDomain));\n}\n\nfunction writeSignupAttribution(\n  browser: { location: { href: string }; document: { cookie: string; referrer: string } },\n  getDomain: DozoGetDomain,\n): void {\n  try {\n    const { document } = browser;\n",
+      "reason": "web startup: the public suffix list (tldts, about 40 kB) loads after first paint through dozo-signup-domain.ts, which keeps the same cookies and values and lets the sign-up request wait for the write",
+      "requires": [
+        "packages/core/src/account/dozo-signup-domain.ts"
+      ]
+    },
+    {
+      "file": "packages/core/src/account/browser-signup-attribution.ts",
+      "find": "  parameter: string,\n): void {\n  try {\n    const url = new URL(browser.location.href);\n    const click",
+      "replace": "  parameter: string,\n): void {\n  withSignupDomain((getDomain) => writePartnerClick(browser, parameter, getDomain));\n}\n\nfunction writePartnerClick(\n  browser: { location: { href: string }; document: { cookie: string } },\n  parameter: string,\n  getDomain: DozoGetDomain,\n): void {\n  try {\n    const url = new URL(browser.location.href);\n    const click",
+      "reason": "web startup: the public suffix list (tldts, about 40 kB) loads after first paint through dozo-signup-domain.ts, which keeps the same cookies and values and lets the sign-up request wait for the write",
+      "requires": [
+        "packages/core/src/account/dozo-signup-domain.ts"
+      ]
+    },
+    {
+      "file": "packages/core/src/account/signup-attribution.test.ts",
+      "find": "import { describe, expect, it } from \"vitest\";\nimport { rememberPartnerClick, rememberSignupAttribution } from \"./browser-signup-attribution.js\";\n",
+      "replace": "import { beforeAll, describe, expect, it } from \"vitest\";\nimport { rememberPartnerClick, rememberSignupAttribution } from \"./browser-signup-attribution.js\";\nimport { loadSignupDomain } from \"./dozo-signup-domain.js\";\n\n// The fork loads the public suffix list after first paint; once loaded, each write is immediate.\nbeforeAll(() => loadSignupDomain());\n",
+      "reason": "upstream test: web startup: the public suffix list (tldts, about 40 kB) loads after first paint through dozo-signup-domain.ts, which keeps the same cookies and values and lets the sign-up request wait for the write; these cases assert the cookies once the list has loaded, dozo-signup-domain.test.ts covers the writes made before it",
+      "requires": [
+        "packages/core/src/account/dozo-signup-domain.ts"
+      ]
+    },
+    {
+      "file": "apps/web/src/lib/auth/auth.ts",
+      "find": "import { rememberSignupAttribution } from \"@rakazo/core/signup-attribution\";\n",
+      "replace": "import { rememberSignupAttribution, signupCookiesWritten } from \"@rakazo/core/signup-attribution\";\n",
+      "reason": "web startup: the public suffix list (tldts, about 40 kB) loads after first paint through dozo-signup-domain.ts, which keeps the same cookies and values and lets the sign-up request wait for the write",
+      "requires": [
+        "packages/core/src/account/dozo-signup-domain.ts"
+      ]
+    },
+    {
       "file": "packages/adapters/src/computers/sandbox/sandbox-allowance.test.ts",
       "find": "    expect(await limit(\"active\", \"ultra\")).toBe(120_000_000);\n",
       "replace": "    expect(await limit(\"active\", \"max\")).toBe(120_000_000);\n",
@@ -14508,6 +14553,15 @@
         "packages/adapters/src/dozo-command-gate.ts"
       ],
       "reason": "a command on the bot's computer that does more than read, in a run an outside message reached while it ran, asks a person in Ask (dozo-command-gate.ts dozoHostedCommandHold and dozoRunStartedFromOutside, rules on run-tool-gate.ts) where upstream runs it unasked, so the test asserts the card in Ask and keeps Never ask running it unasked"
+    },
+    {
+      "file": "apps/web/src/lib/auth/auth.ts",
+      "find": "    onRequest: sendUiLocale,\n",
+      "replace": "    // A sign-up reads the first-touch cookies, which are written once the suffix list has loaded.\n    onRequest: async (request) => {\n      await signupCookiesWritten();\n      return sendUiLocale(request);\n    },\n",
+      "reason": "web startup: the public suffix list (tldts, about 40 kB) loads after first paint through dozo-signup-domain.ts, which keeps the same cookies and values and lets the sign-up request wait for the write",
+      "requires": [
+        "packages/core/src/account/dozo-signup-domain.ts"
+      ]
     }
   ],
   "assets": {
