@@ -1421,11 +1421,9 @@
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "import { followStream } from \"../../lib/query/follow-stream\";\nimport type { RpcClient }",
-      "replace": "import { followStream } from \"../../lib/query/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoCliAccountsChanged } from \"../model-settings/dozo-cli-providers\";\nimport type { RpcClient }",
+      "replace": "import { followStream } from \"../../lib/query/follow-stream\";\nimport { dozoModelPoolChanged, dozoPinsChanged, dozoSiteChanged } from \"../../lib/dozo-stream-changed\";\nimport { dozoCliAccountsChanged } from \"../model-settings/dozo-cli-providers\";\nimport type { RpcClient }",
       "requires": [
-        "apps/web/src/components/dozo-announcement.tsx",
-        "apps/web/src/pages/shell/dozo-message-pins.tsx",
-        "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
+        "apps/web/src/lib/dozo-stream-changed.ts",
         "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx",
         "apps/web/src/pages/model-settings/dozo-cli-providers.ts"
       ],
@@ -1436,9 +1434,7 @@
       "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
       "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void dozoPinsChanged();\n          void dozoModelPoolChanged();\n          void dozoCliAccountsChanged();\n        }",
       "requires": [
-        "apps/web/src/components/dozo-announcement.tsx",
-        "apps/web/src/pages/shell/dozo-message-pins.tsx",
-        "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
+        "apps/web/src/lib/dozo-stream-changed.ts",
         "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
       ],
       "reason": "site settings, pins and the model pool: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once; a roster signal also re-reads the open chat's pins, since a pin change, a deleted message and a cleared chat all send one; it also re-reads the model pool, whose change sends one; and the CLI accounts, which a new connection signals"
@@ -5650,8 +5646,9 @@
     {
       "file": "apps/web/src/pages/shell/chat/message-view.tsx",
       "find": "import { SkillDraftCard } from \"../../../components/teach/SkillDraftCard\";",
-      "replace": "import { SkillDraftCard } from \"../../../components/teach/dozo-skill-draft-card\";",
+      "replace": "import { SkillDraftCard } from \"../../../lib/dozo-lazy-surfaces\";",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/components/teach/dozo-skill-draft-card.tsx"
       ],
       "reason": "teaching: the draft card shows the teacher each value typed while teaching, to keep as an input, keep as typed or drop, and saves or tests with those decisions"
@@ -5668,8 +5665,9 @@
     {
       "file": "apps/web/src/pages/shell/computers/computer-overlay.tsx",
       "find": "import { TeachCaptureOverlay } from \"../../../components/teach/TeachCaptureOverlay\";",
-      "replace": "import { TeachCaptureOverlay } from \"../../../components/teach/dozo-teach-capture-overlay\";",
+      "replace": "import { TeachCaptureOverlay } from \"../../../lib/dozo-lazy-surfaces\";",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/components/teach/dozo-teach-capture-overlay.tsx"
       ],
       "reason": "teaching: clicking the bot's screen moves focus off the page control the computer window opened on, so the text typed next is recorded"
@@ -7045,7 +7043,7 @@
     {
       "file": "apps/web/src/pages/shell/chat/message-hover-actions.tsx",
       "find": "import { useState } from \"react\";\nimport { MessageHoverMetadata } from \"../../../components/messages/MessageHoverMetadata\";\n",
-      "replace": "import { useState } from \"react\";\nimport { DozoPinMenuItem } from \"../dozo-message-pins\";\nimport { useDozoMessageRevision } from \"../dozo-message-revision\";\nimport { MessageHoverMetadata } from \"../../../components/messages/MessageHoverMetadata\";\n",
+      "replace": "import { useState } from \"react\";\nimport { DozoPinMenuItem } from \"../../../lib/dozo-lazy-surfaces\";\nimport { useDozoMessageRevision } from \"../dozo-message-revision\";\nimport { MessageHoverMetadata } from \"../../../components/messages/MessageHoverMetadata\";\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-message-revision.tsx",
         "apps/web/src/pages/shell/dozo-message-pins.tsx"
@@ -7128,7 +7126,7 @@
     {
       "file": "apps/web/src/pages/shell/chat/chat-header.tsx",
       "find": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { InviteDialog }",
-      "replace": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { DozoPinnedMessages } from \"../dozo-message-pins\";\nimport { InviteDialog }",
+      "replace": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { DozoPinnedMessages } from \"../../../lib/dozo-lazy-surfaces\";\nimport { InviteDialog }",
       "requires": [
         "apps/web/src/pages/shell/dozo-message-pins.tsx"
       ],
@@ -8201,7 +8199,7 @@
     {
       "file": "packages/chat-ui/src/markdown.web.tsx",
       "find": "\"./mermaid.web\";\nimport { PAGE_ICON }",
-      "replace": "\"./mermaid.web\";\nimport { mathComponents, mathSource, remarkChatMath } from \"./dozo-markdown-math.web\";\nimport { PAGE_ICON }",
+      "replace": "\"./mermaid.web\";\nimport { mathComponents, mathSource, onMathLoaded, useMathReady, withChatMath } from \"./dozo-markdown-math.web\";\nimport { PAGE_ICON }",
       "requires": [
         "packages/chat-ui/src/dozo-markdown-math.ts",
         "packages/chat-ui/src/dozo-markdown-math.web.tsx",
@@ -8218,14 +8216,20 @@
     {
       "file": "packages/chat-ui/src/markdown.web.tsx",
       "find": "const remarkPlugins = [remarkGfm];",
-      "replace": "const remarkPlugins = [remarkGfm, ...remarkChatMath];",
-      "reason": "chat math: reads $…$ and $$…$$ as math through the renderer's own plugin list"
+      "replace": "const remarkPlugins = withChatMath([remarkGfm]);",
+      "reason": "chat math: reads $…$ and $$…$$ as math through the renderer's own plugin list; the math plugins join the list once their chunk has loaded, so the first page does not carry them"
     },
     {
       "file": "packages/chat-ui/src/markdown.web.tsx",
       "find": "  const parsed = streaming ? closeUnterminatedFence(source) : source;",
-      "replace": "  const parsed = mathSource(streaming ? closeUnterminatedFence(source) : source);",
+      "replace": "  useMathReady();\n  const parsed = mathSource(streaming ? closeUnterminatedFence(source) : source);",
       "reason": "chat math: dollars that are prices, not math delimiters, stay text; same length, so parser offsets still match the source"
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.web.tsx",
+      "find": "const CACHED_SOURCE_LIMIT = 50_000;\nlet renderedTextLength = 0;",
+      "replace": "const CACHED_SOURCE_LIMIT = 50_000;\nonMathLoaded(() => {\n  renderedSources.clear();\n  renderedTextLength = 0;\n});\nlet renderedTextLength = 0;",
+      "reason": "chat math: a message drawn as plain text before the math parser loaded is parsed again once it has, not served from the cache of finished text"
     },
     {
       "file": "packages/db/src/index.ts",
@@ -10557,8 +10561,8 @@
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoModelPoolChanged }",
-      "replace": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoBotChatsChanged, dozoChatOf, dozoIsOpenChat } from \"./dozo-bot-chats\";\nimport { dozoModelPoolChanged }",
+      "find": "import { dozoModelPoolChanged, dozoPinsChanged, dozoSiteChanged } from \"../../lib/dozo-stream-changed\";\nimport { dozoCliAccountsChanged }",
+      "replace": "import { dozoModelPoolChanged, dozoPinsChanged, dozoSiteChanged } from \"../../lib/dozo-stream-changed\";\nimport { dozoBotChatsChanged, dozoChatOf, dozoIsOpenChat } from \"./dozo-bot-chats\";\nimport { dozoCliAccountsChanged }",
       "requires": [
         "apps/web/src/pages/shell/dozo-bot-chats.tsx"
       ],
@@ -12067,8 +12071,8 @@
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "import { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoCliAccountsChanged }",
-      "replace": "import { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
+      "find": "import { dozoBotChatsChanged, dozoChatOf, dozoIsOpenChat } from \"./dozo-bot-chats\";\nimport { dozoCliAccountsChanged }",
+      "replace": "import { dozoBotChatsChanged, dozoChatOf, dozoIsOpenChat } from \"./dozo-bot-chats\";\nimport { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
       "requires": [
         "apps/web/src/pages/shell/dozo-organization-mark.tsx"
       ],
@@ -12353,8 +12357,8 @@
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoBotChatsChanged,",
-      "replace": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoOrganizationLibraryChanged } from \"../dozo-organization-library-changed\";\nimport { dozoBotChatsChanged,",
+      "find": "import { dozoModelPoolChanged, dozoPinsChanged, dozoSiteChanged } from \"../../lib/dozo-stream-changed\";\nimport { dozoBotChatsChanged,",
+      "replace": "import { dozoModelPoolChanged, dozoPinsChanged, dozoSiteChanged } from \"../../lib/dozo-stream-changed\";\nimport { dozoOrganizationLibraryChanged } from \"../dozo-organization-library-changed\";\nimport { dozoBotChatsChanged,",
       "requires": [
         "apps/web/src/pages/dozo-organization-library-changed.ts"
       ],

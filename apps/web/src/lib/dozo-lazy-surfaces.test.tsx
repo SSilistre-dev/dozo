@@ -31,12 +31,20 @@ vi.mock(
   loading.module("DozoOrganizationLibrarySwitch", "DozoLibraryBadge", "DozoHiddenLibrarySkills"),
 );
 vi.mock("../pages/shell/dozo-bot-backups", loading.module("DozoBotBackups"));
+vi.mock("../components/teach/dozo-skill-draft-card", loading.module("SkillDraftCard"));
+vi.mock("../components/teach/dozo-teach-capture-overlay", loading.module("TeachCaptureOverlay"));
+vi.mock("../components/dozo-announcement-lines", loading.module("DozoAnnouncementLines"));
+vi.mock(
+  "../pages/shell/dozo-message-pins",
+  loading.module("DozoPinMenuItem", "DozoPinnedMessages"),
+);
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
 import {
+  DozoAnnouncementLines,
   DozoAvatarGeneratePanel,
   DozoBotBackups,
   DozoBotSkillsSection,
@@ -44,9 +52,13 @@ import {
   DozoHiddenLibrarySkills,
   DozoLibraryBadge,
   DozoOrganizationLibrarySwitch,
+  DozoPinMenuItem,
+  DozoPinnedMessages,
   OwnComputerRow,
   preloadDozoSurfaces,
   SiteSessionsControl,
+  SkillDraftCard,
+  TeachCaptureOverlay,
 } from "./dozo-lazy-surfaces";
 
 let host: HTMLDivElement;
@@ -76,12 +88,21 @@ describe("the fork's screens that load when first shown", () => {
     ["DozoLibraryBadge", DozoLibraryBadge],
     ["DozoHiddenLibrarySkills", DozoHiddenLibrarySkills],
     ["DozoBotBackups", DozoBotBackups],
+    ["SkillDraftCard", SkillDraftCard],
+    ["DozoAnnouncementLines", DozoAnnouncementLines],
+    ["DozoPinMenuItem", DozoPinMenuItem],
+    ["DozoPinnedMessages", DozoPinnedMessages],
   ];
 
   // The badge and the hidden list come from the same file as the switch, loaded by the time they run.
-  const sharesCode = new Set(["DozoLibraryBadge", "DozoHiddenLibrarySkills"]);
+  const sharesCode = new Set(["DozoLibraryBadge", "DozoHiddenLibrarySkills", "DozoPinnedMessages"]);
   // These take no props, so none reach the screen.
-  const takesNone = new Set(["DozoCliAccounts", "DozoLibraryBadge", "DozoHiddenLibrarySkills"]);
+  const takesNone = new Set([
+    "DozoCliAccounts",
+    "DozoLibraryBadge",
+    "DozoHiddenLibrarySkills",
+    "DozoAnnouncementLines",
+  ]);
 
   for (const [name, Screen] of screens) {
     it(`${name} draws nothing while its code is on its way, then the screen with its props`, async () => {
@@ -110,6 +131,26 @@ describe("the fork's screens that load when first shown", () => {
   }
 });
 
+describe("the teaching capture overlay", () => {
+  it("is not even fetched while nothing is being recorded", async () => {
+    await act(async () =>
+      root.render(createElement(TeachCaptureOverlay, { enabled: false, botId: "b" } as never)),
+    );
+    expect(host.innerHTML).toBe("");
+  });
+
+  it("draws with its props once a recording starts", async () => {
+    await act(async () =>
+      root.render(createElement(TeachCaptureOverlay, { enabled: true, botId: "b" } as never)),
+    );
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-stub="TeachCaptureOverlay"]')?.textContent).toBe(
+        '{"enabled":true,"botId":"b"}',
+      ),
+    );
+  });
+});
+
 it("is fetched ahead, all of them, for the idle moment after the page has drawn", async () => {
-  await expect(preloadDozoSurfaces()).resolves.toHaveLength(7);
+  await expect(preloadDozoSurfaces()).resolves.toHaveLength(11);
 });

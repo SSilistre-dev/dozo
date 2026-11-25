@@ -1,21 +1,8 @@
-import { useLingui } from "@lingui/react/macro";
 import { announcementText } from "@rakazo/contracts";
-import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
-import { queryClient, useSpaceQueries } from "../lib/query/query";
-import { DozoPastDue } from "./dozo-past-due";
-import { DozoVerifyReminder } from "./dozo-verify-reminder";
+import { DozoAnnouncementLines } from "../lib/dozo-lazy-surfaces";
 
-/**
- * The live stream's site-settings signal: whatever shows a site setting reads it again. Only
- * mounted screens refetch.
- */
-export function dozoSiteChanged(client = queryClient): Promise<void> {
-  return client.invalidateQueries({
-    predicate: ({ queryKey: [path] }) => Array.isArray(path) && path.at(-2) === "dozoSiteSettings",
-  });
-}
-
+export { dozoSiteChanged } from "../lib/dozo-stream-changed";
 export { announcementText };
 
 /**
@@ -28,30 +15,7 @@ export function DozoAnnouncementLayout() {
       <div className="min-h-0 flex-1">
         <Outlet />
       </div>
-      <DozoPastDue />
-      <DozoVerifyReminder />
-      <DozoAnnouncement />
+      <DozoAnnouncementLines />
     </div>
-  );
-}
-
-function DozoAnnouncement() {
-  const { i18n } = useLingui();
-  // Read once, then again on the live stream's signal (it also signals on every reconnect) and
-  // when the window comes back: nothing here is polled.
-  const announcement = useQuery({
-    ...useSpaceQueries().dozoSiteSettings.announcement.queryOptions(),
-    refetchOnWindowFocus: "always",
-  });
-  const text = announcementText(announcement.data, i18n.locale);
-  if (!text) return null;
-  return (
-    <p
-      role="status"
-      title={text}
-      className="shrink-0 truncate border-t bg-muted px-4 py-1.5 text-center text-body-sm text-muted-foreground"
-    >
-      {text}
-    </p>
   );
 }

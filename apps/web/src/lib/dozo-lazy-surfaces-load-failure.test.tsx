@@ -23,19 +23,36 @@ vi.mock("../pages/shell/dozo-own-computer-row", () => {
 vi.mock("../pages/dozo-organization-library-switch", () => {
   throw new Error("chunk gone");
 });
+vi.mock("../components/teach/dozo-skill-draft-card", () => {
+  throw new Error("chunk gone");
+});
+vi.mock("../components/teach/dozo-teach-capture-overlay", () => {
+  throw new Error("chunk gone");
+});
+vi.mock("../components/dozo-announcement-lines", () => {
+  throw new Error("chunk gone");
+});
+vi.mock("../pages/shell/dozo-message-pins", () => {
+  throw new Error("chunk gone");
+});
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
 import {
+  DozoAnnouncementLines,
   DozoAvatarGeneratePanel,
   DozoBotSkillsSection,
   DozoCliAccounts,
   DozoHiddenLibrarySkills,
   DozoLibraryBadge,
   DozoOrganizationLibrarySwitch,
+  DozoPinMenuItem,
+  DozoPinnedMessages,
   OwnComputerRow,
   SiteSessionsControl,
+  SkillDraftCard,
+  TeachCaptureOverlay,
 } from "./dozo-lazy-surfaces";
 
 let host: HTMLDivElement;
@@ -59,6 +76,7 @@ const screens: Array<[string, ComponentType<never>]> = [
   ["DozoBotSkillsSection", DozoBotSkillsSection],
   ["OwnComputerRow", OwnComputerRow],
   ["DozoOrganizationLibrarySwitch", DozoOrganizationLibrarySwitch],
+  ["SkillDraftCard", SkillDraftCard],
 ];
 
 for (const [name, Screen] of screens) {
@@ -96,6 +114,9 @@ it("DozoCliAccounts, which is nothing on most servers, stays nothing and leaves 
 it.each([
   ["DozoLibraryBadge", DozoLibraryBadge],
   ["DozoHiddenLibrarySkills", DozoHiddenLibrarySkills],
+  ["DozoAnnouncementLines", DozoAnnouncementLines],
+  ["DozoPinMenuItem", DozoPinMenuItem],
+  ["DozoPinnedMessages", DozoPinnedMessages],
 ] as Array<[string, ComponentType<never>]>)(
   "%s, a label beside the skills, stays nothing and leaves the page standing",
   async (_name, Screen) => {
@@ -113,3 +134,18 @@ it.each([
     quiet.mockRestore();
   },
 );
+
+it("TeachCaptureOverlay leaves the computer window's own line in its place while recording", async () => {
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  await act(async () =>
+    root.render(
+      createElement("main", null, [
+        createElement("p", { key: "chat", "data-shell": true }, "the chat"),
+        createElement(TeachCaptureOverlay, { key: "screen", enabled: true } as never),
+      ]),
+    ),
+  );
+  await vi.waitFor(() => expect(host.textContent).toContain("Could not load"));
+  expect(host.querySelector("[data-shell]")?.textContent).toBe("the chat");
+  quiet.mockRestore();
+});

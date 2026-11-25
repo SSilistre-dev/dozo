@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { useId } from "react";
 import { SettingsRow } from "../../components/settings/SettingsRows";
 import { toastError } from "../../lib/dozo-error-text";
-import { queryClient, useQueryUserId, useSave } from "../../lib/query/query";
+import { useQueryUserId, useSave } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 
 /**
@@ -25,10 +25,7 @@ function usePool() {
   return { connections: pool.data?.connections, key };
 }
 
-/** Reads the pool again; the roster signal carries a pool change. */
-export function dozoModelPoolChanged(client = queryClient): Promise<void> {
-  return client.invalidateQueries({ queryKey: ["dozoModelPool"] });
-}
+export { dozoModelPoolChanged } from "../../lib/dozo-stream-changed";
 
 /** The pool switch on a connection's page, when its provider offers one. */
 export function DozoModelPoolSwitch({ credentialId }: { credentialId: string }) {
