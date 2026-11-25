@@ -468,6 +468,18 @@
   ],
   "anchored": [
     {
+      "file": "apps/api/src/billing/byok-plan.postgres.test.ts",
+      "find": "        { tier: \"max\", monthlyPriceCents: 9900, computerSize: \"xlarge\", computerHours: 200 },\n        {\n          tier: \"ultra\",\n          monthlyPriceCents: 19900,\n          annualPriceCents: 190800,\n          computerSize: \"xlarge\",\n          computerHours: 600,\n        },\n      ],",
+      "replace": "        { tier: \"max\", monthlyPriceCents: 9900, computerSize: \"xlarge\", computerHours: 200 },\n      ],",
+      "reason": "plans: Dozo sells three tiers (standard, pro, max); upstream's Ultra is removed from the tier list (billing.ts rules), so the plan offers no Ultra and the move goes back to Pro from Max"
+    },
+    {
+      "file": "apps/api/src/billing/byok-plan.postgres.test.ts",
+      "find": "    await service.changeTier(actor, \"ultra\");\n    await expect(service.status(actor)).resolves.toMatchObject({\n      byokTier: \"ultra\",\n      byokPriceCents: 190800,\n      byokInterval: \"year\",\n    });\n",
+      "replace": "    await expect(service.changeTier(actor, \"ultra\" as never)).rejects.toThrow();\n",
+      "reason": "plans: Dozo sells three tiers (standard, pro, max); upstream's Ultra is removed from the tier list (billing.ts rules), so the plan offers no Ultra and the move goes back to Pro from Max"
+    },
+    {
       "file": "apps/mobile/app/computer.tsx",
       "find": "  ) : null;\n  const placeholder =\n    (computer?.state",
       "replace": "  ) : null;\n  const screenWait = useScreenPending(computer, screenUrl, error);\n  const placeholder =\n    (computer?.state",
