@@ -708,23 +708,15 @@ const step = async (name) => {{
         time.sleep(1.5)  # Turn On answers only after a moment
         # It goes grey when the window loses the focus: a click on it, as the focus comes back,
         # answers nothing, and the question stays.
-        subprocess.run(["xdotool", "windowfocus", next(iter(main_window))], check=True)
+        subprocess.run(["xdotool", "windowactivate", "--sync", next(iter(main_window))], check=True)
         time.sleep(0.7)
+        subprocess.run(["xdotool", "windowactivate", "--sync", question], check=True)
         click_turn_on()
         stays("Turn On does not answer right after the window had lost the focus",
               lambda: len(windows()) == 2 and "open_at_login=true" not in settings.read_text(),
               seconds=0.6)
         time.sleep(1.5)  # focused again for a moment: Turn On answers
-        focused = subprocess.run(["xdotool", "getwindowfocus"], capture_output=True, text=True).stdout.strip()
-        print(f"info: focus is on {focused}, the question is {question}, the page's window {main_window}")
         click_turn_on()
-        time.sleep(3)
-        if len(windows()) == 2:
-            print("info: one click did not answer; trying the keyboard")
-            subprocess.run(["xdotool", "key", "Tab", "space"], check=True)
-            time.sleep(2)
-            print(f"info: after the keyboard: {len(windows())} window(s), saved: "
-                  f"{'open_at_login=true' in settings.read_text()}")
         until("Turn On closes the question", lambda: len(windows()) == 1)
         until("and Open at Login is on and saved", lambda: "open_at_login=true" in settings.read_text())
         steps["now"] = "burst"
