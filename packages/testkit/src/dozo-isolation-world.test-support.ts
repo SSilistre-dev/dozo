@@ -60,7 +60,9 @@ function recordOutgoing(handles: IsolationHandles): IsolationRecords {
     const original = (jobs[name] as (...args: unknown[]) => unknown).bind(jobs);
     jobs[name] = (...args: unknown[]) => {
       const by = inRequest.getStore();
-      if (by) records.jobs.push({ by, text: `${name} ${text(args)}` });
+      // enqueueIn and enqueueManyIn take the transaction's database client first: not a job's words.
+      const said = /In$/.test(name) ? args.slice(1) : args;
+      if (by) records.jobs.push({ by, text: `${name} ${text(said)}` });
       return original(...args);
     };
   }

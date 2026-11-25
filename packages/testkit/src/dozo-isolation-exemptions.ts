@@ -1061,4 +1061,204 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     reason:
       "No messaging app installation provider is configured in tests, so every caller is refused before the installation is looked up (400).",
   },
+  {
+    path: "aiConsent/allow",
+    kind: "reached-409",
+    reason:
+      "The handler read the page's review settings as the caller first (aiConsentStatus with the page id, which only the page's owner or a reviewer passes); the generated scope and version are not the ones that review showed (\"AI data sharing changed. Review it again.\").",
+  },
+  {
+    path: "cloudComputers/setSize",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/account.ts:108 \"await billing.setComputerSize(context.actor, input.computerId, input.size);\" — the computer is looked up for the caller's actor, after the billing check",
+    reason:
+      "No billing provider is configured in tests, so every caller is refused before the computer is looked up (404).",
+  },
+  {
+    path: "computer/restoreHomeVersion",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/computer.ts:381 \"restoreHomeVersion: authed.computer.restoreHomeVersion.handler(async ({ context, input }) => { const computer = (await repos.getBot(context.actor, input.botId)).computer;\" — the bot is read for the caller's actor before anything else",
+    reason:
+      "The handler found the bot and its computer in the caller's Space; the world's computer keeps no earlier versions of its home, so the owner is refused after that (400).",
+  },
+  {
+    path: "connections/complete",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/integrations/connection-flows.ts:336 \"input: { connectionId: string; code?: string }, ) { const existing = await deps.prisma.connection.findFirst({ where: { id: input.connectionId, spaceId: context.actor.spaceId, userId: context.actor.userId, }, });\" — the connection is found by the caller's Space and user id",
+    reason:
+      "The handler found the owner's connection; the world's connection names a connector no provider serves in tests, so completing it is refused after that (400).",
+  },
+  {
+    path: "mcp/servers/connect",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/integrations/mcp-servers.ts:116 \"throw new ConnectionSetupError(\"Connector URL host could not be found\", { cause: error });\" — the generated address is refused for every caller before any server row is read; the rows it then reads are availableInSpace(actor)",
+    reason:
+      "The generated server address names a host that does not exist, so every caller is refused when the address is checked (400), before any stored server is looked up.",
+  },
+  {
+    path: "mcp/servers/createForBots",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/mcp.ts:71 \"if (botIds) await chooseMcpServerBots(tx, actor, row.id, botIds);\" — the bots are chosen as the caller's actor, after the address check",
+    reason:
+      "The generated server address names a host that does not exist, so every caller is refused when the address is checked (400), before the bots are looked up.",
+  },
+  {
+    path: "mcp/servers/save",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/mcp.ts:59 \"input: { id: string; config: McpServerConfigInput } | { id: string; secret: string }, access?: { allBots: boolean; botIds: string[] }, ) { for (let attempt = 0; attempt < 5; attempt++) { const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => { const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...availableInSpace(actor), }, });\" — the server is found among those available in the caller's Space",
+    reason:
+      "The handler found the owner's server; the generated address names a host that does not exist, so the save is refused when the address is checked (400).",
+  },
+  {
+    path: "meetingCalendar/begin",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/meetings/calendar/calendar-routes.ts:45 \"async ({ context: { actor, sessionId }, input }) => { await repos.getBot(actor, input.botId); return configured().authorization.begin(\" — the bot is read for the caller's actor first",
+    reason:
+      "The handler found the bot in the caller's Space; no calendar provider is configured in tests, so the owner is refused after that (404).",
+  },
+  {
+    path: "meetingCalendar/select",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/meetings/calendar/calendar-routes.ts:72 \"select: authed.meetingCalendar.select.handler(async ({ context: { actor }, input }) => { await repos.getBot(actor, input.botId);\" — the bot is read for the caller's actor first",
+    reason:
+      "The handler found the bot in the caller's Space; no calendar provider is configured in tests, so the owner is refused after that (404).",
+  },
+  {
+    path: "meetingCalendar/skip",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/meetings/calendar/calendar-routes.ts:47 \"await repos.getBot(actor, input.botId); await configured().updateSelection(actor, input.botId, input.eventId, \"skip\");\" — the bot is read for the caller's actor first",
+    reason:
+      "The handler found the bot in the caller's Space; no calendar provider is configured in tests, so the owner is refused after that (404).",
+  },
+  {
+    path: "meetingCalendar/removeSeries",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/meetings/calendar/calendar-routes.ts:47 \"await repos.getBot(actor, input.botId); await configured().updateSelection(actor, input.botId, input.eventId, \"removeSeries\");\" — the bot is read for the caller's actor first",
+    reason:
+      "The handler found the bot in the caller's Space; no calendar provider is configured in tests, so the owner is refused after that (404).",
+  },
+  {
+    path: "meetings/ask",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/meetings/meeting-routes.ts:8 \"const { turns, botId } = await requireMeetings().transcript(context.actor, input.id);\" — the meeting's transcript is read for the caller's actor first",
+    reason:
+      "The handler read the owner's meeting transcript; answering needs a connected model, which the world's owner has none of for this (400).",
+  },
+  {
+    path: "meetings/join",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/meetings/meeting-routes.ts:20 \"requireMeetings().join(context.actor, input.botId, input.url, input.shareTranscript)\" — the meeting service gets the caller's actor",
+    reason:
+      "Meetings are not enabled for any Space in tests, so every caller is refused before the bot is looked up (403).",
+  },
+  {
+    path: "models/setBackups",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/context.ts:94 \"throw new ORPCError(\"BAD_REQUEST\", { message: \"Connect that model provider first\" });\" — the connection is looked up with findConnectedModelCredential for the caller's actor just above",
+    reason:
+      "The world's model connection is a stored row the generated provider does not match, so its owner is told to connect that provider first (400).",
+  },
+  {
+    path: "models/setMedia",
+    kind: "unreached",
+    verifiedByCode:
+      "packages/adapters/src/media/media-model-choices.ts:23 \"const connection = (await mediaConnections(prisma, target.userId)).find( (item) => item.id === choice.credentialId, );\" — the connection is found among the caller's own",
+    reason:
+      "The world's model connection offers no media models, so its owner is told the model is not available on it (400).",
+  },
+  {
+    path: "voice/connect",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/calls/voice.ts:147 \"if (!isVoiceProviderId(input.provider)) { throw new ORPCError(\"BAD_REQUEST\", { message: \"Unknown voice provider.\" }); } const previous =\" — the generated provider is refused for every caller before the model connection is read; resolveVoiceKey then reads it by the caller's user id",
+    reason:
+      "The generated voice provider is not one the catalog knows, so every caller is refused before the model connection is looked up (400).",
+  },
+  {
+    path: "organizations/members/remove",
+    kind: "unreached",
+    verifiedByCode:
+      "packages/db/src/spaces/organization-members.ts:81 \"if (input.memberUserId === input.userId) throw new OrganizationAdminRequiredError();\" — removing oneself is refused; anyone else goes through requireManager, which reads the caller's own role in the organization",
+    reason:
+      "The only person of the owner's organization the inputs can name is the owner, who cannot remove themselves (403).",
+  },
+  {
+    path: "organizations/members/setRole",
+    kind: "unreached",
+    verifiedByCode:
+      "packages/db/src/spaces/organization-members.ts:81 \"if (target === \"owner\") throw new OrganizationOwnerUnchangeableError();\" — reached only after requireManager read the caller's own role in the organization",
+    reason:
+      "The handler found the organization and the caller's role in it; the only person the inputs can name is its owner, whose role cannot change (400).",
+  },
+  {
+    path: "organizations/invitations/accept",
+    kind: "reached-409",
+    reason:
+      "The handler found the invitation, which is to the owner's own address; the owner is already a member of the organization it invites to (\"They are already a member\").",
+  },
+  {
+    path: "pageReviews/grant",
+    kind: "reached-409",
+    reason:
+      "The handler found the page as its owner (reviewAccess); the world's page is not shared with specific people, so nobody can be added (\"Choose Specific people before adding someone\").",
+  },
+  {
+    path: "pageReviews/draft",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/content/page-collaboration.ts:47 \"where: { id: pageId, OR: ownerOnly ? [owner] : [owner, reviewWhere(userId)] },\" — the page is found only for its owner or a reviewer it was granted to",
+    reason:
+      "The handler found the owner's page; the request id names no revision draft, as the world has none (404).",
+  },
+  {
+    path: "pageReviews/publish",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/content/page-collaboration.ts:47 \"where: { id: pageId, OR: ownerOnly ? [owner] : [owner, reviewWhere(userId)] },\" — the page is found only for its owner or a reviewer it was granted to",
+    reason:
+      "The handler found the owner's page; the request id names no revision draft, as the world has none (404).",
+  },
+  {
+    path: "pageReviews/image",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/content/page-collaboration.ts:47 \"where: { id: pageId, OR: ownerOnly ? [owner] : [owner, reviewWhere(userId)] },\" — the page is found only for its owner or a reviewer it was granted to",
+    reason:
+      "The handler found the owner's page; the image id names no picture of that version, as the world's page has none (404).",
+  },
+  {
+    path: "computer/downloadFile",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/computer.ts:567 \"downloadFile: authed.computer.downloadFile.handler(async ({ context, input }) => { const bot = await repos.getBot(context.actor, input.botId);\" — the bot is read for the caller's actor before anything else",
+    reason:
+      "The handler found the bot and its running computer in the caller's Space; the path the input names is no file on the test computer, which its read reports as a server error (500). While the computer is not running the conflict entry above covers it.",
+  },
+  {
+    path: "threads/answerToolQuestion",
+    kind: "reached-409",
+    reason:
+      "The handler resolved the chat for the caller (resolveThreadTarget) and looked for the message's question in it; the world's message holds no open question (\"This question is no longer open\").",
+  },
+  {
+    path: "threads/retry",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/routes/threads.ts:371 \"retry: authed.threads.retry.handler(async ({ context, input }) => { const { actor } = context; const target = await resolveThreadTarget(deps.prisma, actor, input);\" — the chat is resolved for the caller's actor first",
+    reason:
+      "The handler resolved the owner's chat; the world's run did not fail, so it cannot be retried (409), and it is not a run of the extra chat or the group at all (404).",
+  },
 ];
