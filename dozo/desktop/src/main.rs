@@ -24,6 +24,7 @@ mod frames;
 #[cfg(target_os = "linux")]
 #[path = "frames_gtk.rs"]
 mod frames;
+mod local_signup;
 #[cfg(target_os = "linux")]
 mod microphone_gtk;
 mod page_bridge;
@@ -297,7 +298,31 @@ async fn set_server(app: AppHandle, address: String) -> Result<String, String> {
         local.stop().await;
     }
     device::select(&app, Some(server.clone()));
+    if let Some(window) = app.get_webview_window("main") {
+        sync_local_signup(&window).await;
+    }
     Ok(server.into())
+}
+
+/// Gives the window the cookie that admits sign-up on the server on this computer while that is
+/// the chosen server, and takes it away otherwise (`local_signup`). Read from the secrets again
+/// each time: a restored backup changes them.
+async fn sync_local_signup(window: &WebviewWindow) {
+    let app = window.app_handle();
+    let (server, this_computer) = {
+        let config = app.state::<Config>();
+        let config = config.0.lock().unwrap();
+        (config.server.clone(), config.this_computer)
+    };
+    let key = if local_signup::wanted(this_computer, server.as_ref()) {
+        local_layout(app)
+            .ok()
+            .and_then(|layout| stack_setup::secrets(&layout.0.join("secrets")).ok())
+            .map(|secrets| local_signup::key(secrets.get("STACK_TOKEN")))
+    } else {
+        None
+    };
+    local_signup::sync(window.clone(), key).await;
 }
 
 /// Starts loading the chosen server and says whether it looks reachable. The local screen stays
@@ -309,6 +334,8 @@ async fn connect(window: WebviewWindow) -> bool {
         return false;
     };
     let probe = server.clone();
+    // Before the page can submit a sign-up.
+    sync_local_signup(&window).await;
     window.navigate(server).is_ok()
         && tauri::async_runtime::spawn_blocking(move || reachable(&probe))
             .await
@@ -1055,6 +1082,11 @@ fn main() {
                     }
                 })
                 .build()?;
+            // A cookie left by an earlier run must not reach a remote server this one opens.
+            tauri::async_runtime::spawn({
+                let window = window.clone();
+                async move { sync_local_signup(&window).await }
+            });
             if let WebviewUrl::External(server) = first {
                 guard_first_load(&app, &window, server);
             }
