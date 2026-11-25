@@ -87,11 +87,11 @@
       "reason": "dev and eval tooling (looks up Rakazo.app, evals prompt text); never shipped"
     },
     {
-      "glob": "packages/adapters/src/composio-fake.ts",
+      "glob": "packages/adapters/src/providers/integration/composio/composio-fake.ts",
       "reason": "offline emulator keyed on owner/repo elie222/rakazo; not user-visible"
     },
     {
-      "glob": "packages/adapters/src/release-watch.ts",
+      "glob": "packages/adapters/src/routines/release-watch.ts",
       "reason": "seeded emulated releases matched by owner/repo; not user-visible"
     },
     {
@@ -128,7 +128,7 @@
     {
       "text": "Rakazo-owned compacted context",
       "files": [
-        "packages/adapters/src/runtime-context.ts"
+        "packages/adapters/src/runtime/context/runtime-context.ts"
       ],
       "reason": "prefix stored in thread history and detected with startsWith in runtime-context.ts; changing it breaks old summaries"
     }
@@ -138,16 +138,16 @@
       {
         "text": "ghcr.io/elie222/rakazo",
         "files": [
-          "packages/adapters/src/kubernetes-sandbox.ts",
-          "packages/adapters/src/incus-sandbox.ts",
-          "packages/adapters/src/apple-container-sandbox.ts"
+          "packages/adapters/src/providers/computer/kubernetes/kubernetes-sandbox.ts",
+          "packages/adapters/src/providers/computer/incus/incus-sandbox.ts",
+          "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.ts"
         ],
         "reason": "published container image name pulled at runtime; stays until Dozo publishes its own images"
       },
       {
         "text": ".update(\"rakazo rls bypass\")",
         "files": [
-          "packages/db/src/row-security.ts"
+          "packages/db/src/database/row-security.ts"
         ],
         "reason": "HMAC input that derives the database row-security bypass key; never shown, changing it breaks the stored digest",
         "permanent": true
@@ -155,51 +155,51 @@
       {
         "text": "PUBLISHED_IMAGE_REPO = \"elie222/rakazo\"",
         "files": [
-          "packages/core/src/compose-update.ts"
+          "packages/core/src/deployment/compose-update.ts"
         ],
         "reason": "image repository used by compose self-update; same reason as the ghcr image"
       }
     ],
     "text": [
-      { "file": "apps/web/src/pages/AccountSettingsOverlay.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
-      { "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
-      { "file": "packages/contracts/src/bot-avatar.ts", "text": "[\"organic\", \"rakazo\"]", "reason": "stored avatar-set enum values" },
-      { "file": "packages/contracts/src/bot-avatar.ts", "text": "value === \"rakazo\" ? \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "packages/core/src/bot-look.ts", "text": "avatarSet === \"rakazo\"", "count": 2, "reason": "stored avatar-set enum value" },
-      { "file": "packages/core/src/logo-avatar-activity.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "packages/core/src/notification-avatar.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "packages/db/src/bot-avatar-choice.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "apps/web/src/pages/settings/AccountSettingsOverlay.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "apps/web/src/pages/shell/bots/avatar-studio-popover.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "packages/contracts/src/bots/bot-avatar.ts", "text": "[\"organic\", \"rakazo\"]", "reason": "stored avatar-set enum values" },
+      { "file": "packages/contracts/src/bots/bot-avatar.ts", "text": "value === \"rakazo\" ? \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/bots/bot-look.ts", "text": "avatarSet === \"rakazo\"", "count": 2, "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/avatars/logo-avatar-activity.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/avatars/notification-avatar.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/db/src/bots/bot-avatar-choice.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
-      { "file": "apps/web/src/pages/AccountSettingsOverlay.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
+      { "file": "apps/web/src/pages/shell/bots/avatar-studio-popover.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
+      { "file": "apps/web/src/pages/settings/AccountSettingsOverlay.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
       { "file": "apps/mobile/app/(settings)/general.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
       { "file": "apps/mobile/app/bot-settings.tsx", "text": "botAvatarSetName(\"rakazo\")", "reason": "stored avatar-set enum value, named by the one function" },
       { "file": "packages/i18n/src/dozo-avatar-set-names.ts", "text": "set === \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "packages/contracts/src/bot-email.ts", "text": "\"rakazo\",", "reason": "reserved bot e-mail names: a guard list, not displayed" },
-      { "file": "packages/contracts/src/bot-email.ts", "text": "anything rakazo*", "reason": "developer comment on the reserved-name guard below it" },
-      { "file": "packages/contracts/src/bot-email.ts", "text": "startsWith(\"rakazo\")", "reason": "reserved bot e-mail names: a guard, not displayed" },
-      { "file": "packages/db/src/content-keys.ts", "text": "Buffer.from(\"rakazo\")", "reason": "key-derivation salt; changing it breaks decryption" },
+      { "file": "packages/contracts/src/bots/bot-email.ts", "text": "\"rakazo\",", "reason": "reserved bot e-mail names: a guard list, not displayed" },
+      { "file": "packages/contracts/src/bots/bot-email.ts", "text": "anything rakazo*", "reason": "developer comment on the reserved-name guard below it" },
+      { "file": "packages/contracts/src/bots/bot-email.ts", "text": "startsWith(\"rakazo\")", "reason": "reserved bot e-mail names: a guard, not displayed" },
+      { "file": "packages/db/src/encryption/content-keys.ts", "text": "Buffer.from(\"rakazo\")", "reason": "key-derivation salt; changing it breaks decryption" },
       { "file": "packages/logging/src/logger.ts", "text": "service: \"rakazo\"", "reason": "operator log service name" },
-      { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "table inet rakazo", "count": 3, "reason": "nftables table name inside the sandbox, not shown" },
-      { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "\"inet\", \"rakazo\"", "reason": "nftables table name inside the sandbox, not shown" },
-      { "file": "packages/adapters/src/boat-sandbox.ts", "text": "replace(\"rakazo\", \"[r]akazo\")", "reason": "process-match marker, internal" },
-      { "file": "packages/adapters/src/chat-sdk-surface.ts", "text": "?? \"rakazo\"", "reason": "bot user name on the internal chat bridge, not displayed" },
-      { "file": "packages/adapters/src/daytona-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "label key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
-      { "file": "packages/adapters/src/remote-desktop-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "metadata key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
-      { "file": "packages/adapters/src/hindsight-memory-provider.ts", "text": "/^rakazo-/i", "reason": "reserved bank prefix regex over stored namespaces (AUDIT 6)" },
-      { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
+      { "file": "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.ts", "text": "table inet rakazo", "count": 3, "reason": "nftables table name inside the sandbox, not shown" },
+      { "file": "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.ts", "text": "\"inet\", \"rakazo\"", "reason": "nftables table name inside the sandbox, not shown" },
+      { "file": "packages/adapters/src/providers/computer/boat/boat-sandbox.ts", "text": "replace(\"rakazo\", \"[r]akazo\")", "reason": "process-match marker, internal" },
+      { "file": "packages/adapters/src/messaging/chat-sdk-surface.ts", "text": "?? \"rakazo\"", "reason": "bot user name on the internal chat bridge, not displayed" },
+      { "file": "packages/adapters/src/providers/computer/daytona/daytona-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "label key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
+      { "file": "packages/adapters/src/computers/sandbox/remote-desktop-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "metadata key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
+      { "file": "packages/adapters/src/providers/memory/hindsight/hindsight-memory-provider.ts", "text": "/^rakazo-/i", "reason": "reserved bank prefix regex over stored namespaces (AUDIT 6)" },
+      { "file": "packages/adapters/src/providers/computer/desktop/desktop-process-tree.ts", "text": "\"RakazoJobLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
       { "file": "packages/adapters/src/dozo-local-postgres.ts", "text": "export const DATABASE = \"rakazo\"", "reason": "the local server's database and owner role names (server-bundle start contract), never displayed" },
-      { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobIoCounters\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
-      { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobExtendedLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
-      { "file": "packages/adapters/src/infisical-secret-store.ts", "text": "/rakazo_start_check", "reason": "key of the secret-store health probe, never displayed" },
-      { "file": "packages/adapters/src/keenable-web.ts", "text": "\"X-Keenable-Title\": \"rakazo\"", "reason": "X-Keenable-Title header to a vendor; operator-visible only, vendor may key on it (AUDIT 20)" },
-      { "file": "packages/adapters/src/pi-codex-catalog.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
-      { "file": "packages/adapters/src/plan-limits.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
-      { "file": "packages/adapters/src/pi-runtime-stream.ts", "text": "\"x-opencode-client\": \"rakazo\"", "reason": "x-opencode-client vendor header; operator-visible only (AUDIT 20)" },
-      { "file": "packages/adapters/src/pi-telemetry-otel.ts", "text": "startsWith(\"rakazo.\")", "reason": "attribute-key prefix of the dotted keys, not shown" },
-      { "file": "packages/adapters/src/secret-store-fake.ts", "text": "\"/rakazo\"", "count": 2, "reason": "folder of the offline secret-store emulator, never shown" },
+      { "file": "packages/adapters/src/providers/computer/desktop/desktop-process-tree.ts", "text": "\"RakazoJobIoCounters\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
+      { "file": "packages/adapters/src/providers/computer/desktop/desktop-process-tree.ts", "text": "\"RakazoJobExtendedLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
+      { "file": "packages/adapters/src/providers/secret-store/infisical/infisical-secret-store.ts", "text": "/rakazo_start_check", "reason": "key of the secret-store health probe, never displayed" },
+      { "file": "packages/adapters/src/providers/web/keenable/keenable-web.ts", "text": "\"X-Keenable-Title\": \"rakazo\"", "reason": "X-Keenable-Title header to a vendor; operator-visible only, vendor may key on it (AUDIT 20)" },
+      { "file": "packages/adapters/src/runtime/pi/models/pi-codex-catalog.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
+      { "file": "packages/adapters/src/billing/plan-limits.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
+      { "file": "packages/adapters/src/runtime/pi/stream/pi-runtime-stream.ts", "text": "\"x-opencode-client\": \"rakazo\"", "reason": "x-opencode-client vendor header; operator-visible only (AUDIT 20)" },
+      { "file": "packages/adapters/src/runtime/pi/usage/pi-telemetry-otel.ts", "text": "startsWith(\"rakazo.\")", "reason": "attribute-key prefix of the dotted keys, not shown" },
+      { "file": "packages/adapters/src/secrets/secret-store-fake.ts", "text": "\"/rakazo\"", "count": 2, "reason": "folder of the offline secret-store emulator, never shown" },
       { "file": "packages/ui-tokens/scripts/export-brand.ts", "text": "apps/www/public/brand/rakazo-mark.png", "reason": "output path of the icon export script in apps/www, outside the stack" },
-      { "file": "apps/web/src/lib/computer-screen.ts", "text": "rakazoScreen as ScreenFrameState", "reason": "message key of the screen frame, a cast in code; the word after it makes it look like prose" },
+      { "file": "apps/web/src/lib/computers/computer-screen.ts", "text": "rakazoScreen as ScreenFrameState", "reason": "message key of the screen frame, a cast in code; the word after it makes it look like prose" },
       { "file": "infra/sandboxes/computer/rakazo-focus-or-launch", "text": "browser rakazo-browser starts", "reason": "docstring naming the installed executable; internal" },
       { "file": "infra/sandboxes/computer/rakazo-focus-or-launch", "text": "Profile rakazo-browser would use", "reason": "docstring naming the installed executable; internal" },
       { "file": "infra/sandboxes/computer/start.sh", "text": "failed to register rakazo-browser for $mime", "reason": "error line naming the installed executable, operator-visible only" },
@@ -212,26 +212,26 @@
       { "file": "apps/mobile/app/(settings)/general.tsx", "text": "value: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/mobile/app/bot-settings.tsx", "text": "key: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/mobile/app/new-bot.tsx", "text": "set === \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "apps/mobile/components/bot-avatar.tsx", "text": "avatarSet: \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "apps/mobile/components/pdf-preview.tsx", "text": "\"RakazoPdfView\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/components/bots/bot-avatar.tsx", "text": "avatarSet: \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "apps/mobile/components/media/pdf-preview.tsx", "text": "\"RakazoPdfView\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "\"RakazoDefaultApiBase\"", "reason": "Info.plist key read by the Siri intents" },
       { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "\"RakazoPendingVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "RakazoSession", "count": 17, "reason": "Swift type name; `struct` is not a keyword the camel-name row knows" },
       { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "RakazoShortcuts", "reason": "Swift type name; `struct` is not a keyword the camel-name row knows" },
       { "file": "apps/mobile/ios-widgets/RakazoWidgets.swift", "text": "RakazoWidgets", "reason": "Swift type name; `struct` is not a keyword the camel-name row knows" },
-      { "file": "apps/mobile/lib/call-background.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/file-drop.ts", "text": "\"RakazoFileDrop\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/fold-regions.ts", "text": "\"RakazoFoldRegions\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/incoming-calls.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/live-notifications.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/native-list-scroll.ts", "text": "\"RakazoListScroll\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/network-cache.ts", "text": "\"RakazoNetworkCache\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/notification-open.ts", "text": "\"rakazo:\"", "reason": "the kept deep-link scheme, compared with a URL's protocol" },
-      { "file": "apps/mobile/lib/notification-open.ts", "text": "`rakazo.${key}`", "reason": "prefix of the notification data keys the server sends (rakazo.threadId); never shown" },
-      { "file": "apps/mobile/lib/push.ts", "text": "\"RakazoNotifications\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/sso.ts", "text": "\"rakazo:\"", "reason": "the kept deep-link scheme, compared with a URL's protocol" },
-      { "file": "apps/mobile/lib/voice-chat-intent.ts", "text": "\"RakazoVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/lib/work-activity.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/calls/call-background.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/composer/file-drop.ts", "text": "\"RakazoFileDrop\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/layout/fold-regions.ts", "text": "\"RakazoFoldRegions\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/calls/incoming-calls.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/notifications/live-notifications.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/native/native-list-scroll.ts", "text": "\"RakazoListScroll\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/api/network-cache.ts", "text": "\"RakazoNetworkCache\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/notifications/notification-open.ts", "text": "\"rakazo:\"", "reason": "the kept deep-link scheme, compared with a URL's protocol" },
+      { "file": "apps/mobile/lib/notifications/notification-open.ts", "text": "`rakazo.${key}`", "reason": "prefix of the notification data keys the server sends (rakazo.threadId); never shown" },
+      { "file": "apps/mobile/lib/notifications/push.ts", "text": "\"RakazoNotifications\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/auth/sso.ts", "text": "\"rakazo:\"", "reason": "the kept deep-link scheme, compared with a URL's protocol" },
+      { "file": "apps/mobile/lib/calls/voice-chat-intent.ts", "text": "\"RakazoVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/notifications/work-activity.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-file-drop/expo-module.config.json", "text": "\"RakazoFileDropModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-file-drop/expo-module.config.json", "text": "\"com.rakazo.filedrop.RakazoFileDropModule\"", "reason": "Android class of a local native module; Android is not built" },
       { "file": "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDrop.podspec", "text": "'RakazoFileDrop'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
@@ -13784,9 +13784,9 @@
       "replace": "dev.ssilistre.dozo",
       "files": [
         "apps/mobile/app.json",
-        "apps/mobile/lib/incoming-share.ts",
-        "apps/api/src/app-association.ts",
-        "packages/adapters/src/apns-voip-config.ts"
+        "apps/mobile/lib/composer/incoming-share.ts",
+        "apps/api/src/http/app-association.ts",
+        "packages/adapters/src/calls/apns-voip-config.ts"
       ],
       "reason": "the one definition of the mobile id family: iOS bundle id, its extensions (.widgets, .expo-sharing-extension, .notifications), the app group (group.<id>) and the Android package all carry this prefix, so the owner changes one line. The server's Android package in its passkey association file and the default push topic follow it; the Apple team id and the Android signing fingerprint come from PASSKEY_APPLE_APP_IDS and PASSKEY_ANDROID_CERT_SHA256 (dozo/deploy/README.md)"
     },
@@ -13813,7 +13813,7 @@
       "find": "RakazoIntrospection",
       "replace": "DozoIntrospection",
       "files": [
-        "packages/adapters/src/graphql-connectors.ts"
+        "packages/adapters/src/integrations/graphql-connectors.ts"
       ],
       "reason": "GraphQL operation name sent to servers users connect; only a label"
     },
@@ -13821,7 +13821,7 @@
       "find": "`rakazo-${server.slug}`",
       "replace": "`dozo-${server.slug}`",
       "files": [
-        "packages/adapters/src/mcp-connector.ts"
+        "packages/adapters/src/mcp/mcp-connector.ts"
       ],
       "reason": "MCP client name announced to third-party servers"
     }
