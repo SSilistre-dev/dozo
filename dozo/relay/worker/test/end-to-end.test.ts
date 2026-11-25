@@ -1,4 +1,4 @@
-import { deferred } from "@dozo/relay-core/async.test-support";
+import { deferred } from "@dozo/relay-core/primitives/async.test-support";
 import type { RelayDuplex, RelayKeyPair, RelayReceiver } from "@dozo/relay-core/dozo-relay-channel";
 import {
   acceptHostChannel,

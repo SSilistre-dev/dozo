@@ -68,6 +68,7 @@ describe("mounted with the device routes", () => {
       hub: { authenticate: async () => null } as never,
       devices: {} as never,
       forwardSecret: "x".repeat(32),
+      pairingSecret: "test-pairing-secret",
       ...(withSecrets ? { secrets: secrets as never } : {}),
       session: async () => null,
       trustedOrigin: () => false,

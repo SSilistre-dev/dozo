@@ -298,6 +298,8 @@ describePostgres("a bot's extra chats through the bot API and chat apps (Postgre
       enqueueIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
+      pendingUntil: vi.fn(async () => ({ until: null, own: false })),
+      releaseFollowersIn: vi.fn(async () => undefined),
     };
     const recorder = new MessagingDelivery({
       prisma: system,

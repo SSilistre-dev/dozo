@@ -6232,11 +6232,17 @@
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
       "find": "    } else userComputer = \"offline\";\n  }\n  const cloudAgent = await cloudAgentPromise;\n",
-      "replace": "    } else userComputer = \"offline\";\n  }\n  if (userComputerOwnerId)\n    await offerPhoneTools(\n      deps,\n      run,\n      thread,\n      userComputerOwnerId,\n      disabledBuiltinTools,\n      bot.disabledBuiltinTools,\n    );\n  const cloudAgent = await cloudAgentPromise;\n",
+      "replace": "    } else userComputer = \"offline\";\n  }\n  if (userComputerOwnerId)\n    await offerPhoneTools(\n      deps,\n      run,\n      parts.records.thread,\n      userComputerOwnerId,\n      disabledBuiltinTools,\n      bot.disabledBuiltinTools,\n    );\n  const cloudAgent = await cloudAgentPromise;\n",
       "requires": [
         "packages/adapters/src/dozo-phone.ts"
       ],
       "reason": "phone: a run the person started themselves is offered each read of their phone (calendar, contacts, location) while the phone is connected with that switch on, unless the bot turned it off, a token's message reached the run, or someone else can read its thread (a group, a channel, a Space with other members)"
+    },
+    {
+      "file": "packages/adapters/src/providers/billing/stripe/stripe-invoice-refund.ts",
+      "find": "state: refund.status,",
+      "replace": "state: refund.status === \"pending\" ? (\"pending\" as const) : (\"succeeded\" as const),",
+      "reason": "type check: the compiler no longer carries the guard above (only a pending or succeeded refund gets here) into the returned state, so the literal is restated to match BillingInvoiceRefund; same value"
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",

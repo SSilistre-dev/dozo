@@ -243,7 +243,7 @@ describe("the phone's approval", () => {
 
   it("refuses a block, a token's run and a run that is not the owner's, even once allowed", async () => {
     expect(
-      await userComputerGate(context({ consent: true }).ctx, true, PHONE_CALENDAR_READ_TOOL, {}),
+      await userComputerGate(context({ consent: true }).ctx, true, PHONE_CALENDAR_READ_TOOL, {}, "never"),
     ).toBe("deny");
     const token = context({ consent: true, token: true });
     expect(await gate(token.ctx)).not.toBe("recorded");
@@ -316,7 +316,7 @@ describe("contacts and location through the gate", () => {
       "recorded",
     );
     expect(plans).toEqual(["deny", "deny"]);
-    expect(await userComputerGate(context({ consent: true }).ctx, true, name, { ...args })).toBe(
+    expect(await userComputerGate(context({ consent: true }).ctx, true, name, { ...args }, "never")).toBe(
       "deny",
     );
   });
@@ -463,7 +463,7 @@ describe("writes to the phone through the gate", () => {
       "recorded",
     );
     expect(plans).toEqual(["deny", "deny"]);
-    expect(await userComputerGate(context({ card: true }).ctx, true, name, { ...args })).toBe(
+    expect(await userComputerGate(context({ card: true }).ctx, true, name, { ...args }, "never")).toBe(
       "deny",
     );
   });

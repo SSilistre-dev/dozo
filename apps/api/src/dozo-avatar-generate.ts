@@ -153,7 +153,7 @@ export function dozoAvatarGenerateRoutes(
         { operationId: id, traceId: id, spaceId: actor.spaceId, userId: actor.userId, signal },
       ),
     );
-    await asFailure(() => validateGeneratedMedia(output, "image/png"));
+    await asFailure(() => validateGeneratedMedia(output, "image"));
     // The same signature check and re-encoding as an uploaded picture; a refusal is its own.
     return dozoAvatarForSave(
       `data:image/png;base64,${Buffer.from(output.bytes).toString("base64")}`,

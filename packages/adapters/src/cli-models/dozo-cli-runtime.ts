@@ -81,6 +81,7 @@ export async function ownRun(prisma: PrismaClient, runId: string): Promise<strin
       sourceRole: run.sourceMessage.role,
       // A chat app's run has its own trigger, which the rule above already refuses.
       messagingChannelRun: false,
+      ownerComputerRoutine: false,
       runUserId: run.userId,
       botUserId: run.bot.userId,
     }) !== undefined;

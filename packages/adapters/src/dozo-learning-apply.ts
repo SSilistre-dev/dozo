@@ -205,7 +205,7 @@ export function applyLearningOps(
   for (const op of adds) {
     if (turnedDown(op.text)) continue;
     const current = joinLines(lines);
-    const edit = editMemory(current, op.text, "", maxBytes);
+    const edit = editMemory(current, [{ action: "add", content: op.text }], maxBytes);
     if ("error" in edit || edit.content === current) continue;
     lines = linesOf(edit.content);
     applied.push({ kind: "add", before: null, after: op.text });

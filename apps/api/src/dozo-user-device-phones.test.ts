@@ -81,6 +81,7 @@ function setup() {
     hub,
     devices,
     forwardSecret: secret,
+    pairingSecret: "test-pairing-secret",
     session: async (request) => {
       const userId = request.headers.get("x-test-user");
       return userId ? { userId, sessionId: `${userId}-session` } : null;

@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
-  approvalModeFromPreference,
+  type ApprovalMode,
   literalCommandWords,
   readOnlyCwd,
   readOnlyPipeline,
@@ -36,18 +36,18 @@ export async function userComputerGate(
   blocked: boolean,
   name: string,
   args: Record<string, unknown>,
+  mode: ApprovalMode,
 ): Promise<"deny" | "allow" | "ask"> {
   // The user's phone has its own approval (dozo-phone.ts).
   if (isPhoneTool(name)) return phoneGate(ctx, blocked, name, args);
   // The page tools reach this gate only when they go to the user's own browser.
   if (isUserBrowserTool(name)) return userBrowserGate(ctx, blocked, name, args);
-  const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
+  const plan = await upstreamUserComputerGate(ctx, blocked, name, args, mode);
   if (plan === "deny" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
   const ruled = await commandRuleMatch(ctx, args, "user");
   if (ruled === "block") return "deny";
   if (plan !== "allow") return plan;
-  if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
-    return "allow";
+  if (mode === "never") return "allow";
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return "allow";
   if (ruled) return "allow";
   markCommandAsk(args);
