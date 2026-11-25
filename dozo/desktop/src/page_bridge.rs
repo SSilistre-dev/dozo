@@ -272,8 +272,6 @@ fn state(app: &AppHandle) -> Value {
     })
 }
 
-/// The switches and the version, once they differ from `seen` (what the section shows now): the
-/// page asks again after each answer, and nothing is asked on a timer.
 /// How many reads may wait at once. One is enough: a new read ends the one before it.
 const MAX_WAITING: usize = 4;
 
@@ -346,6 +344,8 @@ pub fn page_loading(app: &AppHandle, page: &Url) {
     }
 }
 
+/// The switches and the version, once they differ from `seen` (what the section shows now): the
+/// page asks again after each answer, and nothing is asked on a timer.
 #[tauri::command]
 pub async fn desktop_settings(app: AppHandle, webview: Webview, seen: Option<Value>) -> Value {
     if !allowed(&app, &webview) {
@@ -418,11 +418,36 @@ pub async fn desktop_set(app: AppHandle, webview: Webview, key: Option<Value>, o
 /// Settings window (the logins of the password manager). Answers nothing, whatever happened.
 #[tauri::command]
 pub async fn desktop_open(app: AppHandle, webview: Webview, what: Option<Value>) {
-    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    static LAST: Mutex<Opened> = Mutex::new(Opened::new());
     let id = opens(allowed(&app, &webview), what.as_ref());
-    if let Some(id) = id.filter(|_| once_per(&mut LAST.lock().unwrap(), Instant::now(), OPEN_GAP)) {
+    if let Some(id) = id.filter(|id| LAST.lock().unwrap().once(id, Instant::now(), OPEN_GAP)) {
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || crate::run(&handle, id));
+    }
+}
+
+/// When each thing was last opened: the gap holds for each alone, so Change Server and the
+/// Settings window do not take each other's turn, and neither goes faster than once per gap.
+struct Opened(Vec<(&'static str, Instant)>);
+
+impl Opened {
+    const fn new() -> Self {
+        Opened(Vec::new())
+    }
+
+    fn once(&mut self, id: &'static str, now: Instant, gap: Duration) -> bool {
+        let at = match self.0.iter().position(|(seen, _)| *seen == id) {
+            Some(place) => &mut self.0[place],
+            None => {
+                self.0.push((id, now));
+                return true;
+            }
+        };
+        if now.saturating_duration_since(at.1) < gap {
+            return false;
+        }
+        at.1 = now;
+        true
     }
 }
 
@@ -916,6 +941,23 @@ mod tests {
             }
             assert!(once_per(&mut last, start + gap, gap));
         }
+    }
+
+    #[test]
+    fn each_thing_a_page_opens_has_its_own_gap_and_none_goes_faster_than_once_per_gap() {
+        let start = Instant::now();
+        let mut opened = Opened::new();
+        assert!(opened.once("change-server", start, OPEN_GAP));
+        // Another thing at once: its own turn, not swallowed by the first.
+        assert!(opened.once("settings", start, OPEN_GAP));
+        // The same thing again within the gap: held, however it is spread over the gap.
+        for tenth in 1..10 {
+            let at = start + OPEN_GAP * tenth / 10;
+            assert!(!opened.once("change-server", at, OPEN_GAP));
+            assert!(!opened.once("settings", at, OPEN_GAP));
+        }
+        assert!(opened.once("change-server", start + OPEN_GAP, OPEN_GAP));
+        assert!(opened.once("settings", start + OPEN_GAP, OPEN_GAP));
     }
 
     #[test]

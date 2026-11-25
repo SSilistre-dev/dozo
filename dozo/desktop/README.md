@@ -254,12 +254,14 @@ Known limits:
   in the app window only, once its page starts loading there. Tauri cannot take a grant back, so
   each command checks again that it is called from the app window's own page on the origin
   chosen now; a server left behind is refused. A frame inside the page gets neither Tauri's call
-  key nor the bridge (tested on Linux; on macOS and Windows this rests on the same Tauri rule and
-  is not tested by hand). Input is a closed set of names and a boolean; anything else, a refused
+  key nor the bridge (tested on Linux, which also tries real calls to `desktop_settings` from
+  frames of another origin and of the server's own; a frame of the server's own that reaches into
+  the top page's channel is the same page and the same trust, and the gate only reports what
+  happens; on macOS and Windows this rests on the same Tauri rule and is not tested by hand). Input is a closed set of names and a boolean; anything else, a refused
   caller and a call over the rate limit get the same answer as a call that did nothing, and the
   switches are sent to the chosen server only. A read left waiting ends when a new read comes or
   the window's page changes, so none piles up, and opening a window from the page is held to once
-  a second.
+  a second for each window (Change Server and Settings do not take each other's turn).
 - A page changes at once only Push to Talk (its keys stay fixed; turning it on at most once in 30
   seconds, so a shortcut another program holds cannot make its message repeat) and the safe way of
   three switches: Open at Login, Keep Running in Background and Let Bots Use This Computer turned
