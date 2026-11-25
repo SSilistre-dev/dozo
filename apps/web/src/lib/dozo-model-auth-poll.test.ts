@@ -18,7 +18,12 @@ describe("waitForModelOAuth interval", () => {
     try {
       completeOAuth.mockResolvedValueOnce({ status: "pending" });
       completeOAuth.mockResolvedValueOnce({ status: "ready" });
-      const waiting = waitForModelOAuth("login-id", undefined, undefined, 1000);
+      const waiting = waitForModelOAuth(
+        { loginId: "login-id", expiresInSeconds: 600 },
+        undefined,
+        undefined,
+        1000,
+      );
 
       await vi.advanceTimersByTimeAsync(999);
       expect(completeOAuth).toHaveBeenCalledTimes(1);

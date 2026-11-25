@@ -104,7 +104,6 @@ function RosterShell() {
   });
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   useSpaceBootstrap({
-    rpc: rosterRpc,
     roster,
     thread,
     commitComputer: () => {},

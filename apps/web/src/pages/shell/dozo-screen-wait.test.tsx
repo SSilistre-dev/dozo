@@ -81,6 +81,7 @@ function Window() {
     }),
     refreshGroupThread: vi.fn(),
     onUpgrade: vi.fn(),
+    onSendError: vi.fn(),
   });
   const { computer } = state;
   return (
