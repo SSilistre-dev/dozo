@@ -112,7 +112,8 @@ Web, desktop, iPhone, iPad, and Android, all talking to the same server.
 
 ## Quick start (published images)
 
-You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.
+You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install. On Linux,
+the installer installs Docker for you when run as root.
 
 ```bash
 mkdir -p rakazo && cd rakazo &&
@@ -127,7 +128,8 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and conn
 Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, `instabox`, or `railway`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
+New installs default to `latest` (stable releases, `linux/amd64` + `linux/arm64`). A stable
+release must exist; setup does not fall back to main builds. Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
 On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
@@ -139,8 +141,8 @@ For an agent-assisted install, use [SETUP_PROMPT.md](./SETUP_PROMPT.md).
 
 ## Run on a server
 
-Bots stay on when the backend runs on a server. Use the same installer on a VPS, then connect from
-the desktop app, the mobile app, or a browser.
+Bots stay on when the backend runs on a server. Use the same installer on a VPS with 2 vCPUs and
+4 GB of RAM, then connect from the desktop app, the mobile app, or a browser.
 
 ```bash
 bash install-images.sh --prepare-only
@@ -198,7 +200,9 @@ pnpm dev
 ```
 
 `pnpm dev` uses the Postgres in `DATABASE_URL` when it accepts a connection. Otherwise it starts a
-local `rakazo-dev-postgres` container with Docker, and every checkout reuses that one. It applies
+local `rakazo-dev-postgres` container with Docker, and every checkout reuses that one. Without
+Docker, it runs a local Postgres cluster with your installed Postgres (on `PATH` or from Homebrew)
+instead, also shared by every checkout. It applies
 migrations and generates the Prisma client before starting. A branch that adds migrations main
 doesn't have gets its own database on the same server, copied from the shared one when possible,
 so unmerged schema changes stay out of it. When the default ports are taken, for example by
@@ -287,7 +291,8 @@ builds pin the image tag to their own version; unpackaged builds pull `edge`. De
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
 instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
-**Stop Local Stack** in the application menu stops the managed stack without quitting.
+**Quit and Stop Bots** in the application menu stops the managed stack and quits; switching to
+another server also stops it.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
@@ -314,12 +319,12 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 ## UI language
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
-Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, and Polski under
-**Settings → Language**. The Expo app ships the same 15 languages under
+Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, Polski, and ไทย under
+**Settings → Language**. The Expo app ships the same 16 languages under
 **Account → Language**. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
 Native Electron setup and menus also support the web UI's languages, following the saved app
-choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all
+choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers
 15 languages through footer links, including `/zh/` and `/zh-tw/`; other marketing pages remain
 primarily English.
 
@@ -392,6 +397,7 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 - [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [OpenSourceAlternatives.to](https://www.opensourcealternatives.to/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 
 ## Stack
 
