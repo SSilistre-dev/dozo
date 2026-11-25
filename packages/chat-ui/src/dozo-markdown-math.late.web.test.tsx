@@ -3,6 +3,7 @@
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The math parser is a chunk of its own: each test starts from modules that have not loaded it.
@@ -60,5 +61,39 @@ describe("math before its parser has loaded", () => {
     await render("Then $y$");
     await vi.waitFor(() => expect(tries).toHaveBeenCalledTimes(2));
     expect(container.querySelector(".rk-math")).toBeNull();
+  });
+
+  it("loads the parser once for every message, and gives later readers its plugins at once", async () => {
+    const plugin = () => undefined;
+    const parser = vi.fn(() => ({
+      mathSource: (source: string) => `read ${source}`,
+      remarkChatMath: [plugin],
+    }));
+    vi.doMock("./dozo-markdown-math", parser);
+    const { mathSource, withChatMath, useMathReady } = await import("./dozo-markdown-math.web");
+    const early = withChatMath([]);
+    expect(mathSource("$a$")).toBe("$a$");
+    expect(mathSource("$b$")).toBe("$b$");
+    await vi.waitFor(() => expect(early).toEqual([plugin]));
+    expect(parser).toHaveBeenCalledTimes(1);
+    expect(withChatMath([])).toEqual([plugin]);
+    expect(mathSource("$c$")).toBe("read $c$");
+    let ready: boolean | undefined;
+    function Probe() {
+      ready = useMathReady();
+      return null;
+    }
+    await act(async () => {
+      root.render(<Probe />);
+    });
+    expect(ready).toBe(true);
+  });
+
+  it("renders on the server as not ready, so the page draws the text first", async () => {
+    const { useMathReady } = await import("./dozo-markdown-math.web");
+    function Probe() {
+      return <span>{useMathReady() ? "ready" : "text"}</span>;
+    }
+    expect(renderToString(<Probe />)).toBe("<span>text</span>");
   });
 });
