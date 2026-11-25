@@ -82,7 +82,9 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "dozoTeach/decideSaved": ["draftskill"],
   "dozoTeach/save": ["draftskill"],
   "export/bot": [
+    "artifactbody",
     "attachment",
+    "attachmentbody",
     "attachmentmessage",
     "bot",
     "botdescription",

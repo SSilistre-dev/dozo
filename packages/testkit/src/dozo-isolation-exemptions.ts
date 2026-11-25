@@ -939,14 +939,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     reason:
       "The handler found the owner's page; the image id names no picture of that version, as the world's page has none (404).",
   },
-  {
-    path: "computer/downloadFile",
-    kind: "unreached",
-    verifiedByCode:
-      'apps/api/src/routes/computer.ts:567 "downloadFile: authed.computer.downloadFile.handler(async ({ context, input }) => { const bot = await repos.getBot(context.actor, input.botId);" — the bot is read for the caller\'s actor before anything else',
-    reason:
-      "The handler found the bot and its running computer in the caller's Space; the path the input names is no file on the test computer, which its read reports as a server error (500). While the computer is not running the conflict entry above covers it.",
-  },
+
   {
     path: "threads/answerToolQuestion",
     kind: "reached-409",
