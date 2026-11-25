@@ -738,6 +738,16 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         `${prefix} control: canaries found through ${found.length} procedures\n${found.join(" ")}`,
       );
       const seen = new Set(outcomes.flatMap((outcome) => outcome.matched));
+      // The file a message carries is an artifact of its own, and the sweep's inputs name the
+      // other one: the owner reads this one by its id, so its body is a canary a scan can find.
+      const attached = await readAnswer(
+        world.app,
+        A.cookie,
+        "artifacts/getById",
+        { artifactId: P.ids.attachmentArtifactId },
+        P.spaceId,
+      );
+      for (const value of findCanaries(attached.text, P.canaries)) seen.add(value);
       const unseen = P.canaries.filter((value) => !seen.has(value));
       console.log(`${prefix} control: canaries no owner read shows: ${unseen.join(" ") || "none"}`);
       // Destructive procedures that name P's things after that, one at a time, the removals the

@@ -68,7 +68,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "draftskill",
     "file",
     "group",
-    "instructions",
     "instructionsnext",
     "memory",
     "message",
@@ -87,7 +86,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "waitbot",
     "bot",
     "botdescription",
-    "instructions",
     "instructionsnext",
     "routineprompt",
     "secondbot",
@@ -114,14 +112,15 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "secondbot",
     "sharedmemory",
   ],
+  // Only bots the caller made (`dozoTokenOwnBots`): the caller's own copy of S's bot, which
+  // `bots/duplicate` above names after its source.
+  "dozoAccessTokens/ownBots": ["bot"],
   "dozoChats/list": ["chat"],
   "dozoDailyDigest/set": ["bot"],
   "dozoTeach/decideSaved": ["draftskill"],
   "dozoTeach/save": ["draftskill"],
   "export/bot": [
-    "artifactbody",
     "attachment",
-    "attachmentbody",
     "attachmentmessage",
     "bot",
     "botdescription",
@@ -148,7 +147,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "memory/list": ["memory"],
   "routines/list": ["routine", "routineprompt"],
   "routines/listForMentions": ["routine", "routineprompt"],
-  "routines/update": ["routine", "routineprompt"],
   "scratchpad/list": ["scratchpad"],
   "scratchpad/update": ["scratchpad"],
   "skills/get": ["taught"],
@@ -161,7 +159,6 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "bot",
     "botdescription",
     "group",
-    "instructions",
     "instructionsnext",
     "routineprompt",
     "secondbot",
@@ -201,6 +198,7 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
     "page",
     "pagebody",
     "queued",
+    "routine",
     "routineprompt",
     "sharedmemory",
   ],
@@ -226,6 +224,9 @@ export const DESIGNED_SHARING: Readonly<Record<string, readonly string[]>> = {
   "tickets/get": ["ticket"],
   "tickets/list": ["ticket"],
   "tickets/move": ["ticket"],
+  // The caller's own usage records in S (`usage.breakdown` reads by the caller's user id), named
+  // by the bot and routine each was spent on: names the roster and `routines/list` show them too.
+  "usage/breakdown": ["bot", "routine", "secondbot"],
 };
 
 /**
