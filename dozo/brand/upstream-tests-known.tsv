@@ -67,6 +67,7 @@ apps/web/src/lib/bots/logo-avatar-render.test.tsx	keeps static SVG artwork mount
 apps/web/src/lib/bots/logo-avatar-render.test.tsx	projects production feed events into the live avatar and subscribes only live Rakazo consumers	b	the Dozo avatar art replaces upstream's
 apps/web/src/lib/bots/logo-avatar-render.test.tsx	renders generic work elsewhere when the open chat is idle, preserving live detail	b	the Dozo avatar art replaces upstream's
 apps/web/src/lib/bots/logo-avatar-render.test.tsx	retains the live pose through overlapping feed hydration, hidden updates and reconnect	b	the Dozo avatar art replaces upstream's
+packages/adapters/src/providers/billing/stripe/stripe-credits.test.ts	Stripe prepaid model credits names the tier in the price's lookup key, keeping Standard's keys	b	plans: Dozo sells three tiers, so upstream's Ultra is removed from the tier list (billing.ts rules) and its lookup key names no tier
 packages/i18n/src/user-error.test.ts	authErrorText keeps messages from older servers	b	error copy: the server's message is never shown as it is
 apps/web/src/pages/settings/AccountSettingsOverlay.test.tsx	keeps bot style available without a saved value and saves an explicit Original choice	b	the bot style choices are named Character and Simple
 apps/web/src/pages/auth/AdminAccessPage.test.tsx	grants once, holds every control meanwhile, then lists the grant and clears the form	b	the fork's grant actions put Revoke in a menu beside Edit and Delete

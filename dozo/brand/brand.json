@@ -2008,6 +2008,18 @@
     },
     {
       "file": "packages/contracts/src/billing/billing.ts",
+      "find": "export const ByokTierSchema = z.enum([\"standard\", \"pro\", \"max\", \"ultra\"]);\n",
+      "replace": "export const ByokTierSchema = z.enum([\"standard\", \"pro\", \"max\"]);\n",
+      "reason": "plans: Dozo sells three tiers (Free, Premium, Premium Plus); upstream's fourth, Ultra, is not a tier here, so no checkout, plan change, admin grant or price key can name it"
+    },
+    {
+      "file": "packages/contracts/src/billing/billing.ts",
+      "find": "  ultra: {\n    name: \"Ultra\",\n    monthlyPriceCents: 19900,\n    annualPriceCents: 190800,\n    computerAllowanceCents: 12000,\n    computerSize: \"xlarge\",\n  },\n};\n",
+      "replace": "};\n",
+      "reason": "plans: upstream's Ultra terms (its price and allowance) are not Dozo's, and are removed with the tier"
+    },
+    {
+      "file": "packages/contracts/src/billing/billing.ts",
       "find": "/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n  if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;\n",
       "replace": "import { applyDozoPlans } from \"../dozo-plans.js\";\n\napplyDozoPlans(BYOK_TIERS);\n\n/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n",
       "requires": [
@@ -2170,6 +2182,42 @@
         "packages/db/src/dozo-shared-space.ts"
       ],
       "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/adapters/src/meetings/meeting-service.ts",
+      "find": "import { LeaseHeldError, runAsSystem, runAsSystemInTransaction, withLease } from \"@rakazo/db\";\n",
+      "replace": "import {\n  holdSharedSpace,\n  LeaseHeldError,\n  runAsSystem,\n  runAsSystemInTransaction,\n  sharedSpaceFull,\n  withLease,\n} from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check below"
+    },
+    {
+      "file": "packages/adapters/src/meetings/meeting-service.ts",
+      "find": "      const saved = await tx.artifact.createMany({ data: artifact, skipDuplicates: true });\n      return saved.count > 0;\n",
+      "replace": "      const saved = await tx.artifact.createMany({ data: artifact, skipDuplicates: true });\n      await holdSharedSpace(tx, row.spaceId);\n      return saved.count > 0;\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: a transcript the member shares as a file counts against the shared space, and one that does not fit is refused"
+    },
+    {
+      "file": "packages/adapters/src/meetings/meeting-service.ts",
+      "find": "    const turns = await provider.downloadTranscript(artifact.id, signal, { selfName: bot?.name });\n",
+      "replace": "    const turns = await provider.downloadTranscript(artifact.id, signal, {\n      selfName: bot?.name,\n    });\n    // The transcript stays on the meeting; only its shared file is left out when there is no room.\n    const shareFile = row.shareTranscript && !(await sharedSpaceFull(prisma, row.spaceId));\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: a finished meeting whose transcript file would not fit the shared space is still ready, without the file"
+    },
+    {
+      "file": "packages/adapters/src/meetings/meeting-service.ts",
+      "find": "        if (row.shareTranscript) {\n          await tx.artifact.create({ data: meetingTranscriptArtifact(row, turns) });\n        }",
+      "replace": "        if (shareFile) {\n          await tx.artifact.create({ data: meetingTranscriptArtifact(row, turns) });\n          await holdSharedSpace(tx, row.spaceId);\n        }",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the shared transcript file is held to the shared space, so writes running together cannot pass it"
     },
     {
       "file": "apps/api/src/account/account-import.ts",
@@ -11655,6 +11703,69 @@
       "reason": "bot chats on mobile: Stop on a helper in an extra chat names that chat"
     },
     {
+      "file": "apps/mobile/components/cards/OutgoingDraftCard.tsx",
+      "find": "import { errorText } from \"../../lib/api/user-error\";\nimport type { MobileArtifactTarget }",
+      "replace": "import { errorText } from \"../../lib/api/user-error\";\nimport { dozoChatTarget, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport type { MobileArtifactTarget }",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/cards/ToolQuestionCard.tsx",
+      "find": "import { errorText } from \"../../lib/api/user-error\";\nimport type { MobileArtifactTarget }",
+      "replace": "import { errorText } from \"../../lib/api/user-error\";\nimport { dozoChatTarget, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport type { MobileArtifactTarget }",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/cards/OutgoingDraftCard.tsx",
+      "find": "  const answer = useSave({\n    save: (input: { runId: string; answer: string }, send) =>\n      send(\"threads/answer\", { ...target, messageId, ...input }),",
+      "replace": "  const chatId = useDozoChatId();\n  const answer = useSave({\n    save: (input: { runId: string; answer: string }, send) =>\n      send(\"threads/answer\", { ...dozoChatTarget({ ...target, chatId }), messageId, ...input }),",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: an outgoing draft sent from an extra chat answers that chat, not its bot's main chat"
+    },
+    {
+      "file": "apps/mobile/components/cards/ToolQuestionCard.tsx",
+      "find": "  const answer = useSave({\n    save: (input: { action: \"accept\" | \"decline\"; values?: ToolQuestionDraft }, send) =>\n      send(\"threads/answerToolQuestion\", {\n        ...target,",
+      "replace": "  const chatId = useDozoChatId();\n  const answer = useSave({\n    save: (input: { action: \"accept\" | \"decline\"; values?: ToolQuestionDraft }, send) =>\n      send(\"threads/answerToolQuestion\", {\n        ...dozoChatTarget({ ...target, chatId }),",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: a tool question answered in an extra chat answers that chat, not its bot's main chat"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "import { errorText } from \"../../lib/api/user-error\";\nimport { computerHoursOutCopy",
+      "replace": "import { errorText } from \"../../lib/api/user-error\";\nimport { dozoChatTarget, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport { computerHoursOutCopy",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "  const { botId } = thread;\n  const router = useRouter();\n",
+      "replace": "  const { botId } = thread;\n  const chatId = useDozoChatId();\n  const router = useRouter();\n",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the failed run's retry knows which chat it is in"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "        ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId! }),\n        runId: input.runId,",
+      "replace": "        ...dozoChatTarget({ botId: input.botId, groupId: input.groupId, chatId }),\n        runId: input.runId,",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: Retry on a failed run in an extra chat names that chat"
+    },
+    {
       "file": "apps/mobile/app/peer-chat.tsx",
       "find": "import { mobileTokens } from \"../lib/appearance/appearance\";\nimport { openMobileArtifact } from \"../lib/artifacts/artifact-open\";",
       "replace": "import { mobileTokens } from \"../lib/appearance/appearance\";\nimport { dozoChatTarget } from \"../lib/dozo-chat-target\";\nimport { openMobileArtifact } from \"../lib/artifacts/artifact-open\";",
@@ -13834,6 +13945,30 @@
       "find": "    [...actionIds].every((id) => id === \"allow\" || id === \"always\" || id === \"deny\")",
       "replace": "    [...actionIds].every((id) => id === \"allow\" || id === \"always\" || id === \"deny\" || id === \"allow_run\")",
       "reason": "screen input for this run: a card with Allow for this run (allow_run, packages/adapters/src/dozo-screen-run.ts) is still an approval card on every surface"
+    },
+    {
+      "file": "packages/core/src/runs/action-approval.ts",
+      "find": "  if (input.mode === \"never\") return input.steerable ? \"deny\" : \"allow\";\n  if (input.purchase || input.mandatory) return \"ask\";",
+      "replace": "  // Dozo: a purchase and a saved card or login set to ask first ask a person in every mode,\n  // Never ask included, as before upstream let the mode alone decide.\n  if (input.purchase) return \"ask\";\n  if (input.mode === \"never\") return input.steerable ? \"deny\" : \"allow\";\n  if (input.mandatory) return \"ask\";",
+      "reason": "approval: a purchase, a saved card and a saved login set to ask first ask a person in every mode, Never ask included (Dozo's default before upstream's 4fa14367b let the approval mode alone decide); the owner's explicit 'ask first' on a credential is never overridden by the mode"
+    },
+    {
+      "file": "packages/core/src/runs/action-approval.test.ts",
+      "find": "  it(\"runs a purchase in Never ask, where only a block or the spending limit stops it\", () => {\n    expect(gate(\"never\", { purchase: true, consequential: false })).toBe(\"allow\");",
+      "replace": "  it(\"asks a person for a purchase in Never ask too, where a block still refuses it\", () => {\n    expect(gate(\"never\", { purchase: true, consequential: false })).toBe(\"ask\");",
+      "reason": "approval: a purchase asks a person in every mode, Never ask included (the planActionGate rule above); the test asserts that instead of upstream's Never ask running it"
+    },
+    {
+      "file": "packages/adapters/src/runs/tools/run-tool-gate.test.ts",
+      "find": "  it(\"runs it without asking in Never ask\", async () => {\n    plans.length = 0;\n    await gate({ neverAsk: true });\n    expect(plans).toEqual([\"allow\"]);",
+      "replace": "  it(\"asks in Never ask too: a login set to ask first is never overridden by the mode\", async () => {\n    plans.length = 0;\n    expect(await gate({ neverAsk: true })).toBe(\"asks the user\");\n    expect(plans).toEqual([\"ask\"]);",
+      "reason": "approval: a saved login set to ask first asks a person in every mode, Never ask included (the planActionGate rule above); the test asserts that instead of upstream's Never ask running it"
+    },
+    {
+      "file": "packages/adapters/src/runs/executor/executor-readonly-approval.test.ts",
+      "find": "  it(\"presses it without asking in Never ask\", async () => {\n    const page = pageBrowser();\n    const f = fixture({ builtin: true, browser: page.provider, skipApprovals: true });\n    f.setCalls([payCall()]);\n    await f.run();\n    expect(f.pauseRunForInput).not.toHaveBeenCalled();\n    expect(page.acts).not.toEqual([]);",
+      "replace": "  it(\"asks before pressing it in Never ask too\", async () => {\n    const page = pageBrowser();\n    const f = fixture({ builtin: true, browser: page.provider, skipApprovals: true });\n    f.setCalls([payCall()]);\n    await f.run();\n    expect(f.pauseRunForInput).toHaveBeenCalledOnce();\n    expect(page.acts).toEqual([]);",
+      "reason": "approval: a click that completes a purchase asks a person in every mode, Never ask included (the planActionGate rule on action-approval.ts); the test asserts that instead of upstream's Never ask pressing it"
     },
     {
       "file": "packages/db/src/threads/thread-ask.ts",

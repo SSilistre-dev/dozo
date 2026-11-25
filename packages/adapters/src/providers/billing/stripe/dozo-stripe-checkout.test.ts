@@ -14,7 +14,7 @@ function fixture() {
       const body = new URLSearchParams(String(init?.body ?? ""));
       if (init?.method === "POST" && path === "/v1/checkout/sessions" && body.has("mode")) {
         sessions.push(body);
-        return Response.json({ url: "https://checkout.example.test/session" });
+        return Response.json({ id: "cs_fixture", url: "https://checkout.example.test/session" });
       }
       if (init?.method === "POST" && path === "/v1/prices") return Response.json({ id: "price_1" });
       return Response.json({ data: [], has_more: false });

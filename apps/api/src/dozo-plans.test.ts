@@ -1,7 +1,12 @@
 import type { BillingSubscriptionSnapshot, SandboxProvider } from "@rakazo/adapter-kit";
 import { BillingEmulator, sandboxAllowanceUsedUp } from "@rakazo/adapters";
 import type { Actor, ByokTier } from "@rakazo/contracts";
-import { BYOK_TIERS, byokTierPriceCents, sandboxAllowanceHours } from "@rakazo/contracts";
+import {
+  appContract,
+  BYOK_TIERS,
+  byokTierPriceCents,
+  sandboxAllowanceHours,
+} from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
@@ -223,6 +228,19 @@ describe("Dozo plans", () => {
       "Premium",
       "Premium Plus",
     ]);
+  });
+
+  it("has no fourth tier: checkout, funding and plan change refuse upstream's Ultra", () => {
+    const { checkout, selectFunding, changeTier } = appContract.billing;
+    const accepts = (procedure: { "~orpc": { inputSchema?: unknown } }, input: unknown) =>
+      (
+        procedure["~orpc"].inputSchema as { safeParse: (value: unknown) => { success: boolean } }
+      ).safeParse(input).success;
+    const named = { tier: "ultra", client: "web" };
+    expect(accepts(checkout, named)).toBe(false);
+    expect(accepts(selectFunding, { funding: "byok", ...named })).toBe(false);
+    expect(accepts(changeTier, named)).toBe(false);
+    expect(accepts(changeTier, { tier: "max" })).toBe(true);
   });
 
   it("makes Free cost nothing and include no hosted computer", () => {

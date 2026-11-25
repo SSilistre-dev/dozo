@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { BillingStatus } from "@rakazo/contracts";
 import { BYOK_TIERS, sandboxAllowanceHours } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -12,6 +13,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const billing = vi.hoisted(() => ({
   checkout: vi.fn(async (_terms: unknown) => ({ url: "#checkout" })),
+  computerUsage: vi.fn(async () => ({ computers: [], otherHours: 0 })),
 }));
 vi.mock("../lib/query/rpc", () => ({
   rpc: { billing },
@@ -109,6 +111,9 @@ function button(label: RegExp) {
 }
 
 beforeEach(() => {
+  // The shared billing copy reads the global catalog, which the component mock does not cover.
+  i18n.load("en", {});
+  i18n.activate("en");
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   checkout.mockClear();
   container = document.createElement("div");

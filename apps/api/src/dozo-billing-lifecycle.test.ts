@@ -596,7 +596,8 @@ describe("failures and the queue", () => {
     store.transaction = original;
     await billing.afterSync("cus_1");
     await settled(billing);
-    expect(sent).toHaveLength(2);
+    // A past-due subscription gives no plan, so the cancellation waits until it is paid.
+    expect(sent.map((mail) => mail.subject)).toEqual(["Your Dozo payment didn't go through"]);
   });
 
   it("never fail the sync or the admin's change when the database refuses", async () => {
@@ -654,6 +655,11 @@ describe("an occasion with nobody to tell", () => {
     await billing.afterSync("cus_1");
     expect(db.notices.get("org")).toBeUndefined();
     db.readers.set("ada", { ...db.readers.get("ada")!, emailVerified: true });
+    await billing.afterSync("cus_1");
+    await settled(billing);
+    expect(sent.map((mail) => mail.subject)).toEqual(["Your Dozo payment didn't go through"]);
+    // Once it is paid the plan is given again, and the cancellation is told.
+    db.account = subscription({ status: "active", cancelAtPeriodEnd: true });
     await billing.afterSync("cus_1");
     await settled(billing);
     expect(sent.map((mail) => mail.subject)).toEqual([

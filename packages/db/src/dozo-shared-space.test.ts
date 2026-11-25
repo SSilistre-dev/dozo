@@ -383,6 +383,8 @@ describe("writers of file rows", () => {
       "apps/api/src/content/artifacts.ts": 1,
       "packages/adapters/src/storage/thread-artifacts.ts": 2,
       "apps/api/src/account/account-import.ts": 1,
+      // The shared transcript file, in the meeting's own transaction, which holds the check.
+      "packages/adapters/src/meetings/meeting-service.ts": 2,
     });
     expect(text("packages/db/src/artifacts/artifact-versions.ts")).toContain(
       "if (!isReplayedUpload(result)) await holdSharedSpace(tx,",
@@ -393,6 +395,12 @@ describe("writers of file rows", () => {
     );
     expect(text("packages/adapters/src/storage/thread-artifacts.ts")).toMatch(
       /withSharedSpace\(deps\.prisma, owner\.spaceId, \(tx\) =>\s+tx\.artifact\.create\(/,
+    );
+    expect(text("packages/adapters/src/meetings/meeting-service.ts")).toMatch(
+      /tx\.artifact\.createMany\([^;]*;\s+await holdSharedSpace\(tx, row\.spaceId\);/,
+    );
+    expect(text("packages/adapters/src/meetings/meeting-service.ts")).toMatch(
+      /tx\.artifact\.create\(\{[^;]*;\s+await holdSharedSpace\(tx, row\.spaceId\);/,
     );
     expect(text("apps/api/src/account/account-import.ts")).toMatch(
       /withSharedSpace\(this\.deps\.prisma, space\.spaceId, \(tx\) =>\s+tx\.artifact\.createMany\(/,

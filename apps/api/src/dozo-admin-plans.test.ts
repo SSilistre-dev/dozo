@@ -256,6 +256,17 @@ describe("the plans procedures", () => {
   });
 });
 
+describe("a tier Dozo does not sell", () => {
+  it("cannot get a quota, since upstream's Ultra is not one of the plans", async () => {
+    const { as } = setup();
+    await expect(
+      as("admin").plans.setQuota({ tier: "ultra", sharedSpaceMb: 1 } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const { plans } = await as("admin").plans.list();
+    expect(plans.map((plan) => plan.tier)).toEqual(["standard", "pro", "max"]);
+  });
+});
+
 describe("the plans members are offered", () => {
   it("carry the computer hours an admin set, as the allowance counts them", async () => {
     const offers = [

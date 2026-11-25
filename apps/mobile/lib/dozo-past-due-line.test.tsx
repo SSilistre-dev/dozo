@@ -35,7 +35,7 @@ vi.mock("./dozo-store-build", () => ({
 }));
 vi.mock("./native/native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
 vi.mock("./query/query", () => ({
-  queryClient: { setQueryData: api.setQueryData },
+  queryClient: { setQueryData: api.setQueryData, cancelQueries: async () => undefined },
   rpcQuery: (proc: string) => ({ queryKey: [proc] }),
   useSave: (options: {
     save: (input: undefined, send: unknown) => Promise<unknown>;
@@ -125,8 +125,12 @@ describe("DozoPastDueLine", () => {
     await render();
     await act(async () => container.querySelector("button")?.click());
     expect(api.rpc).toHaveBeenCalledWith("billing/portal", { client: "mobile" });
-    expect(api.openBillingPage).toHaveBeenCalledWith("https://billing.example.com/session");
-    expect(api.setQueryData).toHaveBeenCalledWith(["billing/status"], after);
+    expect(api.openBillingPage).toHaveBeenCalledWith(
+      "https://billing.example.com/session",
+      api.rpc,
+    );
+    expect(api.setQueryData).toHaveBeenCalledWith(["billing/status"], expect.any(Function));
+    expect(api.setQueryData.mock.calls[0]?.[1]()).toEqual(after);
   });
 
   it("says so when the portal does not open", async () => {

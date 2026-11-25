@@ -41,10 +41,14 @@ vi.mock("../runs/lifecycle/run-effects.js", async (importOriginal) => ({
 
 const AGENT = "antigravity-agent";
 
-function context(rule?: "deny") {
+function context(rule?: "deny", auto = false) {
   return {
     deps: {
       prisma: { attempt: { count: async () => 1 }, $queryRaw: async () => [{ sourced: false }] },
+      // Auto review's approval model, answering "ask" as it would for a steered write.
+      ...(auto
+        ? { autoReview: vi.fn(async () => ({ decision: "ask", reason: "Steered", model: "m" })) }
+        : {}),
     },
     run: { id: "run-1", userId: "ada", spaceId: "space-1", trigger: "user" },
     runId: "run-1",
@@ -73,7 +77,7 @@ function context(rule?: "deny") {
       routineNamesNewSite: async () => false,
       loadApprovalRules: async () =>
         rule ? [{ effect: rule, matchKind: "tool", matchValue: "save_memory" }] : [],
-      loadAutoReviewPreference: async () => ({ enabled: false, skipApprovals: false }),
+      loadAutoReviewPreference: async () => ({ enabled: auto, skipApprovals: false }),
     },
   };
 }
@@ -155,11 +159,13 @@ describe("a bot tool the agent on the person's computer asks for", () => {
     vi.stubEnv("DATA_DIR", dir);
   });
 
-  it("is judged as a run that read outside content: a memory write asks, and the card is written", async () => {
-    const ctx = context();
+  it("is judged as a run that read outside content: Auto review checks a memory write, and the card is written", async () => {
+    // Upstream lets outside content only inform the approval model now: in Auto a memory write
+    // goes to it once the run read outside content; the effect it would judge is recorded first.
+    const ctx = context(undefined, true);
     const answer = await agentAsks(ctx, "save_memory");
     expect(ctx.state.tainted).toBe(true);
-    expect(plans).toEqual(["ask"]);
+    expect(plans).toEqual(["judge"]);
     expect(answer).toMatchObject({ isError: true });
     expect(answer?.text).toContain("the approval card is written here");
   });
