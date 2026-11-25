@@ -987,6 +987,29 @@ describe("what an agent turn may do on the server", () => {
     expect(order).toEqual(["marked after 0 sent", "tool"]);
   });
 
+  it("sends nothing to the computer and falls back to no backup when marking the run fails", async () => {
+    const computer = new Computer();
+    const marking = new Error("could not mark the run");
+    const readOutsideContent = vi.fn(async () => {
+      throw marking;
+    });
+    const resolveFallbackModel = vi.fn();
+    await expect(
+      collect(
+        runtimeOn(computer).runtime.run(
+          request({
+            readOutsideContent,
+            fallbackModels: [{ provider: "openrouter", id: "m" }],
+            resolveFallbackModel,
+          } as never),
+          {},
+        ),
+      ),
+    ).rejects.toThrow(marking);
+    expect(computer.requests.map((entry) => entry.request.method)).not.toContain("agentTurn");
+    expect(resolveFallbackModel).not.toHaveBeenCalled();
+  });
+
   it("cuts a turn whose agent asks for a tool before it said it started, and stops it", async () => {
     const computer = new Computer();
     computer.script = [

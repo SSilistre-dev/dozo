@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CODEX_AGENT_PROVIDER_ID,
@@ -468,10 +469,10 @@ describe.skipIf(process.platform === "win32")("agent mode with Codex", () => {
     expect(textOf(failing)).toBe("tool said tool broke");
   });
 
-  it("refuses to read a turned-on list it cannot read", () => {
+  it("turns nothing on when the list's place cannot be read at all", () => {
     const { data } = computer("reply");
     vi.stubEnv("DATA_DIR", join(data, "dozo-agent-tools"));
-    expect(() => enabledAgentProviders()).toThrow();
+    expect(enabledAgentProviders()).toEqual(new Set());
   });
 
   it("gives a new process the conversation so far", () => {
@@ -830,5 +831,28 @@ describe.skipIf(process.platform === "win32")("the server's runtime", () => {
     // With the setting on, the run goes on to ask who started it, as with the file.
     row.current = true;
     await expect(collect(serverRuntime.run(request(), {}))).rejects.toThrow(AGENT_OWN_RUNS_ONLY);
+  });
+});
+
+describe("the server's own agent file", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("turns nothing on, and says so once, when the file cannot be read", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dozo-agent-file-"));
+    // A folder where the file should be: reading it fails with something other than "missing".
+    mkdirSync(join(dir, "dozo-agent-tools"));
+    const warn = vi.spyOn(getLogger(), "warn");
+    expect(enabledAgentProviders({ DATA_DIR: dir })).toEqual(new Set());
+    expect(enabledAgentProviders({ DATA_DIR: dir })).toEqual(new Set());
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays quiet when the file is simply not there", () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    const dir = mkdtempSync(join(tmpdir(), "dozo-agent-file-"));
+    expect(enabledAgentProviders({ DATA_DIR: dir })).toEqual(new Set());
+    expect(warn).not.toHaveBeenCalled();
   });
 });

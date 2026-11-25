@@ -7,6 +7,7 @@ import type {
   AgentRuntimeEvent,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { AgentBridge, BridgeCall } from "./dozo-agent-bridge.js";
 import { startAgentBridge } from "./dozo-agent-bridge.js";
 import type { LocalCliHost } from "./dozo-cli-driver.js";
@@ -108,10 +109,21 @@ export function enabledAgentProviders(env: NodeJS.ProcessEnv = process.env): Set
         .filter(Boolean),
     );
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Set<string>();
-    throw error;
+    const code = (error as NodeJS.ErrnoException).code;
+    // Missing is the usual case. A file that cannot be read turns nothing on (the gate stays shut)
+    // and is reported once, so the settings list that asks keeps answering.
+    if (code !== "ENOENT" && !unreadableReported.has(file)) {
+      unreadableReported.add(file);
+      getLogger().warn("agent tools file cannot be read; no agent is turned on by it", {
+        code,
+        file,
+      });
+    }
+    return new Set<string>();
   }
 }
+
+const unreadableReported = new Set<string>();
 
 /** A place in the server's own data folder. */
 export function agentDataFolder(env: NodeJS.ProcessEnv, ...parts: string[]): string {
