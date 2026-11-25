@@ -21,6 +21,15 @@ export const HOSTED_SHELL_TOOL = "shell";
 const SCHEDULE_TOOL = "schedule_create";
 /** The tools that work the bot's own screen: computer_act's actions, and launch_app's program. */
 const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);
+/**
+ * The tool that writes a file on the bot's computer. What it writes can run later with no check of
+ * its own: a login profile every command and screen look reads (they start `bash -lc`), a project's
+ * scripts an allowed command runs, a git hook or config, a scheduled entry. Which files a program
+ * reads is not knowable from the path, so every write is held like screen input (runInputHold).
+ */
+const FILE_WRITE_TOOL = "write_file";
+/** How much of a written file the approval model is shown; past it, it is told the length. */
+const REVIEWED_FILE_CHARS = 4_000;
 /** computer_act's actions that only point, scroll or wait; any other one types or starts a program. */
 const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);
 
@@ -71,14 +80,14 @@ export async function commandRuleMatch(
  * a page, a file, a command's output, a resumed turn, or a run the owner did not start, their
  * routine included) only an exact allow rule covers a command, not a prefix rule. An always-allow
  * rule for the tool and Never ask pass it, as upstream passes any consequential tool. Input on the
- * bot's screen is held the same way, by screenInputHold.
+ * bot's screen and a file written on its computer are held the same way, by runInputHold.
  */
 export async function dozoHostedCommandHold(
   ctx: RunContext,
   name: string,
   args: Record<string, unknown>,
 ): Promise<"review" | "person" | undefined> {
-  if (screenInputCall(name, args)) return screenInputHold(ctx);
+  if (heldAsInput(name, args)) return runInputHold(ctx);
   if (name !== HOSTED_SHELL_TOOL) return undefined;
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return undefined;
   const match = await hostedMatch(ctx, args);
@@ -108,12 +117,21 @@ export function screenInputCall(name: string, args: Record<string, unknown>): bo
 }
 
 /**
- * Input on the bot's screen runs as freely as before in the member's own run until outside content
- * comes in. A person is asked in a run outside text started (dozoRunStartedFromOutside), and once
- * the member asked for commands on the bot's computer to ask; any other run that took in outside
- * content (also one the owner did not start) has the approval model judge it, as a command is.
+ * Whether a call is held like input on the bot's screen: screen input (screenInputCall), or a file
+ * written on the bot's computer, which a later command or session can run.
  */
-async function screenInputHold(ctx: RunContext): Promise<"review" | "person" | undefined> {
+export function heldAsInput(name: string, args: Record<string, unknown>): boolean {
+  return name === FILE_WRITE_TOOL || screenInputCall(name, args);
+}
+
+/**
+ * Input on the bot's screen, and a file written on its computer, run as freely as before in the
+ * member's own run until outside content comes in. A person is asked in a run outside text started
+ * (dozoRunStartedFromOutside), and once the member asked for commands on the bot's computer to
+ * ask; any other run that took in outside content (also one the owner did not start) has the
+ * approval model judge it, as a command is.
+ */
+async function runInputHold(ctx: RunContext): Promise<"review" | "person" | undefined> {
   if (await dozoRunStartedFromOutside(ctx)) return "person";
   if (!(await isRunTainted(ctx))) return undefined;
   return (await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId)) ? "person" : "review";
@@ -152,21 +170,41 @@ export async function dozoRunStartedFromOutside(ctx: RunContext): Promise<boolea
 }
 
 /**
- * What the approval model is told about a command on the bot's computer, or input on its screen
- * (screenInputCall): whether outside content came in, and whether the run's task is someone else's
- * text rather than the owner's words (a run the owner did not start, other than their own routine
- * or chat app).
+ * What the approval model is told about a command on the bot's computer, input on its screen or a
+ * file written there (heldAsInput): whether outside content came in, and whether the run's task
+ * is someone else's text rather than the owner's words (a run the owner did not start, other than
+ * their own routine or chat app).
  */
 export async function dozoHostedReviewFacts(
   ctx: RunContext,
   name: string,
 ): Promise<{ outsideContent?: true; taskFromOutside?: true }> {
-  if (name !== HOSTED_SHELL_TOOL && !SCREEN_TOOLS.has(name)) return {};
+  if (name !== HOSTED_SHELL_TOOL && name !== FILE_WRITE_TOOL && !SCREEN_TOOLS.has(name)) return {};
   const { trigger } = ctx.run;
   const ownersTask = ctx.source.ownerStartedRun || trigger === "routine" || trigger === "messaging";
   return {
     ...((await isRunTainted(ctx)) ? { outsideContent: true as const } : {}),
     ...(ownersTask ? {} : { taskFromOutside: true as const }),
+  };
+}
+
+/**
+ * The arguments the approval model sees, already redacted: a written file's first
+ * REVIEWED_FILE_CHARS characters with its length and that it was cut, so a long file costs one
+ * bounded review; every other call's as they are.
+ */
+export function dozoHostedReviewArgs(
+  name: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const { content } = args;
+  if (name !== FILE_WRITE_TOOL || typeof content !== "string") return args;
+  if (content.length <= REVIEWED_FILE_CHARS) return args;
+  return {
+    ...args,
+    content: content.slice(0, REVIEWED_FILE_CHARS),
+    contentLength: content.length,
+    contentCut: true,
   };
 }
 

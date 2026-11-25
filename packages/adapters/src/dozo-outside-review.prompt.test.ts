@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { autoReviewDecisionQuestion, buildAutoReviewPrompt } from "./auto-review.prompt.js";
 import {
+  DOZO_FILE_WRITE_REVIEW,
   DOZO_OUTSIDE_CONTENT_REVIEW,
   DOZO_SCREEN_INPUT_REVIEW,
   DOZO_SHELL_REVIEW,
@@ -59,6 +60,19 @@ describe("the reviewer's lines for input on the bot's screen", () => {
     expect(outside).not.toContain(DOZO_SHELL_REVIEW);
     expect(autoReviewDecisionQuestion(request(toolName, {})).instructions).toContain(
       DOZO_SCREEN_INPUT_REVIEW,
+    );
+  });
+});
+
+describe("the reviewer's lines for a file written on the bot's computer", () => {
+  it("say a program may run or read the file, and that outside content came in", () => {
+    const outside = buildAutoReviewPrompt(request("write_file", { outsideContent: true }));
+    expect(outside).toContain(DOZO_FILE_WRITE_REVIEW);
+    expect(outside).toContain(DOZO_OUTSIDE_CONTENT_REVIEW);
+    expect(outside).not.toContain(DOZO_SHELL_REVIEW);
+    expect(outside).not.toContain(DOZO_SCREEN_INPUT_REVIEW);
+    expect(autoReviewDecisionQuestion(request("write_file", {})).instructions).toContain(
+      DOZO_FILE_WRITE_REVIEW,
     );
   });
 });

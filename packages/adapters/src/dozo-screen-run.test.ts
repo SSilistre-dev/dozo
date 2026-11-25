@@ -392,3 +392,33 @@ describe("after Allow for this run", () => {
     expect(seen.blocks).toEqual([]);
   });
 });
+
+describe("writing a file on the bot's computer in Ask, after outside content", () => {
+  const WRITE = { name: "write_file", args: { path: ".profile", content: "echo hi\n" } };
+
+  it("asks with a card that offers Allow for this run, and then goes to the model", async () => {
+    expect(await outcome({ ...WRITE, read: true })).toEqual({
+      result: "card",
+      reviewed: false,
+      answers: OFFERED,
+    });
+    expect(await outcome({ ...WRITE, read: true, answered: "allow_run" })).toEqual({
+      result: "runs",
+      reviewed: true,
+    });
+    expect(await outcome({ ...WRITE, read: true, answered: "allow_run", review: "ask" })).toEqual({
+      result: "card",
+      reviewed: true,
+      answers: PLAIN,
+    });
+  });
+
+  it.each<Run>(["webhook", "message", "token", "bot_message", "routine"])(
+    "offers nothing new in a %s run",
+    async (run) => {
+      const result = await outcome({ ...WRITE, run, answered: "allow_run", read: true });
+      expect(result.result).toBe("card");
+      expect(result.answers).not.toContain("allow_run");
+    },
+  );
+});
