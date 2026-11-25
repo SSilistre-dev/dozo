@@ -18,9 +18,9 @@ import {
   dozoTickWait,
   dozoWaitRefusal,
 } from "./dozo-wait.js";
-import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
 import type { tickRoutineWatch } from "./routines/routine-watch.js";
 import { wakeRoutine } from "./runs/assembly/run-routines.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
 import type { ScheduleToolDeps } from "./tools/schedule-tools.js";
 import { createScheduleFromTool } from "./tools/schedule-tools.js";
 
@@ -71,6 +71,7 @@ describePostgres("one-time waits (PostgreSQL)", () => {
           enqueued.push(job);
         },
         enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
         cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,

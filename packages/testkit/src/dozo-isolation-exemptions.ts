@@ -366,6 +366,18 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
       "The handler found the bot and its computer in the caller's Space; the computer is stopped at that point of the owner's sweep (\"Start the computer first\").",
   },
   {
+    path: "organizations/invitations/preview",
+    kind: "distinguishable",
+    reason:
+      "Known finding, by design: an invitation's id is the secret of its link, which only the address it is for receives. Whoever holds an id learns that the invitation exists and is for another address (403 against 404), never which address: the answer does not name it (organization-members.ts, OrganizationInvitationEmailError).",
+  },
+  {
+    path: "organizations/invitations/accept",
+    kind: "distinguishable",
+    reason:
+      "Known finding, by design: an invitation's id is the secret of its link, which only the address it is for receives. Whoever holds an id learns that the invitation exists and is for another address (403 against 404), never which address: the answer does not name it (organization-members.ts, OrganizationInvitationEmailError).",
+  },
+  {
     path: "bots/create",
     kind: "distinguishable",
     reason:
@@ -491,25 +503,116 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
       "The number of one click's picture inside the taught skill that `skillId` names; `skillId` is filled with the target's skill, so the target is named through it.",
   },
   {
-    path: "models/setRole",
+    path: "models/setMedia",
     kind: "no-target",
     fields: ["modelId"],
     reason:
-      "A model's name in a provider's catalog (what to run), not a stored record of anyone's.",
+      "A model's name in a provider's catalog (what to run), not a stored record of anyone's; `credentialId` names the target's connection.",
+  },
+  {
+    path: "models/deployment/update",
+    kind: "no-target",
+    fields: ["modelId"],
+    reason:
+      "A model's name in a provider's catalog, for the server's own default model: a server-wide setting an admin keeps, owned by no Space or person in the world.",
+  },
+  {
+    path: "mcp/servers/createForBots",
+    kind: "no-target",
+    fields: ["clientId"],
+    reason:
+      "The OAuth client id the person types in for a tool server: an outside provider's value, not a stored record; `botIds` name the target's bots.",
+  },
+  {
+    path: "mcp/servers/save",
+    kind: "no-target",
+    fields: ["clientId"],
+    reason:
+      "The OAuth client id the person types in for a tool server: an outside provider's value, not a stored record; `id` names the target's server.",
+  },
+  {
+    path: "threads/nativeCalendarClaim",
+    kind: "no-target",
+    fields: ["id"],
+    reason:
+      "A request for the calendar of the caller's own phone, bound to one native session of that phone and to a running chat of the caller's: the world signs in on the web, which has no native session, so no request can exist (apps/api/src/routes/threads.ts, calendarDevice).",
+  },
+  {
+    path: "threads/nativeCalendarResult",
+    kind: "no-target",
+    fields: ["id"],
+    reason:
+      "A request for the calendar of the caller's own phone, bound to one native session of that phone and to a running chat of the caller's: the world signs in on the web, which has no native session, so no request can exist (apps/api/src/routes/threads.ts, calendarDevice).",
+  },
+  {
+    path: "meetingCalendar/select",
+    kind: "no-target",
+    fields: ["eventId"],
+    reason:
+      "An event of the person's connected outside calendar, named by the calendar provider's own id, not a stored record; `botId` names the target's bot, looked up first.",
+  },
+  {
+    path: "meetingCalendar/skip",
+    kind: "no-target",
+    fields: ["eventId"],
+    reason:
+      "An event of the person's connected outside calendar, named by the calendar provider's own id, not a stored record; `botId` names the target's bot, looked up first.",
+  },
+  {
+    path: "meetingCalendar/removeSeries",
+    kind: "no-target",
+    fields: ["eventId"],
+    reason:
+      "An event of the person's connected outside calendar, named by the calendar provider's own id, not a stored record; `botId` names the target's bot, looked up first.",
+  },
+  {
+    path: "pageReviews/comment",
+    kind: "no-target",
+    fields: ["submissionId"],
+    reason:
+      "A random id the client makes up for one comment submission, so a repeat is told from a new one; it names nothing stored until the comment exists, and `pageId` names the target's page.",
+  },
+  {
+    path: "pageReviews/draft",
+    kind: "no-target",
+    fields: ["requestId"],
+    reason:
+      "A revision request of a comment on the page that `pageId` names, looked up under that page; `pageId` is filled with the target's page, so the target is named through it. A request needs a model to draft it, which the world has none of.",
+  },
+  {
+    path: "pageReviews/publish",
+    kind: "no-target",
+    fields: ["requestId"],
+    reason:
+      "A revision request of a comment on the page that `pageId` names, looked up under that page; `pageId` is filled with the target's page, so the target is named through it. A request needs a model to draft it, which the world has none of.",
+  },
+  {
+    path: "pageReviews/image",
+    kind: "no-target",
+    fields: ["imageId"],
+    reason:
+      "A picture of the page version that `pageId` and `version` name, looked up under that version; `pageId` is filled with the target's page, so the target is named through it. A picture needs stored bytes the world has none of.",
+  },
+  {
+    path: "models/setRole",
+    kind: "no-target",
+    fields: ["modelId", "creditOfferingId"],
+    reason:
+      "A model's name in a provider's catalog (what to run), not a stored record of anyone's. A hosted-credit offering is one the server's own configuration lists, not a stored record of anyone's.",
   },
   {
     path: "models/setBackups",
     kind: "no-target",
-    fields: ["modelId"],
+    fields: ["modelId", "creditOfferingId"],
     reason:
-      "A model's name in a provider's catalog (what to run), not a stored record of anyone's.",
+      "A model's name in a provider's catalog (what to run), not a stored record of anyone's. A hosted-credit offering is one the server's own configuration lists, not a stored record of anyone's.",
   },
   {
     path: "dozoBotModelBackups/set",
     kind: "no-target",
-    fields: ["modelId"],
+    fields: ["modelId", "creditOfferingId"],
     reason:
-      "A model's name in a provider's catalog (what to run), not a stored record of anyone's; `botId` names the target's bot and `credentialId` the target's connection.",
+      "A model's name in a provider's catalog (what to run), not a stored record of anyone's; `botId` names the target's bot and `credentialId` the target's connection. A hosted-credit offering is one the server's own configuration lists, not a stored record of anyone's.",
   },
   {
     path: "models/beginOAuth",
@@ -824,7 +927,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:247 "await validateRoleChoices(context.actor, role, [" \u2014 the choices are checked against the caller\'s own connections',
+      'apps/api/src/routes/models.ts:202 "await validateRoleChoices( context.actor, role, [...(primary ? [primary] : []), ...(backups ?? [])], reads, );" \u2014 the choices are checked against the caller\'s own connections',
     reason:
       "The world's model connection has no provider set up, so the owner's choice is refused (400).",
   },
@@ -895,7 +998,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "option 0",
     verifiedByCode:
-      'apps/api/src/routes/mcp.ts:112 "const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...availableInSpace(context.actor), }," \u2014 the server is looked up among those of the caller\'s Space',
+      'apps/api/src/routes/mcp.ts:186 "const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...availableInSpace(actor), }, });" \u2014 the server is looked up among those of the caller\'s Space',
     reason: "The generated remote endpoint has no address in a test with no network (400).",
   },
   {
@@ -903,7 +1006,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      "apps/api/src/routes/mcp.ts:598 \"return await mcpOAuth.begin({ ...input, redirectUri: expectedRedirect, spaceId: context.actor.spaceId,\" \u2014 the server and session are the caller's Space's",
+      "apps/api/src/routes/mcp.ts:440 \"return await mcpOAuth.begin({ ...input, redirectUri: expectedRedirect, spaceId: actor.spaceId, userId: actor.userId, });\" \u2014 the server and session are the caller's Space's",
     reason:
       "Beginning a sign-in reaches the tool server's address, which a test with no network has not (400).",
   },

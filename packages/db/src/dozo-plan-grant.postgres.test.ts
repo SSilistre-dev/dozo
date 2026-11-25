@@ -43,6 +43,19 @@ describePostgres("a plan granted by hand (PostgreSQL)", () => {
     });
     const spaceId = `${id}-space`;
     await owner.space.create({ data: { id: spaceId, organizationId: id, name: spaceId } });
+    // Asks for the largest size, so what it reads is the largest its plan allows.
+    const computerId = `${id}-computer`;
+    await owner.computer.create({
+      data: {
+        id: computerId,
+        spaceId,
+        userId,
+        scopeKey: computerId,
+        homeKey: computerId,
+        kind: "fake",
+        size: "xlarge",
+      },
+    });
     await owner.modelCreditAccount.create({ data: { organizationId: id, mode: "byok" } });
     if (subscription)
       await owner.billingAccount.create({
@@ -53,7 +66,7 @@ describePostgres("a plan granted by hand (PostgreSQL)", () => {
           ...subscription,
         },
       });
-    return { id, spaceId, customerId: `customer-${id}` };
+    return { id, spaceId, computerId, customerId: `customer-${id}` };
   }
 
   const grant = (organizationId: string, tier: "pro" | "max", days: number, note?: string) =>
@@ -72,8 +85,8 @@ describePostgres("a plan granted by hand (PostgreSQL)", () => {
       runAsTenant({ spaceId, userId }, read);
   const allowance = (org: { id: string; spaceId: string }) =>
     asMember(org.spaceId)(async () => (await sandboxAllowancePlan(prisma, org.id))?.limitCents);
-  const size = (org: { spaceId: string }) =>
-    asMember(org.spaceId)(() => planComputerSize(prisma, org.spaceId));
+  const size = (org: { spaceId: string; computerId: string }) =>
+    asMember(org.spaceId)(() => planComputerSize(prisma, org.computerId));
 
   const subscription = (tier: "pro" | "max" | null) =>
     tier

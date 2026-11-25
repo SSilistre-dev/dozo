@@ -69,6 +69,7 @@ describePostgres("meeting prep with a fake calendar (PostgreSQL)", () => {
           enqueued.push(job);
         },
         enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
         cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,

@@ -550,6 +550,7 @@ export async function seedExtras(
       data: {
         spaceId,
         userId: owner.userId,
+        connectorId: "iso",
         provider: "iso",
         displayName: mark("connection"),
         status: "connected",
@@ -616,6 +617,63 @@ export async function seedExtras(
     target,
     "messaging, tool server, model connection, connection, capability, computer update: system inserts (each needs an outside provider)",
   );
+  // Invitations to the owner's own address, in the owner's organization: the invitee's calls
+  // (preview, accept) are the owner's own, and anyone else's must be refused by the address.
+  await step("invitation", async () => {
+    for (const key of ["invitationId", "cancelInvitationId"] as const) {
+      const invitation = await system.invitation.create({
+        data: {
+          id: `iso-invitation-${rand()}`,
+          organizationId: ids.organizationId!,
+          email: owner.email.toLowerCase(),
+          role: "member",
+          status: "pending",
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          inviterId: owner.userId,
+        },
+      });
+      ids[key] = invitation.id;
+    }
+  });
+  // Finished meetings of the owner's, with their transcripts. No meeting provider is configured, so
+  // none can be made through the API: system inserts in the shape a finished one is left in. The
+  // ones sharing or deleting a transcript carry no canary: sharing copies the transcript into a
+  // file of the Space, deleting empties it.
+  await step("meeting", async () => {
+    const turns = (text: string) => JSON.stringify([{ speaker: "iso", startMs: 0, text }]);
+    const make = async (key: "meetingId" | "shareMeetingId" | "deleteMeetingId", text: string) => {
+      const meeting = await system.meetingSession.create({
+        data: {
+          spaceId,
+          botId,
+          userId: owner.userId,
+          provider: "iso",
+          platform: "zoom",
+          status: "ready",
+          transcript: turns(text),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+      ids[key] = meeting.id;
+    };
+    await make("meetingId", mark("meetingtranscript"));
+    await make("shareMeetingId", "iso plain transcript");
+    await make("deleteMeetingId", "iso plain transcript");
+  });
+  // A grant and a comment on the target's page; the page's other children (a revision request, a
+  // picture) need a model and stored bytes, and are named through the page (see the exemptions).
+  await step("page review", async () => {
+    const pageId = ids.pageId;
+    if (!pageId) throw new Error("no page");
+    const grant = await system.pageGrant.create({
+      data: { pageId, recipientEmail: `iso-${rand()}@example.test`, firstVersion: 1 },
+    });
+    ids.pageGrantId = grant.id;
+    const comment = await system.pageComment.create({
+      data: { pageId, authorId: owner.userId, version: 1, section: "iso", body: mark("pagecomment") },
+    });
+    ids.pageCommentId = comment.id;
+  });
   await step("command rule", async () => {
     const id = randomUUID();
     await system.$executeRaw`

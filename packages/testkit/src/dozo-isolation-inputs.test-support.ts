@@ -73,6 +73,9 @@ const FIELD_KEYS: Record<string, PoolKey> = {
   identityId: "identityId",
   membershipId: "membershipId",
   externalConversationId: "externalConversationId",
+  invitationId: "invitationId",
+  grantId: "pageGrantId",
+  commentId: "pageCommentId",
 };
 /** Fields that name another kind of thing in one procedure than everywhere else. */
 const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
@@ -93,6 +96,12 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   "connections/complete": { connectionId: "connectionId" },
   "connections/rename": { connectionId: "connectionId" },
   "connections/revoke": { connectionId: "connectionId" },
+  // Its own invitation: the owner's cancel would otherwise end the one the later calls name.
+  "organizations/invitations/cancel": { invitationId: "cancelInvitationId" },
+  "meetings/shareTranscript": { id: "shareMeetingId" },
+  "meetings/deleteTranscript": { id: "deleteMeetingId" },
+  // The target's model connection, which the person's voice may use.
+  "voice/connect": { modelCredentialId: "credentialId" },
   "messaging/connections/respond": { connectionId: "messagingConnectionId" },
   "messaging/connections/revoke": { connectionId: "messagingConnectionId" },
   "messaging/installations/remove": { id: "messagingInstallationId" },
@@ -120,6 +129,7 @@ const ID_BY_NAMESPACE: Record<string, PoolKey> = {
   approvalRules: "approvalRuleId",
   dozoCommandRules: "commandRuleId",
   mcp: "mcpServerId",
+  meetings: "meetingId",
 };
 /** Procedures that act only on a taught skill whose recording has ended. */
 const DRAFT_SKILL_PATHS = new Set([

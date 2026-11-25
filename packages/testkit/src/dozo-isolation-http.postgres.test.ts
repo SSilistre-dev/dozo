@@ -67,8 +67,15 @@ const MCP_ACCEPT = "application/json, text/event-stream";
 
 /** Path words a route serving a file, picture or attachment would carry. */
 const FILE_ROUTE = /artifact|attachment|avatar|logo|upload|download|file|media|image|picture/i;
-/** File routes reviewed: the plugin catalog's own pictures, the same for every caller. */
-const REVIEWED_FILE_ROUTES = ["GET /api/dozo/catalog-images/:file"];
+/**
+ * File routes reviewed: the plugin catalog's own pictures, the same for every caller, and a shared
+ * page's pictures, which only the page's own share token opens and only for a picture the page's
+ * current version shows (the token is the bearer link; the image is looked up under that version).
+ */
+const REVIEWED_FILE_ROUTES = [
+  "GET /api/dozo/catalog-images/:file",
+  "GET /api/v1/pages/shared/:token/images/:imageId",
+];
 
 /** Waits until no stream of `streams` has had a frame for `ms`, so a connect burst is over. */
 async function settle(streams: OpenStream[], ms = 1_500) {

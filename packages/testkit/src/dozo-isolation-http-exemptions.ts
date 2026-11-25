@@ -129,6 +129,12 @@ export const ROUTE_DATA: readonly RouteData[] = [
     reason: "public to whoever holds a page's share link, by design",
   },
   {
+    route: "GET /api/v1/pages/shared/:token/images/:imageId",
+    kind: "bearer-link",
+    reason:
+      "public to whoever holds a page's share link, for a picture its current version shows: the image is looked up under the token's own version, so another page's picture is a 404",
+  },
+  {
     route: "GET /api/v1/integration-claims/confirm",
     kind: "bearer-link",
     reason: "a one-time token from an emailed link",

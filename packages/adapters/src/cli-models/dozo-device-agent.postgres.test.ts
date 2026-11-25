@@ -11,7 +11,7 @@ import {
   createThreadMessage,
   runAsTenant,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readDeviceAgents, recordDeviceCapabilities } from "../dozo-device-capabilities.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "../dozo-user-device-gateway.js";
 import { handoffToGroupBot } from "../bots/group-handoff.js";
@@ -126,17 +126,21 @@ describePostgres("an agent on the person's own computer (PostgreSQL)", () => {
     });
   }
 
+  // The server turned the agent on (the file in its data folder).
+  const dataDir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+  writeFileSync(join(dataDir, "dozo-agent-tools"), `${AGENT}\n`);
+
   beforeAll(() => {
     db = createDb(process.env.DATABASE_URL!);
     system = asSystem(db.prisma);
-    // The server turned the agent on (the file in its data folder).
-    const dataDir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
-    writeFileSync(join(dataDir, "dozo-agent-tools"), `${AGENT}\n`);
+  });
+
+  // The config undoes stubbed variables before each test, so every test stubs its own.
+  beforeEach(() => {
     vi.stubEnv("DATA_DIR", dataDir);
   });
 
   afterAll(async () => {
-    vi.unstubAllEnvs();
     await system?.organization.deleteMany({ where: { id: { in: users } } });
     await system?.user.deleteMany({ where: { id: { in: users } } });
     await db?.pool.end();

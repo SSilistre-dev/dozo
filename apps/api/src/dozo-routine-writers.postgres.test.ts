@@ -41,7 +41,13 @@ describePostgres("who last wrote a routine, through the app (PostgreSQL)", () =>
         sandboxProvider: "fake",
       },
       events: createThreadEvents(prisma),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn().mockResolvedValue(undefined) },
+      jobs: {
+        enqueue: vi.fn(),
+        enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
+        cancelIn: async () => undefined,
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       memoryProviders: { resolve: async () => null },
       dataDir,
@@ -164,54 +170,61 @@ describePostgres("who last wrote a routine, through the app (PostgreSQL)", () =>
     expect(await writer(routineId)).toBe("owner");
   });
 
-  it("records another member or a guest creating or saving it as a member, until the owner saves its prompt", async () => {
+  // A routine runs with its owner's accounts, so only its owner changes it; anyone in the Space may
+  // turn it on or off. Another member's text therefore reaches a routine by creating their own.
+  it("records another member or a guest creating or saving their own routine as a member, and leaves the owner's alone", async () => {
     const { owner, member, guest, botId } = await setup();
+    const routineId = await create(owner, botId);
     for (const someone of [member, guest]) {
       const made = await create(someone, botId);
       expect(await writer(made)).toBe("member");
-    }
-    const routineId = await create(owner, botId);
-    for (const someone of [member, guest]) {
+      expect(
+        (await call(someone, "routines/update", { routineId: made, prompt: "Mine again" })).status,
+      ).toBe(200);
+      expect(await writer(made)).toBe("member");
+      // The owner may pause theirs, which sends no text; saving its prompt is refused.
+      expect((await call(owner, "routines/update", { routineId: made, active: false })).status).toBe(
+        200,
+      );
+      expect(
+        (await call(owner, "routines/update", { routineId: made, prompt: "Owner's" })).status,
+      ).toBe(403);
+      expect(await writer(made)).toBe("member");
+      // Pausing the owner's routine leaves the record; their text is refused and changes nothing.
       expect((await call(someone, "routines/update", { routineId, active: false })).status).toBe(
         200,
       );
-      // Pausing it sends no text, so it leaves the record as it was.
-      expect(await writer(routineId)).toBe("owner");
       expect(
         (await call(someone, "routines/update", { routineId, prompt: `Theirs ${someone.userId}` }))
           .status,
-      ).toBe(200);
-      expect(await writer(routineId)).toBe("member");
-      // The owner turning it on, renaming it or moving its time does not make their prompt the owner's.
-      for (const change of [{ active: true }, { name: "Mine now" }, { crons: ["0 8 * * *"] }]) {
-        expect((await call(owner, "routines/update", { routineId, ...change })).status).toBe(200);
-        expect(await writer(routineId)).toBe("member");
-      }
-      // Saving the prompt, even unchanged, does.
-      const { prompt } = await system.routine.findUniqueOrThrow({ where: { id: routineId } });
-      expect((await call(owner, "routines/update", { routineId, prompt })).status).toBe(200);
+      ).toBe(403);
       expect(await writer(routineId)).toBe("owner");
     }
   });
 
-  it("records a member's rename as theirs", async () => {
+  it("records a member's rename of their own routine as theirs", async () => {
     const { owner, member, botId } = await setup();
-    const routineId = await create(owner, botId);
+    const routineId = await create(member, botId);
     expect((await call(member, "routines/update", { routineId, name: "Theirs" })).status).toBe(200);
     expect(await writer(routineId)).toBe("member");
+    const ownerRoutine = await create(owner, botId);
+    expect(
+      (await call(member, "routines/update", { routineId: ownerRoutine, name: "Theirs" })).status,
+    ).toBe(403);
+    expect(await writer(ownerRoutine)).toBe("owner");
   });
 
-  it("saves nothing when the record cannot be written, so the owner's older record never stays on new text", async () => {
-    const { owner, member, botId } = await setup();
-    const routineId = await create(owner, botId);
+  it("saves nothing when the record cannot be written, so a record never stays on text it did not come with", async () => {
+    const { member, botId } = await setup();
+    const routineId = await create(member, botId);
     const failing = routerWithLostRecord();
     const before = await system.routine.findUniqueOrThrow({ where: { id: routineId } });
-    const saved = await failing(member, "routines/update", { routineId, prompt: "Theirs" });
+    const saved = await failing(member, "routines/update", { routineId, prompt: "Changed" });
     expect(saved.status).toBe(500);
     const after = await system.routine.findUniqueOrThrow({ where: { id: routineId } });
     expect(after.prompt).toBe(before.prompt);
-    expect(after.userId).toBe(owner.userId);
-    expect(await writer(routineId)).toBe("owner");
+    expect(after.userId).toBe(member.userId);
+    expect(await writer(routineId)).toBe("member");
     const made = await failing(member, "routines/create", {
       botId,
       name: "Never saved",
@@ -224,7 +237,7 @@ describePostgres("who last wrote a routine, through the app (PostgreSQL)", () =>
     expect((await failing(member, "routines/update", { routineId, active: false })).status).toBe(
       200,
     );
-    expect(await writer(routineId)).toBe("owner");
+    expect(await writer(routineId)).toBe("member");
   });
 
   it("keeps a member's record when they leave and their routine passes to the Space's owner, paused", async () => {
