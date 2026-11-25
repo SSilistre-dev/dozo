@@ -246,3 +246,4 @@ packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new S
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/runs/tools/run-tool-gate.ts	fn gateToolCall	let gateDecision: "ask" | "allow" = plan === "ask" || plan === "judge" ? "ask" : "allow";	request	one tool call's decision, set by its own review closure inside the call; nothing outlives the call
+packages/db/src/billing/billing.ts	module	const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);	global-safe	constant set of fixed words, never changed after load
