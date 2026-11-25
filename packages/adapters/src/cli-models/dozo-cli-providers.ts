@@ -18,7 +18,7 @@ import { ACP_AGENTS } from "./acp/dozo-acp-catalog.js";
 import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
 import { codexAgentDriver } from "./codex/dozo-codex-agent.js";
 import type { AgentDriver } from "./dozo-agent.js";
-import { AGENT_OWN_MODEL } from "./dozo-agent.js";
+import { AGENT_OWN_MODEL, enabledAgentProviders } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, CliTurn } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -197,8 +197,11 @@ export function registerLocalCliProviders(
 ): MutableModels {
   if (!localCliHost()) {
     // A hosted server runs none of them, but a bot can still choose an agent that runs on one of
-    // the person's paired computers (dozo-device-agent.ts): the catalog must know its models.
-    for (const driver of AGENT_DRIVERS) models.setProvider(agentCatalogProvider(driver, models));
+    // the person's paired computers (dozo-device-agent.ts), where the server turned it on: the
+    // catalog must know its models.
+    const on = enabledAgentProviders();
+    for (const driver of AGENT_DRIVERS)
+      if (on.has(driver.provider)) models.setProvider(agentCatalogProvider(driver, models));
     return models;
   }
   for (const driver of CLI_MODEL_DRIVERS)

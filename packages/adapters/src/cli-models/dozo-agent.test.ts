@@ -122,6 +122,10 @@ describe.skipIf(process.platform === "win32")("agent mode with Codex", () => {
 
   it("leaves every other run to the model runtime, and runs no agent on a hosted server", async () => {
     vi.stubEnv("HOST_USER_HOME", undefined);
+    // The server turned the agent on for a person's computer (the file in its data folder).
+    const turnedOn = mkdtempSync(join(tmpdir(), "dozo-server-data-"));
+    writeFileSync(join(turnedOn, "dozo-agent-tools"), `${CODEX_AGENT_PROVIDER_ID}\n`);
+    vi.stubEnv("DATA_DIR", turnedOn);
     const events = await collect(
       runtime().run(request({ model: { provider: "openrouter", id: "m" } }), {}),
     );

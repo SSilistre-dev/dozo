@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { defaultCatalogModelId, loadStoredModelSecret } from "../model-selection.js";
 import { agentConnected, agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
+import { enabledAgentProviders } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, LocalCliHost } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -263,6 +264,9 @@ async function deviceConnection(
 ) {
   if (localCliHost())
     throw new ClientError("NOT_FOUND", "This tool cannot be used on this server.");
+  const agent = agentDriverFor(provider);
+  if (agent && !enabledAgentProviders().has(provider))
+    throw new CliAccountUnavailableError(`${agent.name} agent mode is not turned on on this server.`);
   const connection = await deviceAgentConnection(deps, userId, provider, deviceId);
   if (!connection) throw new CliAccountUnavailableError(DEVICE_OFFLINE_ERROR);
   if ((await connectedDevices(deps, userId, [provider])).get(provider)?.has(deviceId))

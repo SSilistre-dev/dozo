@@ -1,10 +1,13 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type { UserDeviceSummary } from "@rakazo/contracts";
 import { withAbort } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connectionOutReason, poolResetAt } from "../dozo-model-pool.js";
 import type { HostComputerRequest } from "../host-computer-protocol.js";
 import { restoreTurnCheckpoint } from "../turn-checkpoint.js";
@@ -22,6 +25,15 @@ import {
   DEVICE_OFFLINE_ERROR,
   withDeviceAgentRuntime,
 } from "./dozo-device-agent.js";
+
+/** The server's own switch for agents on a person's computer: a file in its data folder. */
+function opened(ids: string[] = ["antigravity-agent", "codex-agent"]) {
+  const dir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+  if (ids.length) writeFileSync(join(dir, "dozo-agent-tools"), `${ids.join("\n")}\n`);
+  vi.stubEnv("DATA_DIR", dir);
+}
+
+beforeEach(() => opened());
 
 const AGENT = "antigravity-agent";
 const REF = "dozo-cli-account:device:dev-1";
@@ -958,11 +970,13 @@ describe("what an agent turn may do on the server", () => {
     vi.unstubAllEnvs();
   });
 
-  it("marks the run as one that read outside content as soon as the agent started, before its first tool", async () => {
+  it("marks the run as one that read outside content before the turn is sent, and before any tool", async () => {
     const computer = new Computer();
     calls(computer, 1);
     const order: string[] = [];
-    const readOutsideContent = vi.fn(async () => void order.push("marked"));
+    const readOutsideContent = vi.fn(
+      async () => void order.push(`marked after ${computer.requests.length} sent`),
+    );
     const executeTool = vi.fn(async () => void order.push("tool"));
     await collect(
       runtimeOn(computer).runtime.run(
@@ -970,15 +984,44 @@ describe("what an agent turn may do on the server", () => {
         {},
       ),
     );
-    expect(order).toEqual(["marked", "tool"]);
-    // A turn that never started marks nothing.
-    const refused = new Computer();
-    refused.script = [{ type: "failed", message: "not signed in" }];
-    const unmarked = vi.fn(async () => undefined);
-    await collect(
-      runtimeOn(refused).runtime.run(request({ readOutsideContent: unmarked }), {}),
-    ).catch(() => undefined);
-    expect(unmarked).not.toHaveBeenCalled();
+    expect(order).toEqual(["marked after 0 sent", "tool"]);
+  });
+
+  it("cuts a turn whose agent asks for a tool before it said it started, and stops it", async () => {
+    const computer = new Computer();
+    computer.script = [
+      { type: "toolCall", callId: "c1", name: "lookup", args: {} },
+      { type: "started" },
+    ];
+    const executeTool = vi.fn(async () => "ok");
+    await expect(
+      collect(
+        runtimeOn(computer).runtime.run(request({ tools: listed("lookup"), executeTool }), {}),
+      ),
+    ).rejects.toThrow(AGENT_INTERRUPTED_ERROR);
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(computer.sent("agentStop")).toHaveLength(1);
+  });
+
+  it("opens nothing on a server that did not turn the agent on", async () => {
+    opened([]);
+    const computer = new Computer();
+    const { runtime, next } = runtimeOn(computer);
+    await expect(
+      collect(
+        runtime.run(
+          request({ fallbackModels: [{ provider: "openrouter", id: "m" }] } as never),
+          {},
+        ),
+      ),
+    ).rejects.toThrow("Antigravity agent mode is not turned on on this server.");
+    expect(computer.requests).toEqual([]);
+    expect(next.run).not.toHaveBeenCalled();
+    // Turned on, the same turn runs.
+    opened();
+    expect((await collect(runtimeOn(new Computer()).runtime.run(request(), {}))).at(-1)).toEqual({
+      type: "done",
+    });
   });
 
   const resumedAfterPause = (over: Partial<AgentRunRequest> = {}) =>
@@ -1165,6 +1208,17 @@ describe("what an agent turn may do on the server", () => {
     expect(failure?.message).toBe("Antigravity on your computer stopped.");
     expect(connectionOutReason({ errorMessage: failure!.message })).toBeUndefined();
     expect(poolResetAt(failure!.message)).toBeUndefined();
+  });
+
+  it("takes control characters out of what the computer says, and cuts a home folder with spaces or a root user's", async () => {
+    const computer = new Computer();
+    computer.script = [
+      { type: "started" },
+      { type: "activity", text: "\u001b[31mred\u001b[0m at /Users/Ann Lee/work/a.txt and /root/.ssh" },
+      { type: "done" },
+    ];
+    const events = await collect(runtimeOn(computer).runtime.run(request(), {}));
+    expect(events[0]).toEqual({ type: "progress", text: "[31mred [0m at ~/work/a.txt and ~/.ssh" });
   });
 
   it("still makes the account's own limit frame the one source of the pool's words", async () => {

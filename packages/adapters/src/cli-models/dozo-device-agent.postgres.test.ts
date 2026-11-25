@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { dozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -126,6 +129,10 @@ describePostgres("an agent on the person's own computer (PostgreSQL)", () => {
   beforeAll(() => {
     db = createDb(process.env.DATABASE_URL!);
     system = asSystem(db.prisma);
+    // The server turned the agent on (the file in its data folder).
+    const dataDir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+    writeFileSync(join(dataDir, "dozo-agent-tools"), `${AGENT}\n`);
+    process.env.DATA_DIR = dataDir;
   });
 
   afterAll(async () => {
@@ -140,6 +147,9 @@ describePostgres("an agent on the person's own computer (PostgreSQL)", () => {
       declares: [`agent:${AGENT}`, "agent:made-up", "shell"] as never,
     });
     expect(await readDeviceAgents(db.prisma, id)).toEqual([AGENT]);
+    // Declared, but not turned on on this server: not there.
+    const shut = { DATA_DIR: mkdtempSync(join(tmpdir(), "dozo-agents-")) };
+    expect(await readDeviceAgents(db.prisma, id, shut)).toEqual([]);
     await recordDeviceCapabilities(db.prisma, id, ["shell"]);
     expect(await readDeviceAgents(db.prisma, id)).toEqual([]);
     await recordDeviceCapabilities(db.prisma, id, null);

@@ -146,9 +146,10 @@ describe("a hosted server", () => {
     const before = builtinModels() as MutableModels;
     const names = new Set(before.getProviders().map((provider) => provider.id));
     const after = registerLocalCliProviders(builtinModels() as MutableModels);
-    // Its catalog adds only the agents', which a paired computer runs, and no tool of its own.
+    // Its catalog adds only the agents the file turns on, which a paired computer runs, and no tool
+    // of its own.
     expect(new Set(after.getProviders().map((provider) => provider.id))).toEqual(
-      new Set([...names, ...PROVIDERS]),
+      new Set([...names, ...(file ? PROVIDERS : [])]),
     );
   });
 });

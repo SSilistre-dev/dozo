@@ -117,9 +117,16 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
   });
 
   it("offers no tool of its own on a hosted server, only the agents a paired computer runs", async () => {
+    // Off until the server turns an agent on: it is not in the catalog.
+    const shut = registerLocalProvider(builtinModels() as MutableModels);
+    for (const driver of AGENT_DRIVERS) expect(shut.getProvider(driver.provider)).toBeUndefined();
+    const dir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+    writeFileSync(join(dir, "dozo-agent-tools"), `${AGENT_DRIVERS[0]!.provider}\n`);
+    vi.stubEnv("DATA_DIR", dir);
     const models = registerLocalProvider(builtinModels() as MutableModels);
     expect(models.getProvider(PROVIDER)).toBeUndefined();
-    for (const driver of AGENT_DRIVERS) expect(models.getProvider(driver.provider)).toBeDefined();
+    expect(models.getProvider(AGENT_DRIVERS[0]!.provider)).toBeDefined();
+    expect(models.getProvider(AGENT_DRIVERS[1]!.provider)).toBeUndefined();
     const runtime = { describe: vi.fn(), run: vi.fn(() => "model run") } as unknown as AgentRuntime;
     const deps = { prisma: {} as PrismaClient };
     const env = {

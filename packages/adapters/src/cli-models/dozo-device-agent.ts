@@ -32,6 +32,7 @@ import {
   AGENT_OWN_MODEL,
   AGENT_RECONNECT_ERROR,
   agentInput,
+  enabledAgentProviders,
   isPause,
   toolResultText,
 } from "./dozo-agent.js";
@@ -295,6 +296,12 @@ async function* runOnDevice(
   request: AgentRunRequest,
   context: Parameters<AgentRuntime["run"]>[1],
 ): AsyncGenerator<AgentRuntimeEvent> {
+  // The server's own switch (the file in its data folder, as for an agent on its own computer):
+  // off, nothing opens.
+  if (!enabledAgentProviders().has(request.model.provider))
+    throw new Error(
+      `${driverFor(request.model.provider).name} agent mode is not turned on on this server.`,
+    );
   const account = parseCliAccountRef(request.model.apiKey);
   if (account?.kind !== "device" || !deps.userDevices) throw new Error(AGENT_RECONNECT_ERROR);
   const access = await deviceAgentAccessCheck(deps)({
@@ -356,10 +363,11 @@ async function* answerOnBackup(
 /** What a computer says in its own words: one short line, its owner's home folder cut to `~`. */
 function deviceText(text: string): string {
   const line = text
+    .replace(/\p{Cc}/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/(?:\/Users|\/home)\/[^/\s]+/g, "~")
-    .replace(/[A-Za-z]:\\Users\\[^\\\s]+/g, "~");
+    .replace(/\/(?:Users|home)\/(?:[^/]+(?=\/)|\S+)|\/root\b/g, "~")
+    .replace(/[A-Za-z]:\\Users\\(?:[^\\]+(?=\\)|\S+)/g, "~");
   return line.length > DEVICE_TEXT_LIMIT ? `${line.slice(0, DEVICE_TEXT_LIMIT - 1)}\u2026` : line;
 }
 
@@ -406,6 +414,9 @@ async function* turnOnDevice(
   let stopAtEnd = true;
   let anyText = false;
   try {
+    // The agent reads what it reads, and asks the bot's tools for more: the run is one that took in
+    // outside content from before the turn leaves, with the protections that go with it.
+    await request.readOutsideContent?.();
     const frames = gateway
       .request<unknown>(userId, turn, stream.signal, deviceId)
       [Symbol.asyncIterator]();
@@ -444,12 +455,8 @@ async function* turnOnDevice(
       if (frame.type === "text") textSize += frame.text.length;
       if (frameCount > MAX_TURN_FRAMES || textSize > MAX_TURN_TEXT)
         throw new Error(AGENT_INTERRUPTED_ERROR);
-      if (frame.type === "started") {
-        started = true;
-        // The agent reads what it reads, and asks the bot's tools for more: from here on the run
-        // is one that took in outside content, with the protections that go with it.
-        await request.readOutsideContent?.();
-      } else if (frame.type === "text") {
+      if (frame.type === "started") started = true;
+      else if (frame.type === "text") {
         anyText = true;
         yield { type: "text", text: frame.text };
       } else if (frame.type === "activity")
@@ -472,7 +479,8 @@ async function* turnOnDevice(
       } else {
         // The agent calls one of the bot's tools: once for each call id, only a listed one, and
         // only so many in one turn.
-        if (calls.size >= maxCalls) throw new Error(AGENT_INTERRUPTED_ERROR);
+        // A call before the agent said it started is not one a running agent made.
+        if (!started || calls.size >= maxCalls) throw new Error(AGENT_INTERRUPTED_ERROR);
         const repeated = calls.has(frame.callId);
         calls.add(frame.callId);
         const runs = !repeated && sent.has(frame.name) && request.executeTool;

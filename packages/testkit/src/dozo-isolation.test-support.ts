@@ -7,7 +7,7 @@
 // dozo-isolation-world.test-support.ts, and its rows are compared by
 // dozo-isolation-snapshot.test-support.ts.
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { createApp } from "@rakazo/api/app";
@@ -194,6 +194,11 @@ export async function startIsolationApp(
   process.env.SANDBOX_PROVIDER = "fake";
   process.env.AGENT_RUNTIME = "scripted";
   const dataDir = mkdtempSync(path.join(tmpdir(), "dozo-isolation-"));
+  // The server turned the agent on for a person's computer (the file in its data folder, which the
+  // agent code reads from DATA_DIR): for this world's life only, then DATA_DIR is as it was.
+  writeFileSync(path.join(dataDir, "dozo-agent-tools"), "codex-agent\n");
+  const earlierDataDir = process.env.DATA_DIR;
+  process.env.DATA_DIR = dataDir;
   const { createApp } = await import("@rakazo/api/app");
   const handles = await createApp({
     databaseUrl,
@@ -209,6 +214,8 @@ export async function startIsolationApp(
     handles,
     async cleanup() {
       await handles.stop();
+      if (earlierDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = earlierDataDir;
       rmSync(dataDir, { recursive: true, force: true });
     },
   };

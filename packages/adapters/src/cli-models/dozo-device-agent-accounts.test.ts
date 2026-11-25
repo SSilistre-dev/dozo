@@ -1,10 +1,25 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { UserDeviceSummary } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cliHomeConnection, readCliTools } from "./dozo-cli-accounts.js";
 import { cliAccountRef } from "./dozo-cli-driver.js";
 import { DEVICE_OFFLINE_ERROR } from "./dozo-device-agent.js";
+
+/** The server's own switch for agents on a person's computer: a file in its data folder. */
+function opened(ids: string[] = ["antigravity-agent", "codex-agent"]) {
+  const dir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+  if (ids.length) writeFileSync(join(dir, "dozo-agent-tools"), `${ids.join("\n")}\n`);
+  vi.stubEnv("DATA_DIR", dir);
+}
+
+beforeEach(() => opened());
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const AGENT = "antigravity-agent";
 
@@ -200,5 +215,18 @@ describe("on the person's own computer's server", () => {
     await expect(cliHomeConnection(hosted(), "ada", AGENT, { deviceId: "dev-1" })).rejects.toThrow(
       "cannot be used on this server",
     );
+  });
+});
+
+describe("on a server that did not turn the agent on", () => {
+  it("shows no row for a computer that declares it, and refuses to connect it", async () => {
+    opened([]);
+    expect(await readCliTools(hosted(), "ada")).toEqual([]);
+    await expect(cliHomeConnection(hosted(), "ada", AGENT, { deviceId: "dev-1" })).rejects.toThrow(
+      "Antigravity agent mode is not turned on on this server.",
+    );
+    // Only the agent the file names: the other stays off.
+    opened(["codex-agent"]);
+    expect(await readCliTools(hosted(), "ada")).toEqual([]);
   });
 });

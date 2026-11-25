@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
@@ -147,6 +150,9 @@ async function agentAsks(ctx: ReturnType<typeof context>, name: string) {
 describe("a bot tool the agent on the person's computer asks for", () => {
   beforeEach(() => {
     plans.length = 0;
+    const dir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+    writeFileSync(join(dir, "dozo-agent-tools"), `${AGENT}\n`);
+    vi.stubEnv("DATA_DIR", dir);
   });
 
   it("is judged as a run that read outside content: a memory write asks, and the card is written", async () => {

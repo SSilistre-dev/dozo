@@ -594,7 +594,8 @@ The hosted server has no person's computer, so there the agent runs in the deskt
 person's own computer, over its device connection. The server only routes the turn
 (`cli-models/dozo-device-agent.ts`; the desktop side is `dozo/desktop/src/device_agent.rs`). It is
 off for now: the desktop app declares no agent until its catalog entry is marked verified, so no
-computer offers one.
+computer offers one. On the server it is opened with the file `dozo-agent-tools` in its data folder
+(one provider id per line, as for an agent on its own computer); without a line there it stays off.
 
 - **Where it shows:** Settings lists, for each of the person's connected computers, the agents that
   computer declares (`agent:<id>`), as "Antigravity · Laptop". Connecting stores which computer
@@ -610,7 +611,9 @@ computer offers one.
 - **What the person decides on the computer:** every permission the agent asks for, every file
   write through the app, and every read outside the bot's folder, in the app's own window; the
   server cannot answer these. The bot's own tools still go through the server's executor and its
-  approvals, and a run counts as one that read outside content from the moment the agent starts.
+  approvals, and a run counts as one that read outside content before the turn is sent. A turn
+  is cut, and the agent stopped, after 200 calls of the bot's tools (or `MAX_TOOL_CALLS_PER_TURN`),
+  20,000 frames or 8 MB of text, each counted per attempt.
 - **Offline:** before the turn starts, the turn falls back to a backup model only if the bot or
   person set a backup list; after it started, or on the attempt after a pause, it ends as
   interrupted.
