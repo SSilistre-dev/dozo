@@ -76,6 +76,7 @@
     pl: ["Nie można połączyć się z serwerem.", "Ponów teraz"],
     "pt-BR": ["Não é possível acessar o servidor.", "Nova tentativa agora"],
     ru: ["Не удаётся связаться с сервером.", "Повторить попытку сейчас"],
+    th: ["เชื่อมต่อเซิร์ฟเวอร์ไม่ได้", "ลองอีกครั้งตอนนี้"],
     tr: ["Sunucuya ulaşılamıyor.", "Şimdi tekrar dene"],
     "zh-CN": ["无法连接服务器。", "立即重试"],
     "zh-TW": ["無法連線伺服器。", "立即重試"],

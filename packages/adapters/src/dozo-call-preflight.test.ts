@@ -203,7 +203,7 @@ describe("which providers are asked at all", () => {
     const counts: Record<string, number> = {};
     for (const entry of providers) counts[classOf(entry)] = (counts[classOf(entry)] ?? 0) + 1;
     expect(counts).toEqual({
-      asked: 32,
+      asked: 33,
       "several addresses": 6,
       "no address in the registry": 2,
       "placeholder in the address": 2,

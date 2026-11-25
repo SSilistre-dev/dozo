@@ -19,7 +19,11 @@ type Input = Parameters<typeof selectRunTools>;
 async function initiallyTainted(recalledMemory: string, ownerStartedRun = true) {
   const hold = {
     deps: {
-      prisma: { externalEffect: { findMany: async () => [] } },
+      prisma: {
+        externalEffect: { findMany: async () => [] },
+        bot: { findMany: async () => [] },
+        chatGroup: { findMany: async () => [] },
+      },
       phoneCallsEnabled: false,
     },
     run: { id: "r", userId: "u", spaceId: "s", botId: "b", trigger: "user", clientNonce: null },
@@ -33,6 +37,10 @@ async function initiallyTainted(recalledMemory: string, ownerStartedRun = true) 
       sourceBlocks: [],
       task: { prompt: "What did we decide?" },
       thread: { id: "t", groupId: null },
+      conversationThread: { id: "t", groupId: null },
+      conversationRun: { trigger: "user" },
+      messagingChannelRun: false,
+      ownerComputerRoutine: false,
       ticketBoardEnabled: false,
       unknownChannelSourceId: undefined,
     },

@@ -19,7 +19,12 @@ const context: AdapterContext = {
 function setup(organization: { billingOn: boolean; usedBytes: number }) {
   const provider = new FakeMediaGenerationProvider();
   const generate = vi.spyOn(provider, "generateImage");
-  const row = { id: "local-job", status: "media_submitting", result: { provider: "fake" } };
+  const row = {
+    id: "local-job",
+    status: "media_submitting",
+    result: { provider: "fake" },
+    request: {},
+  };
   const externalEffect = {
     findFirst: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue(row),
@@ -43,6 +48,7 @@ function setup(organization: { billingOn: boolean; usedBytes: number }) {
   const result = generateMediaFromTool({
     name: "generate_image",
     args: { prompt: "draw" },
+    source: { kind: "hosted" },
     executionId: "execution",
     provider,
     prisma,

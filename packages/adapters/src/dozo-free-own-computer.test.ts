@@ -1,10 +1,10 @@
 import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import type { HostComputerRequest } from "./computers/host/host-computer-protocol.js";
+import type { UserDeviceGateway } from "./computers/host/user-device-protocol.js";
 import type { RunContext } from "./runs/assembly/run-context.js";
 import type { ToolCall } from "./runs/tools/run-tool-gate.js";
 import { userComputerShell } from "./runs/tools/run-tools-user-computer.js";
-import type { UserDeviceGateway } from "./computers/host/user-device-protocol.js";
 
 /**
  * Dozo's Free plan has no hosted computer: its allowance is zero, so starting the bot's own
@@ -22,6 +22,7 @@ describe("Free plan and the member's own computer", () => {
     const gateway: UserDeviceGateway = {
       connected: async () => ({ deviceId: "device-1", name: "Laptop", platform: "linux" }),
       pairedSince: async () => new Date(0),
+      list: async () => [],
       async *request<T>(_userId: string, request: HostComputerRequest) {
         requests.push(request);
         if (request.method === "environment")

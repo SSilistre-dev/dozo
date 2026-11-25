@@ -26,7 +26,8 @@ function fixture() {
     id: "run-1",
     spaceId: "space-1",
     botId: "bot-1",
-    status: "queued",
+    // Only a run held for a takeover takes its computer before its model turn.
+    status: "waiting_takeover",
     leaseFence: 0,
     checkpoint: null,
     startedAt: null,
@@ -54,7 +55,13 @@ function fixture() {
       })),
     },
     computerExecutionLease: { findFirst: vi.fn(async () => ({ id: "lease-of-run-0" })) },
-    attempt: { create: vi.fn(async () => Promise.reject(new Error("attempt setup failed"))) },
+    attempt: {
+      findFirst: vi.fn(async () => null),
+      findMany: vi.fn(async () => []),
+      create: vi.fn(async () => ({ id: "attempt-1" })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      update: vi.fn(async () => ({})),
+    },
   };
   const publishSpaceChange = vi.fn(async (_spaceId: string, kind: string) => {
     order.push(`signal:${kind}`);
@@ -63,6 +70,7 @@ function fixture() {
     prisma,
     jobs: { enqueue: vi.fn() },
     events: { publishSpaceChange },
+    secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return { order, publishSpaceChange, start: () => executor.continueRun("run-1", "worker-1") };
 }

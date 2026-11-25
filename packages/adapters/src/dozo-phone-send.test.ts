@@ -156,6 +156,8 @@ async function sendPlan(ctx: ReturnType<typeof context>, name: string, to: strin
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
   sends.length = 0;

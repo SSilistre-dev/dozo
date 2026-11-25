@@ -1,6 +1,6 @@
 import type { AutoReviewProvider, AutoReviewResult } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
-import { isStuckWorkStatus, STUCK_WORK_EXPIRE_AFTER_MS, stuckWorkAction } from "@rakazo/core";
+import { approvalCardExpires } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { markReadOutsideContent } from "./runs/assembly/run-context.js";
@@ -41,6 +41,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   takeDozoDailySend: vi.fn(async () => ({ full: false, dailySends: 100 })),
 }));
 vi.mock("./runs/turn/run-auto-review.js", () => ({
+  includedAutoReviewChecker: async () => null,
   // The model a review goes to answers as the test says, and is recorded by name.
   autoReviewCheckerProvider: async (
     _deps: unknown,
@@ -97,11 +98,9 @@ const CALLS: Record<string, { name: string; args: Record<string, unknown>; read?
   },
   "an app action": { name: APP_ACTION, args: { title: "Bug" } },
   "deleting an email": { name: "delete_email", args: { id: "mail-1" } },
-  "making a group": { name: "create_group", args: { name: "Team" } },
-  "a memory save after outside content": {
-    name: "remember",
-    args: { content: "The owner prefers mornings" },
-    read: true,
+  "changing a child bot's model": {
+    name: "set_child_bot_model",
+    args: { botId: "bot-2", model: "other" },
   },
   "a command on the bot's computer": { name: "shell", args: { command: "npm install" } },
 };
@@ -157,6 +156,7 @@ function context(options: { mode?: Mode; models?: Models; trigger?: string } = {
       connectedPlugins: [],
     },
     state: {
+      outsideText: "",
       tainted: trigger !== "user",
       earlierAttempt: undefined,
       approval: {},
@@ -183,6 +183,7 @@ function context(options: { mode?: Mode; models?: Models; trigger?: string } = {
             : [],
       }),
       loadOwnerWords: async () => "Tidy up my week",
+      loadEarlierOwnerMessages: async () => [],
       receivedOutsideMessage: async () => false,
       routineNamesNewSite: async () => false,
       loadTrustedSites: async () => new Set<string>(),
@@ -208,6 +209,8 @@ function request(name: string, args: Record<string, unknown>): ToolRequest {
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
 }
@@ -314,24 +317,34 @@ describe.each(Object.entries(CALLS))("%s with backups only", (_label, call) => {
 });
 
 describe("a routine nobody watches, with no approval model", () => {
-  it.each(Object.entries(CALLS))(
-    "pauses on a card for %s, and that wait ends with the run's other human waits",
-    async (_label, call) => {
-      const ctx = context({ models: "none", trigger: "routine" });
-      if (call.read) await markReadOutsideContent(ctx as never);
-      const paused = vi.spyOn(ctx.deps.events, "pauseRunForInput");
-      await gateToolCall(ctx as never, request(call.name, { ...call.args }), undefined);
-      expect(paused).toHaveBeenCalledTimes(1);
-      expect(seen.reviews).toEqual([]);
-      // A paused run waits for input, which the stuck-work sweep cancels after a day by default.
-      expect(isStuckWorkStatus("waiting_input")).toBe(true);
-      expect(
-        stuckWorkAction({
-          status: "waiting_input",
-          ageMs: STUCK_WORK_EXPIRE_AFTER_MS,
-          alreadyNotified: true,
-        }),
-      ).toBe("expire");
-    },
-  );
+  it.each(Object.entries(CALLS))("pauses on a card for %s", async (_label, call) => {
+    const ctx = context({ models: "none", trigger: "routine" });
+    if (call.read) await markReadOutsideContent(ctx as never);
+    const paused = vi.spyOn(ctx.deps.events, "pauseRunForInput");
+    await gateToolCall(ctx as never, request(call.name, { ...call.args }), undefined);
+    expect(paused).toHaveBeenCalledTimes(1);
+    expect(seen.reviews).toEqual([]);
+  });
+
+  // The card does not wait for ever: upstream ends it unanswered (expireApprovalCard), and the
+  // action is not done. The wait no longer ends with the stuck-work sweep, which leaves questions open.
+  it("ends that wait on its own", () => {
+    expect(approvalCardExpires("routine")).toBe(true);
+  });
+});
+
+// Upstream no longer asks for a memory save after outside content: only the approval model checks
+// it, and without one it runs. With one, the save goes through the same verdict handling.
+describe("a memory save after outside content in Auto review", () => {
+  const save = { name: "remember", args: { content: "The owner prefers mornings" }, read: true as const };
+
+  it("goes to the approval model, and runs only when it passes", async () => {
+    expect(await outcome(save)).toBe("reviewed");
+    expect(seen.plans).toEqual(["judge"]);
+  });
+
+  it.each(["ask", "error", "throws"] as const)("asks with a card when the model says %s", async (verdict) => {
+    seen.verdict = verdict;
+    expect(await outcome(save)).toBe("card");
+  });
 });

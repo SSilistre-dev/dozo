@@ -1,12 +1,12 @@
 import type * as Core from "@rakazo/core";
+import { approvalCardExpires } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
-import { recordAuditEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { accountVault, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import { encodeDeviceLogin } from "./dozo-device-login.js";
 import { gateToolCall } from "./runs/tools/run-tool-gate.js";
 import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 import { prepareToolRequest } from "./runs/tools/run-tool-request.js";
+import { accountVault, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "./secrets/secrets.js";
 
 const plans = vi.hoisted(() => [] as string[]);
@@ -74,6 +74,8 @@ async function gate(options: { policy: "ask" | "allow"; trigger?: string; neverA
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
   const ctx = {
@@ -131,14 +133,13 @@ describe("the vault's approval of a login linked to a computer, through the real
     }
   });
 
-  it("is refused in a run nobody can answer, such as a webhook's", async () => {
+  it("asks in a run nobody is watching, such as a webhook's, and the card expires unanswered", async () => {
+    // Upstream no longer refuses it: the sign-in waits for a card that ends after 30 minutes, and
+    // nothing is filled meanwhile (approvalCardExpires, expireApprovalCard).
     const { outcome } = await gate({ policy: "ask", trigger: "webhook" });
-    expect(outcome).toEqual({
-      result: { error: expect.stringContaining("a webhook run cannot ask") },
-    });
-    expect(recordAuditEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({ outcome: "denied", metadata: { reason: "login_unattended" } }),
-    );
+    expect(outcome).toBe("asks the user");
+    expect(plans).toEqual(["ask"]);
+    expect(approvalCardExpires("webhook")).toBe(true);
   });
 
   it("asks nothing more than for any login when it is set to allow", async () => {

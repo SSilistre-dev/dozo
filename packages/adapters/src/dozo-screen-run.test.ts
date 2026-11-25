@@ -163,6 +163,7 @@ function context(
     source: { ownerStartedRun, messagingChannelRun: run === "channel" },
     tools: { connector: new Map(), connectedPlugins: [] },
     state: {
+      outsideText: "",
       tainted: !ownerStartedRun || Boolean(options.read),
       earlierAttempt: undefined,
       approval: {},
@@ -186,6 +187,7 @@ function context(
             : [],
       }),
       loadOwnerWords: async () => "Fill in the form",
+      loadEarlierOwnerMessages: async () => [],
       receivedOutsideMessage: async () => run === "message",
       routineNamesNewSite: async () => false,
       loadTrustedSites: async () => new Set<string>(),
@@ -211,6 +213,8 @@ function request(name: string, args: Record<string, unknown>, approved = false):
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
 }

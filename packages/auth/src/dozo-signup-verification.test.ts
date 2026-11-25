@@ -36,6 +36,7 @@ vi.mock("@rakazo/db", async () => {
     bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
     leaveInvitedSpaces: vi.fn(async () => ({ ownedOrganizationIds: [] })),
     personalOrganizationIds: vi.fn(async () => []),
+    clearAccountIdentity: vi.fn(async () => undefined),
     recordSecurityEvent: vi.fn(async () => undefined),
   };
 });

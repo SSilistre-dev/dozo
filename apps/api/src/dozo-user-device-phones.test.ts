@@ -36,6 +36,8 @@ function fakePrisma() {
         return { id: row.id };
       },
       findMany: async ({ where }: { where: Where }) => rows.filter((row) => matches(row, where)),
+      // A pairing key repeats a pairing; these ones carry none.
+      findUnique: async () => null,
       updateMany: async ({ where, data }: { where: Where; data: Partial<Row> }) => {
         const hit = rows.filter((row) => matches(row, where));
         if (data.revokedAt) state.revokedInTransaction ||= state.inTransaction;
@@ -44,7 +46,13 @@ function fakePrisma() {
       },
     },
     userDeviceConnection: { findUnique: async () => null },
-    session: { findMany: async () => [] },
+    session: {
+      findMany: async () => [],
+      // The pairing checks that the session it came from is still live.
+      findFirst: async ({ where }: { where: { userId?: string } }) => ({
+        id: `${where.userId}-session`,
+      }),
+    },
     securityEvent: {
       create: async ({ data }: { data: (typeof events)[number] }) => events.push(data),
     },

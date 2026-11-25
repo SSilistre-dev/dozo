@@ -182,7 +182,8 @@ describe("the run executor", () => {
       id: "run-1",
       spaceId: "space-1",
       botId: "bot-1",
-      status: "queued",
+      // Only a run held for a takeover takes its computer before its model turn.
+      status: "waiting_takeover",
       leaseFence: 0,
       checkpoint: null,
       startedAt: null,
@@ -206,6 +207,13 @@ describe("the run executor", () => {
           computer: { scope: "team" },
         })),
       },
+      attempt: {
+        findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
+        create: vi.fn(async () => ({ id: "attempt-1" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
       // Held when the claim checks, released by the time the run is back in line.
       computerExecutionLease: {
         findFirst: vi
@@ -218,6 +226,7 @@ describe("the run executor", () => {
       prisma,
       jobs: { enqueue },
       events: { publishSpaceChange: vi.fn() },
+      secrets: [],
     } as unknown as Parameters<typeof createRunExecutor>[0]);
     await executor.continueRun("run-1", "worker-1");
     expect(prisma.computerExecutionLease.findFirst).toHaveBeenLastCalledWith({

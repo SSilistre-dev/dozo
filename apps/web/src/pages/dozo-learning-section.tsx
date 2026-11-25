@@ -74,7 +74,8 @@ export function DozoLearningSection({
               disabled={mode.pending}
               options={[
                 { value: "off", label: t`Off` },
-                { value: "ask", label: t`Ask first` },
+                // Upstream names this label by id (the vault policies), so the catalogs hold it under that id.
+                { value: "ask", label: t({ id: "Ask first", message: "Ask first" }) },
                 { value: "auto", label: t`Auto` },
               ]}
               onValueChange={(value) => mode.run(value)}

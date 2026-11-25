@@ -13,8 +13,8 @@ import {
   readDozoQuietHours,
   saveDozoQuietHours,
 } from "./dozo-quiet-hours.js";
-import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
 import { wakeRoutine } from "./runs/assembly/run-routines.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
 
 const HOUR = 60 * 60_000;
 const { ALL } = DOZO_QUIET_DAYS;
@@ -418,6 +418,7 @@ function fakeDatabase() {
       enqueued.push(job);
     }),
     enqueueIn: async () => undefined,
+    enqueueManyIn: async () => undefined,
     cancelIn: async () => undefined,
     cancel: async () => undefined,
     close: async () => undefined,

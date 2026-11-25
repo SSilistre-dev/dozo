@@ -5,8 +5,9 @@ import {
   planActionGate,
 } from "./runs/action-approval.js";
 
-// What the meeting prep template relies on: its runs are started by a routine, so they begin with
-// outside content assumed, and the first calendar read must still not wait for a person. The
+// What the meeting prep template relies on: its runs are started by a routine, which upstream counts
+// as the owner's run, and a calendar read after outside content came in (what the calendar returns
+// is outside content) must still not wait for a person. The
 // seeded executor run that checks the same through the real gate is in the pull request notes.
 
 describe("a routine run reading the calendar", () => {
@@ -25,8 +26,8 @@ describe("a routine run reading the calendar", () => {
       checkerConfigured,
     });
 
-  it("starts tainted, because the owner did not start it", () => {
-    expect(isOwnerStartedRun("routine", false)).toBe(false);
+  it("reads the calendar as a run that took in outside content", () => {
+    expect(isOwnerStartedRun("routine", false)).toBe(true);
     expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: false })).toBe(true);
     // Reads after the first one, on the same app, are free.
     expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: true })).toBe(false);

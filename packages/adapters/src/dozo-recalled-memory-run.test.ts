@@ -39,6 +39,8 @@ async function turn(recalledMemory: string) {
       savedSkills: [],
       task: { prompt: "What did we decide?" },
       thread: { id: "t", groupId: null },
+      conversationThread: { id: "t", groupId: null },
+      ownerComputerRoutine: false,
     },
     connected: { connectedPlugins: [], context: {} },
     thread: { compactedHistory: { usedLocalSummary: false }, people: undefined },
@@ -46,13 +48,13 @@ async function turn(recalledMemory: string) {
     model: { resolved: {} },
     computer: { modelSeesImages: false },
     capabilities: { disabledBuiltinTools: new Set() },
-    tools: { approvedEffects: [], tools: [] },
+    tools: { approvedEffects: [], tools: [], teammates: [] },
     ctx: {},
   } as unknown as Input[1];
   const built = await buildTurnPrompt(hold, parts);
   // As run-model-turn builds the system prompt from it.
   const system = userTurnInstructions({
-    hasHistoricalContext: built.historicalContext.length > 0,
+    hasHistoricalContext: built.hasHistoricalContext,
   } as Parameters<typeof userTurnInstructions>[0]).join("\n");
   return { built, system };
 }

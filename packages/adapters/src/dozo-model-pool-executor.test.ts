@@ -138,6 +138,8 @@ async function runTurn() {
       },
       attempt: {
         create: vi.fn(async () => ({ id: "attempt-1" })),
+        findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
         update: vi.fn(),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
@@ -156,7 +158,11 @@ async function runTurn() {
         findFirst: vi.fn(async () => null),
       },
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
-      computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      computer: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ scope: "dedicated", state: "running" })),
+      },
+      routine: { findUnique: vi.fn(async () => null) },
       connection: { findMany: vi.fn(async () => []) },
       userModelPreference: {
         findMany: vi.fn(async () => []),
@@ -179,7 +185,7 @@ async function runTurn() {
       taughtSkill: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
-      scratchpadItem: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
       externalEffect: { findMany: vi.fn(async () => []) },
       userActionApprovalRule: { findMany: vi.fn(async () => []) },
       userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },

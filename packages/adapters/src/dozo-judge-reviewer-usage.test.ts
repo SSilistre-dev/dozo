@@ -119,6 +119,7 @@ function context(trigger: string) {
     source: { ownerStartedRun: trigger === "user", messagingChannelRun: false },
     tools: { connector: new Map(), connectedPlugins: [] },
     state: {
+      outsideText: "",
       tainted: trigger !== "user",
       earlierAttempt: undefined,
       approval: {},
@@ -133,6 +134,7 @@ function context(trigger: string) {
         backups: [{ provider: "backup", modelId: "backup-1", thinkingLevel: undefined }],
       }),
       loadOwnerWords: async () => "Set up the project",
+      loadEarlierOwnerMessages: async () => [],
       receivedOutsideMessage: async () => false,
       routineNamesNewSite: async () => false,
       loadTrustedSites: async () => new Set<string>(),
@@ -158,6 +160,8 @@ function request(name: string, args: Record<string, unknown>): ToolRequest {
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
 }

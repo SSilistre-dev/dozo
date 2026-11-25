@@ -1,3 +1,4 @@
+import { VAULT_ITEM_LIMIT } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { fakeDatabase } from "./secrets/bot-secrets.test-support.js";
@@ -138,7 +139,7 @@ describe("linking a login that stays in a password manager", () => {
 
   it("refuses at the vault's limit, and for a computer that was disconnected meanwhile", async () => {
     const full = setup();
-    for (let index = 0; index < 100; index += 1)
+    for (let index = 0; index < VAULT_ITEM_LIMIT; index += 1)
       await full.db.prisma.vaultCredential.create({
         data: {
           id: `item-${index}`,

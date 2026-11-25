@@ -59,6 +59,9 @@ function setup(observe: () => Promise<ComputerObservation>) {
     prisma: {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
       taughtSkill: { findFirst: vi.fn(async () => current) },
+      bot: tx.bot,
+      // The computer's size, which the plan caps: no organization, so the smallest.
+      computer: { findUnique: vi.fn(async () => ({ size: "standard", space: { organization: null } })) },
     },
     sandbox: {
       observe: vi.fn(async () => {

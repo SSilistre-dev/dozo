@@ -155,6 +155,8 @@ function fakePrisma(plan: Plan, reads: string[]) {
     },
     task: { findUniqueOrThrow: () => ({ id: run.taskId, prompt: "Find me a flight to Izmir" }) },
     computer: { updateMany: () => ({ count: 1 }) },
+    // No operator granted extra computer allowance.
+    computerAllowanceGrant: { aggregate: () => ({ _sum: { amountCents: null } }) },
     externalEffect: {
       create: ({ data }: { data: Record<string, unknown> }) => ({
         id: `effect-${String(data.idempotencyKey)}`,
@@ -221,6 +223,7 @@ async function ownerRun(options: {
   const userDevices = options.userComputer
     ? {
         connected: vi.fn(async () => (options.userComputer === "connected" ? device : null)),
+        list: vi.fn(async () => []),
         pairedSince: vi.fn(async () => null),
         async *request() {},
       }

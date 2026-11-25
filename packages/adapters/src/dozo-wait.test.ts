@@ -1,7 +1,6 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
 import { DOZO_ROUTINE_CATCH_UP_MS } from "./dozo-quiet-hours.js";
 import {
   DOZO_MAX_WAITS_PER_BOT,
@@ -11,13 +10,14 @@ import {
   dozoWatchNextRunAt,
 } from "./dozo-wait.js";
 import { DOZO_WAIT_MAX_MINUTES } from "./dozo-wait.tool-definition.js";
-import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
-import { parseConnectorToolArgs } from "./tools/lazy-tool-catalog.js";
 import { normalizeOpenAiToolParameters } from "./models/endpoints/openai-tool-parameters.js";
 import type { tickRoutineWatch } from "./routines/routine-watch.js";
 import type { RunContext } from "./runs/assembly/run-context.js";
 import { wakeRoutine } from "./runs/assembly/run-routines.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
 import { scheduleCreateRefusal } from "./runs/tools/run-tools-tasks.js";
+import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
+import { parseConnectorToolArgs } from "./tools/lazy-tool-catalog.js";
 import type { createScheduleFromTool } from "./tools/schedule-tools.js";
 
 const MINUTE = 60_000;
@@ -94,6 +94,7 @@ function fakeDatabase() {
       enqueued.push(job);
     }),
     enqueueIn: async () => undefined,
+    enqueueManyIn: async () => undefined,
     cancelIn: async () => undefined,
     cancel: vi.fn(async (key: string) => {
       cancelled.push(key);
@@ -168,6 +169,7 @@ describe("schedule_create's wait", () => {
         name: "Call",
         prompt: "Remind me to call",
         delayMinutes: 20,
+        inChat: false,
         waitMinutes: null,
       }),
     ).toMatchObject({ delayMinutes: 20 });
@@ -176,6 +178,7 @@ describe("schedule_create's wait", () => {
         name: "Call",
         prompt: "Remind me to call",
         delayMinutes: 20,
+        inChat: false,
         waitMinutes: 60,
       }),
     ).toThrow(/invalid/i);
@@ -481,6 +484,7 @@ describe("a wait woken by its routine", () => {
       watch: { ...WATCH, everyMinutes: 15, loud: false },
       watchState: null,
       active: true,
+      endsAt: null as Date | null,
       nextRunAt: wait.endsAt as Date | null,
       lastRunAt: null as Date | null,
     };

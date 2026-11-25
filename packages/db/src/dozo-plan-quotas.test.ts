@@ -113,7 +113,7 @@ describe("reading the quotas", () => {
       );
       expect(quotas.pro).toEqual({ sharedSpaceMb: null, computerHours: null, computers: null });
       expect(quotas.max).toEqual({ sharedSpaceMb: null, computerHours: null, computers: null });
-      expect(Object.keys(quotas)).toEqual(["standard", "pro", "max"]);
+      expect(Object.keys(quotas)).toEqual(Object.keys(BYOK_TIERS));
       expect(sink.events.map((event) => [event.level, event.message, event.quota])).toEqual([
         ["warn", "dozo.plan_quota.ignored", "sharedSpaceMb"],
         ["warn", "dozo.plan_quota.ignored", "computerHours"],

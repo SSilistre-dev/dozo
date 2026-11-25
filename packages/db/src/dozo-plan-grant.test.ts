@@ -191,6 +191,7 @@ function organization(
   };
   const prisma = {
     dozoPlanQuota: { findMany: async () => state.quotas },
+    computerAllowanceGrant: { aggregate: async () => ({ _sum: { amountCents: null } }) },
     deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
     organization: {
       findUnique: async () => ({
@@ -205,6 +206,18 @@ function organization(
           modelCredits: { mode: state.mode },
           billing: state.billing,
           dozoPlanGrant: state.grant,
+        },
+      }),
+    },
+    computer: {
+      findUnique: async () => ({
+        size: "xlarge",
+        space: {
+          organization: {
+            modelCredits: { mode: state.mode },
+            billing: state.billing,
+            dozoPlanGrant: state.grant,
+          },
         },
       }),
     },
@@ -231,11 +244,11 @@ describe("the computer a granted plan gives", () => {
   it("is none on Free, and the granted plan's allowance and size while it lasts", async () => {
     const { prisma, state } = organization();
     expect(await limit(prisma)).toBe(0);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("standard");
 
     state.grant = { tier: "pro", endsAt: far };
     expect(await limit(prisma)).toBe(BYOK_TIERS.pro.computerAllowanceCents);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
 
     state.grant = { tier: "max", endsAt: far };
     expect(await limit(prisma)).toBe(BYOK_TIERS.max.computerAllowanceCents);
@@ -252,7 +265,7 @@ describe("the computer a granted plan gives", () => {
   it("is none again once it has ended", async () => {
     const { prisma } = organization({ grant: { tier: "max", endsAt: earlier } });
     expect(await limit(prisma)).toBe(0);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("standard");
   });
 
   it("follows the higher of the subscription and the grant", async () => {

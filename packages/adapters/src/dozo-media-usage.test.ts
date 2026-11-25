@@ -120,10 +120,16 @@ describe("media usage", () => {
       traceId: "trace",
       signal: new AbortController().signal,
     };
-    const created = { id: "job-3", status: "media_submitting", result: { provider: "fake" } };
+    const created = {
+      id: "job-3",
+      status: "media_submitting",
+      result: { provider: "fake" },
+      request: {},
+    };
     const result = await generateMediaFromTool({
       name: "generate_image",
       args: { prompt: "draw" },
+      source: { kind: "hosted" },
       executionId: "execution",
       provider: new FakeMediaGenerationProvider(),
       prisma: {

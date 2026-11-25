@@ -100,6 +100,8 @@ function harness() {
     userModelCredential: {
       findFirst: vi.fn(async () => (organization.ownConnection ? { id: "credential-1" } : null)),
     },
+    // No operator granted extra computer allowance.
+    computerAllowanceGrant: { aggregate: vi.fn(async () => ({ _sum: { amountCents: null } })) },
     accessGrant: {
       aggregate: vi.fn(async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } })),
     },
