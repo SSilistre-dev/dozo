@@ -33,7 +33,7 @@ import {
   switchLeaseKey,
 } from "./dozo-computer-move.js";
 import { LocalAgentHomeStore } from "./storage/home.js";
-import { knownSandboxKinds } from "./sandbox-kind-capabilities.js";
+import { knownSandboxKinds } from "./computers/sandbox/sandbox-kind-capabilities.js";
 
 const A = "botalpha";
 const B = "botbeta";

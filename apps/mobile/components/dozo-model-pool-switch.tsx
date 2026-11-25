@@ -6,7 +6,7 @@ import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
 import { accountRpcQuery, queryClient, useSave } from "../lib/query/query";
 import { useRosterSignals } from "../lib/api/roster-signals";
 import { ACCOUNT_SETTINGS } from "../lib/query/settings-target";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 import { SettingsGroup, SettingsSwitch } from "./settings/settings-group";
 
 /**

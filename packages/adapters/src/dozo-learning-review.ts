@@ -46,7 +46,7 @@ import {
 import { onlyOwnerReads } from "./dozo-phone.js";
 import type { RunRedactionDeps } from "./dozo-run-redactions.js";
 import { loadRunRedactions } from "./dozo-run-redactions.js";
-import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
+import { HostedModelCreditsRequiredError } from "./models/credits/model-credit-observer.js";
 import { redactBlocks } from "./runs/assembly/run-messages.js";
 import { messageBlocksText } from "./runs/assembly/run-replies.prompt.js";
 import { isUserProgressClientNonce } from "./runs/lifecycle/user-progress.js";

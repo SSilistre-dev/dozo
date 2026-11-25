@@ -40,7 +40,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   readRoutineWriter: vi.fn(async () => undefined),
   takeDozoDailySend: vi.fn(async () => ({ full: false, dailySends: 100 })),
 }));
-vi.mock("./run-auto-review.js", () => ({
+vi.mock("./runs/turn/run-auto-review.js", () => ({
   // The model a review goes to answers as the test says, and is recorded by name.
   autoReviewCheckerProvider: async (
     _deps: unknown,

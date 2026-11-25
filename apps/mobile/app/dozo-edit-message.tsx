@@ -15,7 +15,7 @@ import { native, useThemedStyles } from "../lib/native/native";
 import { useSave } from "../lib/query/query";
 import { useScreenHeader } from "../lib/navigation/screen-header";
 import { useSideInsets } from "../lib/layout/side-insets";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 
 /**
  * Edits a message of the person's in a chat with a bot and sends it again; the bot answers it

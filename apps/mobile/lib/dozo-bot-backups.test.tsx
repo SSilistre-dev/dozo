@@ -90,7 +90,7 @@ vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ mutedForeground: "#999999" }),
   useResolvedAppearance: () => "dark",
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
 vi.mock("./query/query", () => ({

@@ -5,7 +5,7 @@ import { Alert } from "react-native";
 import { queryClient, rpcQuery, useSave } from "./query/query";
 import { useSpaceChanges } from "./api/roster-signals";
 import { useScreenQuery } from "./query/screen-query";
-import { errorText } from "./user-error";
+import { errorText } from "./api/user-error";
 
 type QueueTarget = { botId: string } | { groupId: string };
 

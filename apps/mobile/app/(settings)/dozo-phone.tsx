@@ -11,7 +11,7 @@ import { remindersAvailable } from "../../lib/dozo-phone-reminders";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { errorText } from "../../lib/user-error";
+import { errorText } from "../../lib/api/user-error";
 
 /**
  * What bots may read from this phone, and add to it. Each kind is off until switched on here, and is kept on this

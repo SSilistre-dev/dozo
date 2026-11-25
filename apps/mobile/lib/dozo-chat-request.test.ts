@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { jsonResponse, mockSecureStore } from "./api/api-test-helpers";
 import { restoreSessionToken } from "./api/session";
 
-vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("./settings/ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("./bots/logo-avatar-activity", () => ({
   syncMobileAvatarSession: vi.fn(),
 }));
 
-import { promptAiConsent } from "./ai-consent";
+import { promptAiConsent } from "./settings/ai-consent";
 import { rpc } from "./api/api";
 
 beforeEach(async () => {

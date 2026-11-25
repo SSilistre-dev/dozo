@@ -28,7 +28,7 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
 vi.mock("./query/query", () => ({

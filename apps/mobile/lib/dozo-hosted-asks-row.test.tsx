@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const ui = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
 
 vi.mock("react-native", () => ({ Alert: { alert: ui.alert } }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));

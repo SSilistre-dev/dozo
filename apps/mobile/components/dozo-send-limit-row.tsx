@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { Alert, View } from "react-native";
 import { native } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 import { MenuPickerMenu } from "./ui/menu-picker";
 import { NativeSymbol } from "./native/native-symbol";
 import { SettingsRow } from "./settings/settings-group";

@@ -7,7 +7,7 @@ import { StyleSheet, View } from "react-native";
 import { mobileTokens } from "../lib/appearance/appearance";
 import { dozoChatRoute, useDozoBotChats, useDozoChatMenu } from "../lib/dozo-bot-chats";
 import { useDozoPins } from "../lib/dozo-message-actions";
-import { formatSnoozeWake } from "../lib/inbox";
+import { formatSnoozeWake } from "../lib/inbox/inbox";
 import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 
 /**

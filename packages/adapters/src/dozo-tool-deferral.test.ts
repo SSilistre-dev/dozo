@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
 import { partitionTools } from "./tools/builtin-tool-bridge.js";
 
 describe("built-ins listed to the model", () => {

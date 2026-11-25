@@ -52,7 +52,7 @@ vi.mock("./query/query", () => ({
 }));
 vi.mock("./api/roster-signals", () => ({ useSpaceChanges: () => undefined }));
 vi.mock("./query/screen-query", () => ({ useScreenQuery: () => ({ data: { items: ui.items } }) }));
-vi.mock("./user-error", () => ({ errorText: () => "failed" }));
+vi.mock("./api/user-error", () => ({ errorText: () => "failed" }));
 
 import { DozoWaitingFooter } from "../components/thread/dozo-waiting-footer";
 

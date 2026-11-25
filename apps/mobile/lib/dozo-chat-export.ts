@@ -6,7 +6,7 @@ import { rpc } from "./api/api";
 import { resolveMobileAppearance } from "./appearance/appearance";
 import type { DozoChatTarget } from "./dozo-chat-target";
 import { presentMessageActionSheet } from "./messages/message-action-sheet";
-import { errorText } from "./user-error";
+import { errorText } from "./api/user-error";
 
 export type ChatExportTarget = DozoChatTarget;
 

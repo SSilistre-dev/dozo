@@ -1,4 +1,4 @@
-vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("./settings/ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import * as SecureStore from "expo-secure-store";

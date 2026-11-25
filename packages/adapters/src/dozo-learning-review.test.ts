@@ -23,7 +23,7 @@ import {
 import { learningReviewInstructions } from "./dozo-learning-review.prompt.js";
 import type { LearningChangeInput, LearningTurn } from "./dozo-learning-store.js";
 import { dozoRecordLearningTurn } from "./dozo-learning-turn.js";
-import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
+import { HostedModelCreditsRequiredError } from "./models/credits/model-credit-observer.js";
 import type { RunContext, RunState } from "./runs/assembly/run-context.js";
 
 // The review end to end with a deterministic stub model, an in-memory store and notes. The SQL is
@@ -64,8 +64,8 @@ const store = vi.hoisted(() => ({
 // A suggested skill: dozo-learning-review-skill.test.ts.
 vi.mock("./dozo-learning-skill.js", () => ({ knownSkillNames: async () => [] }));
 
-vi.mock("./bot-secrets.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./bot-secrets.js")>()),
+vi.mock("./secrets/bot-secrets.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./secrets/bot-secrets.js")>()),
   loadCommandVariables: async () => ({
     env: {},
     used: [],

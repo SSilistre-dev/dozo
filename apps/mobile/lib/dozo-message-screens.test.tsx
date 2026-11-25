@@ -67,7 +67,7 @@ vi.mock("./navigation/screen-header", () => ({
   },
 }));
 vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));

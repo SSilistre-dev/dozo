@@ -27,7 +27,7 @@ import { native, useThemedStyles } from "../../lib/native/native";
 import { useSave } from "../../lib/query/query";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { errorText } from "../../lib/user-error";
+import { errorText } from "../../lib/api/user-error";
 
 /**
  * A note, up to three pictures and, when switched on, the diagnostics. The lines added under the

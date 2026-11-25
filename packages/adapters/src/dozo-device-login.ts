@@ -1,7 +1,7 @@
 import { DEFAULT_LOGIN_FIELD_LABELS, sameLoginFieldLabel } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { z } from "zod";
-import type { VaultItemUse } from "./bot-secrets.js";
+import type { VaultItemUse } from "./secrets/bot-secrets.js";
 
 /**
  * A vault login whose value stays in a password manager on one of the user's own computers. The

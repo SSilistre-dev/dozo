@@ -1,7 +1,7 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
 import { DOZO_ROUTINE_CATCH_UP_MS } from "./dozo-quiet-hours.js";
 import {
   DOZO_MAX_WAITS_PER_BOT,

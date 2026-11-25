@@ -23,7 +23,7 @@ vi.mock("./auth/api-auth", () => ({}));
 vi.mock("./api/api-live", () => ({}));
 vi.mock("./api/api", () => ({ rpc: state.rpc }));
 vi.mock("./notifications/live-notifications", () => ({ dismissThreadNotifications: state.dismiss }));
-vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./api/user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
 import { useThreadRead } from "./thread/thread-read";
 

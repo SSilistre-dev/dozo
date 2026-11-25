@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoReviewDecisionQuestion, buildAutoReviewPrompt } from "./auto-review.prompt.js";
+import { autoReviewDecisionQuestion, buildAutoReviewPrompt } from "./approvals/auto-review.prompt.js";
 import {
   DOZO_FILE_WRITE_REVIEW,
   DOZO_OUTSIDE_CONTENT_REVIEW,

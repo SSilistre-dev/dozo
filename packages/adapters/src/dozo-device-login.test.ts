@@ -9,7 +9,7 @@ import {
   resolveLoginFill,
   revealBotSecret,
   storeBotSecret,
-} from "./bot-secrets.js";
+} from "./secrets/bot-secrets.js";
 import { accountVault, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import {
   DEVICE_LOGIN_ONLY,

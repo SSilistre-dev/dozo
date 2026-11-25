@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const resolved = vi.hoisted(() => ({ resolveLoginFill: vi.fn(), recordVaultUse: vi.fn() }));
-vi.mock("./bot-secrets.js", () => ({ resolveLoginFill: resolved.resolveLoginFill }));
+vi.mock("./secrets/bot-secrets.js", () => ({ resolveLoginFill: resolved.resolveLoginFill }));
 vi.mock("./runs/assembly/run-context.js", () => ({ recordVaultUse: resolved.recordVaultUse }));
 
 import { DeviceBrowserProvider } from "./dozo-device-browser.js";

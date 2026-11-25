@@ -3,7 +3,7 @@ import type { DozoLearningMode } from "@rakazo/contracts";
 import { Alert } from "react-native";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 import { MenuPicker } from "./ui/menu-picker";
 import { SettingsGroup } from "./settings/settings-group";
 

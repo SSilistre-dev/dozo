@@ -37,7 +37,7 @@ vi.mock("react-native", () => ({
 vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ card: "card", foreground: "fg", mutedForeground: "muted" }),
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
 vi.mock("./query/query", () => ({

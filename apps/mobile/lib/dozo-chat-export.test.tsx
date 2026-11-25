@@ -34,7 +34,7 @@ vi.mock("./messages/message-action-sheet", () => ({ presentMessageActionSheet: a
 vi.mock("./dozo-message-actions", () => ({ useDozoChatPins: () => api.pins }));
 vi.mock("./dozo-trust-bot", () => ({ useDozoTrustActions: () => api.trust }));
 vi.mock("./dozo-bot-chats", () => ({ useDozoNewChat: () => ({ run: api.newChat }) }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));

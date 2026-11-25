@@ -36,7 +36,7 @@ vi.mock("./appearance/appearance", () => ({ mobileTokens: () => ({ unread: "#006
 vi.mock("./dozo-message-actions", () => ({
   useDozoPins: (threadId: string) => api.pins[threadId],
 }));
-vi.mock("./inbox", () => ({ formatSnoozeWake: (iso: string) => `wakes ${iso}` }));
+vi.mock("./inbox/inbox", () => ({ formatSnoozeWake: (iso: string) => `wakes ${iso}` }));
 vi.mock("./dozo-bot-chats", () => ({
   dozoChatRoute: (botId: string, chatId: string, name: string) => ({
     pathname: "/thread",

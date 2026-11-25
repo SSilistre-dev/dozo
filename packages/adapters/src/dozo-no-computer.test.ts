@@ -26,8 +26,8 @@ vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
 
 // A Free member runs on a model connection of their own; the bench runs on the deployment's, whose
 // metering is not under test here.
-vi.mock("./model-credit-observer.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-credit-observer.js")>()),
+vi.mock("./models/credits/model-credit-observer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./models/credits/model-credit-observer.js")>()),
   hostedModelCreditObserver: async () => ({}),
 }));
 

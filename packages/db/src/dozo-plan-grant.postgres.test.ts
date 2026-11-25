@@ -13,7 +13,7 @@ import {
 } from "./dozo-plan-grant.js";
 import { SharedSpaceFullError, withSharedSpace } from "./dozo-shared-space.js";
 import { asSystem, runAsTenant } from "./database/row-security.js";
-import { planComputerSize, sandboxAllowancePlan } from "./sandbox-allowance.js";
+import { planComputerSize, sandboxAllowancePlan } from "./billing/sandbox-allowance.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it.

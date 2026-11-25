@@ -80,7 +80,7 @@ vi.mock("./api/roster-signals", () => ({
     if (enabled) ui.rosterReads.push(read);
   },
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));

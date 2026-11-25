@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Alert } from "react-native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 import { NativeSwitch } from "./native/native-switch";
 import { SettingsRow } from "./settings/settings-group";
 

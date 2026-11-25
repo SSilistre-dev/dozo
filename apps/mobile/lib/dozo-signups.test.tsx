@@ -96,7 +96,7 @@ vi.mock("./auth/passkey", () => ({
   signInWithPasskey: vi.fn(),
 }));
 vi.mock("./thread/send/unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
-vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
+vi.mock("./api/user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 vi.mock("./dozo-relay-fetch", () => ({
   isRelayGone: () => false,
   relayApprovalCodeOf: async () => null,

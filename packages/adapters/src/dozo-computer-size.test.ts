@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
 import { operatorComputerSize, operatorComputerSizes } from "./dozo-computer-size.js";
-import { knownSandboxKinds, sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { knownSandboxKinds, sandboxKindCapabilities } from "./computers/sandbox/sandbox-kind-capabilities.js";
 
 // Runs on the branded tree only: the provider and its capability read the sizes once the brand
 // rules are applied.

@@ -18,7 +18,7 @@ import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useRosterSignals } from "../lib/api/roster-signals";
 import { useScreenQuery } from "../lib/query/screen-query";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 import { NativeSymbol } from "./native/native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 

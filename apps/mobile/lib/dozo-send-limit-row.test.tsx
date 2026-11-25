@@ -15,7 +15,7 @@ vi.mock("react-native", () => ({
   Alert: { alert: ui.alert },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));

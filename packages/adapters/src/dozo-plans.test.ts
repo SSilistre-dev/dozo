@@ -16,9 +16,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "./computers/computer-lifecycle.js";
 import { operatorPaysFor, planRunServices } from "./dozo-plans.js";
 import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
-import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
+import { HostedModelCreditsRequiredError } from "./models/credits/model-credit-observer.js";
 import { hasHostedModelCredits } from "./models/model-selection.js";
-import { autoReviewCheckerProvider } from "./run-auto-review.js";
+import { autoReviewCheckerProvider } from "./runs/turn/run-auto-review.js";
 import { resolveModelKey } from "./runs/turn/run-model.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.

@@ -34,7 +34,7 @@ vi.mock("../../lib/dozo-error-text", () => ({
   errorText: (error: unknown, fallback = "Something went wrong") =>
     error instanceof Error && error.message ? error.message : fallback,
 }));
-vi.mock("../../lib/relative-time", () => ({ formatRelativeTime: () => "1h ago" }));
+vi.mock("../../lib/locale/relative-time", () => ({ formatRelativeTime: () => "1h ago" }));
 // The one timer the dialog arms, run by hand.
 const timer = vi.hoisted(() => ({ fire: null as null | (() => void), ms: null as number | null }));
 vi.mock("@rakazo/chat-ui/hooks", () => ({

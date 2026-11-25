@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
 
 // A call wrapped in use_tool reaches the executor, and so the tool gate (gateToolCall, which
 // dozoHostedCommandHold is wired into), under the wrapped tool's own name and arguments, so a

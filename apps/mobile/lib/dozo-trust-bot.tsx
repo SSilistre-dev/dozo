@@ -5,7 +5,7 @@ import { Alert } from "react-native";
 import type { BotProfileAction } from "../components/bots/bot-profile-menu";
 import { useIdentityConfirmation } from "../components/vault/confirm-identity";
 import { queryClient, rpcQuery, useSave } from "./query/query";
-import { errorText } from "./user-error";
+import { errorText } from "./api/user-error";
 
 /** Where a bot's mark is read; trusting it again reads this again. */
 const markRead = (botId: string) => rpcQuery("dozoAccessTokens/botMark", { botId });

@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 
 vi.mock("./query/query", () => ({ queryClient: new QueryClient() }));
 
-import { spaceChanged } from "./space-changes";
+import { spaceChanged } from "./query/space-changes";
 
 it("reads the cache share again when a run changes", async () => {
   const client = new QueryClient();

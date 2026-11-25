@@ -15,7 +15,7 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <p role="alert">{children}</p>,
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (_error: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 vi.mock("./api/api-server", () => ({}));

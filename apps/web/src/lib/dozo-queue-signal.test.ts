@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 
 vi.mock("./query/query", () => ({ queryClient: new QueryClient() }));
 
-import { spaceChanged } from "./space-changes";
+import { spaceChanged } from "./query/space-changes";
 
 it("a runs change reads what waits for a bot again, and a routines change does not", async () => {
   const client = new QueryClient();

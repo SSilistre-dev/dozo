@@ -24,7 +24,7 @@ vi.mock("./thread/conversation-cleared", () => ({ onConversationCleared: () => (
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
 vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./native/haptics", () => ({ getHapticsEnabled: () => false, hapticSuccess: vi.fn() }));
-vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback = "error") => fallback }));
+vi.mock("./api/user-error", () => ({ errorText: (_: unknown, fallback = "error") => fallback }));
 vi.mock("./preferences/response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => false,
   subscribeResponseStreaming: () => () => {},

@@ -123,7 +123,7 @@ reviewer from a run unless the organization pays (a live subscription or a credi
 no reviewer the run asks the person before a consequential action, as upstream does for any
 reviewer it cannot reach. A monthly credit plan's computer share counts only while its
 subscription is live: its amount stays on the billing account after cancellation, and with Free's
-model access an ended plan would otherwise keep getting computer hours (`packages/db/src/sandbox-allowance.ts`).
+model access an ended plan would otherwise keep getting computer hours (`packages/db/src/billing/sandbox-allowance.ts`).
 
 An admin can give a member's own organization Premium or Premium Plus for a while, from the admin
 page (Set plan), without a subscription. The grant is a row in `dozo_plan_grants` (tier, end date,

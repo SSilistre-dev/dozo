@@ -18,7 +18,7 @@ import {
   teamBrowserProfileName,
 } from "./computers/computer-workspace.js";
 import { removeAgentHomeFolders, resolveAgentHomePath } from "./storage/home.js";
-import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { sandboxKindCapabilities } from "./computers/sandbox/sandbox-kind-capabilities.js";
 import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./storage/workspace-save-policy.js";
 
 export const BOT_FILES_NOT_MOVED = "Couldn't move this bot's files. Try again.";

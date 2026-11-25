@@ -64,7 +64,7 @@ vi.mock("./api/session", () => ({
     userId: "user-1",
   }),
 }));
-vi.mock("./user-error", () => ({ errorText: () => "error" }));
+vi.mock("./api/user-error", () => ({ errorText: () => "error" }));
 vi.mock("./search/search-inbox", () => ({
   useInboxBot: (botId?: string) =>
     botId && state.inboxThread ? { id: botId, threadId: state.inboxThread } : undefined,

@@ -16,7 +16,7 @@ import {
   tierInForce,
 } from "./dozo-plan-grant.js";
 import { computerHoursCents } from "./dozo-plan-quotas.js";
-import { planComputerSize, sandboxAllowancePlan } from "./sandbox-allowance.js";
+import { planComputerSize, sandboxAllowancePlan } from "./billing/sandbox-allowance.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
 

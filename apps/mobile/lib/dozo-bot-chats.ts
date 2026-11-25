@@ -11,7 +11,7 @@ import { SNOOZE_LABELS } from "./inbox/inbox-swipe";
 import { presentMessageActionSheet } from "./messages/message-action-sheet";
 import { queryClient, rpcQuery, useSave } from "./query/query";
 import { useRosterSignals } from "./api/roster-signals";
-import { errorText } from "./user-error";
+import { errorText } from "./api/user-error";
 
 /** A chat's name is one line of at most this many characters (the contract's own limit). */
 const CHAT_NAME_MAX_LENGTH = 80;

@@ -32,7 +32,7 @@ import {
   saveLearningChanges,
   settleLearningWrite,
 } from "./dozo-learning-store.js";
-import { editMemory } from "./memory-tools.js";
+import { editMemory } from "./memory/memory-tools.js";
 import { byteLength } from "../../core/src/primitives/utf8.js";
 
 // What a review's answer may change in the bot's notes, how a change and its undo are written

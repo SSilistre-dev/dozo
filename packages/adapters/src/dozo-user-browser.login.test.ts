@@ -1,7 +1,7 @@
 import { installAuditEventStore } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { storeBotSecret } from "./bot-secrets.js";
+import { storeBotSecret } from "./secrets/bot-secrets.js";
 import { accountVault, fakeAuditLog, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import type { DeviceBrowserEvent } from "./dozo-device-browser.js";
 import { fakeDeviceBrowser, seededDevicePages } from "./dozo-device-browser.test-support.js";

@@ -5,7 +5,7 @@ import { Text, View } from "react-native";
 import { useMobileTokens } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../lib/api/user-error";
 import { BotAvatar } from "./bots/bot-avatar";
 import { GrowingTextInput } from "./ui/growing-text-input";
 import { NativeActionButton } from "./native/native-action-button";

@@ -11,7 +11,7 @@ import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native
 import { queryClient, useSave } from "../../lib/query/query";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { errorText } from "../../lib/user-error";
+import { errorText } from "../../lib/api/user-error";
 
 type Effect = DozoCommandRule["effect"];
 
