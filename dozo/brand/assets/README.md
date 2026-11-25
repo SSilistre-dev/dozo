@@ -31,7 +31,8 @@ PNG/ICO are generated, do not edit by hand.
 | `icon-192.png`, `icon-512.png` | `web/` | 192, 512 | `app-icon-fullbleed.svg` (any + maskable) |
 | (new) `favicon.svg` | `favicon.svg` | vector | linked by an anchored rule in `apps/web/index.html` |
 
-`og-image.png` has no upstream equivalent in `public/`; it is not mapped.
+`og-image.png` maps to `apps/web/public/og-image.png` (nothing in a Dozo build links it: the page's share
+tags point at the landing site's card).
 
 ## Desktop, mobile and mail map (pixel sizes and colour types equal upstream's)
 | Upstream path | Ours | Size, type | Source and rule |
@@ -47,7 +48,7 @@ PNG/ICO are generated, do not edit by hand.
 | `apps/mobile/assets/splash-icon.png` | `mobile/splash-icon.png` | 1024, RGBA | `splash-icon.svg`: dark 620 px plate on transparent, so it reads on the light and the dark splash colour |
 | `apps/mobile/assets/notification-icon.png` | `mobile/notification-icon.png` | 72, RGBA | `notification-icon.svg`: white one-ink silhouette |
 | `apps/mobile/assets/favicon.png` | `web/favicon.png` | 128, RGBA | the web 128 px tile (same file) |
-| `apps/mobile/ios-widgets/.../app-mark.png` | `mobile/app-mark.png` | 180, RGB | `app-icon-fullbleed.svg` (the widget rounds it) |
+| `apps/mobile/ios-widgets/.../app-mark.png`, `apps/mobile/assets/app-mark.png` (Settings footer) | `mobile/app-mark.png` | 180, RGB | `app-icon-fullbleed.svg` (the widget rounds it) |
 | `packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png` | `shared/icon-layer.png` | 1024, RGBA | `icon-layer.svg`: the mark alone, centred, on transparent. iOS and macOS Tahoe icons use it over the system-dark plate (`icon.json`); an anchored rule moves the layer from 90 points low to centred |
 
 The notification and monochrome files carry only an alpha shape; their colour is not read.

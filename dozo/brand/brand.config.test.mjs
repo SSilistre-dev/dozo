@@ -530,6 +530,14 @@ describe("the shipped config, in literal values", () => {
         "apps/mobile/modules/rakazo-voice-chat",
         "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec",
         "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift",
+        "apps/mobile/ios-watch/RakazoWatch.swift",
+        "apps/mobile/ios-watch-complications/RakazoComplications.swift",
+        "apps/mobile/modules/rakazo-calendar",
+        "apps/mobile/modules/rakazo-calendar/ios/RakazoCalendar.podspec",
+        "apps/mobile/modules/rakazo-calendar/ios/RakazoCalendarModule.swift",
+        "apps/mobile/modules/rakazo-composer-keyboard",
+        "apps/mobile/modules/rakazo-composer-keyboard/ios/RakazoComposerKeyboard.podspec",
+        "apps/mobile/modules/rakazo-composer-keyboard/ios/RakazoComposerKeyboardModule.swift",
       ],
     );
     assert.deepEqual(
@@ -548,6 +556,11 @@ describe("the shipped config, in literal values", () => {
         ["apps/mobile/components/media/pdf-preview.tsx", '"RakazoPdfView"', 2],
         ["apps/mobile/ios-intents/RakazoIntents.swift", "RakazoSession", 17],
         ["apps/mobile/lib/notifications/push.ts", '"RakazoNotifications"', 2],
+        ["apps/mobile/components/composer/composer-keyboard.tsx", '"RakazoComposerKeyboard"', 2],
+        // the self-hosted support prompt is switched off; its catalog entries (msgid and msgstr) can never show
+        ...["de", "en", "es", "fr", "he", "hi", "ja", "ko", "nl", "pl", "pt-BR", "ru", "th", "tr", "zh-CN", "zh-TW"].map(
+          (locale) => [`packages/i18n/locales/${locale}/messages.po`, "support@rakazo.com", 2],
+        ),
       ],
     );
     const { scanPath } = buildScanner(config);

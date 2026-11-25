@@ -260,7 +260,46 @@
       { "file": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec", "text": "'RakazoVoiceChat'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift", "text": "\"RakazoPendingVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift", "text": "\"RakazoVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
-      { "file": "apps/mobile/plugins/with-app-intents.js", "text": "\"RakazoWidgets\"", "reason": "widget target name in Xcode; never shown" }
+      { "file": "apps/mobile/plugins/with-app-intents.js", "text": "\"RakazoWidgets\"", "reason": "widget target name in Xcode; never shown" },
+      { "file": "apps/api/src/http/drain.ts", "text": "org.rakazo.run-drain-signal", "reason": "docker label key named in a developer comment; the label itself is a kept identifier, never shown" },
+      { "file": "apps/mobile/app.json", "text": "\"RakazoWatch\"", "reason": "Xcode target name of the watch app; never shown" },
+      { "file": "apps/mobile/app.json", "text": "\"RakazoWatchComplications\"", "reason": "Xcode target name of the watch complications; never shown" },
+      { "file": "apps/mobile/plugins/with-apple-watch.js", "text": "\"RakazoWatch\"", "reason": "Xcode target name of the watch app, the config plugin's constant; never shown" },
+      { "file": "apps/mobile/plugins/with-apple-watch.js", "text": "\"RakazoWatchComplications\"", "reason": "Xcode target name of the watch complications, the config plugin's constant; never shown" },
+      { "file": "apps/mobile/ios-watch/RakazoWatch.swift", "text": "struct RakazoWatch: App", "reason": "Swift type of the watch app, named after its file; never shown" },
+      { "file": "apps/mobile/native/watch/WatchRelay.swift", "text": "throws -> RakazoSession", "reason": "Swift type of the watch relay's session, in a return type; never shown" },
+      { "file": "apps/mobile/native/watch/WatchRelay.swift", "text": "let session: RakazoSession", "reason": "Swift type of the watch relay's session, in a declaration; never shown" },
+      { "file": "apps/mobile/native/watch/WatchRelay.swift", "text": "\"RakazoWatchChatChanged\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift", "text": "\"RakazoWatchChatChanged\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/components/composer/composer-keyboard.tsx", "text": "\"RakazoComposerKeyboard\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-composer-keyboard/expo-module.config.json", "text": "\"RakazoComposerKeyboardModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-composer-keyboard/ios/RakazoComposerKeyboard.podspec", "text": "'RakazoComposerKeyboard'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-composer-keyboard/ios/RakazoComposerKeyboardModule.swift", "text": "\"RakazoComposerKeyboard\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/notifications/watch-chat.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/personal-calendar/device-calendar.ts", "text": "\"RakazoCalendar\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-calendar/expo-module.config.json", "text": "\"RakazoCalendarModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-calendar/ios/RakazoCalendar.podspec", "text": "'RakazoCalendar'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-calendar/ios/RakazoCalendarModule.swift", "text": "\"RakazoCalendar\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "packages/core/src/node/sealed-box.ts", "text": "rakazo sealed box v1", "reason": "key-derivation info string: changing it breaks decryption of stored data" },
+      { "file": "infra/sandboxes/computer/start.sh", "text": "already names rakazo-browser for every type", "reason": "developer comment naming the installed executable" },
+      { "file": "infra/sandboxes/supervisor/src/computer-spec.ts", "text": "variable rakazo-browser reads", "reason": "developer comment naming the installed executable" },
+      { "file": "packages/ui-tokens/scripts/export-brand.ts", "text": "rakazo-mark-72.webp", "reason": "output name of upstream's marketing-site export script (it writes into apps/www, which Dozo does not build or ship); never run by a Dozo build, never shown" },
+      { "file": "packages/i18n/locales/de/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/en/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/es/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/fr/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/he/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/hi/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/ja/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/ko/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/nl/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/pl/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/pt-BR/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/ru/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/th/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/tr/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/zh-CN/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/i18n/locales/zh-TW/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" }
     ],
     "paths": [
       {
@@ -381,6 +420,39 @@
       },
       {
         "glob": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      }
+,
+      {
+        "glob": "apps/mobile/ios-watch/RakazoWatch.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/ios-watch-complications/RakazoComplications.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-calendar",
+        "reason": "local native module directory, named by its package and the autolinking config; never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-calendar/ios/RakazoCalendar.podspec",
+        "reason": "podspec named after the module's pod; CocoaPods looks it up by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-calendar/ios/RakazoCalendarModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-composer-keyboard",
+        "reason": "local native module directory, named by its package and the autolinking config; never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-composer-keyboard/ios/RakazoComposerKeyboard.podspec",
+        "reason": "podspec named after the module's pod; CocoaPods looks it up by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-composer-keyboard/ios/RakazoComposerKeyboardModule.swift",
         "reason": "Swift source file named after its type; file names are never renamed"
       }
     ],
@@ -1745,7 +1817,7 @@
     },
     {
       "file": "apps/web/src/pages/settings/SettingsOverlay.tsx",
-      "find": "              {navItems.map((item) => {\n                const Icon = item.icon;\n                // A space's page is reached from Spaces, so Spaces stays marked.\n                const active = item.id === (section === \"space\" ? \"spaces\" : section);\n                return (\n                  <button\n                    key={item.id}\n                    type=\"button\"\n                    data-testid={`settings-nav-${item.id}`}\n                    aria-current={active ? \"page\" : undefined}\n                    disabled={panelBusy}\n                    onClick={() => onSectionChange(item.id)}\n                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${\n                      active\n                        ? \"bg-accent text-accent-foreground\"\n                        : \"text-muted-foreground hover:bg-accent hover:text-foreground\"\n                    }`}\n                  >\n                    <Icon className=\"size-4 shrink-0\" strokeWidth={1.75} />\n                    <span className=\"whitespace-nowrap\">{item.label}</span>\n                  </button>\n                );",
+      "find": "              {navItems.map((item) => {\n                const Icon = item.icon;\n                // A space's page is reached from Spaces, so Spaces stays marked.\n                const active = item.id === (section === \"space\" ? \"spaces\" : section);\n                return (\n                  <button\n                    key={item.id}\n                    type=\"button\"\n                    data-testid={`settings-nav-${item.id}`}\n                    aria-current={active ? \"page\" : undefined}\n                    disabled={panelBusy}\n                    onClick={() => onSectionChange(item.id)}\n                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${\n                      active\n                        ? \"bg-accent text-accent-foreground\"\n                        : \"text-muted-foreground hover:bg-accent hover:text-foreground\"\n                    }`}\n                  >\n                    <Icon className=\"size-4 shrink-0\" strokeWidth={1.75} />\n                    <span className=\"whitespace-nowrap\">{item.label}</span>\n                  </button>\n                );\n              })}",
       "replace": "              <DozoSettingsNavGroups\n                items={navItems}\n                section={section}\n                disabled={panelBusy}\n                onSectionChange={onSectionChange}\n              />",
       "requires": [
         "apps/web/src/pages/dozo-settings-nav.tsx"
@@ -2390,8 +2462,8 @@
     },
     {
       "file": "packages/adapter-kit/src/types.ts",
-      "find": "  CacheCapabilities as ConnectionCacheCapabilities,\n  ConnectionCatalogItem,\n",
-      "replace": "  CacheCapabilities as ConnectionCacheCapabilities,\n  ComputerSize,\n  ComputerSizeSpec,\n  ConnectionCatalogItem,\n",
+      "find": "  ComputerSize,\n  CacheCapabilities",
+      "replace": "  ComputerSize,\n  ComputerSizeSpec,\n  CacheCapabilities",
       "requires": [
         "packages/contracts/src/dozo-computer-size.ts"
       ],
@@ -2523,7 +2595,7 @@
     {
       "file": "apps/api/src/billing/billing.ts",
       "find": "        const offers = byokTierOffers(Boolean(sized), hourMicros);",
-      "replace": "        const offers = await withPlanHours(\n          prisma,\n          withComputerSpecs(byokTierOffers(Boolean(sized), hourMicros), deps.sandbox),\n        );",
+      "replace": "        const offers = await withPlanHours(\n          prisma,\n          withComputerSpecs(byokTierOffers(Boolean(sized), hourMicros), deps.sandbox),\n          hourMicros,\n        );",
       "requires": [
         "apps/api/src/dozo-computer-size.ts"
       ],
@@ -13859,6 +13931,30 @@
         "packages/adapters/src/dozo-screen-run.ts"
       ],
       "reason": "screen input for this run: such a call not yet allowed for the run asks as in Ask, and its card offers Allow for this run only when the gate's own answer says a model would judge the rest"
+    },
+    {
+      "file": "apps/mobile/lib/billing/self-hosted-support.ts",
+      "find": "// Redirects on the website, so the payment pages can change without an app release.\nconst SUPPORTER_URL = \"https://rakazo.com/supporter\";\nconst PRIORITY_SUPPORT_URL = \"https://rakazo.com/priority-support\";\n\nlet asked = false;\n\nexport function selfHosted(): boolean {\n  return usesCustomApiBase(currentApiBase());\n}\n\nexport function showSelfHostedSupport(): void {\n  Alert.alert(\n    t`Support Rakazo`,\n    t`Rakazo is free to self-host. If you'd like to support it, subscribers can email support@rakazo.com for help.`,\n    [\n      { text: t`Support for $25 / month`, onPress: () => void openExternalUrl(SUPPORTER_URL) },\n      {\n        text: t`Priority support for $100 / month`,\n        onPress: () => void openExternalUrl(PRIORITY_SUPPORT_URL),\n      },\n      { text: t`Not now`, style: \"cancel\" },\n    ],\n  );\n}",
+      "replace": "let asked = false;\n\n// Dozo has no supporter programme: no build counts as self-hosted, so the offer never shows and\n// Settings has no row for it.\nexport function selfHosted(): boolean {\n  return false;\n}\n\nexport function showSelfHostedSupport(): void {}",
+      "reason": "Dozo has no supporter programme, so the prompt (and its links to upstream's supporter and priority-support pages and support address) never shows: selfHosted() is false, which also hides the Settings row"
+    },
+    {
+      "file": "apps/mobile/lib/platform/store-update.ts",
+      "find": "export const OFFICIAL_BUNDLE_ID = \"com.rakazo.app\";",
+      "replace": "// Dozo has no store listing yet: no build counts as the official store build, so there is no\n// review prompt, no \"write a review\" link and no store fallback page. Set this to the Dozo app id\n// once a listing exists.\nexport const OFFICIAL_BUNDLE_ID = \"none.dozo.no-store-listing\";",
+      "reason": "OFFICIAL_BUNDLE_ID gates the store review prompt, the write-a-review link and the store fallback page; with Dozo's own id they would point at a listing that does not exist, so no id matches until one does"
+    },
+    {
+      "file": "apps/web/src/components/audit/AuditLog.tsx",
+      "find": "rakazo-audit-log.jsonl",
+      "replace": "dozo-audit-log.jsonl",
+      "reason": "the audit log download is named after the product the user runs"
+    },
+    {
+      "file": "packages/core/src/deployment/self-update.ts",
+      "find": "[OFFICIAL_REPO_URL, \"https://github.com/rakazobot/rakazo\"]",
+      "replace": "[OFFICIAL_REPO_URL]",
+      "reason": "upstream's second repository address is dropped: no repository counts as official in Dozo (see isOfficialRepoUrl), so the list is never read"
     }
   ],
   "assets": {
@@ -13883,6 +13979,8 @@
     "apps/mobile/assets/notification-icon.png": "mobile/notification-icon.png",
     "apps/mobile/assets/favicon.png": "web/favicon.png",
     "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png": "mobile/app-mark.png",
+    "apps/mobile/assets/app-mark.png": "mobile/app-mark.png",
+    "apps/web/public/og-image.png": "og-image.png",
     "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png": "shared/icon-layer.png"
   },
   "literals": [
@@ -13892,6 +13990,7 @@
       "files": [
         "apps/mobile/app.json",
         "apps/mobile/lib/composer/incoming-share.ts",
+        "apps/mobile/native/watch/WatchRelay.swift",
         "apps/api/src/http/app-association.ts",
         "packages/adapters/src/calls/apns-voip-config.ts"
       ],

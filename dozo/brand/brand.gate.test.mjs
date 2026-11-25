@@ -393,8 +393,11 @@ const SHAPE_CASES = {
       "// Do not filter by rakazo.managed=true: legacy",
       'new URL(p, "http://rakazo.invalid")',
       "https://rakazo.test/api",
+      'const KEY = "rakazo.saved_servers";',
+      "`rakazo.timezone-kept.${userId}`",
     ],
     no: [
+      '"rakazo.saved_serversx"',
       "Welcome to rakazo. Next",
       "rakazo.",
       "rakazo.9",
@@ -427,8 +430,12 @@ const SHAPE_CASES = {
       "animation: rakazo-avatar-spin 1s",
       "rakazo-group-avatar",
       "rakazo-bot-avatar-ring",
+      ".rakazo-mascot-avatar-body-working { }",
+      '"--rakazo-mascot-unit": `${unit}px`',
+      "animation: rakazo-mascot-float 2s",
     ],
     no: [
+      "rakazo-mascot-powered",
       "rakazo-logo-powered",
       "rakazo-avatar-glow",
       "rakazo-bot-powered",
@@ -471,6 +478,7 @@ const SHAPE_CASES = {
   "service-name": {
     yes: [
       'serviceName: "rakazo-api"',
+      '"name": "rakazo-calendar"',
       "rakazo-api-jobs",
       '"rakazo-worker"',
       "Project-Id-Version: rakazo-web\\n",
@@ -479,6 +487,7 @@ const SHAPE_CASES = {
     ],
     no: [
       "rakazo-apis",
+      "rakazo-calendars",
       "rakazo-weblog",
       "rakazo-workers",
       "rakazo-api-evil",
@@ -495,8 +504,12 @@ const SHAPE_CASES = {
       "rakazo-turn-document",
       '"rakazo-slack-install"',
       "user.rakazo-bot-id",
+      '"rakazo-calendar-denied"',
+      "<string>rakazo-watch</string>",
     ],
     no: [
+      "rakazo-watches",
+      "rakazo-calendar-deniedx",
       "rakazo-instance-themes",
       "rakazo-historyx",
       "rakazo-accounts",
@@ -574,6 +587,7 @@ const SHAPE_CASES = {
   "fs-path": {
     yes: [
       "/tmp/rakazo/x.log",
+      'exec 9>/tmp/rakazo-desktop-prepare.lock',
       'cd "/tmp/rakazo"',
       "ls /tmp/rakazo",
       "ls /tmp/rakazo, then",
@@ -598,6 +612,7 @@ const SHAPE_CASES = {
       "see /tmp/ rakazo",
       "/opt/rakazo-pro",
       "/tmp/rakazo-notes/x",
+      "/tmp/rakazo-desktop-prepared.lock",
       "/etc/rakazo.conf",
       "/tmp/rakazo.log",
       "/tmp/rakazo.json",

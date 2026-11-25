@@ -32,10 +32,11 @@ export async function statusSharedSpace(...read: Parameters<typeof sharedSpaceUs
 export async function withPlanHours<Offer extends { tier: ByokTier; computerHours: number }>(
   prisma: Pick<PrismaClient, "dozoPlanQuota">,
   offers: Offer[],
+  hourMicros?: number,
 ): Promise<Offer[]> {
   const limits = await readPlanLimits(prisma);
   return offers.map((offer) => ({
     ...offer,
-    computerHours: sandboxAllowanceHours(limits[offer.tier].computerAllowanceCents),
+    computerHours: sandboxAllowanceHours(limits[offer.tier].computerAllowanceCents, hourMicros),
   }));
 }

@@ -150,8 +150,8 @@ Renamed on purpose (each is a rule in `brand.json`):
   summaries; the reader still accepts the old prefix (`keep`).
 - The memory-provider provenance label `rakazo space:<id> bot:<id>` -> `dozo space:<id> bot:<id>`
   (free text sent to the provider; nothing reads it back; the entity ids `rakazo-space/...` stay).
-- The mobile app's id family: `com.rakazo.app` -> `dev.ssilistre.dozo`, one literal limited to
-  `apps/mobile/app.json` and `lib/incoming-share.ts`. The iOS bundle id, the widget, share and
+- The mobile app's id family: `com.rakazo.app` -> `dev.ssilistre.dozo`, one literal limited to the files it lists
+  (`apps/mobile/app.json`, `lib/incoming-share.ts`, the watch relay's log subsystem, the two server files). The iOS bundle id, the widget, share and
   notification extensions (`<id>.widgets`, `<id>.expo-sharing-extension`, `<id>.notifications`), the app
   group (`group.<id>`) and the Android package all carry that prefix, so it is defined once. Three
   anchored rules in `app.json` set the Expo slug and drop upstream's Expo owner, EAS project id and
@@ -265,7 +265,8 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
 - Dozo has no docs site, plugin submission page, public integration pages, store listing, Android
   build or community server, so anchored rules drop what linked to them: the bot's product-docs skill
   and its fetch list, the error help link, "Submit a plugin" (web and mobile), "Get the mobile app",
-  the GitHub star prompt, and the welcome mail's store, Linux, Discord and GitHub-star links and its
+  the GitHub star prompt, the self-hosted support prompt (`selfHosted()` is false) and the store
+  review prompt and link (no build is the official store build), and the welcome mail's store, Linux, Discord and GitHub-star links and its
   hero image. A claimed integration and its confirmation link open the app's integrations view; the
   in-app store fallback opens the landing page (it has no download anchor to point at). An expired
   claim link gets the API's existing "already used or invalid" answer. The welcome mail links only
