@@ -41,6 +41,9 @@ import {
 } from "./dozo-isolation-sweep.test-support.js";
 import { asWorldRequest, buildIsolationWorld } from "./dozo-isolation-world.test-support.js";
 
+/** A failure's label with what it found, one a line: the CI log shows the message, not the list. */
+const named = (label: string, items: readonly string[]) => `${label}\n${items.join("\n")}`;
+
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeWithDatabase = hasDb ? describe : describe.skip;
 
@@ -605,7 +608,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           .map((outcome) => `${outcome.caller.name}: ${line(outcome)}`)
           .join("\n")}`,
       );
-      expect(failures(outcomes)).toEqual([]);
+      const shown = failures(outcomes);
+      expect(shown, named("seen by a member or guest outside the design", shown)).toEqual([]);
       expect(admin, "a member or guest changed who is in S, or A's keys").toEqual([]);
       expect(calls, "the owner's ringing calls in S, settled by a member or guest").toEqual([]);
       // A member may edit a memory document by design; the sweep's edit must land on a document of
@@ -615,7 +619,9 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         where: { id: S.ids.documentId! },
       });
       expect(
-        S.canaries.filter((value) => S.kinds?.[value] === "memory" && memory.content.includes(value)),
+        S.canaries.filter(
+          (value) => S.kinds?.[value] === "memory" && memory.content.includes(value),
+        ),
         "S's memory document, after a member's and guest's sweep",
       ).toHaveLength(1);
       expect(
@@ -783,9 +789,15 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(found).toEqual(expect.arrayContaining(CONTROL_PATHS));
       expect(unseen, "canaries no read of the owner shows, so no scan can find them").toEqual([]);
       expect
-        .soft(unreached, "inputs naming P's things that the owner's own call does not get through")
+        .soft(
+          unreached,
+          named(
+            "inputs naming P's things that the owner's own call does not get through",
+            unreached,
+          ),
+        )
         .toEqual([]);
-      expect.soft(stale, "stale unreached or reached-409 exemptions").toEqual([]);
+      expect.soft(stale, named("stale unreached or reached-409 exemptions", stale)).toEqual([]);
     }, 900_000);
   },
 );

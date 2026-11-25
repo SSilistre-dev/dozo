@@ -4,6 +4,7 @@ import {
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { planComputerSize, sandboxAllowancePlan } from "./billing/sandbox-allowance.js";
 import type { PrismaClient } from "./database/client.js";
 import {
   DOZO_PLAN_GRANT_SELECT,
@@ -16,7 +17,6 @@ import {
   tierInForce,
 } from "./dozo-plan-grant.js";
 import { computerHoursCents } from "./dozo-plan-quotas.js";
-import { planComputerSize, sandboxAllowancePlan } from "./billing/sandbox-allowance.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
 

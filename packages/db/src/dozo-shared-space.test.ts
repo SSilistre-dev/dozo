@@ -388,7 +388,9 @@ describe("writers of file rows", () => {
       "if (!isReplayedUpload(result)) await holdSharedSpace(tx,",
     );
     // The one answer that skips the check is still the upload route's.
-    expect(text("apps/api/src/content/artifacts.ts")).toContain("return { row: raced, replay: true };");
+    expect(text("apps/api/src/content/artifacts.ts")).toContain(
+      "return { row: raced, replay: true };",
+    );
     expect(text("packages/adapters/src/storage/thread-artifacts.ts")).toMatch(
       /withSharedSpace\(deps\.prisma, owner\.spaceId, \(tx\) =>\s+tx\.artifact\.create\(/,
     );
