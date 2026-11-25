@@ -222,9 +222,11 @@ run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` check
 ### checks
 
 Upstream's `pnpm checks` (`scripts/checks/*.test.mjs`) on the branded staged tree, copied without
-`node_modules` into a throwaway git repository (all files added, no commit) in `node:24.22-slim`, with
-git installed in the container. That install needs the network, so it runs in `qa` and in the CI job
-`dozo-gate` after `brand`, not in `olc`, which stays offline.
+`node_modules` into a throwaway git repository (all files added, no commit) in `dozo-checks:<tag>`, the
+Node image plus git, built on first use (three tries, `DOZO_CHECKS_RETRY_PAUSE` seconds apart, default
+5) and kept under a tag made of the Node image and the recipe. Only that build needs the network, so a run
+on a machine that has the image no longer fails on a DNS hiccup; a fresh CI runner builds it once per
+run. It runs in `qa` and in the CI job `dozo-gate` after `brand`, not in `olc`, which stays offline.
 
 ### budget
 

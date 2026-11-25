@@ -610,17 +610,29 @@ unit_tests() {
 # Upstream's repository checks (`pnpm checks`: scripts/checks/*.test.mjs) on the branded staged
 # tree, where the fork's dozo-* files and the brand rules' output both are. The checks list files
 # with `git ls-files`, so the tree is copied (without node_modules) into a throwaway repository with
-# every file added and nothing committed. The Node image has no git: it is installed in the
-# container, which needs the network, so this step is in qa and CI, not in olc.
+# every file added and nothing committed. The Node image has no git, so the step runs in an image of
+# its own: the Node image plus git, built once (the only part that needs the network, retried) and
+# kept under a tag of what it is made of, so the run itself needs no network. It is in qa and CI,
+# not in olc.
+CHECKS_RECIPE="RUN apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends git && rm -rf /var/lib/apt/lists/*"
+CHECKS_IMAGE="dozo-checks:$(printf '%s\n%s' "$NODE_IMAGE" "$CHECKS_RECIPE" | cksum | cut -d" " -f1)"
+checks_image() {
+  docker image inspect "$CHECKS_IMAGE" >/dev/null 2>&1 && return 0
+  local try
+  for try in 1 2 3; do
+    printf 'FROM %s\n%s\n' "$NODE_IMAGE" "$CHECKS_RECIPE" | docker build -q -t "$CHECKS_IMAGE" - >/dev/null && return 0
+    [ "$try" = 3 ] || sleep "${DOZO_CHECKS_RETRY_PAUSE:-5}"
+  done
+  fail "checks: cannot build $CHECKS_IMAGE ($NODE_IMAGE with git; needs the network once)"; return 1
+}
 repo_checks() {
   local src="$STAGE/src"
   [ -d "$src/scripts/checks" ] || { fail "checks: no staged tree with scripts/checks, run dozo/docker/build.sh stage and brand first"; return 1; }
   [ -f "$STAGE/stage.complete" ] || { fail "checks: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
   node_image || return 1
+  checks_image || return 1
   # shellcheck disable=SC2016
-  if drun checks -v "$src:/src:ro" "$NODE_IMAGE" sh -c 'set -e
-      apt-get update -qq > /tmp/apt.log 2>&1 && apt-get install -y -qq --no-install-recommends git >> /tmp/apt.log 2>&1 \
-        || { cat /tmp/apt.log; echo "[checks] cannot install git"; exit 1; }
+  if drun checks -v "$src:/src:ro" "$CHECKS_IMAGE" sh -c 'set -e
       mkdir /w; tar -C /src --exclude=./node_modules --exclude="*/node_modules" -cf - . | tar -C /w -xf -
       git config --global --add safe.directory /w  # the copy is owned by the host user, git runs as root
       cd /w; git init -q; git add -A
