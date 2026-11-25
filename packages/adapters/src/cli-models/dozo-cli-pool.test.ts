@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Models, MutableModels } from "@earendil-works/pi-ai";
 import type * as AllProviders from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Runs on the branded tree only: the brand rules hand a failed call to the pool
 // (dozo-model-pool.ts) and note the CLI's limit event (stream.ts). Two accounts of a fake CLI
@@ -43,6 +43,7 @@ const FAKE_CLI = fileURLToPath(new URL("./dozo-fake-cli.test-support.mjs", impor
 const PROVIDER = claudeCodeDriver.provider;
 const MODEL_ID = "claude-sonnet-5";
 let log: string;
+let hostEnv: Record<string, string>;
 
 beforeAll(async () => {
   const actual = await vi.importActual<typeof AllProviders>("@earendil-works/pi-ai/providers/all");
@@ -54,14 +55,22 @@ beforeAll(async () => {
     `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLI}" turn "${log}" "$@"\n`,
     { mode: 0o755 },
   );
-  vi.stubEnv("HOST_USER_HOME", home);
-  vi.stubEnv("HOST_USER_PATH", `${bin}:/usr/bin:/bin`);
-  vi.stubEnv("DATA_DIR", mkdtempSync(join(tmpdir(), "dozo-server-data-")));
+  hostEnv = {
+    HOST_USER_HOME: home,
+    HOST_USER_PATH: `${bin}:/usr/bin:/bin`,
+    DATA_DIR: mkdtempSync(join(tmpdir(), "dozo-server-data-")),
+  };
+  stubHostEnv();
   state.models = registerLocalCliProviders(
     actual.builtinModels() as MutableModels,
     async () => undefined,
   );
 });
+// The test setup undoes stubbed envs before each test, so every test stubs them again.
+function stubHostEnv() {
+  for (const [name, value] of Object.entries(hostEnv)) vi.stubEnv(name, value);
+}
+beforeEach(stubHostEnv);
 afterEach(() => {
   writeFileSync(log, "");
 });
