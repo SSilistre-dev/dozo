@@ -80,6 +80,7 @@ vi.mock("react-native-reanimated", async () => {
 });
 
 vi.mock("expo-secure-store", () => ({}));
+vi.mock("../components/thread/routine-event-row", () => ({ RoutineEventRows: () => null }));
 vi.mock("./notifications/live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./api/network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./artifacts/artifact-open", () => ({ openMobileArtifact: vi.fn() }));
@@ -94,6 +95,7 @@ vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
+  useNativeLinkConfirm: () => vi.fn(),
 }));
 
 vi.mock("../components/messages/message-caption", () => ({
@@ -147,7 +149,15 @@ vi.mock("../components/cards/change-undo", () => ({
 vi.mock("./api/api", async (original) => ({
   ...(await original<typeof Api>()),
   rpc: vi.fn(async () => ({ ok: true })),
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
 }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 import { rpc } from "./api/api";
@@ -206,21 +216,22 @@ const stop = () =>
 
 // The helper's card is in one chat, and Stop names it: a stop that named the bot would look for the
 // card in the bot's main chat.
-it("stops a helper in an extra chat as that chat's", () => {
+it("stops a helper in an extra chat as that chat's", async () => {
   show("chat-1");
-  act(() => stop()?.click());
-  expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
-    chatBotId: "bot-1",
-    chatId: "chat-1",
-    messageId: "card-1",
-  });
+  await act(async () => stop()?.click());
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "threads/stopHelper",
+    { chatBotId: "bot-1", chatId: "chat-1", messageId: "card-1" },
+    expect.anything(),
+  );
 });
 
-it("stops a helper in a bot's main chat as before", () => {
+it("stops a helper in a bot's main chat as before", async () => {
   show(undefined);
-  act(() => stop()?.click());
-  expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
-    botId: "bot-1",
-    messageId: "card-1",
-  });
+  await act(async () => stop()?.click());
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "threads/stopHelper",
+    { botId: "bot-1", messageId: "card-1" },
+    expect.anything(),
+  );
 });

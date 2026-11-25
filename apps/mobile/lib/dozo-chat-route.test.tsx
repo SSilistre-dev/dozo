@@ -59,7 +59,7 @@ vi.mock("./api/session", () => ({
   currentReadySessionGeneration: () => 1,
   currentSessionGeneration: () => 1,
   subscribeSessionGeneration: () => () => undefined,
-  loadVerifiedIntegrationsScope: async () => ({
+  loadVerifiedScope: async () => ({
     apiBase: "https://app.example.test",
     userId: "user-1",
   }),

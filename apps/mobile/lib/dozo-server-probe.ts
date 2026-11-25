@@ -22,10 +22,7 @@ export async function probeDozoServer(
   headers: Record<string, string> = {},
 ): Promise<EndpointResult> {
   const parsed = normalizeApiBase(input);
-  if (!parsed.ok)
-    return parsed.error === "Public servers need https://"
-      ? { ok: false, error: t`Public servers need https://` }
-      : parsed;
+  if (!parsed.ok) return parsed;
   let url = parsed.url;
   let outcome = await capabilities(url, fetchImpl, headers);
   const other = wwwAlternative(url);

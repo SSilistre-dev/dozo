@@ -135,14 +135,14 @@ describe("probeDozoServer", () => {
     expect(await probeDozoServer("", fetchImpl)).toMatchObject({ ok: false });
     expect(await probeDozoServer("http://dozo.example", fetchImpl)).toEqual({
       ok: false,
-      error: "Public servers need https://",
+      error: "Public servers need https://. HTTP only works on your local network.",
     });
     expect(calls).toHaveLength(0);
     i18n.load("tr", tr);
     i18n.activate("tr");
     expect(await probeDozoServer("http://dozo.example", fetchImpl)).toEqual({
       ok: false,
-      error: "Herkese açık sunucular için https:// gerekir",
+      error: "Herkese açık sunucular https:// gerektirir. HTTP yalnızca yerel ağında çalışır.",
     });
     expect(await probeDozoServer("dozo.example", fetchImpl)).toEqual({
       ok: false,

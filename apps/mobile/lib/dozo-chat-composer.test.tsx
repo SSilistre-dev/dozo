@@ -18,6 +18,9 @@ const input = vi.hoisted(() => ({
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
 vi.mock("./api/api-server", () => ({}));
+// No native keyboard module here: the composer's keyboard view falls back to a plain view.
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
+vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
 vi.mock("./auth/api-auth", () => ({}));
 vi.mock("./api/api-live", () => ({}));
 vi.mock("./api/api", () => ({
@@ -92,12 +95,22 @@ vi.mock("react-native", () => {
     children,
     testID,
     style,
+    accessibilityLabel,
   }: {
     children?: ReactNode;
     testID?: string;
     style?: object;
+    accessibilityLabel?: string;
   }) =>
-    createElement("div", { "data-testid": testID, "data-style": JSON.stringify(style) }, children);
+    createElement(
+      "div",
+      {
+        "data-testid": testID,
+        "data-style": JSON.stringify(style),
+        "aria-label": accessibilityLabel,
+      },
+      children,
+    );
   return {
     AppState: {
       addEventListener: (_type: string, listener: (state: string) => void) => {
@@ -208,6 +221,7 @@ vi.mock("../components/native/glass-surface", () => ({
     createElement("div", { "data-glass": shape, "data-style": JSON.stringify(style) }, children),
 }));
 vi.mock("../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/models/model-mark", () => ({ ModelMarkIcon: () => null }));
 vi.mock("../components/bots/bot-avatar", () => ({
   BotAvatar: ({ identity, size }: { identity?: string; size?: number }) =>
     createElement("span", { "data-avatar": identity, "data-size": size }),
@@ -251,7 +265,7 @@ let container: HTMLDivElement;
 const composer = createRef<ThreadComposerHandle>();
 const render = (changes: Partial<typeof props> = {}) =>
   act(() => root.render(<ThreadComposer ref={composer} {...props} {...changes} />));
-const attachButton = () => container.querySelector('[data-glass="circle"]');
+const attachButton = () => container.querySelector('[aria-label="Attach file"]');
 const call = () => container.querySelector('button[aria-label="Call"]');
 
 beforeEach(() => {

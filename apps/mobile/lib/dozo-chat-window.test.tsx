@@ -23,6 +23,8 @@ vi.mock("./api/api-live", () => ({ subscribeThread: state.subscribe }));
 vi.mock("./thread/conversation-cleared", () => ({ onConversationCleared: () => () => undefined }));
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
 vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/verified-scope", () => ({ isVerifiedScopeCurrent: () => true }));
+vi.mock("./platform/store-review", () => ({ noteRunCompleted: vi.fn() }));
 vi.mock("./native/haptics", () => ({ getHapticsEnabled: () => false, hapticSuccess: vi.fn() }));
 vi.mock("./api/user-error", () => ({ errorText: (_: unknown, fallback = "error") => fallback }));
 vi.mock("./preferences/response-streaming", () => ({
@@ -31,6 +33,7 @@ vi.mock("./preferences/response-streaming", () => ({
 }));
 const scope = { sessionGeneration: 1, selectionId: "space-1", namespace: "ns" };
 vi.mock("./inbox/saved-chats", () => ({
+  currentSavedChatsScope: () => null,
   liveSavedChatsScope: async () => scope,
   savedChatsScope: async () => scope,
   savedChatTarget: () => "unused",
