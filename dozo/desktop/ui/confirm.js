@@ -1,6 +1,7 @@
-// The question before a switch a server's page asked for is turned on (src/page_bridge.rs). The
+// The question before a switch a server's page asked for is changed (src/page_bridge.rs). The
 // person did not open it, so it must not take a key meant for something else: Cancel comes first
-// and has the focus, Enter and Escape both cancel, and Turn On answers a click only after a moment.
+// and has the focus, Enter and Escape both cancel, and Turn On answers only after the window has
+// been in front for a moment.
 // Every word comes from the app. Only this page can call these commands (capabilities/confirm.json).
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const el = (id) => document.getElementById(id);
@@ -18,9 +19,22 @@ if (shown) {
     if (event.key === "Escape") answer(false);
   });
   el("cancel").focus();
-  setTimeout(() => {
-    el("allow").disabled = false;
-  }, 1000);
+  // Turn On answers only once the window has been on screen and in front for a moment, and goes
+  // grey again whenever it loses the focus.
+  let arming;
+  const arm = () => {
+    clearTimeout(arming);
+    el("allow").disabled = true;
+    if (document.visibilityState === "visible" && document.hasFocus()) {
+      arming = setTimeout(() => {
+        el("allow").disabled = false;
+      }, 1000);
+    }
+  };
+  addEventListener("focus", arm);
+  addEventListener("blur", arm);
+  document.addEventListener("visibilitychange", arm);
+  arm();
 } else {
   // Nothing is being asked (it ended while this opened).
   answer(false);

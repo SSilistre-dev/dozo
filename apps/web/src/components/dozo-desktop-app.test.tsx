@@ -245,6 +245,40 @@ describe("DozoDesktopAppRow with the app's bridge", () => {
     expect(links()).toEqual([["Open", "dozo-app://settings"]]);
   });
 
+  it("still follows the app after being shown and closed again and again", async () => {
+    // As the app answers: a read waits while nothing changed, a new read ends the one waiting
+    // (with null), and at most four may wait, the fifth being refused.
+    let current = SETTINGS;
+    let waiting: { resolve: (answer: DesktopSettings | null) => void }[] = [];
+    const settings = vi.fn((seen?: DesktopSettings | null) => {
+      if (seen !== current) return Promise.resolve(current);
+      for (const read of waiting) read.resolve(null);
+      waiting = [];
+      const read = deferred<DesktopSettings | null>();
+      waiting.push(read);
+      if (waiting.length > 4) return Promise.resolve(null);
+      return read.promise;
+    });
+    window.dozoDesktopShell = true;
+    window.dozoDesktop = {
+      settings,
+      set: vi.fn(() => Promise.resolve(null)),
+      open: vi.fn(() => Promise.resolve(null)),
+    };
+    for (let shown = 0; shown < 6; shown++) {
+      await show(<DozoDesktopAppRow />);
+      act(() => root.unmount());
+      root = createRoot(container);
+    }
+    await show(<DozoDesktopAppRow />);
+    expect(toggle("keepRunning")?.checked).toBe(false);
+    current = { ...SETTINGS, switches: [{ key: "keepRunning", on: true }] };
+    await act(async () => {
+      for (const read of waiting) read.resolve(current);
+    });
+    expect(toggle("keepRunning")?.checked).toBe(true);
+  });
+
   it("keeps what it shows when a later read is refused", async () => {
     const { later } = withBridge(SETTINGS);
     await show(<DozoDesktopAppRow />);

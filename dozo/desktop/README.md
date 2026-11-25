@@ -234,8 +234,9 @@ Known limits:
   key nor the bridge (tested on Linux; on macOS and Windows this rests on the same Tauri rule and
   is not tested by hand). Input is a closed set of names and a boolean; anything else, a refused
   caller and a call over the rate limit get the same answer as a call that did nothing, and the
-  switches are sent to the chosen server only. A read left waiting ends when the window's page
-  changes, and only a few may wait at once.
+  switches are sent to the chosen server only. A read left waiting ends when a new read comes or
+  the window's page changes, so none piles up, and opening a window from the page is held to once
+  a second.
 - A page changes at once only Push to Talk (its keys stay fixed; turning it on at most once in 30
   seconds, so a shortcut another program holds cannot make its message repeat) and the safe way of
   three switches: Open at Login, Keep Running in Background and Let Bots Use This Computer turned

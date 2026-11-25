@@ -145,6 +145,10 @@ fn once_per(last: &mut Option<Instant>, now: Instant, gap: Duration) -> bool {
     true
 }
 
+/// How often a page may open something (Change Server, the Settings window): each brings a window
+/// forward and takes the focus, as `dozo-app://settings` did at most once a second.
+const OPEN_GAP: Duration = Duration::from_secs(1);
+
 /// How often a page may turn Push to Talk on: a shortcut another program holds is said in a
 /// message each time, which a page must not repeat.
 const TALK_GAP: Duration = Duration::from_secs(30);
@@ -270,12 +274,51 @@ fn state(app: &AppHandle) -> Value {
 
 /// The switches and the version, once they differ from `seen` (what the section shows now): the
 /// page asks again after each answer, and nothing is asked on a timer.
-/// A new page started loading in the window: every read the last page left waiting ends now.
-static PAGES: LazyLock<watch::Sender<u64>> = LazyLock::new(|| watch::Sender::new(0));
-
-/// How many reads may wait at once; one page keeps one.
+/// How many reads may wait at once. One is enough: a new read ends the one before it.
 const MAX_WAITING: usize = 4;
-static WAITING: AtomicUsize = AtomicUsize::new(0);
+
+/// The reads that wait for a change. The window has one page and the section keeps one read
+/// waiting, so a new read ends every earlier one (a section shown again, or a page that never
+/// cancels its own), and so does a new page starting to load: none is left behind to fill
+/// [`MAX_WAITING`].
+struct Reads {
+    latest: watch::Sender<u64>,
+    waiting: AtomicUsize,
+}
+
+/// One read: its place among those waiting, and the word that a later one took over.
+struct Read<'a> {
+    _waiting: Waiting<'a>,
+    superseded: watch::Receiver<u64>,
+}
+
+impl Reads {
+    fn new() -> Self {
+        Reads {
+            latest: watch::Sender::new(0),
+            waiting: AtomicUsize::new(0),
+        }
+    }
+
+    /// Ends every read waiting now.
+    fn supersede(&self) {
+        self.latest.send_modify(|count| *count += 1);
+    }
+
+    /// A new read, ending the earlier ones; none while [`MAX_WAITING`] still wait (only calls
+    /// made at the same moment, before the earlier ones have ended).
+    fn start(&self) -> Option<Read<'_>> {
+        self.supersede();
+        let mut superseded = self.latest.subscribe();
+        superseded.borrow_and_update();
+        Waiting::take(&self.waiting, MAX_WAITING).map(|waiting| Read {
+            _waiting: waiting,
+            superseded,
+        })
+    }
+}
+
+static READS: LazyLock<Reads> = LazyLock::new(Reads::new);
 
 /// A place among the reads that wait, given back when the read ends however it ends.
 struct Waiting<'a>(&'a AtomicUsize);
@@ -297,7 +340,7 @@ impl Drop for Waiting<'_> {
 /// The window's page started loading (any page): reads left waiting end, and when it is the chosen
 /// server's, its origin is admitted ([`admit`]).
 pub fn page_loading(app: &AppHandle, page: &Url) {
-    PAGES.send_modify(|count| *count += 1);
+    READS.supersede();
     if crate::chosen(app).is_some_and(|server| server.origin() == page.origin()) {
         admit(app, page);
     }
@@ -308,12 +351,10 @@ pub async fn desktop_settings(app: AppHandle, webview: Webview, seen: Option<Val
     if !allowed(&app, &webview) {
         return Value::Null;
     }
-    let Some(_waiting) = Waiting::take(&WAITING, MAX_WAITING) else {
+    let Some(mut read) = READS.start() else {
         return Value::Null;
     };
     let mut changes = crate::prefs::watch(&app);
-    let mut pages = PAGES.subscribe();
-    pages.borrow_and_update();
     loop {
         changes.borrow_and_update();
         let now = state(&app);
@@ -327,7 +368,7 @@ pub async fn desktop_settings(app: AppHandle, webview: Webview, seen: Option<Val
         }
         tokio::select! {
             changed = changes.changed() => if changed.is_err() { return Value::Null },
-            _ = pages.changed() => return Value::Null,
+            _ = read.superseded.changed() => return Value::Null,
         }
     }
 }
@@ -377,7 +418,9 @@ pub async fn desktop_set(app: AppHandle, webview: Webview, key: Option<Value>, o
 /// Settings window (the logins of the password manager). Answers nothing, whatever happened.
 #[tauri::command]
 pub async fn desktop_open(app: AppHandle, webview: Webview, what: Option<Value>) {
-    if let Some(id) = opens(allowed(&app, &webview), what.as_ref()) {
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    let id = opens(allowed(&app, &webview), what.as_ref());
+    if let Some(id) = id.filter(|_| once_per(&mut LAST.lock().unwrap(), Instant::now(), OPEN_GAP)) {
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || crate::run(&handle, id));
     }
@@ -860,12 +903,19 @@ mod tests {
     }
 
     #[test]
-    fn turning_push_to_talk_on_is_held_to_once_in_its_gap() {
-        let start = Instant::now();
-        let mut last = None;
-        assert!(once_per(&mut last, start, TALK_GAP));
-        assert!(!once_per(&mut last, start + TALK_GAP / 2, TALK_GAP));
-        assert!(once_per(&mut last, start + TALK_GAP, TALK_GAP));
+    fn turning_push_to_talk_on_and_opening_a_window_are_held_to_once_in_their_gap() {
+        assert!(TALK_GAP >= Duration::from_secs(30));
+        assert!(OPEN_GAP >= Duration::from_secs(1));
+        for gap in [TALK_GAP, OPEN_GAP] {
+            let start = Instant::now();
+            let mut last = None;
+            assert!(once_per(&mut last, start, gap));
+            // Five a second, as the budget alone would let through: only the first.
+            for tenth in 1..10 {
+                assert!(!once_per(&mut last, start + gap * tenth / 10, gap));
+            }
+            assert!(once_per(&mut last, start + gap, gap));
+        }
     }
 
     #[test]
@@ -1060,6 +1110,39 @@ mod tests {
         );
     }
 
+    /// A section shown and closed again and again, with nothing changing meanwhile, leaves a read
+    /// waiting each time: each new one must end the one before, so the last is answered.
+    #[tokio::test]
+    async fn a_new_read_ends_the_earlier_ones_so_the_last_stays_alive() {
+        let reads: &'static Reads = Box::leak(Box::new(Reads::new()));
+        let mut ended = Vec::new();
+        for _ in 0..6 {
+            let read = reads.start().expect("a new read always has room");
+            ended.push(tokio::spawn(async move {
+                // The whole read waits, its place among those waiting with it.
+                let mut read = read;
+                let _ = read.superseded.changed().await;
+            }));
+            tokio::task::yield_now().await;
+        }
+        let last = ended.pop().unwrap();
+        for earlier in ended {
+            tokio::time::timeout(Duration::from_secs(5), earlier)
+                .await
+                .expect("an earlier read ends")
+                .unwrap();
+        }
+        assert!(!last.is_finished());
+        assert_eq!(reads.waiting.load(Ordering::SeqCst), 1);
+        // A page starting to load ends it too.
+        reads.supersede();
+        tokio::time::timeout(Duration::from_secs(5), last)
+            .await
+            .expect("the last read ends with the page")
+            .unwrap();
+        assert_eq!(reads.waiting.load(Ordering::SeqCst), 0);
+    }
+
     #[test]
     fn only_a_few_reads_wait_at_once_and_each_gives_its_place_back() {
         let count = AtomicUsize::new(0);
@@ -1083,6 +1166,9 @@ mod tests {
         assert!(script.contains(r#"el("cancel").focus()"#));
         assert!(script.contains("Escape"));
         assert!(script.contains(r#"invoke("confirm_answer""#));
+        // Turn On is armed only while the window is on screen and in front.
+        assert!(script.contains("document.hasFocus()"));
+        assert!(script.contains(r#"addEventListener("blur", arm)"#));
         assert!(QUESTION_LIMIT <= Duration::from_secs(60));
     }
 
