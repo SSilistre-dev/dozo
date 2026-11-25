@@ -8557,6 +8557,45 @@
       "reason": "CLI accounts on the person's own computer: the API lists and connects the tools through the adapters package"
     },
     {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "} from \"@rakazo/adapters\";\nimport type {\n  Actor,\n",
+      "replace": "} from \"@rakazo/adapters\";\nimport { withoutUnconnectedAgents } from \"../dozo-agent-catalog.js\";\nimport type {\n  Actor,\n",
+      "requires": [
+        "apps/api/src/dozo-agent-catalog.ts"
+      ],
+      "reason": "agent mode on a paired computer: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "    return offeredCatalog(merged, selected)\n      .filter(\n",
+      "replace": "    return withoutUnconnectedAgents(offeredCatalog(merged, selected), auth, selected)\n      .filter(\n",
+      "requires": [
+        "apps/api/src/dozo-agent-catalog.ts"
+      ],
+      "reason": "agent mode on a paired computer: the catalog every app reads (web and mobile alike) lists an agent only once the person has a connection to it (a saved choice stays), on a hosted server, so no app offers one as a provider that asks for a key"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  resumeToolResult?: { content: Array<{ type: \"text\"; text: string }> };\n  script?: ScriptedTurn[];\n",
+      "replace": "  resumeToolResult?: { content: Array<{ type: \"text\"; text: string }> };\n  /**\n   * The runtime took in content from outside the run (an agent that reads on the person's own\n   * computer): the run is then one that read outside content, with the protections that go with it.\n   */\n  readOutsideContent?: () => Promise<void>;\n  script?: ScriptedTurn[];\n",
+      "reason": "agent mode on a paired computer: the runtime can mark its run as one that read outside content, as a tool that reads the web does, so the protections of such a run (the approval model's outside-content note, new sites, memory writes) apply to what the agent then asks of the bot's tools"
+    },
+    {
+      "file": "packages/adapters/src/run-model-turn.ts",
+      "find": "    script,\n    allowSilentEmpty: allowSilentEmptyRun,\n",
+      "replace": "    script,\n    readOutsideContent: scripted ? undefined : () => markReadOutsideContent(ctx),\n    allowSilentEmpty: allowSilentEmptyRun,\n",
+      "requires": [
+        "packages/adapter-kit/src/types.ts"
+      ],
+      "reason": "agent mode on a paired computer: the run's own marking of read outside content, handed to a runtime that reads outside it"
+    },
+    {
+      "file": "packages/adapters/src/run-model-turn.ts",
+      "find": "import type { AssembledTurn } from \"./run-assembly.js\";\nimport type { RunExecutorServices",
+      "replace": "import type { AssembledTurn } from \"./run-assembly.js\";\nimport { markReadOutsideContent } from \"./run-context.js\";\nimport type { RunExecutorServices",
+      "reason": "agent mode on a paired computer: the import of the rule above"
+    },
+    {
       "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
       "find": "  const model = useModelSettings(onClose, scope);\n  const {\n",
       "replace": "  const model = useModelSettings(onClose, scope);\n  const cliProviders = useDozoCliProviders();\n  const {\n",

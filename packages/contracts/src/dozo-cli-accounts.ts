@@ -20,6 +20,8 @@ export const DozoCliToolSchema = /* @__PURE__ */ (() =>
     termsRisk: z.boolean().optional(),
     /** The maker's own page to get an agent from (https, fixed), while it is not installed. */
     downloadUrl: z.string().regex(/^https:\/\//).optional(),
+    /** The paired computer an agent runs on (a hosted server's agents), which the row connects. */
+    deviceId: z.string().min(1).max(64).optional(),
     /** Another account's sign-in in progress, with the address the tool printed, or why it ended. */
     login: z
       .object({
@@ -44,7 +46,11 @@ export const dozoCliAccountsContract = /* @__PURE__ */ (() => ({
    */
   connect: oc
     .input(
-      Provider.extend({ consent: z.boolean().optional(), termsConsent: z.boolean().optional() }),
+      Provider.extend({
+        consent: z.boolean().optional(),
+        termsConsent: z.boolean().optional(),
+        deviceId: z.string().min(1).max(64).optional(),
+      }),
     )
     .output(DozoCliToolsSchema),
   /** Starts the tool's own sign-in of another account, in a home of its own. */

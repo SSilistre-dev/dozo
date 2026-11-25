@@ -21,6 +21,7 @@ import {
   withCliAccount,
 } from "./dozo-cli-driver.js";
 import {
+  AGENT_DRIVERS,
   CLI_ACCOUNT_RECONNECT_ERROR,
   CLI_CATALOG_ONLY_ERROR,
   registerLocalCliProviders,
@@ -99,23 +100,47 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
     });
   });
 
-  it("stores only which home a connection uses, and reads nothing else as one", () => {
+  it("stores only which home or computer a connection uses, and reads nothing else as one", () => {
     expect(parseCliAccountRef(HOME_REF)).toEqual({ kind: "home" });
+    const device = cliAccountRef({ kind: "device", deviceId: "dev_1-A" });
+    expect(device).toBe("dozo-cli-account:device:dev_1-A");
+    expect(parseCliAccountRef(device)).toEqual({ kind: "device", deviceId: "dev_1-A" });
+    for (const value of [
+      "dozo-cli-account:device:",
+      "dozo-cli-account:device:a/b",
+      `${device}x y`,
+      `dozo-cli-account:device:${"a".repeat(65)}`,
+    ])
+      expect(parseCliAccountRef(value)).toBeUndefined();
     for (const value of [undefined, "", "sk-real-key", `${HOME_REF}x`, "dozo-cli-account:../x"])
       expect(parseCliAccountRef(value)).toBeUndefined();
   });
 
-  it("offers nothing on a hosted server", async () => {
+  it("offers no tool of its own on a hosted server, only the agents a paired computer runs", async () => {
+    // Off until the server turns an agent on: it is not in the catalog.
+    const shut = registerLocalProvider(builtinModels() as MutableModels);
+    for (const driver of AGENT_DRIVERS) expect(shut.getProvider(driver.provider)).toBeUndefined();
+    const dir = mkdtempSync(join(tmpdir(), "dozo-agents-"));
+    writeFileSync(join(dir, "dozo-agent-tools"), `${AGENT_DRIVERS[0]!.provider}\n`);
+    vi.stubEnv("DATA_DIR", dir);
     const models = registerLocalProvider(builtinModels() as MutableModels);
     expect(models.getProvider(PROVIDER)).toBeUndefined();
-    const runtime = { describe: vi.fn() } as unknown as AgentRuntime;
+    expect(models.getProvider(AGENT_DRIVERS[0]!.provider)).toBeDefined();
+    expect(models.getProvider(AGENT_DRIVERS[1]!.provider)).toBeUndefined();
+    const runtime = { describe: vi.fn(), run: vi.fn(() => "model run") } as unknown as AgentRuntime;
     const deps = { prisma: {} as PrismaClient };
     const env = {
       defaultProvider: "openrouter",
       defaultModel: "x",
       deploymentModelConfigured: true,
     };
-    expect(cliModelRuntime(env, runtime, deps)).toBe(runtime);
+    // A run whose model is not an agent still goes straight to the model runtime.
+    const hosted = cliModelRuntime(env, runtime, deps);
+    expect(hosted.run({ model: { provider: "openrouter" } } as never, {})).toBe("model run");
+    // A deployment that names a command-line tool as its model keeps the upstream runtime.
+    expect(
+      cliModelRuntime({ ...env, defaultProvider: claudeCodeDriver.provider }, runtime, deps),
+    ).not.toBe(runtime);
   });
 
   it("lists the tool's models in the catalog on the person's computer", () => {
@@ -161,6 +186,8 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
   it.each([
     ["no account", undefined],
     ["a key that names no account", "sk-real-key"],
+    // An agent on a paired computer is run there, never by this server's own tool.
+    ["a connection that names a computer", "dozo-cli-account:device:dev-1"],
   ])("never runs another account in place of %s", async (_, apiKey) => {
     const computer = personsComputer("reply");
     const { models, model } = localModels();

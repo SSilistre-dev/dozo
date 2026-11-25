@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { defaultCatalogModelId, loadStoredModelSecret } from "../model-selection.js";
 import { agentConnected, agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
+import { enabledAgentProviders } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, LocalCliHost } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -15,10 +16,16 @@ import {
 import { accountHome, accountHomeIds, removeAccountHome } from "./dozo-cli-homes.js";
 import type { CliLoginView } from "./dozo-cli-login.js";
 import { cliLoginView, liveCliLogins, startCliLogin } from "./dozo-cli-login.js";
-import { CLI_MODEL_DRIVERS } from "./dozo-cli-providers.js";
+import { AGENT_DRIVERS, CLI_MODEL_DRIVERS } from "./dozo-cli-providers.js";
+import {
+  DEVICE_OFFLINE_ERROR,
+  deviceAgentConnection,
+  readDeviceAgentRows,
+} from "./dozo-device-agent.js";
 import { personalCliAccessCheck } from "./personal-access.js";
 
 export { isAgentProvider, saveAgentConnection } from "./dozo-agent-modes.js";
+export { localCliHost } from "./dozo-cli-driver.js";
 export { cancelCliLogin, sendCliLoginCode } from "./dozo-cli-login.js";
 
 export type CliAccountsDeps = {
@@ -49,6 +56,8 @@ export interface CliToolView {
   termsRisk?: true;
   /** The maker's page to get an agent from, only while it is not installed here. */
   downloadUrl?: string;
+  /** The paired computer an agent runs on; set only on a hosted server's rows. */
+  deviceId?: string;
 }
 
 /**
@@ -145,10 +154,54 @@ async function removeUnusedHomes(
   }
 }
 
+/** The computers the person's agent connections name, by agent. */
+async function connectedDevices(
+  deps: CliAccountsDeps,
+  userId: string,
+  providers: string[],
+): Promise<Map<string, Set<string>>> {
+  const rows = await deps.prisma.userModelCredential.findMany({
+    where: { userId, provider: { in: providers } },
+    select: { provider: true, secretId: true },
+  });
+  const devices = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const secret = await loadStoredModelSecret(deps.prisma, deps.secretStore, userId, row.secretId);
+    const account = secret.status === "loaded" ? parseCliAccountRef(secret.plaintext) : undefined;
+    if (account?.kind === "device")
+      devices.set(row.provider, (devices.get(row.provider) ?? new Set()).add(account.deviceId));
+  }
+  return devices;
+}
+
+/**
+ * A hosted server's agents: one row for each connected computer of the person that runs one now,
+ * named for both. None where no computer runs one.
+ */
+async function deviceAgentTools(deps: CliAccountsDeps, userId: string): Promise<CliToolView[]> {
+  const found = await readDeviceAgentRows(deps, userId);
+  const connected = await connectedDevices(
+    deps,
+    userId,
+    AGENT_DRIVERS.map((driver) => driver.provider),
+  );
+  return found.map((entry) => ({
+    provider: entry.provider,
+    name: `${entry.name} \u00b7 ${entry.deviceName}`,
+    mode: "agent",
+    found: true,
+    signedIn: null,
+    connected: connected.get(entry.provider)?.has(entry.deviceId) ?? false,
+    canAdd: false,
+    deviceId: entry.deviceId,
+  }));
+}
+
 /** Each tool, read fresh: what is on the person's PATH and signed in can change at any time. */
 export async function readCliTools(deps: CliAccountsDeps, userId: string): Promise<CliToolView[]> {
   const host = await usableHost(deps, userId);
-  if (!host) return [];
+  // Only a hosted server: on the person's own computer the runtime runs no agent on another one.
+  if (!host) return localCliHost() ? [] : deviceAgentTools(deps, userId);
   const connected = await connectedAccounts(deps, userId);
   const agents = await readAgentTools(deps.prisma, userId, host);
   const models = await Promise.all(
@@ -200,6 +253,28 @@ export function cliConnection(driver: CliModelDriver, account: CliAccount) {
 }
 
 /**
+ * The connection to an agent on one of the person's own computers, on a hosted server: the person
+ * agreed in that computer's app, which only offers an agent once they turned it on there.
+ */
+async function deviceConnection(
+  deps: CliAccountsDeps,
+  userId: string,
+  provider: string,
+  deviceId: string,
+) {
+  if (localCliHost())
+    throw new ClientError("NOT_FOUND", "This tool cannot be used on this server.");
+  const agent = agentDriverFor(provider);
+  if (agent && !enabledAgentProviders().has(provider))
+    throw new CliAccountUnavailableError(`${agent.name} agent mode is not turned on on this server.`);
+  const connection = await deviceAgentConnection(deps, userId, provider, deviceId);
+  if (!connection) throw new CliAccountUnavailableError(DEVICE_OFFLINE_ERROR);
+  if ((await connectedDevices(deps, userId, [provider])).get(provider)?.has(deviceId))
+    throw new CliAccountUnavailableError(`${connection.label} is already connected.`);
+  return connection;
+}
+
+/**
  * The connection to the person's own sign-in of `provider`, once the tool is there, signed in,
  * and not connected yet. The sign-in stays the tool's own.
  */
@@ -207,8 +282,9 @@ export async function cliHomeConnection(
   deps: CliAccountsDeps,
   userId: string,
   provider: string,
-  options: { consent?: boolean; termsConsent?: boolean } = {},
+  options: { consent?: boolean; termsConsent?: boolean; deviceId?: string } = {},
 ): Promise<ReturnType<typeof cliConnection>> {
+  if (options.deviceId) return deviceConnection(deps, userId, provider, options.deviceId);
   const agent = agentDriverFor(provider);
   if (agent) {
     const host = await usableHost(deps, userId);

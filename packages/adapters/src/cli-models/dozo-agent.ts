@@ -355,7 +355,7 @@ function keepWaiting(runId: string, run: LiveRun, waitLimitMs = AGENT_WAIT_LIMIT
   run.idle.unref?.();
 }
 
-function isPause(result: unknown): boolean {
+export function isPause(result: unknown): boolean {
   if (!result || typeof result !== "object") return false;
   const details = (result as { kind?: unknown; details?: { approval?: unknown; secret?: unknown } })
     .details;
@@ -366,7 +366,7 @@ function isPause(result: unknown): boolean {
 }
 
 /** A tool result as the text the agent reads. */
-function toolResultText(result: unknown): string {
+export function toolResultText(result: unknown): string {
   const content = (result as { content?: unknown } | null)?.content;
   if (Array.isArray(content)) {
     const text = content

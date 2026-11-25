@@ -23,7 +23,7 @@ export { isPhonePlatform, PHONE_PLATFORMS } from "./dozo-phone-protocol.js";
 export * from "./user-device-gateway.js";
 
 /** Upstream's window: a connection row whose heartbeat is older lost its holding process. */
-const STALE_AFTER_MS = 75_000;
+export const STALE_AFTER_MS = 75_000;
 const live = () => ({ gt: new Date(Date.now() - STALE_AFTER_MS) });
 const phones = [...PHONE_PLATFORMS];
 

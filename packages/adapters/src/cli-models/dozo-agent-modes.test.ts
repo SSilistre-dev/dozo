@@ -40,6 +40,7 @@ function table(initial: string[] = [], credentials: Record<string, string> = {})
       return 1;
     }),
     user: { count: async () => 1 },
+    userDevice: { findMany: async () => [] },
     deploymentSettings: { findUnique: async () => null },
     userModelCredential: {
       findMany: async ({ where }: { where: { provider: string | { in: string[] } } }) =>
@@ -145,7 +146,11 @@ describe("a hosted server", () => {
     const before = builtinModels() as MutableModels;
     const names = new Set(before.getProviders().map((provider) => provider.id));
     const after = registerLocalCliProviders(builtinModels() as MutableModels);
-    expect(new Set(after.getProviders().map((provider) => provider.id))).toEqual(names);
+    // Its catalog adds only the agents the file turns on, which a paired computer runs, and no tool
+    // of its own.
+    expect(new Set(after.getProviders().map((provider) => provider.id))).toEqual(
+      new Set([...names, ...(file ? PROVIDERS : [])]),
+    );
   });
 });
 

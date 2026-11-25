@@ -81,6 +81,8 @@ function deps(
         count: async ({ where }: { where: { id?: string } }) =>
           where.id ? Number(where.id !== "stranger") : (options.people ?? 1),
       },
+      // No computer of the person's is paired: a hosted server then lists no agent.
+      userDevice: { findMany: async () => [] },
       userModelCredential: {
         // Each reader asks for the providers it means: the models', or the agents'.
         findMany: vi.fn(async ({ where }: { where?: { provider?: { in?: string[] } } } = {}) =>

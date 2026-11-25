@@ -88,6 +88,8 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   "dozoLearning/undo": { changeId: "learningChangeId" },
   "computer/readFile": { path: "filePath" },
   "computer/downloadFile": { path: "filePath" },
+  // The target's paired computer, which runs an agent: another person's is refused.
+  "dozoCliAccounts/connect": { deviceId: "deviceId" },
   "connections/complete": { connectionId: "connectionId" },
   "connections/rename": { connectionId: "connectionId" },
   "connections/revoke": { connectionId: "connectionId" },
@@ -99,6 +101,11 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   // A mention chip names a bot (the first kind of chip).
   "threads/send": { id: "botId" },
   "threads/sendWithRoutines": { id: "botId" },
+};
+/** Values a procedure's own field needs, where the plain string of the generic ones is refused. */
+const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
+  // An agent a paired computer can run, so the owner's own call connects it.
+  "dozoCliAccounts/connect": { provider: "codex-agent" },
 };
 /** A field whose name says it names something; each one must be filled from the target's things. */
 const ID_FIELD = /Id$|Ids$|^id$/;
@@ -357,8 +364,11 @@ class Generator {
       case "string": {
         const id = this.id(field);
         const hint = field === undefined ? undefined : FIELD_VALUES[field];
+        const pathHint =
+          field === undefined ? undefined : PATH_FIELD_VALUES[this.procedure]?.[field];
         for (const value of [
           id,
+          pathHint,
           typeof hint === "string" ? hint : undefined,
           this.probe,
           ...STRINGS,

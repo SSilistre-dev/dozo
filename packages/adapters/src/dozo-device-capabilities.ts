@@ -2,6 +2,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { ACP_AGENTS } from "./cli-models/acp/dozo-acp-catalog.js";
 import { CODEX_AGENT_PROVIDER_ID } from "./cli-models/codex/dozo-codex-agent.js";
+import { enabledAgentProviders } from "./cli-models/dozo-agent.js";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import { isPhonePlatform } from "./dozo-phone-protocol.js";
 import type { UserDevice } from "./user-device-protocol.js";
@@ -158,6 +159,27 @@ export async function readDeviceCapabilities(
     (value) =>
       declared.includes(value) && (platform === "ios" || !IOS_ONLY_CAPABILITIES.includes(value)),
   );
+}
+
+/**
+ * The agents a computer declared on its last connection (`agent:<id>`), only ones this server
+ * knows. A computer that declared none, or that never declared, runs no agent.
+ */
+export async function readDeviceAgents(
+  prisma: PrismaClient,
+  deviceId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string[]> {
+  const rows = await runAsSystem(
+    "read the agents a user device declared",
+    () =>
+      prisma.$queryRaw<{ capabilities: string[] }[]>`
+      SELECT capabilities FROM dozo_device_capabilities WHERE "deviceId" = ${deviceId}`,
+  );
+  const declared = rows[0]?.capabilities ?? [];
+  // Only the agents this server turned on (the file in its data folder, one provider per line).
+  const on = enabledAgentProviders(env);
+  return deviceAgentIds().filter((id) => on.has(id) && declared.includes(`agent:${id}`));
 }
 
 /**

@@ -78,23 +78,32 @@ export interface CliUsageLimit {
   resetsAt?: number;
 }
 
-/** Which of the tool's homes a connection uses: the person's own, or one the server added. */
-export type CliAccount = { kind: "home" } | { kind: "added"; id: string };
+/**
+ * Which of the tool's homes a connection uses: the person's own, one the server added, or an agent
+ * on one of the person's paired computers, which only that computer's app runs
+ * (dozo-device-agent.ts).
+ */
+export type CliAccount =
+  | { kind: "home" }
+  | { kind: "added"; id: string }
+  | { kind: "device"; deviceId: string };
 
 const ACCOUNT_REF_PREFIX = "dozo-cli-account:";
-const ACCOUNT_REF = /^dozo-cli-account:(home|[0-9a-f]{32})$/;
+const ACCOUNT_REF = /^dozo-cli-account:(home|[0-9a-f]{32}|device:[A-Za-z0-9_-]{1,64})$/;
 
 /**
  * What a connection stores in place of a key: which home it uses. Not a credential: the tool keeps
  * its own sign-in, which the server never reads.
  */
 export function cliAccountRef(account: CliAccount): string {
+  if (account.kind === "device") return `${ACCOUNT_REF_PREFIX}device:${account.deviceId}`;
   return `${ACCOUNT_REF_PREFIX}${account.kind === "home" ? "home" : account.id}`;
 }
 
 export function parseCliAccountRef(value: string | undefined): CliAccount | undefined {
   const id = value ? ACCOUNT_REF.exec(value)?.[1] : undefined;
   if (!id) return undefined;
+  if (id.startsWith("device:")) return { kind: "device", deviceId: id.slice("device:".length) };
   return id === "home" ? { kind: "home" } : { kind: "added", id };
 }
 
