@@ -271,7 +271,7 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
   claim link gets the API's existing "already used or invalid" answer. The welcome mail links only
   the desktop release files the landing page links. `assets/mail/welcome.png` is kept as artwork but
   no longer mapped.
-- Self-update: no repository counts as official (anchored rule in `packages/core/src/self-update.ts`,
+- Self-update: no repository counts as official (anchored rule in `packages/core/src/deployment/self-update.ts`,
   held by `dozo-self-update.test.ts`), so an update builds the deployment's checkout and never pulls
   upstream's image. Undo the rule once Dozo publishes its own images under its name.
 - `placeholders` (`dozo.example`, `OWNER/`): an address that does not exist. Any left in a branded

@@ -97,8 +97,8 @@ it("shows the same names on the Avatar Studio tabs", async () => {
 
 it("takes every place that names a set from the one function", () => {
   for (const file of [
-    "apps/web/src/pages/shell/avatar-studio-popover.tsx",
-    "apps/web/src/pages/AccountSettingsOverlay.tsx",
+    "apps/web/src/pages/shell/bots/avatar-studio-popover.tsx",
+    "apps/web/src/pages/settings/AccountSettingsOverlay.tsx",
     "apps/mobile/app/(settings)/general.tsx",
     "apps/mobile/app/bot-settings.tsx",
   ]) {

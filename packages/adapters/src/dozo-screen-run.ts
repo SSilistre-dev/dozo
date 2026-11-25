@@ -7,7 +7,7 @@ import type { RunContext, RunState } from "./runs/assembly/run-context.js";
 /**
  * The answer on a card for input on the bot's screen that sends the rest of this run's screen
  * input to the approval model, as Auto review would. Owner-only, checked where answers are saved
- * (dozo/brand/brand.json, packages/db/src/thread-ask.ts).
+ * (dozo/brand/brand.json, packages/db/src/threads/thread-ask.ts).
  */
 export const SCREEN_RUN_ALLOW = "allow_run";
 

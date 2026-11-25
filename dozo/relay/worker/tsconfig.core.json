@@ -19,7 +19,7 @@
     }
   },
   "files": [
-    "../../../packages/core/src/async.test-support.ts",
+    "../../../packages/core/src/primitives/async.test-support.ts",
     "../../../packages/core/src/dozo-relay-channel.ts",
     "../../../packages/core/src/dozo-relay-mux.ts"
   ]

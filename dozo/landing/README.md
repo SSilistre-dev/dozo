@@ -78,7 +78,7 @@ Closed pre-release state (lifted):
   paid cards' sign-up links, which also carry `plan=premium` or `plan=premium_plus`. Without the
   script both prices show. The prices, the yearly saving, computer
   hours, file storage and each computer's vCPUs and memory are read from the code by
-  `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing.ts`,
+  `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing/billing.ts`,
   `dozo-plans.ts`, and the default `RAKAZO_COMPUTER_SIZES` in `dozo/deploy/compose.deploy.yml`), and
   it fails when a page disagrees. No discount, tax line or other number: write one only once the
   owner has set it and the code enforces it.

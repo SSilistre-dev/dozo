@@ -357,7 +357,7 @@ panel runs Compose, so `deploy.sh` keeps the previous release serving around it 
   go away by themselves, and `deploy.sh` waits for that before its health check. Its log:
   `<dir>/bridge.log`.
 - Open live streams and device sockets on a stopping api close at once and reconnect
-  (`apps/api/src/drain.ts`).
+  (`apps/api/src/http/drain.ts`).
 - The worker keeps upstream's rule: the old one finishes its running jobs before it stops. Compose
   starts nothing new until it has, so a long job delays the deploy; the copies serve meanwhile and
   `watch` waits up to four hours.

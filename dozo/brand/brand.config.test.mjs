@@ -435,7 +435,7 @@ describe("the shipped config, in literal values", () => {
       "packages/core/pnpm-lock.yaml",
       "packages/db/prisma/schema.prisma",
       "apps/web/node_modules/p/i.js",
-      "packages/adapters/src/composio-fake.ts",
+      "packages/adapters/src/providers/integration/composio/composio-fake.ts",
       "apps/web/LICENSE",
       "packages/core/.DS_Store",
       "apps/web/src/Thumbs.db",
@@ -443,7 +443,7 @@ describe("the shipped config, in literal values", () => {
       "apps/mobile/e2e/README.md",
       "apps/mobile/assets/sounds/warm-end.m4a",
       "apps/mobile/modules/rakazo-notifications/android/build.gradle",
-      "apps/mobile/lib/push.test.ts",
+      "apps/mobile/lib/notifications/push.test.ts",
     ]) {
       assert.equal(inScope(config, rel), false, `${rel} is excluded`);
     }
@@ -458,7 +458,7 @@ describe("the shipped config, in literal values", () => {
     }
     for (const rel of [
       "apps/www/src/a.astro",
-      "apps/desktop/src/main.ts",
+      "apps/desktop/src/main/main.ts",
       "apps/desktop/assets/es.lproj/InfoPlist.strings",
       "apps/desktop/assets/README.md",
       "docs/a.md",
@@ -542,12 +542,12 @@ describe("the shipped config, in literal values", () => {
         .filter((entry) => entry.count !== undefined)
         .map((entry) => [entry.file, entry.text, entry.count]),
       [
-        ["packages/core/src/bot-look.ts", 'avatarSet === "rakazo"', 2],
-        ["packages/adapters/src/apple-container-sandbox.ts", "table inet rakazo", 3],
-        ["packages/adapters/src/secret-store-fake.ts", '"/rakazo"', 2],
-        ["apps/mobile/components/pdf-preview.tsx", '"RakazoPdfView"', 2],
+        ["packages/core/src/bots/bot-look.ts", 'avatarSet === "rakazo"', 2],
+        ["packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.ts", "table inet rakazo", 3],
+        ["packages/adapters/src/secrets/secret-store-fake.ts", '"/rakazo"', 2],
+        ["apps/mobile/components/media/pdf-preview.tsx", '"RakazoPdfView"', 2],
         ["apps/mobile/ios-intents/RakazoIntents.swift", "RakazoSession", 17],
-        ["apps/mobile/lib/push.ts", '"RakazoNotifications"', 2],
+        ["apps/mobile/lib/notifications/push.ts", '"RakazoNotifications"', 2],
       ],
     );
     const { scanPath } = buildScanner(config);

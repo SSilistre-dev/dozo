@@ -380,19 +380,19 @@ describe("writers of file rows", () => {
     );
     expect(writers).toEqual({
       // Both through withResolvedArtifactVersion, which holds the check.
-      "apps/api/src/artifacts.ts": 1,
-      "packages/adapters/src/thread-artifacts.ts": 2,
-      "apps/api/src/account-import.ts": 1,
+      "apps/api/src/content/artifacts.ts": 1,
+      "packages/adapters/src/storage/thread-artifacts.ts": 2,
+      "apps/api/src/account/account-import.ts": 1,
     });
-    expect(text("packages/db/src/artifact-versions.ts")).toContain(
+    expect(text("packages/db/src/artifacts/artifact-versions.ts")).toContain(
       "if (!isReplayedUpload(result)) await holdSharedSpace(tx,",
     );
     // The one answer that skips the check is still the upload route's.
-    expect(text("apps/api/src/artifacts.ts")).toContain("return { row: raced, replay: true };");
-    expect(text("packages/adapters/src/thread-artifacts.ts")).toMatch(
+    expect(text("apps/api/src/content/artifacts.ts")).toContain("return { row: raced, replay: true };");
+    expect(text("packages/adapters/src/storage/thread-artifacts.ts")).toMatch(
       /withSharedSpace\(deps\.prisma, owner\.spaceId, \(tx\) =>\s+tx\.artifact\.create\(/,
     );
-    expect(text("apps/api/src/account-import.ts")).toMatch(
+    expect(text("apps/api/src/account/account-import.ts")).toMatch(
       /withSharedSpace\(this\.deps\.prisma, space\.spaceId, \(tx\) =>\s+tx\.artifact\.createMany\(/,
     );
   });

@@ -203,7 +203,7 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   a paid plan ends nor after 90 days unused (upstream deletes it only when the organization can no
   longer run bots, and on Free every organization can).
 - The referral program is off: its reward is a month of the cheapest plan, which is Free, so
-  `apps/api/src/referrals.ts` turns itself off and no reward is offered or paid.
+  `apps/api/src/billing/referrals.ts` turns itself off and no reward is offered or paid.
 - The shared space counts files only. A computer's saved home (no size is recorded; upstream caps
   one at 5 GiB), pages, memory and messages (database text) are not counted.
 - An import that does not fit is refused whole, after its files were written and removed again.
@@ -1017,7 +1017,7 @@ approval models, with no primary of their own and none set for the deployment, h
 judge it in their order, for every tool the approval model judges (an email, an app action, a memory
 save after outside content, a command on the bot's computer) alike. Upstream counted the backups
 when it planned the review but then reviewed only with a primary, so such an action went ahead
-unreviewed. Two anchored rules on `packages/adapters/src/run-tool-gate.ts` hold it: the review runs
+unreviewed. Two anchored rules on `packages/adapters/src/runs/tools/run-tool-gate.ts` hold it: the review runs
 when backups are the only models, and an action planned for review goes ahead only on a verdict that
 passes it, so one no model answered (none set, every backup failing or without its connection)
 leaves a card. Ask and Never ask are unchanged, and a card in a run nobody watches waits like any
@@ -1068,7 +1068,7 @@ Known gaps this does not change:
 
 - In Never ask, a run that read outside content, or that someone else started, still rewrites its
   own bot's instructions with `update_bot` without asking (`unguarded` in
-  `packages/adapters/src/run-tool-request.ts`).
+  `packages/adapters/src/runs/tools/run-tool-request.ts`).
 - A compacted summary can carry what a turn that read outside content saw into a later run that
   counts as clean: only replayed tool results in history are checked, not the summary.
 - `scratchpad_add` and `scratchpad_update` are not held.
@@ -1171,7 +1171,7 @@ Accepted by the owner for now, stated here once:
   the Team Computer, two. Premium's computer is 2 GB (`large=2:2`), so a 4 GB host budget runs
   two at once for the whole host, whoever owns them: a third start waits for one to sleep
   (`SANDBOX_IDLE_MS`).
-- `browser_act`, `computer_act` and `shell` never ask for approval (`packages/core/src/action-approval.ts`),
+- `browser_act`, `computer_act` and `shell` never ask for approval (`packages/core/src/runs/action-approval.ts`),
   and outside-content gating applies only to webhook runs: on a signed-in site, a page that tricks
   the bot can make it post, delete or change settings unasked. Only payment presses and saved
   login or card fills ask. The sign-in dialog says so in one line on every computer ("The bot can

@@ -1,7 +1,7 @@
 //! "Let Bots Use This Computer": the menu switch, the system prompt that grants it and the
 //! connection's life. The pairing itself (consent, token, ending it) is `device_pairing.rs`;
 //! the connection is `device_socket.rs`. Pairing follows upstream's desktop app
-//! (`apps/desktop/src/user-device.ts`).
+//! (`apps/desktop/src/main/auth/user-device.ts`).
 //!
 //! Nothing here is reachable from a page: the switch is a native menu item and the consent a
 //! native prompt naming the server. Changes to the pairing run one at a time under one lock,

@@ -171,7 +171,7 @@ for (const lang of ["en", ...languages]) {
 // The plan cards are written by hand on each page; the code that charges and limits them is the source.
 test("every language shows the plans the code sells and links sign-up from each one", () => {
   const source = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
-  const billing = source("packages/contracts/src/billing.ts");
+  const billing = source("packages/contracts/src/billing/billing.ts");
   const plans = source("packages/contracts/src/dozo-plans.ts");
   const sizes = source("dozo/deploy/compose.deploy.yml").match(
     /RAKAZO_COMPUTER_SIZES:-([^}]*)\}/,

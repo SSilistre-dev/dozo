@@ -132,7 +132,7 @@ async function main() {
   await mkdir(out, { recursive: true });
   const require = createRequire(path.join(workspace, "packages/testkit/package.json"));
   const { configureEnvironment } = await import(
-    from("packages/testkit/src/cli/mobile-screenshots.ts")
+    from("packages/testkit/src/screenshots/mobile-screenshots.ts")
   );
   const { serve } = await import(pathToFileURL(require.resolve("@hono/node-server")).href);
   const { startDevRelay } = await import(from("packages/adapters/src/dozo-relay-dev-relay.ts"));

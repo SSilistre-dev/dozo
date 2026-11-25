@@ -1,7 +1,7 @@
 //! Runs what a server's bots ask of this computer, one request at a time per call: the requests a
 //! paired computer gets (`provision`, `environment`, `execute`, `cancelRunWork`, `stop`,
 //! `destroy`, `prepare`, `isRunning`). The wire format is upstream's host computer protocol
-//! (`packages/adapters/src/host-computer-protocol.ts`); its behaviour follows upstream's desktop
+//! (`packages/adapters/src/computers/host/host-computer-protocol.ts`); its behaviour follows upstream's desktop
 //! runner (`host-computer-runner.ts`, `desktop-sandbox.ts`). Screen control is not offered.
 //! `pageBrowser` drives the bot's own browser (`browser.rs`).
 

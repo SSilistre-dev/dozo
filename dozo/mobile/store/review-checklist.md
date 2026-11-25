@@ -7,9 +7,9 @@ decide or provide. Nothing here is legal advice; where a rule's reach is unclear
 ## Account deletion (App Store 5.1.1(v), Play account deletion policy)
 
 OK in the app. Settings, profile screen, "Delete account" (`apps/mobile/app/(settings)/profile.tsx`,
-`apps/mobile/components/account-deletion.tsx`). It asks the owner to confirm with the password, a
+`apps/mobile/components/settings/account-deletion.tsx`). It asks the owner to confirm with the password, a
 fresh sign-in with the single-sign-on provider, or an emailed code, then calls the server's
-`/api/auth/delete-user` (`apps/mobile/lib/api-auth.ts`, `deleteAccount`) and returns to sign-in.
+`/api/auth/delete-user` (`apps/mobile/lib/auth/api-auth.ts`, `deleteAccount`) and returns to sign-in.
 The paywall screen offers the same action. Play also wants a web page for deletion requests, named
 in the Data safety form: OK, `https://dozo.bot/delete-account/` (`dozo/landing/delete-account/`, also in Turkish); TODO owner: enter it in the form.
 TODO owner: what deletion removes on the server and what is kept (billing records), for the

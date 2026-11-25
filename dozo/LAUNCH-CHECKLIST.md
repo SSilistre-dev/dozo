@@ -51,7 +51,7 @@ stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder add
       `ANALYTICS_PROVIDER`, `SENTRY_BROWSER_DSN`, `DUB_API_KEY`, referrals or
       `WELCOME_EMAIL_ENABLED` is turned on, the privacy page is updated first.
 - [ ] **Our own docs** (blocks launch). Bots fetch upstream docs at `rakazo.com/docs/*`, mainly from
-      `packages/adapters/src/builtin-skills.prompt.ts`, plus `packages/core/src/user-error.ts`. Until
+      `packages/adapters/src/tools/builtin-skills.prompt.ts`, plus `packages/core/src/primitives/user-error.ts`. Until
       our docs exist, bots answer from upstream's. Host these pages (as `.md`, and the HTML index) and
       map the base URL in `dozo/brand/brand.json`:
   - `docs.md`, `docs/`
@@ -75,7 +75,7 @@ stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder add
       markets before public use. If it fails, the name lives in `dozo/brand/brand.json`, so a rename
       is a rule change.
 - [ ] **Billing, OAuth and listing names** (blocks launch if the feature is on). Create our Stripe
-      products, prices and names (upstream billing code is `apps/api/src/billing.ts`; use env
+      products, prices and names (upstream billing code is `apps/api/src/billing/billing.ts`; use env
       configuration, never code edits). The plans and the one place their prices change:
       `dozo/README.md`, Hosted plans. Set our names in OAuth consent screens, the Slack, Discord and
       Telegram apps and the OpenRouter listing. Owner's decision: the product is source available

@@ -2,7 +2,7 @@ import { darkTokens, lightTokens, UI_APPEARANCE_STORAGE_KEY } from "@rakazo/ui-t
 import { dozoTheme } from "@rakazo/ui-tokens/dozo-themes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// The anchored rules in apps/mobile/lib/appearance.ts and user-bubble.ts, on the branded tree: the
+// The anchored rules in apps/mobile/lib/appearance/appearance.ts and user-bubble.ts, on the branded tree: the
 // phone's own appearance module paints a saved theme, tells its subscribers, and starts plain when
 // what was saved no longer fits.
 

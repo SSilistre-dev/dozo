@@ -7,7 +7,7 @@ import { asSystem, runAsTenant } from "./database/row-security.js";
 import { answerRunInput } from "./threads/thread-ask.js";
 
 // Allow for this run on a card for input on the bot's screen (dozo/brand/brand.json,
-// packages/db/src/thread-ask.ts; the gate is packages/adapters/src/dozo-screen-run.ts). Runs on the
+// packages/db/src/threads/thread-ask.ts; the gate is packages/adapters/src/dozo-screen-run.ts). Runs on the
 // branded tree only, against a migrated database; the fork's unit gate has no database and skips it.
 
 const describePostgres =

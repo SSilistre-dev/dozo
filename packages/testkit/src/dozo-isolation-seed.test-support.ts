@@ -639,8 +639,8 @@ export async function seedExtras(
  * A run queued on the target's second bot, made fresh, and kept waiting the way the product's own
  * waiting runs are: another run of the bot holds its computer. The recovery scan leaves a queued run
  * whose bot's computer lease belongs to another run (`findRunRecoveryBlockers`,
- * packages/adapters/src/run-recovery.ts), and a start that does reach it finds the computer taken
- * and puts the run back to waiting (`startClaimedAttempt`, packages/adapters/src/run-attempt.ts).
+ * packages/adapters/src/runs/lifecycle/run-recovery.ts), and a start that does reach it finds the computer taken
+ * and puts the run back to waiting (`startClaimedAttempt`, packages/adapters/src/runs/lifecycle/run-attempt.ts).
  * The lease reaches less than two lease lengths ahead, so it is not taken for an abandoned
  * takeover hold, and it names no run, so it is the holder's alone to release: `releaseWaitingRun`.
  */

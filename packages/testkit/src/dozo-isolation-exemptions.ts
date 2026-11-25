@@ -251,7 +251,7 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
     {
       kinds: ["routineprompt"],
       shownWhen:
-        "The answer is the bot's roster row, whose `preview` is the newest visible text message of the bot's chat (`botThreadPreviews`, packages/db/src/bot-previews.ts, read by `repos.listBots` in the `bots.update` handler, apps/api/src/routes/bots.ts). It carries the routine's prompt when that message is the bot's reply to a routine run, which the scripted runtime writes as `on it ... i handled: <prompt>` (`inferScript`, packages/adapters/src/scripted-runtime.ts): early in the sweep, while a routine run started before this call (the world is shared with the file's earlier tests) is replying.",
+        "The answer is the bot's roster row, whose `preview` is the newest visible text message of the bot's chat (`botThreadPreviews`, packages/db/src/bots/bot-previews.ts, read by `repos.listBots` in the `bots.update` handler, apps/api/src/routes/bots.ts). It carries the routine's prompt when that message is the bot's reply to a routine run, which the scripted runtime writes as `on it ... i handled: <prompt>` (`inferScript`, packages/adapters/src/runtime/scripted-runtime.ts): early in the sweep, while a routine run started before this call (the world is shared with the file's earlier tests) is replying.",
       hiddenWhen:
         "A newer visible message is the chat's preview: the reply to another run (the draft skill's test run, `skills/testRun`) or a message a send of the sweep wrote, or no routine run has replied yet.",
     },
@@ -260,7 +260,7 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
     {
       kinds: ["bot"],
       shownWhen:
-        "The computer is already running (`state === running` with a `providerRef`), so `computer.boot` skips the lease and answers `computerStatus` (apps/api/src/routes/computer.ts, apps/api/src/computer-control.ts), and a run of the bot holds the computer at that moment, so `resolveComputerWork` (apps/api/src/computer-status.ts) names the bot as busy.",
+        "The computer is already running (`state === running` with a `providerRef`), so `computer.boot` skips the lease and answers `computerStatus` (apps/api/src/routes/computer.ts, apps/api/src/computers/computer-control.ts), and a run of the bot holds the computer at that moment, so `resolveComputerWork` (apps/api/src/computers/computer-status.ts) names the bot as busy.",
       hiddenWhen:
         'No run of the bot holds the computer yet or any more (the answer has `busyBotName: null`), or the computer is not in the running state: the full path then needs the lease through `acquireBootLease`, which a live run\'s lease refuses (409 "busy"), or boots it and releases the lease before answering.',
     },
@@ -269,7 +269,7 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
     {
       kinds: ["bot"],
       shownWhen:
-        "`busyBotName` is the bot's name while a run of the bot is active (`ACTIVE_RUN_STATUSES`) and holds the bot's computer lease, or a boot, reset or update holds one with no run (`resolveComputerWork`, apps/api/src/computer-status.ts): the runs C and D's sends, routine and skill test runs started are executing.",
+        "`busyBotName` is the bot's name while a run of the bot is active (`ACTIVE_RUN_STATUSES`) and holds the bot's computer lease, or a boot, reset or update holds one with no run (`resolveComputerWork`, apps/api/src/computers/computer-status.ts): the runs C and D's sends, routine and skill test runs started are executing.",
       hiddenWhen:
         "Nothing holds the lease at the read: the first caller's status comes before the runs it started have taken the computer, or the runs have ended (their lease is released a moment after, and a lease of an ended run is not work). The recording the seed leaves holds no execution lease (`takeComputerControl` takes a control lease only).",
     },
@@ -278,13 +278,13 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
     {
       kinds: ["artifact"],
       shownWhen:
-        "The bot's home file `notes/last-task.md` holds the prompt of the last run that reached its second turn, and that run is the group send with the artifact (prompt `User attached file \"<name>\"`, `buildSendPrompt`, apps/api/src/thread-target.ts); `export.bot` lists the home's files (`exportHome`, apps/api/src/routes/content.ts). The generic scripted turn writes the file (`inferScript`, packages/adapters/src/scripted-runtime.ts).",
+        "The bot's home file `notes/last-task.md` holds the prompt of the last run that reached its second turn, and that run is the group send with the artifact (prompt `User attached file \"<name>\"`, `buildSendPrompt`, apps/api/src/threads/thread-target.ts); `export.bot` lists the home's files (`exportHome`, apps/api/src/routes/content.ts). The generic scripted turn writes the file (`inferScript`, packages/adapters/src/runtime/scripted-runtime.ts).",
       hiddenWhen:
         "A later run of the bot that takes the generic scripted turn (a routine test run, another send) wrote its own prompt over `notes/last-task.md`, or the group send's run had not reached its second turn at the read. The artifact's name is in no message of the bot's own chat: the sends that name it there answer 409 in the sweep, and the group send goes to the group's chat.",
     },
   ],
   // The sweep asks for the `active` filter only (the contract's enum names it first and the input
-  // generator takes the first entry), so `listSpaceRuns` (apps/api/src/runs.ts) lists the runs of
+  // generator takes the first entry), so `listSpaceRuns` (apps/api/src/threads/runs.ts) lists the runs of
   // the Space in `ACTIVE_RUN_STATUSES` that are not background ones, each with the bot's name, the
   // group's name and the task's prompt. The seed's own runs are finished, so every entry below
   // needs a run the sweep started to be queued, leased or running at the read.
@@ -306,14 +306,14 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
     {
       kinds: ["routineprompt"],
       shownWhen:
-        "A routine test run (`routines/testRun`, `threads/sendWithRoutines`, `createRoutineTestRun` in apps/api/src/routines.ts) is in flight: its task prompt is the routine's prompt.",
+        "A routine test run (`routines/testRun`, `threads/sendWithRoutines`, `createRoutineTestRun` in apps/api/src/routines/routines.ts) is in flight: its task prompt is the routine's prompt.",
       hiddenWhen:
         "No routine run is queued, leased or running at the read: it has ended or none began.",
     },
     {
       kinds: ["group", "artifact"],
       shownWhen:
-        'The group send with the artifact (`threads/send` with `groupId` and `artifactIds`) is in flight: its run\'s thread has a group (`groupName`) and its task prompt is `User attached file "<name>"` (`buildSendPrompt`, apps/api/src/thread-target.ts).',
+        'The group send with the artifact (`threads/send` with `groupId` and `artifactIds`) is in flight: its run\'s thread has a group (`groupName`) and its task prompt is `User attached file "<name>"` (`buildSendPrompt`, apps/api/src/threads/thread-target.ts).',
       hiddenWhen:
         "That run has ended or has not begun. The sends that name the artifact in a bot's own chat answer 409 in the sweep, so no other run carries the artifact's name.",
     },
@@ -322,7 +322,7 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
     {
       kinds: ["routine"],
       shownWhen:
-        "The chat's active run was started from the routine (`routines/testRun` or `threads/sendWithRoutines`, trigger `routine`): `routineName` is read with the active runs only (`include: { routine: { select: { name: true } } }`, apps/api/src/thread-snapshot.ts) while the run is queued, leased, running or waiting.",
+        "The chat's active run was started from the routine (`routines/testRun` or `threads/sendWithRoutines`, trigger `routine`): `routineName` is read with the active runs only (`include: { routine: { select: { name: true } } }`, apps/api/src/threads/thread-snapshot.ts) while the run is queued, leased, running or waiting.",
       hiddenWhen:
         "The run has ended or none was started yet: the failed or finished run a chat shows is read without the routine (`busyOrFailed` has no include), so the name is not in the answer. Members see the routine's name in `routines/list` as well.",
     },
@@ -886,7 +886,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/plugin-installs.ts:398 "...availableInSpace(actor), id: input.id" \u2014 the install is looked up among those of the caller\'s Space',
+      'apps/api/src/integrations/plugin-installs.ts:398 "...availableInSpace(actor), id: input.id" \u2014 the install is looked up among those of the caller\'s Space',
     reason:
       "The world's capability is a stored row, not a plugin whose parts were read from a repository (404).",
   },
@@ -945,7 +945,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/connection-flows.ts:576 "const snapshot = await deps.prisma.connection.findFirst({ where: { id: input.connectionId, spaceId: context.actor.spaceId, userId: context.actor.userId, }," \u2014 the connection is looked up for the caller in the caller\'s Space',
+      'apps/api/src/integrations/connection-flows.ts:576 "const snapshot = await deps.prisma.connection.findFirst({ where: { id: input.connectionId, spaceId: context.actor.spaceId, userId: context.actor.userId, }," \u2014 the connection is looked up for the caller in the caller\'s Space',
     reason: "Revoking reaches the connection's provider, which tests do not configure (400).",
   },
   {

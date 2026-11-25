@@ -1,6 +1,6 @@
 //! The paired computer's connection: one outbound WebSocket to the server's
 //! `/api/devices/connect`, authenticated with the device token. The server never connects in.
-//! Messages are upstream's (`packages/adapters/src/user-device-protocol.ts`): the server sends
+//! Messages are upstream's (`packages/adapters/src/computers/host/user-device-protocol.ts`): the server sends
 //! `request`, `cancel` and `revoked`; this computer answers with `frame`s tagged by request id.
 
 use std::collections::HashMap;

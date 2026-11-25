@@ -55,7 +55,7 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   carries: the seal dot's red, and the logo band's red for `packages/ui-web/src/dozo-logo.tsx`, as
   the brand file `dozo/brand/assets/logo-dark.svg` has it (a test holds drawing and file equal).
 - Closed registration: `SIGNUPS_ENABLED=false` reaches the client as `signupsOpen` in the public
-  auth capabilities (anchored rules in `packages/contracts/src/auth.ts` and `apps/api/src/app.ts`).
+  auth capabilities (anchored rules in `packages/contracts/src/account/auth.ts` and `apps/api/src/app.ts`).
   `apps/web/src/pages/dozo-auth.tsx` then shows sign-in at the sign-up address and
   `dozo-shell.css` hides the link to sign-up. The field exists only in the staged tree.
   The mobile sign-in screen follows the same field through `apps/mobile/lib/dozo-signups.ts` and

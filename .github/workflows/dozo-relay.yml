@@ -10,7 +10,7 @@ on:
       - "dozo/relay/**"
       - "packages/contracts/src/dozo-relay.ts"
       - "packages/core/src/dozo-relay-*.ts"
-      - "packages/core/src/async.test-support.ts"
+      - "packages/core/src/primitives/async.test-support.ts"
       - ".github/workflows/dozo-relay.yml"
 
 permissions:

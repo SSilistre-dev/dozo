@@ -112,15 +112,15 @@ export the same names:
   (`dozo-avatar.tsx`). Upstream's `BotAvatar` is still called for one case, a bot with a saved
   photo: it draws the photo and, while the bot works, a plain progress ring (`:120`), no mascot.
 - `packages/ui-web/src/logo-avatar.tsx:62` (`LogoAvatar`, the sign-in 74 px mascot at
-  `apps/web/src/pages/Auth.tsx:657`): replaced by the wrapper's `LogoAvatar`, the Dozo lockup; the
+  `apps/web/src/pages/auth/Auth.tsx:657`): replaced by the wrapper's `LogoAvatar`, the Dozo lockup; the
   upstream file is imported only by upstream's `bot-avatar.tsx`, on a branch the wrapper never
   reaches.
-- `packages/core/src/logo-avatar-art.ts:31-34` (body and hand paths): no web or server code reads
+- `packages/core/src/avatars/logo-avatar-art.ts:31-34` (body and hand paths): no web or server code reads
   them now. The pill rules (row 8) stay for the mobile app, which is out of scope.
-- `packages/core/src/notification-avatar.ts:54,60` (the art as a `data:image/svg+xml` portrait for
+- `packages/core/src/avatars/notification-avatar.ts:54,60` (the art as a `data:image/svg+xml` portrait for
   push and browser notifications): the index exports `notificationAvatarSource` from
   `dozo-avatar-art.ts` instead, which draws the bot's Dozo character; a saved photo stays.
-- `packages/core/src/bot-avatar-shapes.ts`, `avatar-shape.ts` (the eight shipped shapes and the
+- `packages/core/src/avatars/bot-avatar-shapes.ts`, `avatar-shape.ts` (the eight shipped shapes and the
   organic body): read only by the two upstream files above. The avatar editor
   (`avatar-studio-popover.tsx`) lists the shapes by index and previews each through
   `BotShapePreview`, so it offers the Dozo characters; two anchored rules keep it to six tiles,

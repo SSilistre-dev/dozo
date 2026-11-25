@@ -25,7 +25,7 @@ export const SEALED_TAG_BYTES = 16;
 export const SEALED_MAX_ENTRY_HEADER = 64 * 1024;
 /** The one entry of an account backup made in the browser: the account export's zip. */
 export const SEALED_ACCOUNT_ENTRY = "account-export.zip";
-/** The account import's body limit, `ACCOUNT_IMPORT_LIMITS.bodyBytes` in `apps/api/src/account-import.ts`. */
+/** The account import's body limit, `ACCOUNT_IMPORT_LIMITS.bodyBytes` in `apps/api/src/account/account-import.ts`. */
 export const SEALED_ACCOUNT_MAX_BYTES = 4 * 1024 ** 3;
 /** The largest sealed account backup: the zip and room for the header, tags, gzip and entry head. */
 export const SEALED_ACCOUNT_FILE_MAX_BYTES = SEALED_ACCOUNT_MAX_BYTES + 16 * 1024 ** 2;
