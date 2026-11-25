@@ -1,7 +1,9 @@
 name: dozo-sync
 
 # Daily upstream sync: runs dozo/sync.sh and opens (or replaces) a pull request from
-# sync/upstream-<sha> into main. Review and merge the PR yourself; nothing merges automatically.
+# sync/upstream-<sha> into main, with auto-merge on (merge commit, never squash or rebase). The PR
+# merges by itself once the required check on main ("olc, brand leak gate and fork unit tests", from
+# dozo-gate) passes; a failing gate leaves it open for a person. Deploy stays a separate manual step.
 #
 # DOZO_SYNC_TOKEN (repository secret) is required. Upstream changes files under
 # .github/workflows, and GitHub rejects a branch push that modifies workflow files unless the
@@ -124,16 +126,19 @@ jobs:
             sed 's/^\[sync\] //' "$RUNNER_TEMP/sync.log" | grep -E 'range merged|upstream commits|files changed|fork health|make ' || true
             echo '```'
             echo
-            echo "Review, wait for dozo-gate, then merge with a merge commit (not squash, not rebase)."
+            echo "Auto-merge is on: this merges with a merge commit once dozo-gate passes. If the gate fails it stays open for a person; never squash or rebase it."
           } > "$RUNNER_TEMP/body.md"
           title="Sync upstream ($BRANCH)"
           existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --title "$title" --body-file "$RUNNER_TEMP/body.md"
-            exit 0
+          else
+            # Replace older open sync PRs: the newest upstream tip supersedes them.
+            for n in $(gh pr list --label upstream-sync --state open --json number --jq '.[].number'); do
+              gh pr close "$n" --delete-branch --comment "Superseded by $BRANCH."
+            done
+            gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md" --label upstream-sync
           fi
-          # Replace older open sync PRs: the newest upstream tip supersedes them.
-          for n in $(gh pr list --label upstream-sync --state open --json number --jq '.[].number'); do
-            gh pr close "$n" --delete-branch --comment "Superseded by $BRANCH."
-          done
-          gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md" --label upstream-sync
+          # Merge commit only: a squash or rebase would re-apply upstream's commits as new ones. The
+          # required check on main holds the merge until dozo-gate is green on this head.
+          gh pr merge "$BRANCH" --auto --merge
