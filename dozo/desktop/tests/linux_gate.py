@@ -543,11 +543,30 @@ def bridge_gate(binary):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return f"http://127.0.0.1:{server.server_address[1]}"
 
+    # A frame reports what it can see, and then tries to call the app the way the page's own bridge
+    # does: its own `window.ipc` and `__TAURI_INTERNALS__`, the top page's, and the raw channel.
+    # `desktop_settings` answers the state to the page and null to anyone refused.
     frame = """<script>
-let up;
-try { up = typeof top.dozoDesktop; } catch (error) { up = error.name; }
-fetch('/report?' + new URLSearchParams({ who: '{who}', bridge: typeof window.dozoDesktop,
-  internals: typeof window.__TAURI_INTERNALS__, up }));
+(async () => {
+  let up;
+  try { up = typeof top.dozoDesktop; } catch (error) { up = error.name; }
+  const calls = {};
+  const attempt = async (name, run) => {
+    try {
+      const answer = await run();
+      calls[name] = answer === null ? 'null' : typeof answer === 'object' ? 'state' : String(answer);
+    } catch (error) { calls[name] = 'threw:' + error.name; }
+  };
+  const message = JSON.stringify({ cmd: 'desktop_settings', payload: { seen: null } });
+  await attempt('ownIpc', () => window.ipc.postMessage(message));
+  await attempt('ownInvoke', () => window.__TAURI_INTERNALS__.invoke('desktop_settings', { seen: null }));
+  await attempt('topInvoke', () => top.__TAURI_INTERNALS__.invoke('desktop_settings', { seen: null }));
+  await attempt('topIpc', async () => { await top.ipc.postMessage(message); return 'sent'; });
+  await attempt('raw', async () => (await fetch('ipc://localhost/desktop_settings',
+    { method: 'POST', body: JSON.stringify({ seen: null }) })).status);
+  fetch('/report?' + new URLSearchParams({ who: '{who}', bridge: typeof window.dozoDesktop,
+    internals: typeof window.__TAURI_INTERNALS__, up, calls: JSON.stringify(calls) }));
+})();
 </script>"""
     # Site B: a frame inside A's page, and later the server the person changes to.
     other = reporting("b", {
@@ -636,6 +655,17 @@ const step = async (name) => {{
               and other_frame["up"] == ["SecurityError"])
         until("a frame of the server's own has loaded", lambda: got("a", "who", "same"))
         check("and has no bridge of its own", got("a", "who", "same")["bridge"] == ["undefined"])
+        # Real calls from the frames, not only what they can see. A call that got the state back is
+        # the one thing a frame must not get.
+        other_calls = json.loads(other_frame["calls"][0])
+        check(f"a frame from another origin got no answer to desktop_settings ({other_calls})",
+              "state" not in other_calls.values())
+        same_calls = json.loads(got("a", "who", "same")["calls"][0])
+        check(f"a frame of the server's own, through its own channel, got none ({same_calls})",
+              all(same_calls[name] != "state" for name in ("ownIpc", "ownInvoke", "raw")))
+        # Through the top page's channel it is the same page, the same trust: reported as it is.
+        print(f"info: a same-origin frame through the top page's channel: "
+              f"invoke={same_calls['topInvoke']} ipc={same_calls['topIpc']}")
         until("the page changed a switch", lambda: got("a", "step", "after"))
         check("every write answers the same nothing",
               json.loads(got("a", "step", "answers")["answers"][0]) == [None] * 5)
@@ -654,11 +684,24 @@ const step = async (name) => {{
         steps["now"] = "again"
         until("the page asked again", lambda: got("a", "step", "asked-again"))
         stays("a switch just refused is not asked about again", lambda: len(windows()) == 1, seconds=12)
+        main_window = set(windows())
         steps["now"] = "allow"
         until("the page asked for Open at Login", lambda: got("a", "step", "asked-allow"))
         until("the app asks", lambda: len(windows()) == 2)
+        question = (set(windows()) - main_window).pop()
         time.sleep(1.5)  # Turn On answers only after a moment
-        subprocess.run(["xdotool", "key", "Tab", "space"], check=True)
+        # It goes grey when the window loses the focus: a click on it, as the focus comes back,
+        # answers nothing, and the question stays.
+        subprocess.run(["xdotool", "windowfocus", next(iter(main_window))], check=True)
+        time.sleep(0.7)
+        subprocess.run(["xdotool", "mousemove", "--window", question, "360", "143", "click", "1"],
+                       check=True)
+        stays("Turn On does not answer right after the window had lost the focus",
+              lambda: len(windows()) == 2 and "open_at_login=true" not in settings.read_text(),
+              seconds=0.6)
+        time.sleep(1.5)  # focused again for a moment: Turn On answers
+        subprocess.run(["xdotool", "mousemove", "--window", question, "360", "143", "click", "1"],
+                       check=True)
         until("Turn On closes the question", lambda: len(windows()) == 1)
         until("and Open at Login is on and saved", lambda: "open_at_login=true" in settings.read_text())
         steps["now"] = "burst"
