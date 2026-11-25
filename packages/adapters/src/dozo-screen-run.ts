@@ -1,7 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { ApprovalMode } from "@rakazo/core";
 import { storedMessageBlocks } from "@rakazo/db";
-import { screenInputCall } from "./dozo-command-gate.js";
+import { heldAsInput } from "./dozo-command-gate.js";
 import type { RunContext, RunState } from "./run-context.js";
 
 /**
@@ -19,12 +19,13 @@ const offered = new WeakSet<Record<string, unknown>>();
 const granted = new WeakMap<RunState, Promise<boolean>>();
 
 /**
- * The approval mode for one call. In Ask, input on the bot's screen the approval model would judge
- * in Auto review (hold `review`: a run of the member's own message that took in outside content)
- * is planned as in Auto review, so the gate works out whether a model would judge it. Once the
- * member allowed it for this run it then goes to that model, and still asks when the model asks,
- * fails or there is none; until then dozoScreenRunChecker keeps it asking. Runs outside text
- * started, a token's run, other triggers, commands, Never ask and Auto are unchanged.
+ * The approval mode for one call. In Ask, input on the bot's screen or a file written on its
+ * computer (heldAsInput) that the approval model would judge in Auto review (hold `review`: a run
+ * of the member's own message that took in outside content) is planned as in Auto review, so the
+ * gate works out whether a model would judge it. Once the member allowed it for this run it then
+ * goes to that model, and still asks when the model asks, fails or there is none; until then
+ * dozoScreenRunChecker keeps it asking. Runs outside text started, a token's run, other triggers,
+ * commands, Never ask and Auto are unchanged.
  */
 export async function dozoScreenRunMode(
   ctx: RunContext,
@@ -39,7 +40,7 @@ export async function dozoScreenRunMode(
 ): Promise<ApprovalMode> {
   if (mode !== "ask" || call.hold !== "review" || call.approved) return mode;
   if (!ctx.source.ownerStartedRun) return mode;
-  if (!screenInputCall(call.name, call.args)) return mode;
+  if (!heldAsInput(call.name, call.args)) return mode;
   if (!(await screenRunGranted(ctx))) pending.add(call.args);
   return "auto";
 }

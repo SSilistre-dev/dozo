@@ -243,8 +243,9 @@ async function outcome(
   return { result: "call" in result ? "runs" : "refused", reviewed };
 }
 
-const OFFERED = ["allow", "allow_run", "always", "deny"];
-const PLAIN = ["allow", "always", "deny"];
+// A card for input held like a command never offers Always allow, which would pass the tool for good.
+const OFFERED = ["allow", "allow_run", "deny"];
+const PLAIN = ["allow", "deny"];
 
 beforeEach(() => {
   seen.blocks.length = 0;
@@ -314,7 +315,8 @@ describe("typing on the bot's screen in Ask, in the member's own run after outsi
     expect(await outcome({ ...shell, read: true, answered: "allow_run" })).toEqual({
       result: "card",
       reviewed: false,
-      answers: PLAIN,
+      // A command's Always allow saves a rule for those words alone, as before.
+      answers: ["allow", "always", "deny"],
     });
   });
 
@@ -391,4 +393,34 @@ describe("after Allow for this run", () => {
     expect(seen.reviews).toBe(2);
     expect(seen.blocks).toEqual([]);
   });
+});
+
+describe("writing a file on the bot's computer in Ask, after outside content", () => {
+  const WRITE = { name: "write_file", args: { path: ".profile", content: "echo hi\n" } };
+
+  it("asks with a card that offers Allow for this run, and then goes to the model", async () => {
+    expect(await outcome({ ...WRITE, read: true })).toEqual({
+      result: "card",
+      reviewed: false,
+      answers: OFFERED,
+    });
+    expect(await outcome({ ...WRITE, read: true, answered: "allow_run" })).toEqual({
+      result: "runs",
+      reviewed: true,
+    });
+    expect(await outcome({ ...WRITE, read: true, answered: "allow_run", review: "ask" })).toEqual({
+      result: "card",
+      reviewed: true,
+      answers: PLAIN,
+    });
+  });
+
+  it.each<Run>(["webhook", "message", "token", "bot_message", "routine"])(
+    "offers nothing new in a %s run",
+    async (run) => {
+      const result = await outcome({ ...WRITE, run, answered: "allow_run", read: true });
+      expect(result.result).toBe("card");
+      expect(result.answers).not.toContain("allow_run");
+    },
+  );
 });

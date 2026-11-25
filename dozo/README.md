@@ -722,10 +722,9 @@ allow rule covers counts as an action that changes something, as upstream counts
 - "Ask before commands on bot computers" (Settings > Approvals, shown once the Space has such a
   computer; per account, table `dozo_command_settings`) now means: a card, never the approval
   model, outside Never ask. An account without the setting gets the default above.
-- It covers `shell`, and input on the bot's screen below. A script the bot wrote with the file
-  tools is held when the command that runs it is (a script is not a read), but what `write_file`
-  writes (also into a file an allowed command reads) and a command watch's later runs (asked about
-  once, when the routine is made) are not read per command.
+- It covers `shell`, and input on the bot's screen and files the bot writes below. A script the
+  bot wrote is held when the command that runs it is (a script is not a read); a command watch's
+  later runs (asked about once, when the routine is made) are not read per command.
 
 Input on the bot's screen (`screenInputCall` in `packages/adapters/src/dozo-command-gate.ts`):
 `computer_act`'s `type`, `key` and `focus` actions, an action of a kind the server does not know,
@@ -748,23 +747,46 @@ match):
 - The screen is outside content, so in practice a run takes in outside content with its first look:
   in Auto review each `computer_act` call that types or presses a key is then one review call, with
   its cost and wait (a call batches up to 24 actions, so one review covers them), and in Ask one card.
-- Allow for this run (`packages/adapters/src/dozo-screen-run.ts`): in Ask, the card for such input in
-  a run of the member's own message offers it after Allow once, when an approval model is set. It
-  allows that call, and the rest of the run's input on the screen then goes to the approval model as
-  in Auto review: a card again when the model asks, fails or there is none. It is no rule: it is read
-  from the run's own answered cards, so it ends with the run (the next message is a new run), and the
-  run's member alone can give it (anyone else's answer is refused, as Always allow is). A subagent
-  inside the run gets it too: its screen input is the same run's, for the same member. It is offered
-  only when the gate itself counts a model that would judge the rest. It never
-  covers commands, and is not offered in a run outside text started, a token's run, a routine,
-  another bot's run or Auto review; Never ask and block rules are unchanged. The user's own computer
-  (`user_computer_*`) is not affected: there each screen action keeps its own approval.
+- Allow for this run (`packages/adapters/src/dozo-screen-run.ts`): in Ask, the card for such input
+  (or a file write, below) in a run of the member's own message offers it after Allow once, when
+  an approval model is set. It allows that call, and the rest of the run's input on the screen (and
+  its file writes) then goes to the approval model as in Auto review: a card again when the model
+  asks, fails or there is none. It is no rule: it is read from the run's own answered cards, so it
+  ends with the run (the next message is a new run), and the run's member alone can give it (anyone
+  else's answer is refused, as Always allow is). A subagent inside the run gets it too: its screen
+  input is the same run's, for the same member. It is offered only when the gate itself counts a
+  model that would judge the rest. It never covers commands, and is not offered in a run outside
+  text started, a token's run, a routine, another bot's run or Auto review; Never ask and block
+  rules are unchanged. The user's own computer (`user_computer_*`) is not affected: there each
+  screen action keeps its own approval.
 - Not covered: a paste through a right-click menu with the mouse alone (text copied with the mouse
-  from a page into a terminal) is a click, and stays free; so are a double click on a script or a
-  `.desktop` file in a file manager, typing with an on-screen keyboard, and `open_path`, which can open
-  a file with its default program.
+  from a page into a terminal) is a click, and stays free. A double click, an on-screen keyboard and
+  `open_path` stay free because on the bot's computer image none reaches a command: `open_path`
+  opens a file, a script or `.desktop` file too, as a browser tab and hands only an http(s) address
+  to the system opener, and the image has no file manager, desktop-file opener or on-screen
+  keyboard (`infra/sandboxes/supervisor/src/dozo-screen-opens-nothing.test.ts` fails if it gains
+  one).
 - The bot's computer is Linux, so the shell is known there; the reading below stays the one built
   for an unknown shell, which only makes more commands ask.
+
+A file the bot writes on its computer (`write_file`, `heldAsInput` in
+`packages/adapters/src/dozo-command-gate.ts`) can run later with no check of its own: commands and
+screen looks start a login shell that reads the profile, an allowed command (`npm test`) runs the
+project's scripts, and a git hook, a git setting or a scheduled entry runs too. Which files a
+program reads cannot be told from the path, so no list of paths would hold: every write is held
+like input on the screen, by the same table. The approval model sees the whole file; a call too
+long for it to see whole (over upstream's 8,000 characters of arguments) asks a person instead.
+
+- A plain file the bot then runs (`sh notes.sh`) is still held at the command. Allow for this run
+  covers writes as it covers screen input. `render_plot` writes a picture, not text a program
+  runs, and a browser download lands in Downloads; both stay free.
+- A card for input on the screen or a file write offers no Always allow: that rule would pass the
+  tool for good in every run, outside content or not. A tool rule set in Settings still applies.
+- Cost: reading a file or getting a command's output already counts as outside content, so in a
+  typical coding task every write after the first read is held. In Auto review that is one
+  approval-model call per write, with its cost and wait. In Ask it is a card, and after Allow for
+  this run one approval-model call per write. A file too long to review is a card in both. The
+  owner's clean run writes as before.
 
 How a command is read, and what that does not cover:
 
