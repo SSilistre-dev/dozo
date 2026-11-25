@@ -54,9 +54,14 @@ without the `upstream` remote and the branch. For CI, origin also needs `upstrea
    only a manual dispatch with `fast` off runs the full `make qa` on the runner. It then force-pushes the sync branch, fast-forwards
    `upstream-main` on origin (also when `main` already had upstream's tip and there is no sync
    branch: a separate step pushes it, without `--force`), creates the label `upstream-sync` if missing, closes older open PRs with
-   that label (deleting their branches) and opens or updates the PR. If `sync.sh` fails, nothing is
+   that label (deleting their branches) and opens or updates the PR. It then turns on auto-merge for
+   that PR (`gh pr merge --auto --merge`, a merge commit, never squash or rebase): the PR merges by
+   itself once the required check on `main`, "olc, brand leak gate and fork unit tests" from
+   `dozo-gate`, passes. A failing gate leaves the PR open for a person (see When it fails). Deploy
+   stays a separate manual step: nothing is deployed by the merge. If `sync.sh` fails, nothing is
    published and the job fails. It needs:
    - the secret `DOZO_SYNC_TOKEN` (workflows scope; upstream changes `.github/workflows`);
+   - auto-merge allowed in the repository settings, and the check above required on `main`;
    - `upstream-main` on origin (see Prerequisites);
    - optionally the repository variable `DOZO_UPSTREAM_URL`, the upstream clone URL (default
      `https://github.com/elie222/rakazo.git`).
