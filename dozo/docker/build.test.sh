@@ -119,5 +119,32 @@ grep -q '^cccccccccccc .*unknown ' <<<"$out" || bad "a tree without an owner not
 grep -q -- ':/cache:ro' "$TMP/docker.args" || bad "unit-trees.sh must mount the volume read-only: $(cat "$TMP/docker.args")"
 PATH="$TMP/bin:$PATH" "$HERE/unit-trees.sh" wipe >/dev/null 2>&1; [ "$?" = 64 ] || bad "unit-trees.sh accepted an unknown command"
 
-[ "$FAILED" = 0 ] && echo "[build.test] ok: stage overlay, dc env cleaning, lock owner start time, fork test count, unit tree owners"
+# ---- checks: git comes with the image, built once, and the run itself installs nothing ----
+CK="$TMP/checks-stage"; mkdir -p "$CK/src/scripts/checks" "$TMP/ckbin"; : > "$CK/stage.complete"
+cat > "$TMP/ckbin/docker" <<FAKE
+#!/usr/bin/env bash
+case "\$1 \$2" in
+  "image inspect") case "\$3" in dozo-checks:*) [ -f "$TMP/ck.built" ] ;; *) true ;; esac; exit \$? ;;
+esac
+case "\$1" in
+  build) echo x >> "$TMP/ck.builds"; cat > "$TMP/ck.dockerfile"; [ -z "\${FAKE_BUILD_FAIL:-}" ] || exit 1; : > "$TMP/ck.built" ;;
+  run) printf '%s\\n' "\$*" >> "$TMP/ck.runs" ;;
+esac
+FAKE
+chmod +x "$TMP/ckbin/docker"
+ck() { (cd "$REPO" && PATH="$TMP/ckbin:$PATH" DOZO_STAGE_DIR="$CK" DOZO_CHECKS_RETRY_PAUSE=0 "$HERE/gate.sh" checks 2>&1); }
+out="$(FAKE_BUILD_FAIL=1 ck)"; rc=$?
+{ [ "$rc" = 2 ] && grep -q 'checks: cannot build dozo-checks:' <<<"$out" && [ "$(wc -l < "$TMP/ck.builds")" = 3 ] && [ ! -f "$TMP/ck.runs" ]; } \
+  || bad "an image that cannot be built did not fail the checks step after three tries, before any run (exit $rc): $(printf '%s' "$out" | tail -3)"
+out="$(ck)"; rc=$?
+[ "$rc" = 0 ] || bad "the checks step failed with the image buildable (exit $rc): $(printf '%s' "$out" | tail -3)"
+grep -q '^FROM node:' "$TMP/ck.dockerfile" && grep -q 'install .* git' "$TMP/ck.dockerfile" \
+  || bad "the checks image is not the Node image with git: $(cat "$TMP/ck.dockerfile")"
+[ "$(grep -c '^run ' "$TMP/ck.runs")" = 1 ] && grep -q ' dozo-checks:[0-9]* sh -c ' "$TMP/ck.runs" \
+  || bad "the checks run does not use the checks image: $(cat "$TMP/ck.runs")"
+! grep -q 'apt-get\|apt ' "$TMP/ck.runs" || bad "the checks run installs packages (needs the network every time)"
+out="$(ck)"; [ "$(wc -l < "$TMP/ck.builds")" = 4 ] || bad "a checks image that exists was built again"
+[ "$(grep -c '^run ' "$TMP/ck.runs")" = 2 ] || bad "the second checks run did not run"
+
+[ "$FAILED" = 0 ] && echo "[build.test] ok: stage overlay, dc env cleaning, lock owner start time, fork test count, unit tree owners, checks image"
 exit "$FAILED"
