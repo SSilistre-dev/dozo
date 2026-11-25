@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
-import type { DozoUsageGroup, DozoUsageGrouping, UsageSummary } from "@rakazo/contracts";
+import type { DozoUsageGroup, DozoUsageGrouping } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -47,10 +47,8 @@ vi.mock("../lib/dozo-error-text", () => ({ toastError: api.toastError }));
 vi.mock("./IconTooltip", () => ({
   IconTooltip: ({ children }: { children: ReactElement }) => children,
 }));
-vi.mock("../pages/settings/AccountSettingsOverlay", () => ({
-  UsageSettingsPanel: ({ usage }: { usage?: UsageSummary | null }) => (
-    <div data-testid="upstream-usage">{usage?.models?.length ?? "none"}</div>
-  ),
+vi.mock("../pages/settings/UsageSettingsPanel", () => ({
+  UsageSettingsPanel: () => <div data-testid="upstream-usage" />,
 }));
 
 import { DozoUsageSettingsPanel } from "./dozo-usage-breakdown";
@@ -69,26 +67,6 @@ function group(more: Partial<DozoUsageGroup>): DozoUsageGroup {
     ...more,
   };
 }
-
-const summary: UsageSummary = {
-  inputTokens: 1200,
-  outputTokens: 300,
-  totalTokens: 1500,
-  costUsd: 0.42,
-  modelCalls: 3,
-  runs: 1,
-  models: [
-    {
-      provider: "openai",
-      model: "small",
-      inputTokens: 1200,
-      outputTokens: 300,
-      totalTokens: 1500,
-      costUsd: 0.42,
-      modelCalls: 3,
-    },
-  ],
-};
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -153,21 +131,14 @@ function pick(label: string) {
   act(() => item.click());
 }
 
-it("keeps upstream's totals, drops its per-model table and groups by model first", async () => {
-  await show(<DozoUsageSettingsPanel usage={summary} />);
-  expect(host.querySelector("[data-testid=upstream-usage]")?.textContent).toBe("0");
+it("shows upstream's panel and groups by model first", async () => {
+  await show(<DozoUsageSettingsPanel />);
+  expect(host.querySelector("[data-testid=upstream-usage]")).not.toBeNull();
   await vi.waitFor(() => expect(rows()).toEqual([["smallopenai", "3", "1,200", "300", "$0.42"]]));
 });
 
-it("shows nothing more before there is usage", async () => {
-  await show(<DozoUsageSettingsPanel usage={{ ...summary, models: [] }} />);
-  expect(host.querySelector("[data-testid=usage-breakdown]")).toBeNull();
-  await show(<DozoUsageSettingsPanel usage={null} />);
-  expect(host.querySelector("[data-testid=upstream-usage]")?.textContent).toBe("none");
-});
-
 it("groups by bot, naming deleted bots and spend without one", async () => {
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   pick("Bot");
   await vi.waitFor(() => expect(host.querySelector("thead")?.textContent).toContain("Bot"));
   await vi.waitFor(() =>
@@ -180,7 +151,7 @@ it("groups by bot, naming deleted bots and spend without one", async () => {
 });
 
 it("groups by routine, with each routine's bot, and what it cannot tell", async () => {
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   pick("Routine");
   await vi.waitFor(() =>
     expect(rows().map((row) => row[0])).toEqual(["Morning digestChef", "Unknown", "No routine"]),
@@ -191,7 +162,7 @@ const buttons = () =>
   [...host.querySelectorAll("[data-testid=usage-breakdown] button")].map((b) => b.textContent);
 
 it("groups by day, newest first, with a bar scaled to the costliest day", async () => {
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   pick("Day");
   await vi.waitFor(() =>
     expect(rows().map((row) => [row[0], row[4]])).toEqual([
@@ -206,7 +177,7 @@ it("groups by day, newest first, with a bar scaled to the costliest day", async 
 it("draws no bars over the previous grouping's rows while the days load", async () => {
   const days = deferred();
   api.hold = days.promise;
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   await vi.waitFor(() => expect(rows()).toHaveLength(1));
   pick("Day");
   // Still the model rows, kept while the days arrive: no bar yet.
@@ -218,13 +189,13 @@ it("draws no bars over the previous grouping's rows while the days load", async 
 });
 
 it("offers person only when the server says the caller may, and lists everyone", async () => {
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   await vi.waitFor(() => expect(rows()).toHaveLength(1));
   expect(buttons()).not.toContain("Person");
   act(() => root.unmount());
   root = createRoot(host);
   api.person = true;
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   await vi.waitFor(() => expect(buttons()).toContain("Person"));
   pick("Person");
   await vi.waitFor(() =>
@@ -237,7 +208,7 @@ it("offers person only when the server says the caller may, and lists everyone",
 });
 
 it("downloads the grouping shown as the server's CSV", async () => {
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   pick("Routine");
   await act(async () =>
     (host.querySelector("[aria-label='Download CSV']") as HTMLButtonElement).click(),
@@ -254,7 +225,7 @@ it("names the CSV with the person's own day", async () => {
   process.env.TZ = "Europe/Istanbul";
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T21:30:00Z") });
   try {
-    await show(<DozoUsageSettingsPanel usage={summary} />);
+    await show(<DozoUsageSettingsPanel />);
     await act(async () =>
       (host.querySelector("[aria-label='Download CSV']") as HTMLButtonElement).click(),
     );
@@ -270,7 +241,7 @@ it("names the CSV with the person's own day", async () => {
 it("says so when the download fails", async () => {
   const failure = new Error("offline");
   api.csv.mockRejectedValueOnce(failure);
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   await act(async () =>
     (host.querySelector("[aria-label='Download CSV']") as HTMLButtonElement).click(),
   );
@@ -281,7 +252,7 @@ it("says so when the download fails", async () => {
 it("speaks Turkish with the catalog the build ships", async () => {
   i18n.load("tr", tr as Messages);
   i18n.activate("tr");
-  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await show(<DozoUsageSettingsPanel />);
   expect(host.querySelector("[aria-label=Grupla]")).not.toBeNull();
   pick("Rutin");
   await vi.waitFor(() =>

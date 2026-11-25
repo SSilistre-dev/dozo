@@ -1,7 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { DozoAdminPlan, DozoAdminUser } from "@rakazo/contracts";
 import { BYOK_TIERS, grantEndsAt, planEndDays } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Button, Input, OptionSelect } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { toastError } from "../lib/dozo-error-text";
@@ -104,17 +104,18 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
           }
         >
           <div className="flex flex-wrap items-center gap-2">
-            <NativeSelect
+            <OptionSelect<Choice>
               aria-label={t`Plan`}
               value={choice}
-              onChange={(event) => setChoice(event.target.value as Choice)}
-            >
-              <NativeSelectOption value="pro">{BYOK_TIERS.pro.name}</NativeSelectOption>
-              <NativeSelectOption value="max">{BYOK_TIERS.max.name}</NativeSelectOption>
-              {grantedUntil ? (
-                <NativeSelectOption value="none">{t`Remove granted plan`}</NativeSelectOption>
-              ) : null}
-            </NativeSelect>
+              options={[
+                { value: "pro", label: BYOK_TIERS.pro.name },
+                { value: "max", label: BYOK_TIERS.max.name },
+                ...(grantedUntil
+                  ? [{ value: "none" as const, label: t`Remove granted plan` }]
+                  : []),
+              ]}
+              onValueChange={(value) => setChoice(value)}
+            />
             {granting ? (
               <Input
                 type="date"

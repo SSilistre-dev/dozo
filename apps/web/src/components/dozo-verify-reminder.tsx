@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
+import { authErrorText } from "@rakazo/i18n/user-error";
 import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
@@ -8,7 +9,6 @@ import { authClient } from "../lib/auth/auth";
 import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
 import { toastError } from "../lib/dozo-error-text";
 import { useSave } from "../lib/query/query";
-import { authErrorText } from "../../../../packages/i18n/src/user-error";
 
 const DISMISSED_KEY = "dozo:verify-reminder-dismissed";
 

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { toastError } from "../../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
@@ -33,20 +33,17 @@ export function DozoRoutineChat({
   return (
     <label htmlFor={`${fieldId}-chat`} className="mt-5 block text-body text-muted-foreground">
       <Trans>Chat</Trans>
-      <NativeSelect
+      <OptionSelect
         id={`${fieldId}-chat`}
         className="mt-2 w-full"
         value={chatId ?? ""}
         disabled={save.pending}
-        onChange={(event) => save.run(event.target.value || null)}
-      >
-        <NativeSelectOption value="">{bot.name}</NativeSelectOption>
-        {open.map((chat) => (
-          <NativeSelectOption key={chat.id} value={chat.id}>
-            {chat.name}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+        options={[
+          { value: "", label: bot.name },
+          ...open.map((chat) => ({ value: chat.id, label: chat.name })),
+        ]}
+        onValueChange={(value) => save.run(value || null)}
+      />
     </label>
   );
 }

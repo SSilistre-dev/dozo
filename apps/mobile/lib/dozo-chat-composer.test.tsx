@@ -238,7 +238,7 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   botId: "bot-1",
   onCall: false,
   sending: false,
-  styles: { circleButton: {}, composerFill: {} },
+  styles: { composerFill: {} },
   attachActions: [{ id: "library", title: "Photo library" }],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),

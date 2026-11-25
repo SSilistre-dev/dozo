@@ -5,6 +5,7 @@ import {
   SEALED_MIN_PASSWORD_LENGTH,
   SEALED_OPEN_MIN_PASSWORD_LENGTH,
 } from "@rakazo/core/dozo-sealed-file";
+import { errorText } from "@rakazo/i18n/user-error";
 import {
   Button,
   Dialog,
@@ -20,9 +21,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { queryClient, useSave } from "../lib/query/query";
 import { recheckSessionOnUnauthorized } from "../lib/query/rpc";
-import { errorText } from "../../../../packages/i18n/src/user-error";
-import { SuccessPop } from "./ai/primitives";
 import { useIdentityConfirmation } from "./account/ConfirmIdentityDialog";
+import { SuccessPop } from "./ai/primitives";
 import { SettingsRow } from "./settings/SettingsRows";
 
 /**

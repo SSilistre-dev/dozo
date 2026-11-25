@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoCommandRule } from "@rakazo/contracts";
 import { commandWordsLabel, prefixRuleAllowed } from "@rakazo/core";
-import { Button, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Button, OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { toastError } from "../lib/dozo-error-text";
@@ -61,23 +61,20 @@ export function DozoCommandRules() {
             }
             control={
               <>
-                <NativeSelect
+                <OptionSelect<Effect>
                   aria-label={t`What ${label} does`}
                   value={effect}
                   disabled={update.pending}
-                  onChange={(event) =>
-                    update.run({ id: rule.id, effect: event.target.value as Effect })
-                  }
+                  options={[
+                    { value: "allow", label: t`Allow` },
+                    ...(prefixRuleAllowed(rule.words, rule.cwd) || effect === "allow_prefix"
+                      ? [{ value: "allow_prefix" as const, label: t`Allow with arguments` }]
+                      : []),
+                    { value: "block", label: t`Block` },
+                  ]}
+                  onValueChange={(value) => update.run({ id: rule.id, effect: value })}
                   className="w-48"
-                >
-                  <NativeSelectOption value="allow">{t`Allow`}</NativeSelectOption>
-                  {prefixRuleAllowed(rule.words, rule.cwd) || effect === "allow_prefix" ? (
-                    <NativeSelectOption value="allow_prefix">
-                      {t`Allow with arguments`}
-                    </NativeSelectOption>
-                  ) : null}
-                  <NativeSelectOption value="block">{t`Block`}</NativeSelectOption>
-                </NativeSelect>
+                />
                 <Button
                   variant="ghost"
                   size="icon-sm"

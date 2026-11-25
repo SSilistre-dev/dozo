@@ -4,8 +4,8 @@ import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { SettingsRow } from "../components/settings/SettingsRows";
+import { errorText } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query/query";
-import { errorText } from "../../../../packages/i18n/src/user-error";
 import { DozoOrganizationLogoTile } from "./shell/dozo-organization-mark";
 
 /** The pictures the server can use; it checks the bytes and draws the stored logo itself. */

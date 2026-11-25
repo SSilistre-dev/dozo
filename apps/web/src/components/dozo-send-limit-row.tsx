@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { DOZO_DAILY_SEND_CHOICES } from "@rakazo/contracts";
-import { Label, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Label, OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { toastError } from "../lib/dozo-error-text";
@@ -37,19 +37,14 @@ export function DozoSendLimitRow() {
           </Label>
         }
         control={
-          <NativeSelect
+          <OptionSelect
             id={selectId}
             value={value === undefined ? "" : String(value)}
             disabled={value === undefined || save.pending}
-            onChange={(event) => save.run(Number(event.target.value))}
+            options={choices.map((choice) => ({ value: String(choice), label: String(choice) }))}
+            onValueChange={(next) => save.run(Number(next))}
             className="w-24"
-          >
-            {choices.map((choice) => (
-              <NativeSelectOption key={choice} value={String(choice)}>
-                {String(choice)}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+          />
         }
       />
     </div>

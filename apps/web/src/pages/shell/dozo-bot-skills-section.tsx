@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { planHasNoComputer } from "@rakazo/contracts";
+import { errorText } from "@rakazo/i18n/user-error";
 import { Button, Label, Popover, PopoverContent, PopoverTrigger, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -10,7 +11,6 @@ import { DeleteSkill } from "../../components/teach/dozo-delete-skill";
 import { enqueueTeachComputerInput } from "../../components/teach/teach-computer-input-chain";
 import { runsOnUserMachine } from "../../lib/computers/computer-sandbox";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { errorText } from "../../../../../packages/i18n/src/user-error";
 import { PanelSection } from "./bots/bot-settings-sections";
 import { ComputerPanel } from "./computers/computer-panel";
 import { SavedValuesReview } from "./dozo-saved-values-review";

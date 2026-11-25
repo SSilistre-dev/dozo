@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { authErrorText } from "@rakazo/i18n/user-error";
 import { Button, buttonVariants, Input, Label } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -7,8 +8,11 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react
 import { authClient } from "../lib/auth/auth";
 import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
 import { useSave } from "../lib/query/query";
-import { authErrorText } from "../../../../packages/i18n/src/user-error";
-import { AuthFrame, submitClass, PasswordResetPage as UpstreamPasswordResetPage } from "./auth/Auth";
+import {
+  AuthFrame,
+  submitClass,
+  PasswordResetPage as UpstreamPasswordResetPage,
+} from "./auth/Auth";
 
 /**
  * Where an emailed link lands once the server has checked it. The verification link comes back

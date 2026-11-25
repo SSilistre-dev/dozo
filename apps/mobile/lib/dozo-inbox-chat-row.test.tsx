@@ -34,7 +34,7 @@ vi.mock("./appearance/ripple", () => ({ androidRipple: () => undefined }));
 vi.mock("../components/inbox/inbox-styles", () => ({
   INBOX_ROW: { padding: 16, gap: 12, avatarSize: 62 },
   COMPACT_INBOX_ROW: { padding: 12, gap: 10 },
-  createHomeStyles: () => ({ rowPressed: "pressed", unreadDot: "dot" }),
+  createInboxStyles: () => ({ rowPressed: "pressed", unreadDot: "dot" }),
 }));
 vi.mock("../components/ui/drag-safe-pressable", () => ({
   DragSafePressable: (props: {

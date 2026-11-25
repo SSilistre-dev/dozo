@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoLocalModelServer, SettingsScope } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { errorText } from "@rakazo/i18n/user-error";
 import {
   Button,
   Disclosure,
@@ -22,7 +23,6 @@ import {
   rankLocalModels,
 } from "../lib/dozo-local-model-fit";
 import { useSave, useSpaceQueries } from "../lib/query/query";
-import { errorText } from "../../../../packages/i18n/src/user-error";
 import { connectionKey, LocalModelRows } from "./dozo-local-model-rows";
 
 const MAX_ROWS = 3;

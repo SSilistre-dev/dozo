@@ -15,8 +15,7 @@ import {
 import {
   Button,
   Label,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Switch,
   ToggleGroup,
   ToggleGroupItem,
@@ -92,19 +91,18 @@ export function DozoQuietHoursRow() {
       ? HOUR_MINUTES
       : [...HOUR_MINUTES, range[side]].sort((a, b) => a - b);
     return (
-      <NativeSelect
+      <OptionSelect
         aria-label={name}
         value={String(range[side])}
         disabled={save.pending}
-        onChange={(event) => change(index, { ...range, [side]: Number(event.target.value) })}
+        options={options.map((minute) => ({
+          value: String(minute),
+          label: label(minute),
+          disabled: minute === other,
+        }))}
+        onValueChange={(value) => change(index, { ...range, [side]: Number(value) })}
         className="w-28"
-      >
-        {options.map((minute) => (
-          <NativeSelectOption key={minute} value={String(minute)} disabled={minute === other}>
-            {label(minute)}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+      />
     );
   };
 
@@ -124,25 +122,24 @@ export function DozoQuietHoursRow() {
             –
           </span>
           {edge(range, index, "endMinute", t`Quiet hours end`)}
-          <NativeSelect
+          <OptionSelect
             aria-label={t`Days`}
             value={single ? CUSTOM : preset}
             disabled={save.pending}
-            onChange={(event) => {
-              const next = event.target.value;
+            options={[
+              ...DOZO_QUIET_DAY_PRESETS.map((option) => ({
+                value: option,
+                label: presetLabel[option],
+              })),
+              { value: CUSTOM, label: t`Custom` },
+            ]}
+            onValueChange={(next) => {
               if (next === CUSTOM) return setOpenDays(index);
               setOpenDays(null);
               change(index, { ...range, days: DOZO_QUIET_DAYS[next as DozoQuietDayPreset] });
             }}
             className="w-32"
-          >
-            {DOZO_QUIET_DAY_PRESETS.map((option) => (
-              <NativeSelectOption key={option} value={option}>
-                {presetLabel[option]}
-              </NativeSelectOption>
-            ))}
-            <NativeSelectOption value={CUSTOM}>{t`Custom`}</NativeSelectOption>
-          </NativeSelect>
+          />
           {ranges.length > 1 ? (
             <Button
               variant="ghost"

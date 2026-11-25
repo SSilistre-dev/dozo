@@ -54,8 +54,33 @@ vi.mock("@rakazo/ui-web", () => {
         {children}
       </label>
     ),
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect: ({
+      options,
+      value,
+      onValueChange,
+      size: _size,
+      "data-testid": testId,
+      ...props
+    }: {
+      options: { value: string; label: string; disabled?: boolean }[];
+      value: string | null;
+      onValueChange: (value: string) => void;
+      size?: string;
+      "data-testid"?: string;
+    } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+      <select
+        data-testid={testId}
+        {...props}
+        value={value ?? ""}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
     Switch: ({
       checked,
       onCheckedChange,

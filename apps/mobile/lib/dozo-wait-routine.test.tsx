@@ -59,6 +59,7 @@ const wait = (extra: Partial<Routine> = {}): Routine => ({
   timezone: "UTC",
   active: true,
   notify: true,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
@@ -71,6 +72,7 @@ const wait = (extra: Partial<Routine> = {}): Routine => ({
   lastRunAt: null,
   // The deadline, which the wait's next check is moved onto.
   nextRunAt: "2026-11-21T12:00:00.000Z",
+  endsAt: null,
   createdAt: "2026-11-21T10:00:00.000Z",
   ...extra,
 });

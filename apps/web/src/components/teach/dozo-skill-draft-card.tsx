@@ -1,12 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
-import { formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
+import { errorCode, formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
+import { errorText } from "@rakazo/i18n/user-error";
 import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { errorCode, errorText } from "../../../../../packages/i18n/src/user-error";
 import { BuiCard } from "../ai/primitives";
 import { DeleteSkill } from "./dozo-delete-skill";
 import type { TeachValueChoice } from "./dozo-teach-value-row";

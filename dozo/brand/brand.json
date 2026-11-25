@@ -8150,34 +8150,6 @@
       "reason": "chat math: dollars that are prices, not math delimiters, stay text; same length, so parser offsets still match the source"
     },
     {
-      "file": "packages/chat-ui/package.json",
-      "find": "    \"./hooks\": \"./src/hooks.ts\",\n    \"./mermaid\"",
-      "replace": "    \"./hooks\": \"./src/hooks.ts\",\n    \"./math\": \"./src/dozo-math-options.ts\",\n    \"./mermaid\"",
-      "requires": [
-        "packages/chat-ui/src/dozo-math-options.ts"
-      ],
-      "reason": "chat math on mobile: the app reads the shared KaTeX options and MathML writer from a light entry, without loading the Markdown renderer"
-    },
-    {
-      "file": "apps/mobile/app/_layout.tsx",
-      "find": "import { IncomingCall } from \"../components/calls/IncomingCall\";\nimport { VoicePlayerBar }",
-      "replace": "import { IncomingCall } from \"../components/calls/IncomingCall\";\nimport { DozoMarkdownProviders } from \"../components/dozo-markdown-providers\";\nimport { VoicePlayerBar }",
-      "requires": [
-        "apps/mobile/components/dozo-markdown-providers.tsx",
-        "apps/mobile/components/dozo-math-view.tsx",
-        "apps/mobile/components/dozo-table-tools.tsx",
-        "apps/mobile/lib/dozo-math-webview.ts",
-        "apps/mobile/lib/dozo-table-share.ts"
-      ],
-      "reason": "chat math and tables on mobile: import of the provider that gives chat Markdown its formula drawing, table controls and table labels"
-    },
-    {
-      "file": "apps/mobile/app/_layout.tsx",
-      "find": "<OpenPageContext.Provider value={openPage}>{children}</OpenPageContext.Provider>",
-      "replace": "<OpenPageContext.Provider value={openPage}>\n                <DozoMarkdownProviders>{children}</DozoMarkdownProviders>\n              </OpenPageContext.Provider>",
-      "reason": "chat math and tables on mobile: wraps the app in the formula, table-control and table-label providers"
-    },
-    {
       "file": "packages/db/src/index.ts",
       "find": "export * from \"./account/account-status.js\";\nexport * from \"./account/audit-events.js\";",
       "replace": "export * from \"./account/account-status.js\";\nexport * from \"./dozo-access-tokens.js\";\nexport * from \"./account/audit-events.js\";",
@@ -11745,7 +11717,7 @@
     {
       "file": "apps/mobile/app/index.tsx",
       "find": "import type { InboxItem, InboxSpace, PinnedChat } from \"../lib/inbox/inbox-spaces\";",
-      "replace": "import type { DozoInboxItem as InboxItem } from \"../lib/dozo-inbox-chats\";\nimport {\n  dozoInboxItemKey as inboxItemKey,\n  dozoInboxSignal as inboxSignal,\n  useDozoInboxItems,\n} from \"../lib/dozo-inbox-chats\";\nimport type { InboxSpace, PinnedChat } from \"../lib/inbox/inbox-spaces\";",
+      "replace": "import type { DozoInboxItem as InboxItem } from \"../lib/dozo-inbox-chats\";\nimport {\n  dozoInboxItemKey as inboxItemKey,\n  dozoInboxSignal as inboxSignal,\n  dozoUpstreamItems,\n  useDozoInboxItems,\n} from \"../lib/dozo-inbox-chats\";\nimport type { InboxSpace, PinnedChat } from \"../lib/inbox/inbox-spaces\";",
       "requires": [
         "apps/mobile/lib/dozo-inbox-chats.ts"
       ],
@@ -11777,6 +11749,15 @@
         "apps/mobile/lib/dozo-inbox-chats.ts"
       ],
       "reason": "inbox chats on mobile: the rows under each bot; the badge and the bot rows below still count main chats only"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "void preloadChats(inboxChats(listData));",
+      "replace": "void preloadChats(inboxChats(dozoUpstreamItems(listData)));",
+      "requires": [
+        "apps/mobile/lib/dozo-inbox-chats.ts"
+      ],
+      "reason": "inbox chats on mobile: saved copies are made for the bots' and groups' main chats only (upstream's rows); an extra chat opens from the network"
     },
     {
       "file": "apps/mobile/app/index.tsx",
@@ -13147,7 +13128,7 @@
     {
       "file": "apps/web/src/pages/shell/bots/bot-panel.tsx",
       "find": "              <DozoBotBackups botId={bot.id} spaceId={bot.spaceId} />\n",
-      "replace": "              <DozoBotBackups\n                botId={bot.id}\n                spaceId={bot.spaceId}\n                model={\n                  effectiveProvider && effectiveModelId\n                    ? { provider: effectiveProvider, modelId: effectiveModelId }\n                    : null\n                }\n              />\n",
+      "replace": "              <DozoBotBackups\n                botId={bot.id}\n                spaceId={bot.spaceId}\n                model={\n                  selectedModel ??\n                  (me?.defaultProvider && me.defaultModel\n                    ? { provider: me.defaultProvider, modelId: me.defaultModel }\n                    : null)\n                }\n              />\n",
       "reason": "model rests: the bot's model, its own or the main one, says when it opens again while it rests, under its row"
     },
     {

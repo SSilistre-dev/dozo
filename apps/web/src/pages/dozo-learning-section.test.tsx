@@ -30,6 +30,10 @@ vi.mock("../lib/dozo-error-text", () => ({
   toastError: api.toastError,
 }));
 vi.mock("@lingui/react/macro", () => ({
+  useLingui: () => ({
+    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
+  }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
@@ -45,10 +49,33 @@ vi.mock("@rakazo/ui-web", () => ({
     variant: _variant,
     ...props
   }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
-  NativeSelect: ({ size: _size, ...props }: ComponentProps<"select"> & { size?: string }) => (
-    <select {...props} />
+  OptionSelect: ({
+    options,
+    value,
+    onValueChange,
+    size: _size,
+    "data-testid": testId,
+    ...props
+  }: {
+    options: { value: string; label: string; disabled?: boolean }[];
+    value: string | null;
+    onValueChange: (value: string) => void;
+    size?: string;
+    "data-testid"?: string;
+  } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+    <select
+      data-testid={testId}
+      {...props}
+      value={value ?? ""}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   ),
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
 }));
 
 import { QueryUserProvider } from "../lib/query/query";

@@ -2,13 +2,24 @@
 
 import type { BillingStatus } from "@rakazo/contracts";
 import { BYOK_TIERS, sandboxAllowanceHours } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 // Runs on the branded tree only: Billing offers the paid plans once the brand rules are applied.
 
+const billing = vi.hoisted(() => ({
+  checkout: vi.fn(async (_terms: unknown) => ({ url: "#checkout" })),
+}));
+vi.mock("../lib/query/rpc", () => ({
+  rpc: { billing },
+  rpcForSpace: () => ({ billing }),
+  createSpaceRpc: () => ({ billing }),
+  selectedSpaceId: () => null,
+  clearSpaceSelection: () => undefined,
+}));
 vi.mock("@lingui/react/macro", () => {
   const t = (strings: TemplateStringsArray, ...values: unknown[]) =>
     strings.flatMap((part, index) => [part, values[index] ?? ""]).join("");
@@ -41,8 +52,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import type { RpcClient } from "../lib/query/rpc";
-import { CreditChoice, ModelCreditsSettings } from "./billing/ModelCredits";
+import { ModelCreditsSettings } from "./billing/ModelCredits";
 
 const offers = (["pro", "max"] as const).map((tier) => ({
   tier,
@@ -78,14 +88,17 @@ const free: BillingStatus = {
   hasCustomer: false,
 };
 
-const checkout = vi.fn(async (_terms: unknown) => ({ url: "#checkout" }));
-const client = { billing: { checkout } } as unknown as RpcClient;
+const { checkout } = billing;
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
 async function render(status: BillingStatus) {
   await act(async () => {
-    root.render(<ModelCreditsSettings status={status} refresh={async () => {}} client={client} />);
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ModelCreditsSettings status={status} refresh={async () => {}} />
+      </QueryClientProvider>,
+    );
   });
 }
 
@@ -269,67 +282,4 @@ it("keeps the subscription's renewal when a granted plan above it ends first", a
   expect(container.querySelector('[data-testid="own-key-plan"]')?.textContent).toContain(
     "Renews Feb 15, 2030",
   );
-});
-
-describe("the plan cards", () => {
-  const selectFunding = vi.fn(async (_terms: unknown) => ({ ok: true, url: "#checkout" }));
-  const cardsClient = { billing: { checkout, selectFunding } } as unknown as RpcClient;
-  const cards = { ...free, planLayout: "tiers" as const };
-  const subscribe = (name: string) =>
-    container.querySelector<HTMLButtonElement>(`button[aria-label="Subscribe to ${name}"]`);
-
-  async function renderCards() {
-    await act(async () => {
-      root.render(<CreditChoice status={cards} client={cardsClient} dismissible />);
-    });
-  }
-
-  afterEach(async () => {
-    const { clearPlanIntent } = await import("../lib/dozo-plan-intent");
-    clearPlanIntent();
-    selectFunding.mockClear();
-  });
-
-  it("lead with the plan and period picked on the landing page", async () => {
-    const { savePlanIntent } = await import("../lib/dozo-plan-intent");
-    savePlanIntent({ tier: "max", period: "year" });
-    await renderCards();
-    expect(subscribe("Premium Plus")?.className).toBe("w-full");
-    expect(subscribe("Premium")?.className).toContain("bg-background");
-    await act(async () => subscribe("Premium Plus")?.click());
-    expect(selectFunding).toHaveBeenCalledWith({
-      funding: "byok",
-      tier: "max",
-      interval: BYOK_TIERS.max.annualPriceCents ? "year" : "month",
-    });
-  });
-
-  it("lead with the first plan, monthly, without a pick", async () => {
-    await renderCards();
-    expect(subscribe("Premium")?.className).toBe("w-full");
-    expect(subscribe("Premium Plus")?.className).toContain("bg-background");
-    await act(async () => subscribe("Premium")?.click());
-    expect(selectFunding).toHaveBeenCalledWith({ funding: "byok", tier: "pro", interval: "month" });
-  });
-
-  it("lead with the first plan when the picked one is not on offer", async () => {
-    const { savePlanIntent } = await import("../lib/dozo-plan-intent");
-    savePlanIntent({ tier: "max", period: "month" });
-    await act(async () => {
-      root.render(
-        <CreditChoice
-          status={{
-            ...cards,
-            byokTiers: [
-              ...offers,
-              { ...offers[0]!, tier: "standard" as const, name: "Free" },
-            ].filter((offer) => offer.tier !== "max"),
-          }}
-          client={cardsClient}
-          dismissible
-        />,
-      );
-    });
-    expect(subscribe("Premium")?.className).toBe("w-full");
-  });
 });

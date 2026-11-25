@@ -1,10 +1,10 @@
 import type { DozoBotChat, SpaceBot } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
 import { useMemo } from "react";
+import type { MobileBot } from "./api/mobile-types";
 import { useDozoSpaceChats } from "./dozo-bot-chats";
 import type { InboxItem } from "./inbox/inbox-spaces";
 import { inboxItemKey, inboxSignal } from "./inbox/inbox-spaces";
-import type { MobileBot } from "./api/mobile-types";
 import type { InboxSignal } from "./inbox/offscreen-unreads";
 import { useSnoozeClock } from "./inbox/use-snooze-clock";
 
@@ -12,6 +12,11 @@ import { useSnoozeClock } from "./inbox/use-snooze-clock";
 export type DozoInboxItem =
   | InboxItem
   | { type: "botChat"; bot: MobileBot | SpaceBot; chat: DozoBotChat };
+
+/** Upstream's own rows, for code that knows nothing of a bot's extra chats. */
+export function dozoUpstreamItems(items: readonly DozoInboxItem[]): InboxItem[] {
+  return items.filter((item): item is InboxItem => item.type !== "botChat");
+}
 
 const NO_CHATS: DozoBotChat[] = [];
 

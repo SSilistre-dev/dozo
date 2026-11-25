@@ -1,6 +1,7 @@
 import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoRevisable, DozoRevisionConfirmed, ThreadMessage } from "@rakazo/contracts";
+import { errorCode } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -16,7 +17,6 @@ import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { errorText, toastError } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { errorCode } from "../../../../../packages/i18n/src/user-error";
 
 /**
  * Edit for the caller's messages and Regenerate for the bot's replies, in the message's More menu.
