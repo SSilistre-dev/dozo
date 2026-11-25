@@ -368,6 +368,15 @@ mod tests {
     }
 
     #[test]
+    fn a_colour_at_the_end_of_the_title_does_not_hide_the_count() {
+        let server = url("https://dozo.example.com/");
+        let count = |title: &str| count_for(Some(&server), Some(&server), title);
+        assert_eq!(count("(3) Dozo #0e0e10"), 3);
+        assert_eq!(count("Dozo #0e0e10"), 0);
+        assert_eq!(count("(x) Dozo #0e0e10"), 0);
+    }
+
+    #[test]
     fn the_badge_is_capped_and_cleared_at_zero() {
         assert_eq!(badge_label(0), None);
         assert_eq!(badge_label(1).as_deref(), Some("1"));

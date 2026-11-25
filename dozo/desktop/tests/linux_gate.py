@@ -210,7 +210,11 @@ def notify_gate(binary):
         "/": ask.format(who="server", summary="from-the-server")
         + f"""<iframe src="{other}/frame" style="{frame};left:0"></iframe>
 <iframe src="/same" style="{frame};left:240px"></iframe>
-<script>setInterval(async () => {{
+<script>const scheme = matchMedia('(prefers-color-scheme: dark)');
+const tell = () => fetch('/report?scheme=' + (scheme.matches ? 'dark' : 'light'));
+scheme.onchange = tell;
+tell();
+setInterval(async () => {{
   const next = await (await fetch('/title')).text();
   if (next && document.title !== next) document.title = next;
 }}, 200);</script>""",
@@ -271,6 +275,38 @@ def notify_gate(binary):
             titles["now"] = title
             time.sleep(0.6)
         stays("titles with and without a count leave the app running as Dozo", lambda: app.poll() is None and len(windows()) == 1)
+
+        # The colour at the end of the title is the window's own surface (src/titlebar.rs): it shows
+        # where the page paints nothing. A title that is not a colour changes nothing.
+        def pixel():
+            import gi
+
+            gi.require_version("Gdk", "3.0")
+            from gi.repository import Gdk
+
+            root = Gdk.get_default_root_window()
+            buf = Gdk.pixbuf_get_from_window(root, 700, 500, 1, 1)
+            return tuple(buf.get_pixels()[:3])
+
+        for title, want in [
+            ("(2) Gate #fafafa", (250, 250, 250)),
+            ("Gate #0e0e10", (14, 14, 16)),
+            ("Gate #ffffff", (255, 255, 255)),
+            ("Gate #12345", (255, 255, 255)),
+            ("Gate", (255, 255, 255)),
+        ]:
+            titles["now"] = title
+            until(f"the window's surface is {want} for the title {title!r}", lambda: pixel() == want, 10)
+            # What the web view tells the page about the system's colour scheme: it must follow too,
+            # or the "System" theme would stay on the last tone.
+            tone = "light" if want[0] > 140 else "dark"
+            until(f"the page's prefers-color-scheme is {tone}", lambda: ([r for r in report["a"] if r.startswith("scheme=")] or [""])[-1] == f"scheme={tone}", 10)
+            if os.environ.get("GATE_SHOTS") and title.split()[-1].startswith("#"):
+                from gi.repository import Gdk
+
+                root = Gdk.get_default_root_window()
+                shot = Gdk.pixbuf_get_from_window(root, 0, 0, root.get_width(), root.get_height())
+                shot.savev(f"{os.environ['GATE_SHOTS']}/frame-{title.split()[-1][1:]}.png", "png", [], [])
     finally:
         if app:
             app.kill()

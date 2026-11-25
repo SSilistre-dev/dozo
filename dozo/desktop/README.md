@@ -173,6 +173,24 @@ command was added and `capabilities/local.json` is unchanged.
 - Linux needs `libayatana-appindicator3` for the tray: the .deb depends on it, the AppImage carries it.
 - macOS and Windows: compiled, not tried by hand. Only Linux runs under `tests/linux_gate.py`.
 
+## The window's frame
+
+The frame follows the web app's theme (light, dark and the named themes). The page cannot call the
+app, so the colour travels the way the unread count does: in the desktop app's window only, the
+web app puts its applied background (the page's `theme-color`) at the end of the title as ` #0e0e10` (last, so an app released before this one still reads the unread count from the start of the title)
+(`apps/web/src/lib/dozo-desktop-badge.ts`), and `src/titlebar.rs` reads it for the server's origin
+only: a six-digit hex colour, nothing else, nothing sent back. The window's tone (light or dark,
+by the colour's luma) and its own surface colour follow it. A title with no colour leaves the frame
+as it was; leaving the server (Change Server, the connection screens) puts the dark default back.
+
+- Linux: tried by `tests/linux_gate.py`: the window's surface takes each colour the title carries
+  and ignores a malformed one. The title bar itself is the window manager's or GTK's: it follows the
+  tone (dark or light variant of the system theme), not the exact colour.
+- macOS: compiled in, not tried. The title bar follows the tone and the window's colour shows
+  through it only where the system makes it transparent.
+- Windows: compiled, not tried. The caption follows the tone on recent Windows; its exact colour is
+  not set (Tauri has no public call for it).
+
 ## Notifications and the unread badge
 
 The web app's own notifications (a bot finished, asks a question or waits for approval, a run

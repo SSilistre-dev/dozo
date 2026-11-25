@@ -3,7 +3,12 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { titleWithCount, useDesktopBadge } from "./dozo-desktop-badge";
+import {
+  frameColour,
+  titleWithColour,
+  titleWithCount,
+  useDesktopBadge,
+} from "./dozo-desktop-badge";
 
 let root: Root;
 function Harness({ count }: { count: number }) {
@@ -46,4 +51,64 @@ it("follows the count and clears it when the shell goes", () => {
   }
   act(() => root.render(null));
   expect(document.title).toBe("Dozo");
+});
+
+it("keeps the frame colour at the end, so the count stays first", () => {
+  expect(titleWithCount("Dozo #0e0e10", 3)).toBe("(3) Dozo #0e0e10");
+  expect(titleWithCount("(3) Dozo #0e0e10", 0)).toBe("Dozo #0e0e10");
+  expect(titleWithColour("(3) Dozo", "#ffffff")).toBe("(3) Dozo #ffffff");
+  expect(titleWithColour("(3) Dozo #0e0e10", "#ffffff")).toBe("(3) Dozo #ffffff");
+  expect(titleWithColour("(3) Dozo #0e0e10", null)).toBe("(3) Dozo");
+});
+
+it("is read by an app that reads the count from the start of the title", () => {
+  // The unread count as every released desktop app reads it (dozo/desktop/src/alerts.rs,
+  // unread_count): a number in brackets at the very start, then the end or a space.
+  const released = (title: string) => {
+    const match = title.match(/^\((\d+)\+?\)(?: |$)/);
+    return match ? Number(match[1]) : 0;
+  };
+  for (const [count, colour] of [
+    [3, "#0e0e10"],
+    [12, "#ffffff"],
+    [0, "#fafafa"],
+  ] as const) {
+    expect(released(titleWithColour(titleWithCount("Dozo", count), colour))).toBe(count);
+  }
+});
+
+it("takes only a hex theme colour", () => {
+  expect(frameColour("#0A0A0A")).toBe("#0a0a0a");
+  expect(frameColour(" #fff ")).toBe("#ffffff");
+  for (const bad of [null, undefined, "", "red", "rgb(1, 2, 3)", "#12345", "#1234567", "0a0a0a"]) {
+    expect(frameColour(bad)).toBeNull();
+  }
+});
+
+it("follows the theme-color in the desktop app's window only", async () => {
+  const meta = document.createElement("meta");
+  meta.setAttribute("name", "theme-color");
+  meta.setAttribute("content", "#0a0a0a");
+  document.head.append(meta);
+  try {
+    act(() => root.render(<Harness count={2} />));
+    expect(document.title).toBe("(2) Dozo");
+    act(() => root.unmount());
+
+    vi.stubGlobal("dozoDesktopShell", true);
+    root = createRoot(document.createElement("div"));
+    act(() => root.render(<Harness count={2} />));
+    expect(document.title).toBe("(2) Dozo #0a0a0a");
+    meta.setAttribute("content", "#ffffff");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.title).toBe("(2) Dozo #ffffff");
+    act(() => root.render(<Harness count={0} />));
+    expect(document.title).toBe("Dozo #ffffff");
+    act(() => root.render(null));
+    expect(document.title).toBe("Dozo");
+  } finally {
+    meta.remove();
+  }
 });
