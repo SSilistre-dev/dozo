@@ -5,9 +5,9 @@ import { Button, NativeSelect, NativeSelectOption, SectionHeading } from "@rakaz
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query";
-import { errorCode } from "../lib/user-error";
-import { SettingsCard } from "./shell/bot-settings-sections";
+import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query/query";
+import { errorCode } from "../../../../packages/i18n/src/user-error";
+import { SettingsCard } from "./shell/bots/bot-settings-sections";
 
 function changedSince(error: Error | null): boolean {
   return errorCode(error) === DOZO_LEARNING_CHANGED_CODE;

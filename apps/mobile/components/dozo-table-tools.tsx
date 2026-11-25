@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Alert, Modal, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { shareCsv } from "../lib/dozo-table-share";
-import { NativeActionButton } from "./native-action-button";
+import { NativeActionButton } from "./native/native-action-button";
 
 /** The controls beside a chat table: share it as CSV, and open it full screen. */
 export function TableTools({ csv, renderTable }: TableToolsProps) {

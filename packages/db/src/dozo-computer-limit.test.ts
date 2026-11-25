@@ -1,7 +1,7 @@
 import { PLAN_LIMIT_CODES } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { ComputerLimitError, ensureComputerRecord } from "./computers.js";
+import type { PrismaClient } from "./database/client.js";
+import { ComputerLimitError, ensureComputerRecord } from "./computers/computers.js";
 import {
   assertOwnComputerAllowed,
   computerLimitFor,

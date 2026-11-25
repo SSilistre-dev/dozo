@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { ByokTierSchema } from "./billing.js";
+import { ByokTierSchema } from "./billing/billing.js";
 import { dozoAdminAccessContract } from "./dozo-admin-access.js";
 import { dozoAdminBillingContract } from "./dozo-admin-billing.js";
 import { dozoAdminFunnelContract } from "./dozo-admin-funnel.js";

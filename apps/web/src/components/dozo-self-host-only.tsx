@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useBilling } from "./SubscriptionGate";
+import { useBilling } from "./billing/SubscriptionGate";
 
 /**
  * Shows its children on a deployment that does not bill, so self-hosters keep what is written for

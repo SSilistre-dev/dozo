@@ -10,10 +10,10 @@ import {
   trustDozoBot,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { messageBot, returnBotMessageOutcome } from "./bot-messages.js";
+import { messageBot, returnBotMessageOutcome } from "./messaging/bot-messages.js";
 import { dozoBotTokenTainted } from "./dozo-token-marks.js";
 import { dozoTokenRunDone, dozoTokenRunPlan } from "./dozo-token-run.js";
-import { handoffToGroupBot } from "./group-handoff.js";
+import { handoffToGroupBot } from "./bots/group-handoff.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it. The gate's

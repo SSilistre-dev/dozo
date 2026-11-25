@@ -3,7 +3,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useModelOAuthSignIn } from "./use-model-oauth-signin";
+import { useModelOAuthSignIn } from "./models/use-model-oauth-signin";
 
 const models = vi.hoisted(() => ({
   beginOAuth: vi.fn(),
@@ -11,13 +11,13 @@ const models = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
 }));
 const waitForModelOAuth = vi.hoisted(() => vi.fn());
-vi.mock("./space-rpc", () => ({ useSpaceRpc: () => ({ models }) }));
-vi.mock("./desktop", () => ({
+vi.mock("./query/space-rpc", () => ({ useSpaceRpc: () => ({ models }) }));
+vi.mock("./platform/desktop", () => ({
   desktopBridge: () => undefined,
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
 }));
-vi.mock("./model-auth", () => ({
+vi.mock("./models/model-auth", () => ({
   waitForModelOAuth,
 }));
 

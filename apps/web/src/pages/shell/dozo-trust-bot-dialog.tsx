@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { useIdentityConfirmation } from "../../components/ConfirmIdentityDialog";
+import { useIdentityConfirmation } from "../../components/account/ConfirmIdentityDialog";
 import { toastError } from "../../lib/dozo-error-text";
-import { queryClient, useSave } from "../../lib/query";
+import { queryClient, useSave } from "../../lib/query/query";
 import { markKey } from "./dozo-trust-bot";
 
 /**

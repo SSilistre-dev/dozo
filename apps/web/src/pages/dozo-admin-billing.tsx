@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { errorText } from "../lib/dozo-error-text";
-import { useSpaceQueries } from "../lib/query";
+import { useSpaceQueries } from "../lib/query/query";
 
 /** The admin page's billing section, at `/admin/billing`; the admin page checks who may see it. */
 export function DozoAdminBilling() {

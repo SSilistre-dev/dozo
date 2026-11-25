@@ -1,9 +1,9 @@
-import { authClient } from "./auth";
-import { fetchAuthCapabilities } from "./auth-capabilities";
+import { authClient } from "./auth/auth";
+import { fetchAuthCapabilities } from "./auth/auth-capabilities";
 import { initialBootstrapTarget } from "./bootstrap-target";
 import { preloadDozoSurfaces } from "./dozo-lazy-surfaces";
-import { reportClientError } from "./monitoring";
-import { importChunk } from "./preload-recovery";
+import { reportClientError } from "./platform/monitoring";
+import { importChunk } from "./platform/preload-recovery";
 
 /** The shell `index.html` draws before any script runs; see `dozo-boot.js` in `public/`. */
 const BOOT_SHELL_ID = "dozo-boot";
@@ -92,9 +92,9 @@ export function whenIdle(view: BootWindow, load: () => Promise<unknown>): void {
 /** The screens people open most: settings (with billing and models), a new bot, a bot's menu. */
 export const loadCommonScreens = () =>
   Promise.all([
-    import("../pages/SettingsOverlay"),
+    import("../pages/settings/SettingsOverlay"),
     import("../components/bot-templates/bot-templates-dialog"),
-    import("../pages/BotContextMenu"),
+    import("../pages/shell/chat/bot-context-menu"),
     preloadDozoSurfaces(),
   ]);
 

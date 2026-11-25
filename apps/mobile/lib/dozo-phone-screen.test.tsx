@@ -75,16 +75,16 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   native: { groupedPage: "grouped" },
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./screen-header", () => ({
+vi.mock("./navigation/screen-header", () => ({
   useScreenHeader: (header: { title?: string }) => {
     ui.header = header;
   },
 }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
@@ -94,14 +94,14 @@ vi.mock("./dozo-phone-calendar", () => ({ calendarAvailable: () => ui.available 
 vi.mock("./dozo-phone-contacts", () => ({ contactsAvailable: () => ui.contacts }));
 vi.mock("./dozo-phone-location", () => ({ locationAvailable: () => ui.location }));
 vi.mock("./dozo-phone-reminders", () => ({ remindersAvailable: () => ui.reminders }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   currentApiBase: () => ui.apiBase,
   subscribeApiBase: () => () => undefined,
 }));
 vi.mock("./dozo-relay-endpoint", () => ({
   isRelayServer: (url: string) => url.endsWith(".computer.dozo.invalid"),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) => (
     <ul>
       {children}

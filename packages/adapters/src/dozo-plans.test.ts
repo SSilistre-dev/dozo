@@ -13,13 +13,13 @@ import { BYOK_TIERS } from "@rakazo/contracts";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { provisionComputer } from "./computer-lifecycle.js";
+import { provisionComputer } from "./computers/computer-lifecycle.js";
 import { operatorPaysFor, planRunServices } from "./dozo-plans.js";
-import type { ExecutorDeps } from "./executor-deps.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
-import { hasHostedModelCredits } from "./model-selection.js";
+import { hasHostedModelCredits } from "./models/model-selection.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
-import { resolveModelKey } from "./run-model.js";
+import { resolveModelKey } from "./runs/turn/run-model.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
 

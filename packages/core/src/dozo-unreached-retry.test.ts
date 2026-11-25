@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deferred } from "./async.test-support.js";
+import { deferred } from "./primitives/async.test-support.js";
 import { isRequestUnreached, retryWhenUnreached } from "./dozo-unreached-retry.js";
 
 /** What oRPC's web client throws for an answer that is not one of the API's errors. */

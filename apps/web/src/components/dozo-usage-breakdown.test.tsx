@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
   download: vi.fn(),
   toastError: vi.fn(),
 }));
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/query/query", () => ({
   useSpaceQueries: () => ({
     dozoUsage: {
       breakdown: {
@@ -42,12 +42,12 @@ vi.mock("../lib/query", () => ({
     },
   }),
 }));
-vi.mock("../lib/artifact-open", () => ({ downloadArtifactBytes: api.download }));
+vi.mock("../lib/pages/artifact-open", () => ({ downloadArtifactBytes: api.download }));
 vi.mock("../lib/dozo-error-text", () => ({ toastError: api.toastError }));
 vi.mock("./IconTooltip", () => ({
   IconTooltip: ({ children }: { children: ReactElement }) => children,
 }));
-vi.mock("../pages/AccountSettingsOverlay", () => ({
+vi.mock("../pages/settings/AccountSettingsOverlay", () => ({
   UsageSettingsPanel: ({ usage }: { usage?: UsageSummary | null }) => (
     <div data-testid="upstream-usage">{usage?.models?.length ?? "none"}</div>
   ),

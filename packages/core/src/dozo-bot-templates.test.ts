@@ -1,8 +1,8 @@
 import { BotTemplateSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { extractRoutineSkillMentions } from "./agent-skill.js";
-import { BOT_TEMPLATES, findBotTemplate } from "./bot-templates.js";
-import { presetFromCron } from "./cron.js";
+import { extractRoutineSkillMentions } from "./skills/agent-skill.js";
+import { BOT_TEMPLATES, findBotTemplate } from "./bots/bot-templates.js";
+import { presetFromCron } from "./routines/schedule.js";
 import { DOZO_BOT_TEMPLATES } from "./dozo-bot-templates.js";
 import {
   DOZO_MEETING_PREP_REMINDER,

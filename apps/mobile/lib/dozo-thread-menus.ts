@@ -8,8 +8,8 @@ import {
   setDozoReportOpener,
   useDozoPins,
 } from "./dozo-message-actions";
-import type { MobileSnapshot } from "./mobile-types";
-import { queryClient } from "./query";
+import type { MobileSnapshot } from "./api/mobile-types";
+import { queryClient } from "./query/query";
 
 setDozoEditOpener((threadId, messageId) =>
   router.push({ pathname: "/dozo-edit-message", params: { threadId, messageId } }),

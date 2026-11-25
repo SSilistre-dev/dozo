@@ -3,12 +3,12 @@ import { deferred } from "@rakazo/core/test-async";
 import type * as DbModule from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
-import { ComputerBusyError } from "./computer-lifecycle.js";
+import type * as ComputerLifecycleModule from "./computers/computer-lifecycle.js";
+import { ComputerBusyError } from "./computers/computer-lifecycle.js";
 import { requeueBehindComputerLock } from "./dozo-computer-lock-wait.js";
-import { createRunExecutor } from "./executor.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { startNextWaitingRun } from "./run-lifecycle.js";
+import { createRunExecutor } from "./runs/executor/executor.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { startNextWaitingRun } from "./runs/lifecycle/run-lifecycle.js";
 
 const acquire = vi.hoisted(() => vi.fn());
 
@@ -16,7 +16,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof DbModule>()),
   settleReleasedTakeoverCards: vi.fn(),
 }));
-vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
+vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: acquire,
 }));

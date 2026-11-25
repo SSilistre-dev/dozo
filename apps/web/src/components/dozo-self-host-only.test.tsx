@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const billing = vi.hoisted(() => ({ status: null as Partial<BillingStatus> | null }));
-vi.mock("./SubscriptionGate", () => ({
+vi.mock("./billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: billing.status, showPlans: () => undefined }),
 }));
 

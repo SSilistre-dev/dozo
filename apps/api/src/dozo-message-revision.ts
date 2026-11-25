@@ -20,12 +20,12 @@ import {
   withDozoChatBot,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { buildSendPrompt } from "./artifacts.js";
+import { buildSendPrompt } from "./content/artifacts.js";
 import { dozoMessagePinRoutes } from "./dozo-message-pins.js";
 import type { RouterContext } from "./routes/context.js";
 import { botsRunOwnModels, modelSetup } from "./routes/shared.js";
-import { assertTeachingSendAllowed } from "./taught-skills.js";
-import { resolveThreadTarget } from "./thread-target.js";
+import { assertTeachingSendAllowed } from "./bots/taught-skills.js";
+import { resolveThreadTarget } from "./threads/thread-target.js";
 
 type Db = Pick<
   Prisma.TransactionClient,

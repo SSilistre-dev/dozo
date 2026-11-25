@@ -10,7 +10,7 @@ import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
 
 const computerInput = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const keys = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: { computer: { input: computerInput }, dozoTeach: { keys } },
 }));
 

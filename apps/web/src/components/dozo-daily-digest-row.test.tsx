@@ -7,11 +7,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), bots: vi.fn(), toastError: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoDailyDigest: { set: api.set } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoDailyDigest: {
@@ -25,7 +25,7 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -64,7 +64,7 @@ vi.mock("@rakazo/ui-web", () => ({
   toast: { error: api.toastError },
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoDailyDigestRow } from "./dozo-daily-digest-row";
 
 let container: HTMLDivElement;

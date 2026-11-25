@@ -24,8 +24,8 @@ vi.mock("@earendil-works/pi-ai/providers/all", async (importOriginal) => {
     }),
   };
 });
-vi.mock("../pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
-vi.mock("../pi-openai-compatible-provider.js", () => ({
+vi.mock("../runtime/pi/models/pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
+vi.mock("../runtime/pi/models/pi-openai-compatible-provider.js", () => ({
   OPENAI_COMPATIBLE_PROVIDER_ID: "openai-compatible",
   registerOpenAiCompatibleCatalog: (models: unknown) => models,
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
@@ -33,8 +33,8 @@ vi.mock("../pi-openai-compatible-provider.js", () => ({
 
 import type { RunModelPool } from "../dozo-model-pool.js";
 import { withRunModelPool } from "../dozo-model-pool.js";
-import { PiAgentRuntime } from "../pi-runtime.js";
-import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { PiAgentRuntime } from "../runtime/pi/pi-runtime.js";
+import { claudeCodeDriver } from "../providers/cli-model/claude-code/dozo-driver.js";
 import { cliAccountRef } from "./dozo-cli-driver.js";
 import { createAccountHome } from "./dozo-cli-homes.js";
 import { registerLocalCliProviders } from "./dozo-cli-providers.js";

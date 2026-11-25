@@ -8,7 +8,7 @@ import { newVaultItemName } from "./bot-secrets.js";
 import { readDeviceCapabilities } from "./dozo-device-capabilities.js";
 import { encodeDeviceLogin } from "./dozo-device-login.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
-import { sealVaultValue } from "./vault-values.js";
+import { sealVaultValue } from "./secrets/vault/vault-values.js";
 
 /**
  * The vault side of a login linked to a computer's password manager. The item is an ordinary

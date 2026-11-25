@@ -6,10 +6,10 @@ import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApprovedEffectReplayQueue } from "../approval-effect.js";
-import type { HostComputerRequest } from "../host-computer-protocol.js";
-import { markReadOutsideContent } from "../run-context.js";
-import { applyTool } from "../run-tools.js";
+import { createApprovedEffectReplayQueue } from "../approvals/approval-effect.js";
+import type { HostComputerRequest } from "../computers/host/host-computer-protocol.js";
+import { markReadOutsideContent } from "../runs/assembly/run-context.js";
+import { applyTool } from "../runs/tools/run-tools.js";
 import { cliModelRuntime } from "./dozo-cli-runtime.js";
 
 // What an agent on the person's computer asks of the bot's tools goes through the run's own
@@ -32,7 +32,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   recordAuditEvent: vi.fn(async () => {}),
 }));
-vi.mock("../run-effects.js", async (importOriginal) => ({
+vi.mock("../runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => {
     throw new Error("the approval card is written here");

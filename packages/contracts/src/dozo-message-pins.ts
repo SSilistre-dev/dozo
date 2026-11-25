@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { ReplyPreviewSchema } from "./events.js";
+import { ReplyPreviewSchema } from "./threads/message-blocks.js";
 import { Id } from "./ids.js";
 
 /** Pins hold at most this many messages per chat and person; the oldest go first past it. */

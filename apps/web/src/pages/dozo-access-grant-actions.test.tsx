@@ -8,11 +8,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ update: vi.fn(), delete: vi.fn(), toastError: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoAdmin: { accessGrants: { update: api.update, delete: api.delete } } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({ accessGrants: { list: { key: () => ["grants"] } } }),
 }));
@@ -78,7 +78,7 @@ vi.mock("../components/ConfirmDialog", () => ({
   ),
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoGrantActions } from "./dozo-access-grant-actions";
 
 const pending: AccessGrant = {

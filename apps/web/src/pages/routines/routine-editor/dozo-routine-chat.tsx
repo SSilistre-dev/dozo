@@ -1,8 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { toastError } from "../../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../../lib/query";
+import { toastError } from "../../../lib/dozo-error-text";
+import { useSave, useSpaceQueries } from "../../../lib/query/query";
 
 /**
  * Which of the bot's chats a saved routine posts in. Shown only once the bot has an open extra

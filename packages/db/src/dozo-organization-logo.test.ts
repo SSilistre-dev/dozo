@@ -4,7 +4,7 @@ import {
   readOrganizationMark,
   setOrganizationLogo,
 } from "./dozo-organization-logo.js";
-import { IsolationError } from "./scope.js";
+import { IsolationError } from "./database/scope.js";
 
 const LOGO = "data:image/webp;base64,UklGRg==";
 

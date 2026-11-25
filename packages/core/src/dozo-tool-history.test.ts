@@ -1,6 +1,6 @@
 import type { HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { splitToolHistory, withToolHistory } from "./events.js";
+import { splitToolHistory, withToolHistory } from "./messages/events.js";
 
 // Through upstream's split (an anchored rule in dozo/brand/brand.json), on the branded tree: every
 // message write keeps its tool calls with it for later runs to replay.

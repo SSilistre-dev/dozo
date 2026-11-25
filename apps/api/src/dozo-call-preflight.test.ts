@@ -12,8 +12,8 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/adapters")>()),
   dozoBotModelEndpoint: mocks.model,
 }));
-vi.mock("./voice.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./voice.js")>()),
+vi.mock("./calls/voice.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./calls/voice.js")>()),
   loadDefaultVoiceCredential: mocks.voice,
 }));
 

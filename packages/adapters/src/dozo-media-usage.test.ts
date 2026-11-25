@@ -6,8 +6,8 @@ import {
   dozoRecordMediaUsage,
   dozoReserveMediaUsage,
 } from "./dozo-media-usage.js";
-import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
-import { generateMediaFromTool } from "./media-generation-tools.js";
+import { FakeMediaGenerationProvider } from "./media/media-generation-provider.js";
+import { generateMediaFromTool } from "./media/media-generation-tools.js";
 
 // The plans' shared-space check before a generation has its own tests; here there is room.
 vi.mock("@rakazo/db", async (importOriginal) => ({

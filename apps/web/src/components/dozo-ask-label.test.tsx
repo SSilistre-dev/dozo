@@ -19,7 +19,7 @@ vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   useLinkFavicon: () => ({ icon: null, unusable: () => undefined }),
 }));
-vi.mock("../lib/rpc", () => ({
+vi.mock("../lib/query/rpc", () => ({
   rpc: {},
   rpcForSpace: () => ({}),
   createSpaceRpc: () => ({}),
@@ -27,8 +27,8 @@ vi.mock("../lib/rpc", () => ({
 }));
 vi.mock("./vault/use-vault-contacts", () => ({ useVaultContacts: () => [] }));
 
-import type { AskBlock } from "./AskCard";
-import { AskCard } from "./AskCard";
+import type { AskBlock } from "./messages/AskCard";
+import { AskCard } from "./messages/AskCard";
 import { dozoRunAllowLabel } from "./dozo-ask-label";
 
 let root: Root;

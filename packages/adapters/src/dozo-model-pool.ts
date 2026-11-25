@@ -19,12 +19,12 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { POOLABLE_CONNECTION_KINDS } from "./dozo-model-pool-capabilities.js";
 import { recordRest } from "./dozo-model-rests.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { parseModelSecret } from "./model-secret.js";
-import type { ModelCredential } from "./model-selection.js";
-import { loadStoredModelSecret } from "./model-selection.js";
-import { modelCredentialAuthKindFromPlaintext } from "./pi-catalog-availability.js";
-import { oauthCredentialAccountId } from "./pi-oauth.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { parseModelSecret } from "./models/model-secret.js";
+import type { ModelCredential } from "./models/model-selection.js";
+import { loadStoredModelSecret } from "./models/model-selection.js";
+import { modelCredentialAuthKindFromPlaintext } from "./runtime/pi/models/pi-catalog-availability.js";
+import { oauthCredentialAccountId } from "./runtime/pi/models/pi-oauth.js";
 
 /**
  * A run's model pool (packages/core/src/dozo-model-pool.ts): the connection it starts on and the

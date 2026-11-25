@@ -4,10 +4,10 @@ import type { DozoCommandRuleView } from "@rakazo/core";
 import { BACKGROUND_HELPER_TRIGGER } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
-import { markReadOutsideContent } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { ROUTINE_WATCH_NOTE_START } from "./routines/routine-watch.prompt.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // The branded gate for a command on the bot's own computer: dozoHostedCommandHold and
 // dozoHostedCommandGate wired in by dozo/brand/brand.json, with upstream's planActionGate, review
@@ -52,7 +52,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
     seen.routineWriter ? { writer: seen.routineWriter, writtenAt: new Date(0) } : undefined,
   ),
 }));
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => ({
     duplicate: false,
@@ -63,16 +63,16 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
     return true;
   }),
 }));
-vi.mock("./run-lifecycle.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   renewRunLease: vi.fn(async () => true),
   enqueueSteeringContinuation: vi.fn(async () => {}),
 }));
-vi.mock("./run-notifications.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-notifications.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   notifyRun: vi.fn(async () => {}),
 }));
-vi.mock("./run-context.js", async (importOriginal) => ({
+vi.mock("./runs/assembly/run-context.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   persistTurnCheckpoint: vi.fn(async () => {}),
 }));

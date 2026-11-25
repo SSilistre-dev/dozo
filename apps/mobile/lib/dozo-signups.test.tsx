@@ -7,9 +7,9 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
-import { passwordResetCapabilities } from "./api-auth";
+import { passwordResetCapabilities } from "./auth/api-auth";
 import { authModeFor, signupsAreClosed, titleWhenKnown } from "./dozo-signups";
-import type * as Endpoint from "./endpoint";
+import type * as Endpoint from "./api/endpoint";
 
 // Runs on the branded tree (`make qa`): the screen under test is upstream's sign-in after the
 // closed-registration rules in dozo/brand/brand.json, so the texts carry the Dozo name.
@@ -62,26 +62,26 @@ vi.mock("react-native", () => {
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress?: () => void }) => (
     <button type="button" onClick={onPress}>
       {label}
     </button>
   ),
 }));
-vi.mock("../components/social-sign-in-buttons", () => ({ SocialSignInButtons: () => null }));
-vi.mock("./native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
+vi.mock("../components/settings/social-sign-in-buttons", () => ({ SocialSignInButtons: () => null }));
+vi.mock("./native/native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
 vi.mock("react-native-svg", () => ({ default: () => null, Path: () => null }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ currentApiBase: () => server.base, rpc: vi.fn() }));
-vi.mock("./endpoint", async (importOriginal) => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({ currentApiBase: () => server.base, rpc: vi.fn() }));
+vi.mock("./api/endpoint", async (importOriginal) => ({
   ...(await importOriginal<typeof Endpoint>()),
   displayApiHost: () => "one.example.invalid",
   usesCustomApiBase: () => false,
 }));
-vi.mock("./session", () => ({ loadSessionToken: vi.fn().mockResolvedValue(null) }));
-vi.mock("./api-auth", () => ({
+vi.mock("./api/session", () => ({ loadSessionToken: vi.fn().mockResolvedValue(null) }));
+vi.mock("./auth/api-auth", () => ({
   passwordResetCapabilities: vi.fn(),
   requestPasswordReset: vi.fn(),
   sendSignInCode: vi.fn(),
@@ -89,13 +89,13 @@ vi.mock("./api-auth", () => ({
   signInWithCode: vi.fn(),
   signUp: vi.fn(),
 }));
-vi.mock("./incoming-share", () => ({ hasIncomingShare: () => false }));
-vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
-vi.mock("./passkey", () => ({
+vi.mock("./composer/incoming-share", () => ({ hasIncomingShare: () => false }));
+vi.mock("./auth/sso", () => ({ continueWithSso: vi.fn() }));
+vi.mock("./auth/passkey", () => ({
   passkeysAvailable: vi.fn().mockResolvedValue(false),
   signInWithPasskey: vi.fn(),
 }));
-vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
+vi.mock("./thread/send/unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 vi.mock("./dozo-relay-fetch", () => ({
   isRelayGone: () => false,
@@ -105,7 +105,7 @@ vi.mock("./dozo-relay-fetch", () => ({
 vi.mock("./dozo-relay-sign-in", () => ({
   askComputerForSignIn: async () => "sign-in-on-computer",
 }));
-vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./platform/app-foreground", () => ({ useAppForeground: () => true }));
 
 const base = {
   passwordAuth: true,

@@ -1,12 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import { paymentPastDue } from "@rakazo/contracts";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { openBillingPage } from "../lib/billing";
+import { openBillingPage } from "../lib/billing/billing";
 import { storeBuild } from "../lib/dozo-store-build";
-import { useMobileTokens } from "../lib/native";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { NativeActionButton } from "./native-action-button";
+import { useMobileTokens } from "../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
+import { NativeActionButton } from "./native/native-action-button";
 
 /**
  * One line above the chats while the subscription is past due, for the member who manages

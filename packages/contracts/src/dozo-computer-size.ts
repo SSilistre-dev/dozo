@@ -1,6 +1,6 @@
 import * as z from "zod";
-import type { ComputerSize } from "./computer.js";
-import { COMPUTER_SIZE_SPECS } from "./computer.js";
+import type { ComputerSize } from "./computers/computer.js";
+import { COMPUTER_SIZE_SPECS } from "./computers/computer.js";
 
 /** The vCPUs and memory a computer really gets, as the server that starts it reports them. */
 export const ComputerSizeSpecSchema = /* @__PURE__ */ (() =>

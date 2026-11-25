@@ -2,38 +2,38 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { hapticSuccess } from "./haptics";
-import * as feedbackModule from "./thread-feedback";
+import { hapticSuccess } from "./native/haptics";
+import * as feedbackModule from "./thread/send/thread-feedback";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
-vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
+vi.mock("./native/haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
   useNavigation: () => ({ isFocused: () => true }),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example",
   rpc: vi.fn(),
   selectedSpaceId: () => null,
 }));
-vi.mock("./live-notifications", () => ({ resumeLiveNotifications: async () => undefined }));
-vi.mock("./focus-prompt", () => ({ cancelFocusPrompt: () => undefined }));
-vi.mock("./unsent-sends", () => ({ prepareUnsentSends: async () => undefined }));
-vi.mock("./session", () => ({
+vi.mock("./notifications/live-notifications", () => ({ resumeLiveNotifications: async () => undefined }));
+vi.mock("./notifications/focus-prompt", () => ({ cancelFocusPrompt: () => undefined }));
+vi.mock("./thread/send/unsent-sends", () => ({ prepareUnsentSends: async () => undefined }));
+vi.mock("./api/session", () => ({
   loadSessionToken: async () => "token",
   currentSessionGeneration: () => 1,
   registerSessionDiskCache: () => undefined,
 }));
-vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
-vi.mock("./work-activity", () => ({ startWorkActivity: vi.fn() }));
+vi.mock("./pages/page-runtime", () => ({ loadPageRuntime: async () => "" }));
+vi.mock("./notifications/work-activity", () => ({ startWorkActivity: vi.fn() }));
 
-const { useThreadSend } = await import("./thread-send");
-const { offerPageReply } = await import("./pages");
+const { useThreadSend } = await import("./thread/send/thread-send");
+const { offerPageReply } = await import("./pages/pages");
 const { dozoOfferKey } = await import("./dozo-chat-target");
-const { offerComposerText } = await import("./composer-offer");
+const { offerComposerText } = await import("./composer/composer-offer");
 
 type Sender = ReturnType<typeof useThreadSend>;
 

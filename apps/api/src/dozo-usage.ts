@@ -8,7 +8,7 @@ import {
   SpaceOwnerRequiredError,
   spaceIsShared,
 } from "@rakazo/db";
-import { savedTimeZone } from "./agent-import.js";
+import { savedTimeZone } from "./bots/agent-import.js";
 import {
   groupUsage,
   readDayCells,

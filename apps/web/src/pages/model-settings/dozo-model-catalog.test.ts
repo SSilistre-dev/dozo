@@ -2,11 +2,11 @@ import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { spaceQueries } from "../../lib/query";
+import { spaceQueries } from "../../lib/query/query";
 
 const { selected } = vi.hoisted(() => ({ selected: vi.fn<() => string | null>(() => null) }));
-vi.mock("../../lib/rpc", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/rpc")>()),
+vi.mock("../../lib/query/rpc", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/query/rpc")>()),
   selectedSpaceId: selected,
 }));
 

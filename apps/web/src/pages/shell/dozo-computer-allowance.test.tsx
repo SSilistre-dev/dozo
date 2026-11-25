@@ -11,11 +11,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 // the Turkish catalog carries the fork's lines.
 
 const billing = vi.hoisted(() => ({ status: null as Partial<BillingStatus> | null }));
-vi.mock("../../components/SubscriptionGate", () => ({
+vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: billing.status, showPlans: () => undefined }),
 }));
 
-import { errorText } from "../../lib/user-error";
+import { errorText } from "../../../../../packages/i18n/src/user-error";
 import { useComputerAllowance } from "./dozo-computer-allowance";
 
 const offers = [

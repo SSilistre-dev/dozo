@@ -9,8 +9,8 @@ import {
   TeachValueRow,
   valueDecisionOf,
 } from "../../components/teach/dozo-teach-value-row";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorCode, errorText } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorCode, errorText } from "../../../../../packages/i18n/src/user-error";
 
 /**
  * A saved skill whose steps still type text verbatim (saved before values were decided about):

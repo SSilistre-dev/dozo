@@ -293,7 +293,7 @@ describe("a plan's price key", () => {
   });
 
   it("follows the billing adapter's own formula, which it keeps private", () => {
-    const source = readFileSync(new URL("./stripe-billing.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./providers/billing/stripe/stripe-billing.ts", import.meta.url), "utf8");
     expect(source).toContain('const BYOK_PRICE_KEY_PREFIX = "rakazo_byok_";');
     expect(source).toContain('const period = interval === "year" ? "yearly" : "monthly";');
     expect(source).toMatch(/`\$\{BYOK_PRICE_KEY_PREFIX\}\$\{period\}_\$\{amountCents\}`/);

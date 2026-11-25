@@ -22,8 +22,8 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   sendCliLoginCode: fake.sendCode,
   cancelCliLogin: fake.cancel,
 }));
-vi.mock("./model-credentials.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-credentials.js")>()),
+vi.mock("./models/model-credentials.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./models/model-credentials.js")>()),
   persistModelCredential: fake.persist,
 }));
 

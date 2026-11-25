@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ report: vi.fn(), check: vi.fn(), toast: vi.fn() }));
-vi.mock("./monitoring", () => ({ reportClientError: mocks.report }));
+vi.mock("./platform/monitoring", () => ({ reportClientError: mocks.report }));
 vi.mock("./dozo-error-text", () => ({ toastError: mocks.toast }));
-vi.mock("./rpc", () => ({ rpc: { dozoCallPreflight: { check: mocks.check } } }));
+vi.mock("./query/rpc", () => ({ rpc: { dozoCallPreflight: { check: mocks.check } } }));
 
 import { checkBeforeAnswer, placeCall } from "./dozo-call-gate";
 

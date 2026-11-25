@@ -9,7 +9,7 @@ import type { DozoBotBackups as LoadedDozoBotBackups } from "../pages/shell/dozo
 import type { DozoBotSkillsSection as LoadedDozoBotSkillsSection } from "../pages/shell/dozo-bot-skills-section";
 import type { OwnComputerRow as LoadedOwnComputerRow } from "../pages/shell/dozo-own-computer-row";
 import type { SiteSessionsControl as LoadedSiteSessionsControl } from "../pages/shell/dozo-site-sessions";
-import { lazyComponent } from "./preload-recovery";
+import { lazyComponent } from "./platform/preload-recovery";
 
 // The fork's screens that are not needed to draw the first page: each loads when it is first shown,
 // so the code the app starts with stays under its budget (scripts/checks/bundle-size.budgets.json).

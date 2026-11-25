@@ -10,7 +10,7 @@ import {
   RelaySessionRequestSchema,
   relayAgentProofMessage,
 } from "@rakazo/contracts";
-import { abortableDelay } from "./async.js";
+import { abortableDelay } from "./primitives/async.js";
 import type { RelayChannel, RelayCrypto, RelayDuplex, RelayKeyPair } from "./dozo-relay-channel.js";
 import {
   acceptHostChannel,
@@ -25,8 +25,8 @@ import {
 import { serveRelay } from "./dozo-relay-mux.js";
 import type { RelaySocketClosedError, RelayWebSocket } from "./dozo-relay-ws.js";
 import { wsDuplex } from "./dozo-relay-ws.js";
-import { retry } from "./retry.js";
-import { parseRetryAfter, reconnectDelayMs } from "./retry-policy.js";
+import { retry } from "./primitives/retry.js";
+import { parseRetryAfter, reconnectDelayMs } from "./primitives/retry-policy.js";
 
 /**
  * The computer's end of the relay: makes pairing offers, keeps one relay socket per channel and

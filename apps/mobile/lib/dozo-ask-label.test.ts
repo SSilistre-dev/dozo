@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askActionLabel } from "./ask-action-label";
+import { askActionLabel } from "./cards/ask-action-label";
 import { dozoAlwaysAllowLabel, dozoRunAllowLabel } from "./dozo-ask-label";
 
 describe("the approval card's Always allow on a command", () => {

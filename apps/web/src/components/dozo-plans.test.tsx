@@ -41,7 +41,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import type { RpcClient } from "../lib/rpc";
+import type { RpcClient } from "../lib/query/rpc";
 import { CreditChoice, ModelCreditsSettings } from "./ModelCredits";
 
 const offers = (["pro", "max"] as const).map((tier) => ({

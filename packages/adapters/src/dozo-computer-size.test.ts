@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
 import { operatorComputerSize, operatorComputerSizes } from "./dozo-computer-size.js";
 import { knownSandboxKinds, sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 

@@ -1,9 +1,9 @@
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApprovedEffectReplayQueue } from "./approval-effect.js";
+import { createApprovedEffectReplayQueue } from "./approvals/approval-effect.js";
 import { runReadHistory } from "./dozo-read-outside.js";
-import { markReadOutsideContent } from "./run-context.js";
-import { applyTool } from "./run-tools.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { applyTool } from "./runs/tools/run-tools.js";
 
 // The branded applyTool, which runs every call the gate let through with runToolNoted
 // (dozo/brand/brand.json). The gate has its own tests (dozo-lasting-write-gate.test.ts); here it
@@ -24,7 +24,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
     },
   ),
 }));
-vi.mock("./run-tool-gate.js", async (importOriginal) => ({
+vi.mock("./runs/tools/run-tool-gate.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   gateToolCall: vi.fn(async (_ctx: unknown, request: { name: string; args: unknown }) => ({
     call: {
@@ -37,7 +37,7 @@ vi.mock("./run-tool-gate.js", async (importOriginal) => ({
     },
   })),
 }));
-vi.mock("./run-tool-request.js", async (importOriginal) => ({
+vi.mock("./runs/tools/run-tool-request.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   resolveToolRequest: vi.fn(async (_ctx: unknown, name: string, args: unknown) => ({
     name,
@@ -50,16 +50,16 @@ const write = (name: string) => async () => {
   seen.order.push(name);
   return seen.result ?? { ok: true, routineId: "routine-9" };
 };
-vi.mock("./schedule-tools.js", async (importOriginal) => ({
+vi.mock("./tools/schedule-tools.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   createScheduleFromTool: vi.fn(async () => write("schedule_create")()),
   updateScheduleFromTool: vi.fn(async () => write("schedule_update")()),
 }));
-vi.mock("./fleet-tools.js", async (importOriginal) => ({
+vi.mock("./tools/fleet-tools.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   createChildRoutine: vi.fn(async () => write("create_child_routine")()),
 }));
-vi.mock("./run-tools-memory.js", async (importOriginal) => ({
+vi.mock("./runs/tools/run-tools-memory.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   memoryTools: {
     read_history: async () => ({ messages: [] }),

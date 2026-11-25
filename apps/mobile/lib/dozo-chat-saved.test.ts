@@ -1,24 +1,24 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { composerDraftScope, readComposerDraft, writeComposerDraft } from "./composer-draft";
-import type { MobileSnapshot } from "./mobile-types";
-import type { SavedChatsScope } from "./saved-chats";
-import { readSavedThread, writeSavedThread } from "./saved-chats";
-import { mobileSearchDestination } from "./search-destination";
+import { composerDraftScope, readComposerDraft, writeComposerDraft } from "./composer/composer-draft";
+import type { MobileSnapshot } from "./api/mobile-types";
+import type { SavedChatsScope } from "./inbox/saved-chats";
+import { readSavedThread, writeSavedThread } from "./inbox/saved-chats";
+import { mobileSearchDestination } from "./search/search-destination";
 
 const files = vi.hoisted(() => new Map<string, string>());
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://api.example.test",
   selectedSpaceId: () => "space-a",
 }));
-vi.mock("./artifact-cache-session", () => ({ artifactCacheSession: async () => "ns-1" }));
+vi.mock("./artifacts/artifact-cache-session", () => ({ artifactCacheSession: async () => "ns-1" }));
 vi.mock("./integrations-cache", () => ({
   isIntegrationsScopeCurrent: () => true,
   integrationsCacheScope: async () => null,
 }));
-vi.mock("./session", () => ({
+vi.mock("./api/session", () => ({
   currentSessionGeneration: () => 1,
   loadSessionToken: async () => "fake-token",
   loadVerifiedIntegrationsScope: async () => null,

@@ -12,11 +12,11 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoOrganizationLibrary: { share: api.share, hide: api.hide } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     agentSkills: { key: () => [["agentSkills"]] },
@@ -58,7 +58,7 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import {
   DozoHiddenLibrarySkills,
   DozoLibraryBadge,

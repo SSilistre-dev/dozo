@@ -15,9 +15,9 @@ import {
 } from "@rakazo/ui-web";
 import { Copy, Download, FileText } from "lucide-react";
 import { useState } from "react";
-import { downloadArtifactBytes } from "../../lib/artifact-open";
+import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { toastError } from "../../lib/dozo-error-text";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc } from "../../lib/query/rpc";
 
 export { chatExportSince };
 export type ChatExportTarget =

@@ -3,7 +3,7 @@ import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const withheld = vi.hoisted(() => ({ value: false }));
-vi.mock("./run-tools-computer.js", () => ({
+vi.mock("./runs/tools/run-tools-computer.js", () => ({
   pageBrowserTool: vi.fn(async () => "the bot's computer"),
 }));
 vi.mock("./dozo-no-computer.js", async (importOriginal) => ({
@@ -17,8 +17,8 @@ import { withoutCloudComputerTools } from "./dozo-no-computer.js";
 import { pageBrowserTool, USER_BROWSER_NOTE, userBrowserSignIn } from "./dozo-user-browser.js";
 import { pageSite, routesToUserBrowser, userBrowserGate } from "./dozo-user-browser-gate.js";
 import { buildApprovalAskBlock } from "./dozo-user-computer-gate.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
 
 const FORM = "https://example.test/form";
 

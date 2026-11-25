@@ -1,14 +1,14 @@
-import { ClientError } from "./client-error.js";
+import { ClientError } from "./primitives/client-error.js";
 import {
   SKILL_CLICK_TARGETS_NOTE,
   skillGivenInputs,
   skillInputsInstruction,
 } from "./dozo-teach-playbook.prompt.js";
-import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "./teach-playbook.js";
+import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "./skills/teach-playbook.js";
 import {
   scrollDirection,
   formatSkillRunPrompt as upstreamFormatSkillRunPrompt,
-} from "./teach-playbook.js";
+} from "./skills/teach-playbook.js";
 import {
   DEFAULT_APPROVAL,
   DEFAULT_FAILURE,
@@ -16,10 +16,10 @@ import {
   DEFAULT_WHAT_TO_RETURN,
   DEFAULT_WHEN_TO_USE,
   playbookHowToCheck,
-} from "./teach-playbook.prompt.js";
+} from "./skills/teach-playbook.prompt.js";
 
 // Upstream's module, with the two names below replaced: local exports win over a star re-export.
-export * from "./teach-playbook.js";
+export * from "./skills/teach-playbook.js";
 
 /**
  * A value typed or pasted while teaching. Its text never enters the playbook: the steps hold

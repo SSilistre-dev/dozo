@@ -31,7 +31,7 @@ vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
 vi.mock("./user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
-vi.mock("./query", () => ({
+vi.mock("./query/query", () => ({
   rpcQuery: (proc: string, input?: unknown) => ({ queryKey: [proc, input] }),
   useSave: (options: Save) => {
     api.saves.push(options);
@@ -43,7 +43,7 @@ vi.mock("./query", () => ({
     };
   },
 }));
-vi.mock("./screen-query", () => ({
+vi.mock("./query/screen-query", () => ({
   useScreenQuery: (read: { queryKey: [string] }, options?: { enabled?: boolean }) => {
     const [key] = read.queryKey;
     api.reads.push({ key, enabled: options?.enabled ?? true });
@@ -51,10 +51,10 @@ vi.mock("./screen-query", () => ({
     return { data: options?.enabled ? api.learning : undefined };
   },
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children: ReactNode }) => <section>{children}</section>,
 }));
-vi.mock("../components/menu-picker", () => ({
+vi.mock("../components/ui/menu-picker", () => ({
   MenuPicker: (props: {
     label: string;
     choices: Array<{ key: string; label: string }>;

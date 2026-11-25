@@ -1,6 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import type * as ComputerLifecycleModule from "./computers/computer-lifecycle.js";
 import { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from "./dozo-device-screen.prompt.js";
 import {
   CLOUD_COMPUTER_TOOL_NAMES,
@@ -11,13 +11,13 @@ import {
   noCloudComputerInstruction,
   noComputerFilesInstruction,
 } from "./dozo-no-computer.prompt.js";
-import { createRunExecutor } from "./executor.js";
-import { EncryptedSecretStore } from "./secrets.js";
-import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
+import { createRunExecutor } from "./runs/executor/executor.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
+import { USER_COMPUTER_SCREEN_TOOLS } from "./computers/host/user-computer-tools.js";
 
 const provisionComputer = vi.hoisted(() => vi.fn());
 
-vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
+vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,

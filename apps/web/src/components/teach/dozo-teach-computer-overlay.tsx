@@ -1,6 +1,6 @@
 import { planHasNoComputer } from "@rakazo/contracts";
 import type { ComponentProps } from "react";
-import { useBilling } from "../SubscriptionGate";
+import { useBilling } from "../billing/SubscriptionGate";
 import { TeachComputerOverlayControl as UpstreamControl } from "./TeachComputerOverlay";
 
 /** Upstream's Teach control in the computer header, hidden on a plan with no computer. */

@@ -1,10 +1,10 @@
 import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import type { HostComputerRequest } from "./host-computer-protocol.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
-import { userComputerShell } from "./run-tools-user-computer.js";
-import type { UserDeviceGateway } from "./user-device-protocol.js";
+import type { HostComputerRequest } from "./computers/host/host-computer-protocol.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
+import { userComputerShell } from "./runs/tools/run-tools-user-computer.js";
+import type { UserDeviceGateway } from "./computers/host/user-device-protocol.js";
 
 /**
  * Dozo's Free plan has no hosted computer: its allowance is zero, so starting the bot's own

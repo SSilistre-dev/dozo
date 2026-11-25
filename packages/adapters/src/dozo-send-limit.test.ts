@@ -12,9 +12,9 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   takeDozoDailySend: db.take,
 }));
 
-import { buildApprovalAskBlock } from "./approval-ask.js";
+import { buildApprovalAskBlock } from "./approvals/approval-ask.js";
 import { dozoSendLimitCard, dozoSendLimitGate } from "./dozo-send-limit.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 const ctx = {
   deps: { prisma: {} },

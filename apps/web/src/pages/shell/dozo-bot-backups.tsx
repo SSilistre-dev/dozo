@@ -13,8 +13,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Plus } from "lucide-react";
 import { toastError } from "../../lib/dozo-error-text";
-import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
 import { useDozoRestNote } from "../model-settings/dozo-model-rests";
 import type { RoleModelOption } from "../model-settings/role-model-picker";
 import { RoleModelPicker } from "../model-settings/role-model-picker";

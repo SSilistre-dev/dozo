@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Prisma } from "./client.js";
+import type { Prisma } from "./database/client.js";
 import { readDozoDailySends, saveDozoDailySends, takeDozoDailySend } from "./dozo-send-limit.js";
 
 /** Answers each query with the next of `answers`; statements answer nothing. */

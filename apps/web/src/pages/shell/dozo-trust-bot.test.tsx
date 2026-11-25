@@ -12,11 +12,11 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoAccessTokens: { trustBot: api.trustBot, botMark: api.botMark } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../components/ConfirmIdentityDialog", () => ({
+vi.mock("../../components/account/ConfirmIdentityDialog", () => ({
   useIdentityConfirmation: () => ({
     withIdentityConfirmation: <T,>(action: () => Promise<T>) => {
       api.confirmed();
@@ -25,7 +25,7 @@ vi.mock("../../components/ConfirmIdentityDialog", () => ({
     identityDialog: <div data-testid="identity-dialog" />,
   }),
 }));
-vi.mock("../../lib/user-error", () => ({
+vi.mock("../../../../../packages/i18n/src/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -37,7 +37,7 @@ vi.mock("@rakazo/ui-web", () => ({
   toast: { error: api.toastError },
 }));
 
-import { queryClient as client } from "../../lib/query";
+import { queryClient as client } from "../../lib/query/query";
 import { DozoTrustBotHost, DozoTrustBotItem } from "./dozo-trust-bot";
 
 let container: HTMLDivElement;

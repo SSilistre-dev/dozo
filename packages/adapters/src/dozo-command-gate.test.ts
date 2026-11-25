@@ -21,7 +21,7 @@ import {
   dozoHostedCommandHold,
   dozoRunStartedFromOutside,
 } from "./dozo-command-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 type Mode = "ask" | "auto" | "never";
 

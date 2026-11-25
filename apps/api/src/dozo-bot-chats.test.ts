@@ -21,8 +21,8 @@ import {
 import type { RouterContext } from "./routes/context.js";
 
 const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn(), stopThreadRuns: vi.fn() }));
-vi.mock("./thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
-vi.mock("./thread-stop.js", () => ({ stopThreadRuns: mocks.stopThreadRuns }));
+vi.mock("./threads/thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
+vi.mock("./threads/thread-stop.js", () => ({ stopThreadRuns: mocks.stopThreadRuns }));
 
 const actor = { userId: "user-me", spaceId: "space-1", email: "me@example.test" } as Actor;
 const createdAt = new Date("2026-11-21T10:00:00.000Z");

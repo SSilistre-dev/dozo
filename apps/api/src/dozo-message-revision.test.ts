@@ -35,11 +35,11 @@ vi.mock("./routes/shared.js", () => ({
   modelSetup: mocks.modelSetup,
   botsRunOwnModels: mocks.botsRunOwnModels,
 }));
-vi.mock("./taught-skills.js", () => ({
+vi.mock("./bots/taught-skills.js", () => ({
   assertTeachingSendAllowed: mocks.assertTeachingSendAllowed,
 }));
-vi.mock("./thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
-vi.mock("./artifacts.js", () => ({ buildSendPrompt: (text: string) => `prompt: ${text}` }));
+vi.mock("./threads/thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
+vi.mock("./content/artifacts.js", () => ({ buildSendPrompt: (text: string) => `prompt: ${text}` }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   appendEventInTransaction: mocks.appendEventInTransaction,

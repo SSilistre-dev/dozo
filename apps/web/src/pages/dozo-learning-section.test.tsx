@@ -18,7 +18,7 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = {
     dozoLearning: { get: api.get, setMode: api.setMode, undo: api.undo },
     memory: { list: api.memoryList, budget: api.budget },
@@ -51,7 +51,7 @@ vi.mock("@rakazo/ui-web", () => ({
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
 }));
 
-import { QueryUserProvider } from "../lib/query";
+import { QueryUserProvider } from "../lib/query/query";
 import { dozoLearningChanged } from "./dozo-learning-changed";
 import { DozoLearningSection } from "./dozo-learning-section";
 

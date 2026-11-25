@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./database/client.js";
 import {
   holdSharedSpace,
   isReplayedUpload,

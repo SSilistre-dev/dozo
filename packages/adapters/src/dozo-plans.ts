@@ -5,8 +5,8 @@ import {
   organizationForMember,
   tierInForce,
 } from "@rakazo/db";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { modelCreditBillingEnabled } from "./run-model.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { modelCreditBillingEnabled } from "./runs/turn/run-model.js";
 
 type BillingDeps = Pick<ExecutorDeps, "billingEnabled"> & { prisma: PrismaClient };
 

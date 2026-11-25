@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lastingWriteCard } from "./dozo-lasting-write-card.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // Reads the branded approvalDetailLength (dozo/brand/brand.json). Runs on the staged tree.
 
 const current = vi.hoisted(() => ({ skill: undefined as Record<string, unknown> | undefined }));
-vi.mock("./skill-tools.js", async (importOriginal) => ({
+vi.mock("./tools/skill-tools.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   skillReadFromTool: vi.fn(async () => current.skill ?? { error: "Skill not found." }),
 }));

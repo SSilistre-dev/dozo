@@ -8,7 +8,7 @@ import {
   dozoTokenRunPlan,
   runCameByToken,
 } from "./dozo-token-run.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 // What the SQL finds is covered against a real database in dozo-token-run.postgres.test.ts; these
 // cover the decisions around it.

@@ -4,12 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { authClient } from "../lib/auth";
-import type { AuthCapabilities } from "../lib/auth-capabilities";
-import { fetchAuthCapabilities } from "../lib/auth-capabilities";
-import type * as Passkeys from "../lib/passkeys";
-import { clearSpaceSelection } from "../lib/rpc";
-import { AuthPage } from "./Auth";
+import { authClient } from "../lib/auth/auth";
+import type { AuthCapabilities } from "../lib/auth/auth-capabilities";
+import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
+import type * as Passkeys from "../lib/auth/passkeys";
+import { clearSpaceSelection } from "../lib/query/rpc";
+import { AuthPage } from "./auth/Auth";
 
 // A server with a mail provider opens no session at sign-up and refuses an unverified account's
 // password sign-in. The page answers with "Check your email" and never enters the app, and says
@@ -46,16 +46,16 @@ vi.mock("@rakazo/ui-web", () => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
 }));
-vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: vi.fn() }));
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/auth/auth-capabilities", () => ({ fetchAuthCapabilities: vi.fn() }));
+vi.mock("../lib/auth/auth", () => ({
   authClient: {
     signIn: { social: vi.fn(), email: vi.fn(), emailOtp: vi.fn(), passkey: vi.fn() },
     signUp: { email: vi.fn() },
     emailOtp: { sendVerificationOtp: vi.fn() },
   },
 }));
-vi.mock("../lib/rpc", () => ({ clearSpaceSelection: vi.fn() }));
-vi.mock("../lib/passkeys", async (importActual) => ({
+vi.mock("../lib/query/rpc", () => ({ clearSpaceSelection: vi.fn() }));
+vi.mock("../lib/auth/passkeys", async (importActual) => ({
   ...(await importActual<typeof Passkeys>()),
   usePasskeysSupported: () => false,
   conditionalPasskeyAvailable: async () => false,

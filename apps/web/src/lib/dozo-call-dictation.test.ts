@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Dictation } from "./dictation.js";
+import { Dictation } from "./calls/dictation.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();

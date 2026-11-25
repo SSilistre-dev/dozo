@@ -1,7 +1,7 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { dozoRemovedMessageId } from "./dozo-removed-message.js";
-import { reduceThreadSnapshot } from "./thread-snapshot-events.js";
+import { reduceThreadSnapshot } from "./threads/thread-snapshot-events.js";
 
 const message = (id: string, seq: number): ThreadMessage => ({
   id,

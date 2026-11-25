@@ -14,7 +14,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 }));
 
 import { readDozoModelPool, setDozoModelPool } from "./dozo-model-pool-settings.js";
-import { serializeModelSecret } from "./model-secret.js";
+import { serializeModelSecret } from "./models/model-secret.js";
 
 const now = Date.UTC(2026, 10, 20, 12);
 const HOUR = 60 * 60_000;

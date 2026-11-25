@@ -5,7 +5,7 @@ const api = vi.hoisted(() => ({
   connections: { catalog: vi.fn(), list: vi.fn() },
   capabilities: { list: vi.fn(), catalogSearch: vi.fn() },
 }));
-vi.mock("../../lib/rpc", () => ({ rpc: api }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: api }));
 
 import { loadIntegrations } from "./dozo-load-integrations";
 

@@ -1,7 +1,7 @@
 import { isBotAvatarValue } from "@rakazo/contracts";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { resolveUpdateBotAvatar } from "./bot-avatar.js";
+import { resolveUpdateBotAvatar } from "./bots/bot-avatar.js";
 import { dozoAvatarImageBytes } from "./dozo-avatar-upload.js";
 
 const dataUrl = (type: string, bytes: Uint8Array | string) =>

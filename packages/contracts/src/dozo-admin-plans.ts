@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { ByokTierSchema } from "./billing.js";
+import { ByokTierSchema } from "./billing/billing.js";
 import { ComputerSizeSpecSchema } from "./dozo-computer-size.js";
 
 /** Bounds an admin may set: ten terabytes of shared space, and every hour of a month and more. */

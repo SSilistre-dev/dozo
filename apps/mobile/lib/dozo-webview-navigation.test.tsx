@@ -8,8 +8,8 @@ import { createRoot } from "react-dom/client";
 import type { WebViewProps } from "react-native-webview";
 import type * as Shared from "react-native-webview/lib/WebViewShared";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MermaidDiagram } from "../components/mermaid-diagram";
-import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
+import { MermaidDiagram } from "../components/messages/mermaid-diagram";
+import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 
 // Runs on the branded tree (`make qa`): the navigation rules of the bot-HTML preview and the chat
 // diagram live in dozo/brand/brand.json.
@@ -34,7 +34,7 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   ActivityIndicator: () => <div role="progressbar" />,
 }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://one.example.invalid",
   subscribeApiBase: () => () => {},
 }));

@@ -5,13 +5,13 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { DozoSettingsNavGroups, dozoSettingsNavGroups, NOTICES_PAGE } from "./dozo-settings-nav";
-import type { SettingsNavItem } from "./settings-nav";
-import type { SettingsSection } from "./shell-overlay";
+import type { SettingsNavItem } from "./settings/settings-nav";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 
 const capabilities = vi.hoisted(() => ({
   fetchAuthCapabilities: vi.fn<() => Promise<{ notices?: boolean }>>(async () => ({})),
 }));
-vi.mock("../lib/auth-capabilities", () => capabilities);
+vi.mock("../lib/auth/auth-capabilities", () => capabilities);
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),

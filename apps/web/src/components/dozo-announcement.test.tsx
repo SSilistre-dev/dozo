@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ announcement: vi.fn(), locale: "en" }));
 
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoSiteSettings: {
@@ -25,7 +25,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { announcementText, DozoAnnouncementLayout, dozoSiteChanged } from "./dozo-announcement";
 
 let container: HTMLDivElement;

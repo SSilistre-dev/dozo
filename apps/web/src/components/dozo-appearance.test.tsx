@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({
   toggle: undefined as undefined | ((value: string[]) => void),
 }));
 
-vi.mock("../lib/ui-appearance", () => ({
+vi.mock("../lib/preferences/ui-appearance", () => ({
   getUiAppearancePreference: () => "dark",
   setUiAppearance: api.upstream,
   applyUiAppearance: () => "dark",

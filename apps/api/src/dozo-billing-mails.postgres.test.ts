@@ -5,7 +5,7 @@ import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createPool } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService } from "./billing/billing.js";
 import { BILLING_SWEEP_TASK, createBillingLifecycle } from "./dozo-billing-lifecycle.js";
 import { sqlMailStore } from "./dozo-billing-mails.js";
 

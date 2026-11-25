@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ track: vi.fn(), me: vi.fn() }));
-vi.mock("./rpc", () => ({ rpc: { me: api.me, dozoEvents: { track: api.track } } }));
+vi.mock("./query/rpc", () => ({ rpc: { me: api.me, dozoEvents: { track: api.track } } }));
 
 import { forgetEventServer } from "./dozo-event-sender";
 import { reportSignupStarted, reportUpgradeViewed } from "./dozo-events";

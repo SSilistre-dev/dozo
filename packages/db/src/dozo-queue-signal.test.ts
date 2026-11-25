@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { sendUserMessage } from "./events.js";
+import type { PrismaClient } from "./database/client.js";
+import { sendUserMessage } from "./threads/events.js";
 
 /**
  * The line of waiting work is re-read when the Space signals a change in its runs. A message sent

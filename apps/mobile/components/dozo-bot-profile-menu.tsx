@@ -4,10 +4,10 @@ import { useDozoNewChat } from "../lib/dozo-bot-chats";
 import { useChatExport } from "../lib/dozo-chat-export";
 import { useDozoChatPins } from "../lib/dozo-message-actions";
 import { useDozoTrustActions } from "../lib/dozo-trust-bot";
-import type { BotProfileAction } from "./bot-profile-menu";
-import { useBotProfileActions as useUpstreamBotProfileActions } from "./bot-profile-menu";
+import type { BotProfileAction } from "./bots/bot-profile-menu";
+import { useBotProfileActions as useUpstreamBotProfileActions } from "./bots/bot-profile-menu";
 
-export { botProfileMenuOptions } from "./bot-profile-menu";
+export { botProfileMenuOptions } from "./bots/bot-profile-menu";
 
 /**
  * Upstream's profile actions with New chat and Export first, as the web roster menu has them, then

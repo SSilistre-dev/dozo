@@ -1,8 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { partitionTools } from "./builtin-tool-bridge.js";
-import type { ToolHost } from "./pi-runtime-tools.js";
-import { toAgentTool } from "./pi-runtime-tools.js";
+import { partitionTools } from "./tools/builtin-tool-bridge.js";
+import type { ToolHost } from "./runtime/pi/tools/pi-runtime-tools.js";
+import { toAgentTool } from "./runtime/pi/tools/pi-runtime-tools.js";
 
 /**
  * A paused turn may hold a direct call to a built-in that was listed when it paused and is now

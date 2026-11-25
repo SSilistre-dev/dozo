@@ -1,5 +1,5 @@
 import { announcementText } from "@rakazo/contracts";
-import { queryClient, rpcQuery } from "./query";
+import { queryClient, rpcQuery } from "./query/query";
 
 const ANNOUNCEMENT = "dozoSiteSettings/announcement";
 

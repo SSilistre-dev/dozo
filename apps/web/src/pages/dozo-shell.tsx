@@ -3,7 +3,7 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { PageLoading } from "../components/PageLoading";
-import { authClient } from "../lib/auth";
+import { authClient } from "../lib/auth/auth";
 import { reportEvent, reportSignupStarted } from "../lib/dozo-events";
 import type { PlanIntent } from "../lib/dozo-plan-intent";
 import {
@@ -12,7 +12,7 @@ import {
   planIntentFromParams,
   savePlanIntent,
 } from "../lib/dozo-plan-intent";
-import { rpc } from "../lib/rpc";
+import { rpc } from "../lib/query/rpc";
 import { ShellPage as UpstreamShellPage } from "./Shell";
 import { DozoChatAddress, useDozoOpenChat } from "./shell/dozo-bot-chats";
 import { DozoTrustBotHost } from "./shell/dozo-trust-bot";

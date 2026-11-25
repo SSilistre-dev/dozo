@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { authCapabilitiesSchema, isPrivateNetworkHost } from "@rakazo/contracts";
 import { cancelResponseBody, readBoundedJsonResponse, withAbort } from "@rakazo/core";
-import type { EndpointResult } from "./endpoint";
-import { MAX_API_PROBE_RESPONSE_BYTES, normalizeApiBase, probeApiBase } from "./endpoint";
+import type { EndpointResult } from "./api/endpoint";
+import { MAX_API_PROBE_RESPONSE_BYTES, normalizeApiBase, probeApiBase } from "./api/endpoint";
 
 /** Short: the person is waiting on the Server screen, and a second address may follow. */
 export const SERVER_PROBE_TIMEOUT_MS = 6_000;

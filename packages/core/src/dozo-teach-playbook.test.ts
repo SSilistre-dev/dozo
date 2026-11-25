@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientError } from "./client-error.js";
+import { ClientError } from "./primitives/client-error.js";
 import type { TeachRecordingEvent } from "./dozo-teach-playbook.js";
 import {
   applyValueDecisions,
@@ -19,7 +19,7 @@ import {
   withClickTargets,
 } from "./dozo-teach-playbook.js";
 import * as core from "./index.js";
-import { formatSkillRunPrompt as upstreamFormatSkillRunPrompt } from "./teach-playbook.js";
+import { formatSkillRunPrompt as upstreamFormatSkillRunPrompt } from "./skills/teach-playbook.js";
 
 const at = "2026-01-01T00:00:00.000Z";
 

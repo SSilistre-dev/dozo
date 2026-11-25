@@ -9,9 +9,9 @@ import {
   rejectedLearningSkills,
   setSkillSuggestion,
 } from "./dozo-learning-store.js";
-import { listAgentSkillRecords } from "./skill-tools.js";
-import type { TaughtSkillRow } from "./teaching-session.js";
-import { emitSkillDraftMessages, emptyRecording } from "./teaching-session.js";
+import { listAgentSkillRecords } from "./tools/skill-tools.js";
+import type { TaughtSkillRow } from "./bots/teaching-session.js";
+import { emitSkillDraftMessages, emptyRecording } from "./bots/teaching-session.js";
 
 // A skill a learning review suggests: a draft taught skill and the draft card teaching posts,
 // in the bot's own chat, for the owner to save or dismiss. Never saved without them, in any mode.

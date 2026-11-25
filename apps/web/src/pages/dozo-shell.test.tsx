@@ -30,12 +30,12 @@ vi.mock("./shell/dozo-bot-chats", async () => {
       ),
   };
 });
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/auth/auth", () => ({
   authClient: {
     useSession: () => ({ data: mocks.userId ? { user: { id: mocks.userId } } : null }),
   },
 }));
-vi.mock("../lib/rpc", () => ({
+vi.mock("../lib/query/rpc", () => ({
   rpc: { me: mocks.me, billing: { status: mocks.status }, dozoEvents: { track: mocks.track } },
 }));
 

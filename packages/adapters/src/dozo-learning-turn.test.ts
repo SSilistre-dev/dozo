@@ -10,8 +10,8 @@ import {
 } from "./dozo-learning-review.js";
 import { countsForLearning, dozoRecordLearningTurn } from "./dozo-learning-turn.js";
 import { markRunReadOutside } from "./dozo-read-outside.js";
-import type { RunContext, RunState } from "./run-context.js";
-import { markReadOutsideContent } from "./run-context.js";
+import type { RunContext, RunState } from "./runs/assembly/run-context.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
 
 // When a finished run becomes a learning turn, and what it starts. The SQL itself is covered by
 // dozo-learning-store.test.ts and, against a real database, dozo-learning.postgres.test.ts.
@@ -26,7 +26,7 @@ const { resolveRunModel, resolveConnectedRunModel } = vi.hoisted(() => ({
   resolveRunModel: vi.fn(async () => ({ provider: "test", id: "own" })),
   resolveConnectedRunModel: vi.fn(async () => ({ provider: "test", id: "role" })),
 }));
-vi.mock("./run-model.js", () => ({ resolveRunModel, resolveConnectedRunModel }));
+vi.mock("./runs/turn/run-model.js", () => ({ resolveRunModel, resolveConnectedRunModel }));
 
 const { runReadPhone, onlyOwnerReads } = vi.hoisted(() => ({
   runReadPhone: vi.fn(async () => false),

@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ComponentProps } from "react";
 import { Alert, Platform, Pressable } from "react-native";
 import { queueLine, queueSheet, stopText, useDozoQueue } from "../../lib/dozo-queue";
-import { showIOSActionSheet } from "../../lib/ios-action-sheet";
+import { showIOSActionSheet } from "../../lib/native/ios-action-sheet";
 import { ThreadWorkingFooter } from "./thread-list-controls";
 
 type FooterProps = ComponentProps<typeof ThreadWorkingFooter>;

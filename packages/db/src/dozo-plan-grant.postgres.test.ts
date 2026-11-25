@@ -1,8 +1,8 @@
 import { BYOK_TIERS, TRIAL_SANDBOX_ALLOWANCE_CENTS } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { syncBillingSnapshot } from "./billing.js";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import { syncBillingSnapshot } from "./billing/billing.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import {
   grantInForce,
   paidTierOf,
@@ -12,7 +12,7 @@ import {
   tierInForce,
 } from "./dozo-plan-grant.js";
 import { SharedSpaceFullError, withSharedSpace } from "./dozo-shared-space.js";
-import { asSystem, runAsTenant } from "./row-security.js";
+import { asSystem, runAsTenant } from "./database/row-security.js";
 import { planComputerSize, sandboxAllowancePlan } from "./sandbox-allowance.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,

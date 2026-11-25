@@ -12,7 +12,7 @@ import {
 } from "./dozo-access-tokens.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
-import { AUDITED_PROCEDURES } from "./security-audit.js";
+import { AUDITED_PROCEDURES } from "./auth/security-audit.js";
 
 const spies = vi.hoisted(() => ({
   resolve: vi.fn(),
@@ -36,8 +36,8 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   dozoBotTokenTainted: spies.tainted,
 }));
-vi.mock("./identity-confirmation.js", () => ({ requireIdentityConfirmation: spies.confirm }));
-vi.mock("./thread-target.js", () => ({ resolveThreadTarget: spies.resolve }));
+vi.mock("./auth/identity-confirmation.js", () => ({ requireIdentityConfirmation: spies.confirm }));
+vi.mock("./threads/thread-target.js", () => ({ resolveThreadTarget: spies.resolve }));
 vi.mock("@rakazo/auth", () => ({ emailBanned: spies.banned }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),

@@ -2,10 +2,10 @@ import { bestEffort } from "@rakazo/logging";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import { noComputerFilesInstruction } from "./dozo-no-computer.prompt.js";
 import { PHONE_TOOL_NAMES } from "./dozo-phone.tool-definition.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { modelCreditBillingEnabled } from "./run-model.js";
-import { sandboxAllowance, sandboxHourlyCostMicros } from "./sandbox-allowance.js";
-import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { modelCreditBillingEnabled } from "./runs/turn/run-model.js";
+import { sandboxAllowance, sandboxHourlyCostMicros } from "./computers/sandbox/sandbox-allowance.js";
+import { restoreTurnCheckpoint } from "./runs/turn/turn-checkpoint.js";
 
 /**
  * The built-ins that work only on the bot's own computer: every one of them starts it. The user's

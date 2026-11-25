@@ -2,10 +2,10 @@ import { useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Alert } from "react-native";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { errorText } from "../lib/user-error";
-import { NativeSwitch } from "./native-switch";
-import { SettingsRow } from "./settings-group";
+import { NativeSwitch } from "./native/native-switch";
+import { SettingsRow } from "./settings/settings-group";
 
 /**
  * Whether commands that change something on the bot's computer ask first, under the account's

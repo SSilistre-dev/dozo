@@ -7,7 +7,7 @@ const upstream = vi.hoisted(() =>
     return { id: skillId };
   }),
 );
-vi.mock("./teaching-session.js", () => ({ expireTaughtSkillTeaching: upstream }));
+vi.mock("./bots/teaching-session.js", () => ({ expireTaughtSkillTeaching: upstream }));
 vi.mock("@rakazo/db", () => ({
   expireTeachValues: vi.fn(async (_prisma: unknown, skillId: string) => {
     calls.push(`values ${skillId}`);

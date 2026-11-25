@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const upstream = vi.hoisted(() => ({ plan: "allow" as "allow" | "ask" | "deny" }));
 const rules = vi.hoisted(() => ({ read: vi.fn(async (): Promise<DozoCommandRuleView[]> => []) }));
 
-vi.mock("./run-tools-user-computer.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./run-tools-user-computer.js")>()),
+vi.mock("./runs/tools/run-tools-user-computer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./runs/tools/run-tools-user-computer.js")>()),
   userComputerGate: vi.fn(async () => upstream.plan),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
@@ -15,7 +15,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 
 import { dozoCommandBlockRefusal } from "./dozo-command-gate.js";
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 const SHELL = "user_computer_shell";
 const KEY = { userId: "user-1", botId: "bot-1" };

@@ -2,7 +2,7 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import type { AuditEventPage } from "@rakazo/contracts";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { queryClient, rpcQuery } from "./query";
+import { queryClient, rpcQuery } from "./query/query";
 
 const PAGE_SIZE = 30;
 

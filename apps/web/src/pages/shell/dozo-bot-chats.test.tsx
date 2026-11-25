@@ -18,14 +18,14 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = {
     dozoChats: { create: api.create, rename: api.rename, archive: api.archive },
     threads: { markRead: api.markRead, markUnread: api.markUnread, snooze: api.snooze },
   };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoChats: {
@@ -131,7 +131,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../lib/query/query";
 import {
   DozoBotChatRows,
   DozoChatAddress,

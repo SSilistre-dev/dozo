@@ -26,8 +26,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { useId, useState } from "react";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
-import { SettingsRow } from "./SettingsRows";
+import { useSave, useSpaceQueries } from "../lib/query/query";
+import { SettingsRow } from "./settings/SettingsRows";
 
 const HOUR_MINUTES = Array.from({ length: 24 }, (_, hour) => hour * 60);
 /** The days choice that opens the single days. */

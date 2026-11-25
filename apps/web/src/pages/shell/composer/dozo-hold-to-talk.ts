@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef } from "react";
-import { webSpeechAvailable } from "../../lib/dictation";
-import { useEventListener } from "../../lib/use-event-listener";
-import { useHoldToTalk as useComposerHoldToTalk } from "./HoldToTalk";
+import { webSpeechAvailable } from "../../../lib/calls/dictation";
+import { useEventListener } from "../../../lib/use-event-listener";
+import { useHoldToTalk as useComposerHoldToTalk } from "./hold-to-talk";
 
-export { HoldToTalkStrip } from "./HoldToTalk";
+export { HoldToTalkStrip } from "./hold-to-talk";
 
 /**
  * What the fork's desktop shell sends the page when its push-to-talk shortcut goes down or up.

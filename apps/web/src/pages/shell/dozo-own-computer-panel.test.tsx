@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 // Runs on the branded tree only: the brand rules put OwnComputerRow into the bot panel and route a
 // refused switch to it. The row itself is covered by dozo-own-computer-row.test.tsx.
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = {
     bots: { emailAddress: vi.fn(async () => null), list: vi.fn(async () => []) },
     voice: { voices: vi.fn(async () => []) },
@@ -23,12 +23,12 @@ vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values);
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("../../components/SubscriptionGate", () => ({ useBilling: () => ({ status: null }) }));
+vi.mock("../../components/billing/SubscriptionGate", () => ({ useBilling: () => ({ status: null }) }));
 vi.mock("../../components/pages/PagesList", () => ({ PagesList: () => null }));
-vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
+vi.mock("./bots/avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("./dozo-bot-skills-section", () => ({ DozoBotSkillsSection: () => null }));
-vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
-vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
+vi.mock("../space/ScratchpadSection", () => ({ ScratchpadSection: () => null }));
+vi.mock("../space/KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 
 const row = vi.hoisted(() => ({
   last: null as null | {
@@ -44,7 +44,7 @@ vi.mock("./dozo-own-computer-row", () => ({
   },
 }));
 
-import { BotSettings } from "./bot-panel";
+import { BotSettings } from "./bots/bot-panel";
 
 const bot = {
   id: "bot-1",

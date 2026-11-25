@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dozoMemoryAsData } from "./dozo-memory-as-data.js";
-import { buildAgentMemoryPrompt } from "./memory-context.prompt.js";
+import { buildAgentMemoryPrompt } from "./memory/memory-context.prompt.js";
 
 // Memory reaches the model as data inside one block (memory-context.prompt.ts, with the fork's
 // rule): no note, however it was written, closes that block or passes for one of its headings.

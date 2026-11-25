@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import { readBackupReplies, recordBackupReply } from "./dozo-backup-replies.js";
-import { asSystem, runAsTenant } from "./row-security.js";
+import { asSystem, runAsTenant } from "./database/row-security.js";
 
 // Runs against a migrated database only; the fork's unit gate has no database and skips it.
 

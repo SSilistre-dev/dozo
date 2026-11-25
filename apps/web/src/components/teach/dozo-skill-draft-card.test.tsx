@@ -18,7 +18,7 @@ const api = vi.hoisted(() => ({
   list: vi.fn(async () => []),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const client = {
     dozoTeach: {
       review: api.review,

@@ -2,12 +2,12 @@ import { useLingui } from "@lingui/react/macro";
 import { useNow } from "@rakazo/chat-ui/hooks";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "react-native";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
-import { accountRpcQuery, queryClient, useSave } from "../lib/query";
-import { useRosterSignals } from "../lib/roster-signals";
-import { ACCOUNT_SETTINGS } from "../lib/settings-target";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { accountRpcQuery, queryClient, useSave } from "../lib/query/query";
+import { useRosterSignals } from "../lib/api/roster-signals";
+import { ACCOUNT_SETTINGS } from "../lib/query/settings-target";
 import { errorText } from "../lib/user-error";
-import { SettingsGroup, SettingsSwitch } from "./settings-group";
+import { SettingsGroup, SettingsSwitch } from "./settings/settings-group";
 
 /**
  * The model pool on a connection's page, as the web app has it: one switch, offered only where the

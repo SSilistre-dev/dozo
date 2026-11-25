@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { StripeBillingProvider } from "./stripe-billing.js";
+import { StripeBillingProvider } from "./providers/billing/stripe/stripe-billing.js";
 
 // Runs on the branded tree only: the checkout shape below is the brand rules'.
 

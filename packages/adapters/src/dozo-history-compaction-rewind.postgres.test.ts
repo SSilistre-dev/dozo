@@ -10,7 +10,7 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { compactHistory } from "./history-compaction.js";
+import { compactHistory } from "./runtime/context/history-compaction.js";
 
 // Runs against a migrated database only (dozo/docker/postgres-tests.sh, which also runs it with the
 // database in other time zones than UTC). The fork's unit gate has no database and skips it.

@@ -5,9 +5,9 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createPageSession } from "../../lib/pages";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { useComposerActions } from "./use-composer-actions";
+import { createPageSession } from "../../lib/pages/pages";
+import type { createSpaceRpc } from "../../lib/query/rpc";
+import { useComposerActions } from "./composer/use-composer-actions";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>

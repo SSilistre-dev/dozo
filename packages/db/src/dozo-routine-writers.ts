@@ -1,4 +1,4 @@
-import type { PrismaClient } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
 
 /**
  * Who last created or changed each routine (`dozo_routine_writers`, migration

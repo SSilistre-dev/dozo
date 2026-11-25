@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
+vi.mock("../components/WindowChrome", () => ({ WindowChrome: () => null }));
 
 import { NotFoundPage } from "./dozo-not-found";
 

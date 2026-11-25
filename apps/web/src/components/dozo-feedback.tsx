@@ -3,7 +3,7 @@ import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import { lazy, Suspense, useSyncExternalStore } from "react";
-import { useSpaceQueries } from "../lib/query";
+import { useSpaceQueries } from "../lib/query/query";
 
 const DozoFeedbackDialog = lazy(() =>
   import("./dozo-feedback-dialog").then((module) => ({ default: module.DozoFeedbackDialog })),

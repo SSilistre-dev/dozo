@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forwardsToApi } from "./api-proxy.js";
+import { forwardsToApi } from "../server/api-proxy.js";
 
 describe("what the web server forwards to the API (MCP metadata)", () => {
   it("forwards the MCP endpoint's OAuth metadata, as the API serves it", () => {

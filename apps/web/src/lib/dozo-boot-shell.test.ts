@@ -7,7 +7,7 @@ import {
   BOTS_SIDEBAR_MINI_WIDTH,
   clampBotsSidebarWidth,
   readBotsSidebarWidth,
-} from "./bots-sidebar-pref";
+} from "./preferences/bots-sidebar-pref";
 
 function runAt(path: string, viewport = 1280, saved: Record<string, string> = {}) {
   window.history.replaceState(null, "", path);

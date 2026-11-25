@@ -7,9 +7,9 @@ import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { hasModelAccess, memberHasModelAccess, planComputerSize } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService } from "./billing/billing.js";
 import { PlanNotOfferedError } from "./dozo-billing.js";
-import { createReferrals } from "./referrals.js";
+import { createReferrals } from "./billing/referrals.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
 
@@ -89,7 +89,7 @@ vi.mock("@rakazo/db", async (original) => ({
     return { expiresAt: new Date() };
   },
 }));
-vi.mock("./access-grants.js", () => ({ applyAccessGrants: async () => undefined }));
+vi.mock("./auth/access-grants.js", () => ({ applyAccessGrants: async () => undefined }));
 
 /** Computer hours run this period, as the usage query answers. */
 const runs: { kind: string; hours: number }[] = [];

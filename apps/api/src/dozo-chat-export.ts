@@ -2,8 +2,8 @@ import type { Actor, DozoChatExportInput } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { chatMarkdown, chatTimeFormatter } from "./dozo-chat-markdown.js";
 import type { RouterContext } from "./routes/context.js";
-import { loadMessagePage } from "./thread-message-pages.js";
-import { resolveThreadTarget } from "./thread-target.js";
+import { loadMessagePage } from "./threads/thread-message-pages.js";
+import { resolveThreadTarget } from "./threads/thread-target.js";
 
 const PAGE_SIZE = 200;
 

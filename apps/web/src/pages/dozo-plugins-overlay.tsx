@@ -14,7 +14,7 @@ import type { ComponentProps } from "react";
 import { Suspense } from "react";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { preloadPluginsOverlay, warmPluginsOverlay } from "./dozo-plugins-overlay-chunk";
-import type { PluginsOverlay as LoadedPluginsOverlay } from "./PluginsOverlay";
+import type { PluginsOverlay as LoadedPluginsOverlay } from "./plugins/PluginsOverlay";
 import { IntegrationRowsSkeleton } from "./plugins/dozo-integrations-skeleton";
 
 type PluginsOverlayProps = ComponentProps<typeof LoadedPluginsOverlay>;

@@ -14,12 +14,12 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/auth/auth", () => ({
   authClient: { useSession: () => api.session, sendVerificationEmail: api.send },
 }));
-vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: api.capabilities }));
+vi.mock("../lib/auth/auth-capabilities", () => ({ fetchAuthCapabilities: api.capabilities }));
 vi.mock("../lib/dozo-error-text", () => ({ toastError: api.toastError }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   authErrorText: (error: { code?: string }, fallback: string) =>
     error.code === "TOO_MANY_REQUESTS" ? "Too many attempts" : fallback,
 }));

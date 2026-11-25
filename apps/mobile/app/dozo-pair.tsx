@@ -5,8 +5,8 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { currentApiBase, flushPendingSignOut } from "../lib/api";
-import { saveApiBase } from "../lib/api-server";
+import { currentApiBase, flushPendingSignOut } from "../lib/api/api";
+import { saveApiBase } from "../lib/api/api-server";
 import { linkedOffer } from "../lib/dozo-pair-link";
 import type { RelayPairingError } from "../lib/dozo-relay-connection";
 import { pairRelay, readPairingOffer } from "../lib/dozo-relay-connection";
@@ -19,11 +19,11 @@ import {
   relayDeps,
   relayPairingStore,
 } from "../lib/dozo-relay-fetch";
-import { useMobileTokens } from "../lib/native";
-import { useScreenHeader } from "../lib/screen-header";
-import { loadSessionToken } from "../lib/session";
-import { useSideInsets } from "../lib/side-insets";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
+import { useMobileTokens } from "../lib/native/native";
+import { useScreenHeader } from "../lib/navigation/screen-header";
+import { loadSessionToken } from "../lib/api/session";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 /** Links already acted on: each arrives once, so a later visit never brings an old one back. */
 const usedLinks = new Set<string>();

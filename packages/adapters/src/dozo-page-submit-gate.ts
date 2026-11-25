@@ -3,7 +3,7 @@ import type { DomNode, Step } from "./dozo-page-submit.js";
 import { couldSubmit, notedPageSubmits, sendingSteps, submitsIn } from "./dozo-page-submit.js";
 import type { Route } from "./dozo-user-browser-gate.js";
 import { userBrowserRoute } from "./dozo-user-browser-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 /** The desktop passes only a whole number as a depth, so "all of it" is a number no page reaches. */
 const DOM_DEPTH = 256;

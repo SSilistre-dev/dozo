@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./mobile-types";
+import type { MobileMessage } from "./api/mobile-types";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -18,14 +18,14 @@ vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
   AppState: { currentState: "active" },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: state.rpc }));
-vi.mock("./live-notifications", () => ({ dismissThreadNotifications: state.dismiss }));
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({ rpc: state.rpc }));
+vi.mock("./notifications/live-notifications", () => ({ dismissThreadNotifications: state.dismiss }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
-import { useThreadRead } from "./thread-read";
+import { useThreadRead } from "./thread/thread-read";
 
 type Props = { botId?: string; groupId?: string; chatId?: string };
 let root: Root;

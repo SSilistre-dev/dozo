@@ -11,14 +11,14 @@ import {
   dozoWatchNextRunAt,
 } from "./dozo-wait.js";
 import { DOZO_WAIT_MAX_MINUTES } from "./dozo-wait.tool-definition.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import { normalizeOpenAiToolParameters } from "./openai-tool-parameters.js";
-import type { tickRoutineWatch } from "./routine-watch.js";
-import type { RunContext } from "./run-context.js";
-import { wakeRoutine } from "./run-routines.js";
-import { scheduleCreateRefusal } from "./run-tools-tasks.js";
-import type { createScheduleFromTool } from "./schedule-tools.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { parseConnectorToolArgs } from "./tools/lazy-tool-catalog.js";
+import { normalizeOpenAiToolParameters } from "./models/endpoints/openai-tool-parameters.js";
+import type { tickRoutineWatch } from "./routines/routine-watch.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { wakeRoutine } from "./runs/assembly/run-routines.js";
+import { scheduleCreateRefusal } from "./runs/tools/run-tools-tasks.js";
+import type { createScheduleFromTool } from "./tools/schedule-tools.js";
 
 const MINUTE = 60_000;
 const NOW = new Date("2026-11-21T10:00:00Z");

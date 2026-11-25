@@ -13,10 +13,10 @@ vi.mock("react-native", () => ({
 vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => null }));
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("expo-constants", () => ({ default: {} }));
-vi.mock("./api", () => ({}));
-vi.mock("./session", () => ({}));
-vi.mock("./server-headers", () => ({}));
-vi.mock("./monitoring", () => ({}));
+vi.mock("./api/api", () => ({}));
+vi.mock("./api/session", () => ({}));
+vi.mock("./api/server-headers", () => ({}));
+vi.mock("./platform/monitoring", () => ({}));
 
 const { createPhoneDevice, MAX_MESSAGE_BYTES, phoneStorageKey } = await import(
   "./dozo-phone-device"

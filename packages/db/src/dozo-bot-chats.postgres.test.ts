@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
-import type { ContentExportRecord } from "./content-export.js";
-import { exportContent } from "./content-export.js";
-import { asSystem } from "./row-security.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
+import type { ContentExportRecord } from "./history/content-export.js";
+import { exportContent } from "./history/content-export.js";
+import { asSystem } from "./database/row-security.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;

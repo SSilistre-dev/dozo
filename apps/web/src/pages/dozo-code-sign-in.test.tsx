@@ -62,26 +62,26 @@ vi.mock("@rakazo/ui-web", () => ({
   InputOTPGroup: ({ children }: { children: ReactNode }) => <>{children}</>,
   InputOTPSlot: () => null,
 }));
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/auth/auth", () => ({
   authClient: {
     emailOtp: { sendVerificationOtp: mocks.send },
     signIn: { emailOtp: mocks.verify, social: mocks.social },
   },
 }));
-vi.mock("../lib/sso-flow", () => ({ runSsoFlow: mocks.sso }));
-vi.mock("../lib/rpc", async (original) => {
-  const rpc = await original<typeof import("../lib/rpc")>();
+vi.mock("../lib/auth/sso-flow", () => ({ runSsoFlow: mocks.sso }));
+vi.mock("../lib/query/rpc", async (original) => {
+  const rpc = await original<typeof import("../lib/query/rpc")>();
   mocks.realClear = rpc.clearSpaceSelection;
   return { ...rpc, clearSpaceSelection: (...args: []) => mocks.clear(...args) };
 });
-vi.mock("../components/PasskeySignIn", () => ({
+vi.mock("../components/account/PasskeySignIn", () => ({
   usePasskeySignIn: () => ({
     supported: mocks.passkeySupported,
     pending: false,
     start: mocks.passkeyStart,
   }),
 }));
-vi.mock("../components/SocialSignInButtons", () => ({
+vi.mock("../components/account/SocialSignInButtons", () => ({
   SocialSignInButtons: (props: { providers: { id: string }[]; onPress: (id: string) => void }) => {
     mocks.providers(props.providers);
     return (
@@ -95,7 +95,7 @@ vi.mock("../components/SocialSignInButtons", () => ({
     );
   },
 }));
-vi.mock("./Auth", () => ({
+vi.mock("./auth/Auth", () => ({
   submitClass: "submit",
   AuthFrame: ({
     title,
@@ -115,7 +115,7 @@ vi.mock("./Auth", () => ({
 vi.mock("./dozo-signup-terms", () => ({ DozoSignupTerms: () => <p>terms</p> }));
 
 import type { SignInProvider } from "@rakazo/contracts";
-import { authErrorText } from "../lib/user-error";
+import { authErrorText } from "../../../../packages/i18n/src/user-error";
 import { DozoCodeSignIn, dozoCodeDigits, RESEND_AFTER_MS } from "./dozo-code-sign-in";
 import { DozoEmailCodeLink, dozoCodeSignInAvailable } from "./dozo-email-code-link";
 

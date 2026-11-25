@@ -1,5 +1,5 @@
 import { DOZO_FEEDBACK_IMAGE_MAX_BYTES, DOZO_FEEDBACK_MAX_IMAGES } from "@rakazo/contracts";
-import { pickFromLibrary } from "./pick-attachments";
+import { pickFromLibrary } from "./composer/pick-attachments";
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 

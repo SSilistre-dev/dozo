@@ -12,11 +12,11 @@ const api = vi.hoisted(() => ({
   signOut: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoSiteSessions: { signIn: api.signIn, signOut: api.signOut } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoSiteSessions: {
@@ -100,7 +100,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Spinner: () => <span role="status" />,
 }));
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../lib/query/query";
 import { SiteSessionsControl } from "./dozo-site-sessions";
 
 const status = (over: Partial<ComputerStatus> = {}) =>

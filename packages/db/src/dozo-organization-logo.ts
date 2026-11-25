@@ -1,8 +1,8 @@
 import type { DozoOrganizationLogo, DozoOrganizationMark } from "@rakazo/contracts";
-import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
-import { IsolationError } from "./scope.js";
+import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing/billing.js";
+import type { PrismaClient } from "./database/client.js";
+import { Prisma } from "./database/client.js";
+import { IsolationError } from "./database/scope.js";
 
 type Db = Pick<PrismaClient, "member" | "spaceMember">;
 

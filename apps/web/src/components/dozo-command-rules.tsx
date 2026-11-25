@@ -5,8 +5,8 @@ import { Button, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
-import { SettingsGroup, SettingsRow } from "./SettingsRows";
+import { useSave, useSpaceQueries } from "../lib/query/query";
+import { SettingsGroup, SettingsRow } from "./settings/SettingsRows";
 
 type Effect = DozoCommandRule["effect"];
 

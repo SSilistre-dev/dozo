@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
-import { ByokIntervalSchema, ByokTierSchema } from "./billing.js";
+import { ByokIntervalSchema, ByokTierSchema } from "./billing/billing.js";
 import { PLAN_LIMIT_CODES } from "./dozo-plan-limits.js";
 import { IsoDate } from "./ids.js";
 

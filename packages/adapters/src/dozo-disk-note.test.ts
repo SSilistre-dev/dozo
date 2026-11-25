@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diskNoteInstruction } from "./computer-disk.js";
+import { diskNoteInstruction } from "./computers/computer-disk.js";
 
 const disk = (usedGb: number, freeGb: number) => ({
   diskUsedBytes: BigInt(Math.round(usedGb * 1e9)),

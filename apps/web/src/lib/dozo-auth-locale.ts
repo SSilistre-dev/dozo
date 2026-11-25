@@ -1,4 +1,4 @@
-import { getActiveUiLocale } from "./i18n";
+import { getActiveUiLocale } from "./locale/i18n";
 
 /**
  * Tells the auth server the language the app is shown in. An account has no saved language until

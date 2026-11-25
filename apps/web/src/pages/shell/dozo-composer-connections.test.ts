@@ -1,7 +1,7 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { spaceQueries } from "../../lib/query";
+import { spaceQueries } from "../../lib/query/query";
 import { loadComposerConnections } from "./dozo-composer-connections";
 
 const queries = spaceQueries("user_1", "space_1");

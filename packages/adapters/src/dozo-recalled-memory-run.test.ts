@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildTurnPrompt } from "./run-assembly-context.js";
-import { userTurnInstructions } from "./run-instructions.prompt.js";
+import { buildTurnPrompt } from "./runs/assembly/run-assembly-context.js";
+import { userTurnInstructions } from "./runs/assembly/run-instructions.prompt.js";
 
 type Input = Parameters<typeof buildTurnPrompt>;
 

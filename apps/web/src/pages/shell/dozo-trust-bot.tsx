@@ -3,7 +3,7 @@ import { ContextMenuItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc } from "../../lib/query/rpc";
 
 /** Where a bot's mark is read; trusting it again makes this read again. */
 export const markKey = (botId: string) => ["dozoBotMark", botId] as const;

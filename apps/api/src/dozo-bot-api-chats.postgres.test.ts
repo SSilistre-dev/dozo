@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { DozoTokenCaller } from "./dozo-access-tokens.js";
 import { dozoBotApiDeps, mountDozoBotApi } from "./dozo-bot-api.js";
 import { createChat } from "./dozo-bot-chats.js";
-import { createMessagingInboundHandler } from "./messaging-inbound.js";
+import { createMessagingInboundHandler } from "./messaging/messaging-inbound.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 import { handleHttpError, handleRpcError } from "./rpc-errors.js";

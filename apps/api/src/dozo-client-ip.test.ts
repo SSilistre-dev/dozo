@@ -1,6 +1,6 @@
 import type { networkInterfaces } from "node:os";
 import { describe, expect, it } from "vitest";
-import { createClientIpResolver } from "./client-ip.js";
+import { createClientIpResolver } from "./http/client-ip.js";
 
 // The production stack (dozo/deploy/README.md, Client addresses): a CDN's client header, the
 // panel's proxy as the one trusted proxy, by container name. Addresses are on the stack's network.

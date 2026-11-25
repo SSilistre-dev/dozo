@@ -1,4 +1,4 @@
-import type { RunState } from "./run-context.js";
+import type { RunState } from "./runs/assembly/run-context.js";
 
 /** Attempts, by their run state, whose model was shown memory recalled for the turn. */
 const recalledStates = new WeakSet<RunState>();

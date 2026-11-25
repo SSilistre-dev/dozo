@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { ActivityIndicator } from "react-native";
 import { useDozoRouteChat } from "../lib/dozo-chat-route";
 import { DozoChatContext, dozoChatParam } from "../lib/dozo-chat-target";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native/native";
 
 /**
  * The chat route's own chat. A route holds one chat (a bot's main chat, or one of its extra chats)

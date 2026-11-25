@@ -2,9 +2,9 @@ import { Trans } from "@lingui/react/macro";
 import { Button, buttonVariants, Label, Switch } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
-import { useSave } from "../lib/query";
-import { listUserDevices } from "../lib/user-devices";
-import { SettingsGroup, SettingsRow } from "./SettingsRows";
+import { useSave } from "../lib/query/query";
+import { listUserDevices } from "../lib/auth/user-devices";
+import { SettingsGroup, SettingsRow } from "./settings/SettingsRows";
 
 /**
  * The address an older Dozo desktop app opens its own Settings window for, and does nothing else

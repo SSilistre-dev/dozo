@@ -4,8 +4,8 @@ import { Label, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
-import { SettingsRow } from "./SettingsRows";
+import { useSave, useSpaceQueries } from "../lib/query/query";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * How many sends each bot makes a day without asking, under the account's approval mode; past it,

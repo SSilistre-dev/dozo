@@ -2,7 +2,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import { defaultCatalogModelId, loadStoredModelSecret } from "../model-selection.js";
+import { defaultCatalogModelId, loadStoredModelSecret } from "../models/model-selection.js";
 import { agentConnected, agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
 import { enabledAgentProviders } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, LocalCliHost } from "./dozo-cli-driver.js";

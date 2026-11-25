@@ -1,7 +1,7 @@
-import type { BillingStatus, ByokTier } from "./billing.js";
-import { BYOK_TIERS } from "./billing.js";
-import type { ComputerMode } from "./computer.js";
-import { isComputerAllowanceUsed } from "./runs.js";
+import type { BillingStatus, ByokTier } from "./billing/billing.js";
+import { BYOK_TIERS } from "./billing/billing.js";
+import type { ComputerMode } from "./computers/computer.js";
+import { isComputerAllowanceUsed } from "./runs/runs.js";
 
 /**
  * What a client shows when a plan or server limit refuses something: one sentence and at most

@@ -34,7 +34,7 @@ import {
 } from "./dozo-phone.test-support.js";
 import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
 import { phoneCalendarValue } from "./dozo-phone-protocol.js";
-import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./user-device-gateway.js";
+import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./computers/host/user-device-gateway.js";
 
 /**
  * The same raw events and what is left of them, word for word in the phone's test

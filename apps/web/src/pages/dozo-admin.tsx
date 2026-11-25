@@ -19,13 +19,13 @@ import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageLoading } from "../components/PageLoading";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 import { DozoAdminAccount } from "./dozo-admin-account";
 import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 import { DozoPlanAction } from "./dozo-admin-plan";
 import { Row, Rows } from "./dozo-admin-rows";
 import { NotFoundPage } from "./dozo-not-found";
-import { WindowChrome } from "./WindowChrome";
+import { WindowChrome } from "../components/WindowChrome";
 
 /**
  * The hosted deployment's admin page, at `/admin` and every address under it that has no route

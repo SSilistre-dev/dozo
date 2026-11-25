@@ -2,9 +2,9 @@ import { t } from "@lingui/core/macro";
 import type { DozoQueueItem } from "@rakazo/contracts";
 import { queueLine as queueLineOf, queueRows } from "@rakazo/core";
 import { Alert } from "react-native";
-import { queryClient, rpcQuery, useSave } from "./query";
-import { useSpaceChanges } from "./roster-signals";
-import { useScreenQuery } from "./screen-query";
+import { queryClient, rpcQuery, useSave } from "./query/query";
+import { useSpaceChanges } from "./api/roster-signals";
+import { useScreenQuery } from "./query/screen-query";
 import { errorText } from "./user-error";
 
 type QueueTarget = { botId: string } | { groupId: string };

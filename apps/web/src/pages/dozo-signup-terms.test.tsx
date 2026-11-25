@@ -8,7 +8,7 @@ const lingui = vi.hoisted(() => ({ locale: "en" }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
 }));
-vi.mock("../lib/i18n", () => ({ getActiveUiLocale: () => lingui.locale }));
+vi.mock("../lib/locale/i18n", () => ({ getActiveUiLocale: () => lingui.locale }));
 
 import { DozoSignupTerms } from "./dozo-signup-terms";
 

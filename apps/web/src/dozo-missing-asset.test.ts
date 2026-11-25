@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IMMUTABLE_ASSET, missingAssetMiddleware } from "./dozo-missing-asset";
-import { createWebServer } from "./standalone-server.js";
+import { createWebServer } from "../server/standalone-server.js";
 
 const assetsDir = path.resolve("/srv/dist/assets");
 const present = new Set([path.join(assetsDir, "index-new.js")]);

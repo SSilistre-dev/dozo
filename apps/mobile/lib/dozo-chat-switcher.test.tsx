@@ -44,12 +44,12 @@ vi.mock("react-native", () => ({
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
     createElement("span", { "aria-label": accessibilityLabel }, children),
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   native: { secondaryLabel: "grey" },
   useResolvedAppearance: () => "dark",
 }));
-vi.mock("./search-inbox", () => ({ useInboxBot: () => api.inboxBot }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("./search/search-inbox", () => ({ useInboxBot: () => api.inboxBot }));
+vi.mock("../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./dozo-bot-chats", () => ({
   dozoChatRoute: (botId: string, chatId: string, name: string) => ({
     pathname: "/thread",

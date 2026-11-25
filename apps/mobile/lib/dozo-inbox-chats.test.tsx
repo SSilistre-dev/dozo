@@ -18,13 +18,13 @@ vi.mock("./dozo-bot-chats", () => ({
     return api.chats;
   },
 }));
-vi.mock("./use-snooze-clock", () => ({
+vi.mock("./inbox/use-snooze-clock", () => ({
   useSnoozeClock: (chats: unknown) => {
     api.clockSaw = chats;
     return api.now;
   },
 }));
-vi.mock("./inbox-spaces", () => ({
+vi.mock("./inbox/inbox-spaces", () => ({
   inboxItemKey: (item: { type: string; bot?: { id: string } }) => `upstream-${item.bot?.id}`,
   inboxSignal: () => ({ unread: 5, attention: 6 }),
 }));
@@ -37,8 +37,8 @@ import {
   dozoInboxSignal,
   useDozoInboxItems,
 } from "./dozo-inbox-chats";
-import type { InboxItem } from "./inbox-spaces";
-import type { MobileBot } from "./mobile-types";
+import type { InboxItem } from "./inbox/inbox-spaces";
+import type { MobileBot } from "./api/mobile-types";
 
 const bot = (id: string) => ({ id, name: `Bot ${id}` }) as MobileBot;
 const botItem = (id: string): InboxItem => ({ type: "bot", bot: bot(id) });

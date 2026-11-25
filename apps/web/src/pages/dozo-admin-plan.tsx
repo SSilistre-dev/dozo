@@ -5,7 +5,7 @@ import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web"
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 
 type Choice = "pro" | "max" | "none";
 

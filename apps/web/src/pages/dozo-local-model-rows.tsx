@@ -4,7 +4,7 @@ import { Check, Copy } from "lucide-react";
 import { LOCAL_RUNTIME } from "../lib/dozo-local-model-catalog";
 import type { LocalModelFit } from "../lib/dozo-local-model-fit";
 import { LOCAL_MODEL_CONTEXT_TOKENS } from "../lib/dozo-local-model-fit";
-import { errorText } from "../lib/user-error";
+import { errorText } from "../../../../packages/i18n/src/user-error";
 
 const oneDecimal = (value: number) => Number(value.toFixed(1));
 

@@ -16,7 +16,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { errorText } from "../../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { formatRelativeTime } from "../../lib/relative-time";
 
 /**

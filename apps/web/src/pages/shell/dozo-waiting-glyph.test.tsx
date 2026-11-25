@@ -8,11 +8,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), cancel: vi.fn(), toastError: vi.fn() }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoQueue: { cancelWaiting: api.cancel } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoQueue: {
@@ -54,7 +54,7 @@ vi.mock("@rakazo/ui-web", () => ({
   PopoverContent: ({ children }: { children: ReactNode }) => <div data-list>{children}</div>,
 }));
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../lib/query/query";
 import { DozoWaitingGlyph } from "./dozo-waiting-glyph";
 
 const item = (over: Partial<DozoQueueItem>): DozoQueueItem => ({

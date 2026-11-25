@@ -16,7 +16,7 @@ vi.mock("./dozo-computer-announce.js", () => ({
   },
 }));
 
-import { provisionComputer } from "./computer-lifecycle.js";
+import { provisionComputer } from "./computers/computer-lifecycle.js";
 
 it("starts every computer through the running announcement", async () => {
   const missing = new Error("no such computer");

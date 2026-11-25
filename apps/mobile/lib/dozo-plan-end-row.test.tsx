@@ -35,12 +35,12 @@ vi.mock("react-native", () => ({
     </span>
   ),
 }));
-vi.mock("./i18n", () => ({ dateLocaleForUi: () => "en-US" }));
-vi.mock("./native", () => ({
+vi.mock("./i18n/i18n", () => ({ dateLocaleForUi: () => "en-US" }));
+vi.mock("./native/native", () => ({
   native: { secondaryLabel: "secondary" },
   useMobileTokens: () => ({ warning: "warning" }),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsRow: ({ title, trailing }: { title: string; trailing?: ReactNode }) => (
     <div>
       <b>{title}</b>

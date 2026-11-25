@@ -1,4 +1,4 @@
-import type { PrismaClient } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
 
 /**
  * The runs a backup model answered (`dozo_backup_replies`, migration

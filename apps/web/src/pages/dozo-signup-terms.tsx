@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { getActiveUiLocale } from "../lib/i18n";
+import { getActiveUiLocale } from "../lib/locale/i18n";
 
 const SITE = "https://dozo.bot";
 

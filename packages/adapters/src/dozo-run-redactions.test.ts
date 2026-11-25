@@ -25,8 +25,8 @@ vi.mock("./bot-secrets.js", async (importOriginal) => ({
     return [`code-of-${runId}`];
   },
 }));
-vi.mock("./purchase-service.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./purchase-service.js")>()),
+vi.mock("./payments/purchase-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./payments/purchase-service.js")>()),
   loadPurchaseRedactions: async (_deps: unknown, scope: unknown) => {
     calls.push(["purchase", scope]);
     return ["4242424242424242"];

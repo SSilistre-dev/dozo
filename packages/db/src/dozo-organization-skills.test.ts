@@ -11,7 +11,7 @@ import {
   shareSkillWithOrganization,
   skillsReadableInSpace,
 } from "./dozo-organization-skills.js";
-import { IsolationError } from "./scope.js";
+import { IsolationError } from "./database/scope.js";
 
 const scope = { spaceId: "space-1", userId: "user-1" };
 

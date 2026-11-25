@@ -2,14 +2,14 @@ import { useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { mobileTokens } from "../../lib/appearance/appearance";
 import { dozoActivityAction, useDozoActivity } from "../../lib/dozo-activity";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
-import { native, useThemedStyles } from "../../lib/native";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useSideInsets } from "../../lib/side-insets";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { useSideInsets } from "../../lib/layout/side-insets";
 
 /**
  * The organization's activity log, newest first, as the web app shows it: what happened, to what,

@@ -2,8 +2,8 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { outsideRunToolRequiresApproval } from "@rakazo/core";
 import type { DozoMarkDb } from "./dozo-token-marks.js";
 import { dozoBotTokenTainted, dozoMarkBot } from "./dozo-token-marks.js";
-import type { RunContext } from "./run-context.js";
-import { READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { READ_ONLY_AGENT_TOOLS } from "./runs/tools/run-tool-selection.js";
 
 export { dozoBotTokenTainted } from "./dozo-token-marks.js";
 

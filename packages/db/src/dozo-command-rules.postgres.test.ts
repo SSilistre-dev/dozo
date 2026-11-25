@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import {
   dozoSpaceHasComputer,
   findDozoCommandRule,
@@ -13,9 +13,9 @@ import {
   saveDozoHostedAsks,
   updateDozoCommandRule,
 } from "./dozo-command-rules.js";
-import { createThreadMessage } from "./messages.js";
-import { asSystem, runAsTenant } from "./row-security.js";
-import { answerRunInput } from "./thread-ask.js";
+import { createThreadMessage } from "./threads/messages.js";
+import { asSystem, runAsTenant } from "./database/row-security.js";
+import { answerRunInput } from "./threads/thread-ask.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it.

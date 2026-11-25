@@ -14,10 +14,10 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import type { RefObject } from "react";
 import { useState } from "react";
-import { downloadArtifactBytes } from "../lib/artifact-open";
+import { downloadArtifactBytes } from "../lib/pages/artifact-open";
 import { toastError } from "../lib/dozo-error-text";
-import { useSpaceQueries } from "../lib/query";
-import { UsageSettingsPanel as UpstreamUsageSettingsPanel } from "../pages/AccountSettingsOverlay";
+import { useSpaceQueries } from "../lib/query/query";
+import { UsageSettingsPanel as UpstreamUsageSettingsPanel } from "../pages/settings/AccountSettingsOverlay";
 import { IconTooltip } from "./IconTooltip";
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;

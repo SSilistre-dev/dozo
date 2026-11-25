@@ -13,11 +13,11 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoMessages: { edit: api.edit, regenerate: api.regenerate } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoMessages: {
@@ -94,7 +94,7 @@ vi.mock("../../components/ConfirmDialog", () => ({
   ),
 }));
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../lib/query/query";
 import { useDozoMessageRevision } from "./dozo-message-revision";
 
 const ask: ThreadMessage = {

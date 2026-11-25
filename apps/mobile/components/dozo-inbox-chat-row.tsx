@@ -5,13 +5,13 @@ import { useRouter } from "expo-router";
 import { memo, useContext } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { dozoChatRoute, useDozoChatMenu } from "../lib/dozo-bot-chats";
-import { openChatFromInbox } from "../lib/inbox-changes";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useThemedStyles } from "../lib/native";
-import { androidRipple } from "../lib/ripple";
-import { DragSafePressable } from "./drag-safe-pressable";
-import { COMPACT_INBOX_ROW, createHomeStyles, INBOX_ROW } from "./home-styles";
-import { CompactRowsContext, SelectedChatContext } from "./inbox-rows";
+import { openChatFromInbox } from "../lib/inbox/inbox-changes";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { native, useThemedStyles } from "../lib/native/native";
+import { androidRipple } from "../lib/appearance/ripple";
+import { DragSafePressable } from "./ui/drag-safe-pressable";
+import { COMPACT_INBOX_ROW, createHomeStyles, INBOX_ROW } from "./inbox/inbox-styles";
+import { CompactRowsContext, SelectedChatContext } from "./inbox/inbox-rows";
 
 /**
  * One of a bot's extra chats under the bot's row, in line with the bot's name: its name and its own

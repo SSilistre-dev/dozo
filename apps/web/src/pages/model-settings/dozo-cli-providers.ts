@@ -1,8 +1,8 @@
 import type { DozoCliTool } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { queryClient, useQueryUserId } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { queryClient, useQueryUserId } from "../../lib/query/query";
+import { rpc } from "../../lib/query/rpc";
 
 /**
  * What the rest of the app reads of the tools below (the roster signal, the providers the key list

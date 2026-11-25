@@ -4,7 +4,7 @@ import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, storedMessageBlocks, withDozoChatBot } from "@rakazo/db";
 import type { RouterContext } from "./routes/context.js";
-import { resolveThreadTarget } from "./thread-target.js";
+import { resolveThreadTarget } from "./threads/thread-target.js";
 
 type Db = Pick<PrismaClient, "thread" | "message" | "$queryRaw" | "$executeRaw">;
 

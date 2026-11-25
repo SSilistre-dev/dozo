@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
 
-vi.mock("./query", () => ({ queryClient: new QueryClient() }));
+vi.mock("./query/query", () => ({ queryClient: new QueryClient() }));
 
 import { spaceChanged } from "./space-changes";
 

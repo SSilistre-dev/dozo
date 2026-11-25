@@ -3,7 +3,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { installSecurityEventStore } from "@rakazo/db";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mountUserDeviceRoutes } from "./user-devices.js";
+import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 
 // The branded pairing route (dozo/brand/brand.json): one phone per account. Runs on the staged tree.
 

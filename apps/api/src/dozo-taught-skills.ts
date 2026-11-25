@@ -32,8 +32,8 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
-import type { TaughtSkillsDeps } from "./taught-skills.js";
-import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "./taught-skills.js";
+import type { TaughtSkillsDeps } from "./bots/taught-skills.js";
+import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "./bots/taught-skills.js";
 
 /** How many of a thread's latest bot messages are looked through for a skill's card. */
 const CARD_MESSAGES = 100;

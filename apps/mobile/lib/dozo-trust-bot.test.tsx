@@ -23,10 +23,10 @@ vi.mock("./user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async (spaceId: string | null = "space") => ({
@@ -36,9 +36,9 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
 // The identity check is loaded with the dialog only: this stub counts when it is first used.
-vi.mock("../components/confirm-identity", () => ({
+vi.mock("../components/vault/confirm-identity", () => ({
   useIdentityConfirmation: () => {
     ui.mounted();
     return {
@@ -52,7 +52,7 @@ vi.mock("../components/confirm-identity", () => ({
 }));
 
 import { DozoTrustBotHost, useDozoTrustActions } from "./dozo-trust-bot";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let answers: Record<string, unknown>;
 let root: Root;

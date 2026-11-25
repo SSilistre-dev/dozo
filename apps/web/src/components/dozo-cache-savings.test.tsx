@@ -12,7 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 // Runs on the branded tree only: the procedure joins the app contract through a brand rule.
 
 const answer = vi.hoisted(() => ({ value: null as Savings | null }));
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/query/query", () => ({
   useSpaceQueries: () => ({
     dozoUsage: {
       cacheSavings: {
@@ -21,7 +21,7 @@ vi.mock("../lib/query", () => ({
     },
   }),
 }));
-vi.mock("./PlanUsage", () => ({ PlanUsage: () => <div data-testid="upstream-plan-usage" /> }));
+vi.mock("./billing/PlanUsage", () => ({ PlanUsage: () => <div data-testid="upstream-plan-usage" /> }));
 
 import { DozoCacheSavings } from "./dozo-cache-savings";
 import { PlanUsage } from "./dozo-plan-usage";

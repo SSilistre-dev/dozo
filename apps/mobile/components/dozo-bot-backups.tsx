@@ -13,14 +13,14 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import { useDozoRestNote } from "../lib/dozo-model-rests";
-import { closeModelPicker, openModelPicker } from "../lib/model-picker-selection";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
-import { useRosterSignals } from "../lib/roster-signals";
-import { useScreenQuery } from "../lib/screen-query";
+import { closeModelPicker, openModelPicker } from "../lib/models/model-picker-selection";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { useRosterSignals } from "../lib/api/roster-signals";
+import { useScreenQuery } from "../lib/query/screen-query";
 import { errorText } from "../lib/user-error";
-import { NativeSymbol } from "./native-symbol";
-import { SettingsGroup, SettingsRow } from "./settings-group";
+import { NativeSymbol } from "./native/native-symbol";
+import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 
 /** What a row's menu offers, and what the screen reader's actions name. */
 type RowAction = MenuAction & { id: string };

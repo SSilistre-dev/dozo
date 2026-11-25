@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import {
   readOrganizationLogo,
   readOrganizationMark,
   setOrganizationLogo,
 } from "./dozo-organization-logo.js";
-import { asSystem } from "./row-security.js";
-import { IsolationError } from "./scope.js";
+import { asSystem } from "./database/row-security.js";
+import { IsolationError } from "./database/scope.js";
 
 // Runs on the branded tree only, against a migrated database, the way the routes call it (as the
 // system, after the caller's own Space was resolved). The fork's unit gate skips it.

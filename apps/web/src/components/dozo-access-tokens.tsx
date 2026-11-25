@@ -15,9 +15,9 @@ import { Check, Copy, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useCopyText } from "../lib/copy-text";
 import { toastError } from "../lib/dozo-error-text";
-import { queryClient, useSave, useSpaceQueries } from "../lib/query";
-import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
-import { SettingsRow } from "./SettingsRows";
+import { queryClient, useSave, useSpaceQueries } from "../lib/query/query";
+import { useIdentityConfirmation } from "./account/ConfirmIdentityDialog";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * Personal access tokens for the bot API, from Settings > General > Security: one row that opens

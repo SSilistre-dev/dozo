@@ -15,11 +15,11 @@ const api = vi.hoisted(() => ({
   bridge: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoFeedback: { send: api.send } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoFeedback: {
@@ -29,9 +29,9 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("../lib/desktop", () => ({ desktopBridge: api.bridge }));
-vi.mock("../lib/artifact-open", () => ({ downloadArtifactBytes: api.download }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../lib/platform/desktop", () => ({ desktopBridge: api.bridge }));
+vi.mock("../lib/pages/artifact-open", () => ({ downloadArtifactBytes: api.download }));
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -92,7 +92,7 @@ vi.mock("@rakazo/ui-web", () => ({
   toast: Object.assign(api.toast, { error: vi.fn() }),
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoFeedbackHost, DozoFeedbackItem } from "./dozo-feedback";
 import { clientDiagnostics } from "./dozo-feedback-dialog";
 

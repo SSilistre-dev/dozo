@@ -1,4 +1,4 @@
-import { queryClient } from "../lib/query";
+import { queryClient } from "../lib/query/query";
 
 /**
  * A library change comes on the roster signal: read the skills and the library again. Apart from

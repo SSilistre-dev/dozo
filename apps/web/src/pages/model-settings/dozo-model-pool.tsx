@@ -4,10 +4,10 @@ import { Label, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useId } from "react";
-import { SettingsRow } from "../../components/SettingsRows";
+import { SettingsRow } from "../../components/settings/SettingsRows";
 import { toastError } from "../../lib/dozo-error-text";
-import { queryClient, useQueryUserId, useSave } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { queryClient, useQueryUserId, useSave } from "../../lib/query/query";
+import { rpc } from "../../lib/query/rpc";
 
 /**
  * The model pool in Models settings: one switch on a connection's page, offered only where the

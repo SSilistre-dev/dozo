@@ -40,7 +40,7 @@ vi.mock("expo-secure-store", () => ({
     app.secure.delete(key);
   },
 }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   currentApiBase: () => app.apiBase,
   captureApiRequestContext: async () => ({
     apiBase: app.apiBase,
@@ -54,7 +54,7 @@ vi.mock("./api", () => ({
     return app.removed.server;
   },
 }));
-vi.mock("./session", () => ({
+vi.mock("./api/session", () => ({
   currentSessionGeneration: () => app.generation,
   loadSessionToken: async () => app.token,
   subscribeSessionGeneration: (listener: () => void) => {
@@ -62,10 +62,10 @@ vi.mock("./session", () => ({
     return app.removed.session;
   },
 }));
-vi.mock("./server-headers", () => ({
+vi.mock("./api/server-headers", () => ({
   serverHeaders: () => ({ "cf-access-client-id": "placeholder" }),
 }));
-vi.mock("./monitoring", () => ({ reportMobileError: app.report }));
+vi.mock("./platform/monitoring", () => ({ reportMobileError: app.report }));
 
 const device = await import("./dozo-phone-device");
 

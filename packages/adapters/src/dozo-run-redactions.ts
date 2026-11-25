@@ -6,7 +6,7 @@ import {
   loadRunCodeRedactions,
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
-import { loadPurchaseRedactions } from "./purchase-service.js";
+import { loadPurchaseRedactions } from "./payments/purchase-service.js";
 
 export type RunRedactionDeps = {
   prisma: PrismaClient;

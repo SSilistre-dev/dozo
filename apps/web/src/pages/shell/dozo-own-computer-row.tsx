@@ -6,9 +6,9 @@ import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { useBilling } from "../../components/SubscriptionGate";
-import { useSpaceQueries } from "../../lib/query";
-import { SwitchRow } from "./bot-settings-sections";
+import { useBilling } from "../../components/billing/SubscriptionGate";
+import { useSpaceQueries } from "../../lib/query/query";
+import { SwitchRow } from "./bots/bot-settings-sections";
 
 /**
  * The bot's Own computer switch, with one line under it while it is off: why it cannot be turned

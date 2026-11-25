@@ -27,8 +27,8 @@ import {
   signupsOpenFrom,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { setAccountActive } from "./account-status.js";
-import { isAdmin, requireAdmin } from "./admins.js";
+import { setAccountActive } from "./account/account-status.js";
+import { isAdmin, requireAdmin } from "./auth/admins.js";
 import { dozoAdminAccessRoutes } from "./dozo-admin-access.js";
 import { readAccount } from "./dozo-admin-account.js";
 import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
@@ -42,9 +42,9 @@ import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
 import type { RouterContext } from "./routes/context.js";
 import { spendingLimitRoutes as upstreamSpendingLimitRoutes } from "./routes/spending-limit.js";
-import { afterSpaceDeparture } from "./space-departure.js";
-import type { DeviceStore } from "./user-devices.js";
-import { revokeUserDevices } from "./user-devices.js";
+import { afterSpaceDeparture } from "./spaces/space-departure.js";
+import type { DeviceStore } from "./auth/user-devices.js";
+import { revokeUserDevices } from "./auth/user-devices.js";
 
 export const DOZO_ADMIN_USERS_PAGE = 50;
 const DOZO_ADMIN_COMPUTERS_LIMIT = 100;

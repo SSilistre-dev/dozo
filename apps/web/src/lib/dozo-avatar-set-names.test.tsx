@@ -23,7 +23,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
-import { AvatarStudioPopover } from "../pages/shell/avatar-studio-popover";
+import { AvatarStudioPopover } from "../pages/shell/bots/avatar-studio-popover";
 
 const repo = (path: string) => readFileSync(join(import.meta.dirname, "../../../..", path), "utf8");
 

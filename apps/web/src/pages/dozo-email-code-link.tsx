@@ -1,7 +1,7 @@
 import { Trans } from "@lingui/react/macro";
 import "@rakazo/ui-web/dozo-auth.css";
 import { useLocation, useNavigate } from "react-router-dom";
-import type { AuthCapabilities } from "../lib/auth-capabilities";
+import type { AuthCapabilities } from "../lib/auth/auth-capabilities";
 
 /** Whether this server signs in with an emailed code: password sign-in on and a mail sender. */
 export function dozoCodeSignInAvailable(capabilities: AuthCapabilities | null | undefined) {

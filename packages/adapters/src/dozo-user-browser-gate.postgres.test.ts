@@ -4,7 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createRepos, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { forgetConsents, recordConsent } from "./dozo-user-browser-gate.js";
-import { createUserDeviceToken, hashUserDeviceToken } from "./user-device-gateway.js";
+import { createUserDeviceToken, hashUserDeviceToken } from "./computers/host/user-device-gateway.js";
 
 // Runs against a migrated database only (dozo/docker/postgres-tests.sh). The fork's unit gate has no
 // database and skips it.

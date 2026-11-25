@@ -1,6 +1,6 @@
 import type { MessageAuthor } from "@rakazo/contracts";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import type { MobileMessage } from "./mobile-types";
+import type { MobileMessage } from "./api/mobile-types";
 
 /**
  * People this phone hides: their messages in shared chats are not shown (App Review 1.2), and a

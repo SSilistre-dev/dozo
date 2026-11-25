@@ -13,7 +13,7 @@ const api = vi.hoisted(() => ({
   assign: vi.fn(),
 }));
 
-vi.mock("../lib/auth", () => ({ authClient: { useSession: () => api.session } }));
+vi.mock("../lib/auth/auth", () => ({ authClient: { useSession: () => api.session } }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
@@ -22,7 +22,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("./Auth", () => ({
+vi.mock("./auth/Auth", () => ({
   submitClass: "submit",
   AuthFrame: ({
     title,

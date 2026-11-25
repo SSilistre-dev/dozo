@@ -5,7 +5,7 @@ import { CODEX_AGENT_PROVIDER_ID } from "./cli-models/codex/dozo-codex-agent.js"
 import { enabledAgentProviders } from "./cli-models/dozo-agent.js";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import { isPhonePlatform } from "./dozo-phone-protocol.js";
-import type { UserDevice } from "./user-device-protocol.js";
+import type { UserDevice } from "./computers/host/user-device-protocol.js";
 
 /**
  * Sent by a paired computer when it connects: what it can do, comma-separated. A computer that

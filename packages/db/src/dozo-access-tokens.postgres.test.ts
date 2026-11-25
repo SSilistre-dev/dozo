@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import {
   createDozoAccessToken,
   DOZO_ACCESS_TOKEN_LIMIT,
@@ -11,7 +11,7 @@ import {
   takeDozoApiMinute,
   touchDozoAccessToken,
 } from "./dozo-access-tokens.js";
-import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
+import { asSystem, runAsSystem, runAsTenant } from "./database/row-security.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it.

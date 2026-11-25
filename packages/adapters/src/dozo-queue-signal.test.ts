@@ -1,8 +1,8 @@
 import type * as DbModule from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
-import { ComputerBusyError } from "./computer-lifecycle.js";
-import { createRunExecutor } from "./executor.js";
+import type * as ComputerLifecycleModule from "./computers/computer-lifecycle.js";
+import { ComputerBusyError } from "./computers/computer-lifecycle.js";
+import { createRunExecutor } from "./runs/executor/executor.js";
 
 const leases = vi.hoisted(() => ({ acquire: vi.fn(), dedicated: vi.fn(), release: vi.fn() }));
 
@@ -10,7 +10,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof DbModule>()),
   settleReleasedTakeoverCards: vi.fn(),
 }));
-vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
+vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: leases.acquire,
   acquireDedicatedScreenLeaseFence: leases.dedicated,

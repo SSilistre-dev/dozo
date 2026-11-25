@@ -20,8 +20,8 @@ import { dozoBotChatOf, IsolationError } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
-import { stopThreadRuns } from "./thread-stop.js";
-import { resolveThreadTarget } from "./thread-target.js";
+import { stopThreadRuns } from "./threads/thread-stop.js";
+import { resolveThreadTarget } from "./threads/thread-target.js";
 
 type Db = Pick<PrismaClient, "$queryRaw">;
 type Tx = Pick<Prisma.TransactionClient, "$queryRaw" | "$executeRaw" | "thread">;

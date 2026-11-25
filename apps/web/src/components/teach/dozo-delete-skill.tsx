@@ -2,8 +2,8 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { Trash2Icon } from "lucide-react";
 import { useState } from "react";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorText } from "../../../../../packages/i18n/src/user-error";
 import { ConfirmDialog } from "../ConfirmDialog";
 
 /**

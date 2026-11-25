@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { claudeCodeDriver } from "../providers/cli-model/claude-code/dozo-driver.js";
 import type { CliAccount, LocalCliHost } from "./dozo-cli-driver.js";
 import { accountHomeIds, cliAccountsRoot } from "./dozo-cli-homes.js";
 import {

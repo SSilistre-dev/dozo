@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { selectRunTools } from "./run-assembly-capabilities.js";
+import { selectRunTools } from "./runs/assembly/run-assembly-capabilities.js";
 
 // The branded run assembly. Automatic recall does not taint the run: a tainted run's turn is never
 // retained (run-turn.ts rule in dozo/brand/brand.json), and the recalled block reaches the model as

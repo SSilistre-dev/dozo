@@ -4,7 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./mobile-types";
+import type { MobileSnapshot } from "./api/mobile-types";
 
 // Runs on the branded tree: the message procedures exist once the brand rules apply.
 
@@ -12,10 +12,10 @@ const api = vi.hoisted(() => ({ rpc: vi.fn(), push: vi.fn() }));
 vi.mock("expo-router", () => ({ router: { push: api.push } }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: vi.fn() }));
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async () => ({
@@ -25,12 +25,12 @@ vi.mock("./api", () => ({
   }),
   rpc: api.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./roster-signals", () => ({ useRosterSignals: () => undefined }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/roster-signals", () => ({ useRosterSignals: () => undefined }));
 
 import { takeEditDraft, useDozoMessageActions } from "./dozo-message-actions";
 import { useDozoThreadMenus } from "./dozo-thread-menus";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let root: Root;
 

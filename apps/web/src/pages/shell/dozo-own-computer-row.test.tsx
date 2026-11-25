@@ -16,7 +16,7 @@ const billing = vi.hoisted(() => ({
   me: { userId: "maker" } as { userId: string } | undefined,
   members: undefined as { canManage: boolean } | undefined,
 }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/query/query", () => ({
   useSpaceQueries: () => ({
     me: { queryOptions: () => ({ queryKey: ["me"] }) },
     spaces: { members: { list: { queryOptions: () => ({ queryKey: ["members"] }) } } },
@@ -32,7 +32,7 @@ vi.mock("@lingui/react/macro", async () => {
   const { t } = await import("@lingui/core/macro");
   return { Trans: ({ children }: { children: string }) => t({ message: children }) };
 });
-vi.mock("../../components/SubscriptionGate", () => ({
+vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: billing.status, showPlans: billing.showPlans }),
 }));
 

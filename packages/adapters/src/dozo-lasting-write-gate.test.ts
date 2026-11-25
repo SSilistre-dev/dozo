@@ -2,10 +2,10 @@ import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { markRunReadHistory } from "./dozo-read-outside.js";
-import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
-import { markReadOutsideContent } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { ROUTINE_WATCH_NOTE_START } from "./routines/routine-watch.prompt.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // The branded gate, wired to lastingWriteHeld and lastingWriteCard (dozo/brand/brand.json), with the
 // branded markReadOutsideContent, and the marker run-tools.ts calls for a history tool
@@ -32,22 +32,22 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   recordAuditEvent: vi.fn(async () => {}),
 }));
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => ({
     duplicate: false,
     effect: { id: "effect-1", status: "intended" },
   })),
 }));
-vi.mock("./run-lifecycle.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   renewRunLease: vi.fn(async () => true),
 }));
-vi.mock("./run-context.js", async (importOriginal) => ({
+vi.mock("./runs/assembly/run-context.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   persistTurnCheckpoint: vi.fn(async () => {}),
 }));
-vi.mock("./skill-tools.js", async (importOriginal) => ({
+vi.mock("./tools/skill-tools.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   skillReadFromTool: vi.fn(async () => seen.skill ?? { error: "Skill not found." }),
 }));

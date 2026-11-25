@@ -1,7 +1,7 @@
 import type { ComputerMode } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { promptVersionParts } from "./prompt-version.js";
-import { loadComputerInstructions } from "./run-assembly-capabilities.js";
+import { promptVersionParts } from "./runs/assembly/prompt-version.js";
+import { loadComputerInstructions } from "./runs/assembly/run-assembly-capabilities.js";
 
 type Hold = Parameters<typeof loadComputerInstructions>[0];
 type Parts = Parameters<typeof loadComputerInstructions>[1];

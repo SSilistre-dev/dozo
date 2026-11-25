@@ -1,6 +1,6 @@
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { useState } from "react";
-import type { ComputerStatus } from "./computer";
+import type { ComputerStatus } from "./computers/computer";
 
 /** How long a running computer may go without its screen link before its preview says so. */
 export const SCREEN_PENDING_MS = 30_000;

@@ -12,8 +12,8 @@ import {
   fetchMobileJson,
   rpc,
   subscribeApiBase,
-} from "./api";
-import { isForegroundState } from "./app-foreground";
+} from "./api/api";
+import { isForegroundState } from "./platform/app-foreground";
 import type {
   PhoneCalendarRequest,
   PhoneCalendarValue,
@@ -56,9 +56,9 @@ import {
 import type { PhoneReminderCreateValue } from "./dozo-phone-reminders-write";
 import { createReminder } from "./dozo-phone-reminders-write";
 import { isRelayOrigin } from "./dozo-relay-connection";
-import { reportMobileError } from "./monitoring";
-import { serverHeaders } from "./server-headers";
-import { currentSessionGeneration, loadSessionToken, subscribeSessionGeneration } from "./session";
+import { reportMobileError } from "./platform/monitoring";
+import { serverHeaders } from "./api/server-headers";
+import { currentSessionGeneration, loadSessionToken, subscribeSessionGeneration } from "./api/session";
 
 /**
  * The phone as a paired device of its account (wire contract: the paired-computer connection,

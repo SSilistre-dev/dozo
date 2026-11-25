@@ -14,8 +14,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { readDeviceAgents, recordDeviceCapabilities } from "../dozo-device-capabilities.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "../dozo-user-device-gateway.js";
-import { handoffToGroupBot } from "../group-handoff.js";
-import { startRunModel } from "../run-model-start.js";
+import { handoffToGroupBot } from "../bots/group-handoff.js";
+import { startRunModel } from "../runs/turn/run-model-start.js";
 import { AGENT_OWN_RUNS_ONLY, AGENT_RECONNECT_ERROR, AGENT_TOKEN_TEXT } from "./dozo-agent.js";
 import { cliHomeConnection } from "./dozo-cli-accounts.js";
 import { ownRun } from "./dozo-cli-runtime.js";

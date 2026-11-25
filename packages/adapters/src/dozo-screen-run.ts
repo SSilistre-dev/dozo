@@ -2,7 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { ApprovalMode } from "@rakazo/core";
 import { storedMessageBlocks } from "@rakazo/db";
 import { heldAsInput } from "./dozo-command-gate.js";
-import type { RunContext, RunState } from "./run-context.js";
+import type { RunContext, RunState } from "./runs/assembly/run-context.js";
 
 /**
  * The answer on a card for input on the bot's screen that sends the rest of this run's screen

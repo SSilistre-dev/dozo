@@ -1,8 +1,8 @@
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { endCall, startCall } from "./call-session";
-import { dictation } from "./dictation.js";
-import { speaker } from "./tts.js";
+import { endCall, startCall } from "./calls/call-session";
+import { dictation } from "./calls/dictation.js";
+import { speaker } from "./calls/tts.js";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) => String.raw(strings, ...values),
@@ -11,8 +11,8 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/core")>()),
   runThreadSubscription: vi.fn(async () => undefined),
 }));
-vi.mock("./call-pickup.js", () => ({ pickUp: vi.fn(async () => undefined) }));
-vi.mock("./dictation.js", () => ({
+vi.mock("./calls/call-pickup.js", () => ({ pickUp: vi.fn(async () => undefined) }));
+vi.mock("./calls/dictation.js", () => ({
   usesServerDictation: vi.fn(() => false),
   dictation: {
     recording: false,
@@ -21,7 +21,7 @@ vi.mock("./dictation.js", () => ({
     subscribe: vi.fn(() => () => undefined),
   },
 }));
-vi.mock("./tts.js", () => ({
+vi.mock("./calls/tts.js", () => ({
   speaker: {
     speak: vi.fn(async () => undefined),
     stop: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock("./tts.js", () => ({
     subscribe: vi.fn(() => () => undefined),
   },
 }));
-vi.mock("./rpc.js", () => ({
+vi.mock("./query/rpc.js", () => ({
   recheckSessionOnUnauthorized: vi.fn(),
   rpc: {
     threads: {

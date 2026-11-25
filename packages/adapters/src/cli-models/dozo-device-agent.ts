@@ -20,11 +20,11 @@ import {
 import { deviceAgentIds, readDeviceAgents } from "../dozo-device-capabilities.js";
 import { PHONE_PLATFORMS } from "../dozo-phone-protocol.js";
 import { STALE_AFTER_MS } from "../dozo-user-device-gateway.js";
-import type { HostComputerRequest } from "../host-computer-protocol.js";
-import { defaultCatalogModelId } from "../model-selection.js";
-import { maxToolCallsPerTurn } from "../pi-runtime-tools.js";
-import { UserDeviceOfflineError } from "../user-device-gateway.js";
-import type { UserDeviceGateway } from "../user-device-protocol.js";
+import type { HostComputerRequest } from "../computers/host/host-computer-protocol.js";
+import { defaultCatalogModelId } from "../models/model-selection.js";
+import { maxToolCallsPerTurn } from "../runtime/pi/tools/pi-runtime-tools.js";
+import { UserDeviceOfflineError } from "../computers/host/user-device-gateway.js";
+import type { UserDeviceGateway } from "../computers/host/user-device-protocol.js";
 import type { AgentDriver } from "./dozo-agent.js";
 import {
   AGENT_BRIDGE_PAUSED,

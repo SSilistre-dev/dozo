@@ -4,8 +4,8 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DictationSnapshot } from "../../lib/dictation";
-import { dictation } from "../../lib/dictation";
+import type { DictationSnapshot } from "../../../lib/calls/dictation";
+import { dictation } from "../../../lib/calls/dictation";
 import { TALK_KEY_EVENT, useHoldToTalk } from "./dozo-hold-to-talk";
 
 vi.mock("@lingui/react/macro", () => {
@@ -22,7 +22,7 @@ function emit(snapshot: DictationSnapshot) {
 
 let webSpeech = false;
 
-vi.mock("../../lib/dictation", () => ({
+vi.mock("../../../lib/calls/dictation", () => ({
   webSpeechAvailable: () => webSpeech,
   dictation: {
     subscribe: vi.fn((watcher: (snapshot: DictationSnapshot) => void) => {

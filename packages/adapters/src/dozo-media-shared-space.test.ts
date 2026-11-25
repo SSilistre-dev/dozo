@@ -1,8 +1,8 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
-import { generateMediaFromTool } from "./media-generation-tools.js";
+import { FakeMediaGenerationProvider } from "./media/media-generation-provider.js";
+import { generateMediaFromTool } from "./media/media-generation-tools.js";
 
 // Runs on the branded tree only: the check is there once the brand rules are applied.
 

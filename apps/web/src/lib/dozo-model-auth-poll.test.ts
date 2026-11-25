@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { waitForModelOAuth } from "./model-auth";
-import { rpc } from "./rpc";
+import { waitForModelOAuth } from "./models/model-auth";
+import { rpc } from "./query/rpc";
 
-vi.mock("./rpc", () => ({
+vi.mock("./query/rpc", () => ({
   rpc: { models: { completeOAuth: vi.fn() } },
 }));
 

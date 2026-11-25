@@ -6,16 +6,16 @@ import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useIdentityConfirmation } from "../../components/confirm-identity";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
+import { useIdentityConfirmation } from "../../components/vault/confirm-identity";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings/settings-group";
 import { revokeTitle, tokenDates } from "../../lib/dozo-access-tokens";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
-import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useSideInsets } from "../../lib/side-insets";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { useSideInsets } from "../../lib/layout/side-insets";
 import { errorText } from "../../lib/user-error";
 
 type NewToken = {

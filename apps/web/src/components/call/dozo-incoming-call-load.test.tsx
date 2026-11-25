@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { startCall } from "../../lib/call-session";
-import { rpc } from "../../lib/rpc";
+import { startCall } from "../../lib/calls/call-session";
+import { rpc } from "../../lib/query/rpc";
 import { IncomingCall } from "./IncomingCall";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -22,7 +22,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   isLeavingSession: vi.fn(() => false),
   prepareCallAudio: vi.fn(),
   startCall: vi.fn(),
@@ -32,8 +32,8 @@ vi.mock("../../lib/call-session", () => ({
 vi.mock("../../lib/dozo-call-start", () => {
   throw new TypeError("Failed to fetch dynamically imported module");
 });
-vi.mock("../../lib/monitoring", () => ({ reportClientError: vi.fn() }));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/platform/monitoring", () => ({ reportClientError: vi.fn() }));
+vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     threads: { answerCall: vi.fn(), endCall: vi.fn() },
     notifications: { declineIncomingCall: vi.fn() },

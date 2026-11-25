@@ -1,7 +1,7 @@
 import type { ComputerObservation } from "@rakazo/adapter-kit";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
-import { emptyRecording, recordTeachingInputEvent } from "./teaching-session.js";
+import { emptyRecording, recordTeachingInputEvent } from "./bots/teaching-session.js";
 
 // Runs on the branded tree, where the fork's hooks sit in `recordTeachingInputEvent`: what the
 // screen showed just before a click lands is kept with the recording, and never stands in its way.

@@ -1,7 +1,7 @@
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { DEFAULT_COMPUTER_SCREEN, mapTeachPointer } from "@rakazo/core";
 import { useRef, useState } from "react";
-import { rpc } from "../../lib/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { useEventListener } from "../../lib/use-event-listener";
 import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 

@@ -11,7 +11,7 @@ import {
 } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import { errorText } from "../../lib/dozo-error-text";
-import { useSave } from "../../lib/query";
+import { useSave } from "../../lib/query/query";
 import { useListKey } from "./dozo-bot-chats";
 
 /** Renames one of a bot's extra chats; loaded when someone asks to rename (dozo-bot-chats.tsx). */

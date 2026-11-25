@@ -18,11 +18,11 @@ import {
   dozoTickWait,
   dozoWaitRefusal,
 } from "./dozo-wait.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import type { tickRoutineWatch } from "./routine-watch.js";
-import { wakeRoutine } from "./run-routines.js";
-import type { ScheduleToolDeps } from "./schedule-tools.js";
-import { createScheduleFromTool } from "./schedule-tools.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import type { tickRoutineWatch } from "./routines/routine-watch.js";
+import { wakeRoutine } from "./runs/assembly/run-routines.js";
+import type { ScheduleToolDeps } from "./tools/schedule-tools.js";
+import { createScheduleFromTool } from "./tools/schedule-tools.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it.

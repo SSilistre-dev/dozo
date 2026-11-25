@@ -4,11 +4,11 @@ import type { DozoBotChat } from "@rakazo/contracts";
 import { chatSnoozed, nextChatWake } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { StyleSheet, View } from "react-native";
-import { mobileTokens } from "../lib/appearance";
+import { mobileTokens } from "../lib/appearance/appearance";
 import { dozoChatRoute, useDozoBotChats, useDozoChatMenu } from "../lib/dozo-bot-chats";
 import { useDozoPins } from "../lib/dozo-message-actions";
 import { formatSnoozeWake } from "../lib/inbox";
-import { SettingsGroup, SettingsRow } from "./settings-group";
+import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 
 /**
  * The bot's extra chats on its profile, only when it has some: a bot without any shows nothing

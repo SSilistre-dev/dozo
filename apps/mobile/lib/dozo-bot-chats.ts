@@ -4,13 +4,13 @@ import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Alert } from "react-native";
-import { useTextEditDialog } from "../components/profile-edit-dialog";
-import { resolveMobileAppearance } from "./appearance";
+import { useTextEditDialog } from "../components/bots/profile-edit-dialog";
+import { resolveMobileAppearance } from "./appearance/appearance";
 import { useChatExport } from "./dozo-chat-export";
-import { SNOOZE_LABELS } from "./inbox-swipe";
-import { presentMessageActionSheet } from "./message-action-sheet";
-import { queryClient, rpcQuery, useSave } from "./query";
-import { useRosterSignals } from "./roster-signals";
+import { SNOOZE_LABELS } from "./inbox/inbox-swipe";
+import { presentMessageActionSheet } from "./messages/message-action-sheet";
+import { queryClient, rpcQuery, useSave } from "./query/query";
+import { useRosterSignals } from "./api/roster-signals";
 import { errorText } from "./user-error";
 
 /** A chat's name is one line of at most this many characters (the contract's own limit). */

@@ -2,9 +2,9 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { useState, useSyncExternalStore } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { currentApiBase, isServerReachable, subscribeServerReachable } from "../lib/api";
+import { currentApiBase, isServerReachable, subscribeServerReachable } from "../lib/api/api";
 import { isRelayComputerOffline, subscribeRelayState } from "../lib/dozo-relay-fetch";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens } from "../lib/native/native";
 
 /** A short outage passes unnoticed: the live stream reconnects by itself. */
 export const CONNECTION_LINE_DELAY_MS = 20_000;

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import { readDozoDailySends, saveDozoDailySends, takeDozoDailySend } from "./dozo-send-limit.js";
-import { asSystem } from "./row-security.js";
+import { asSystem } from "./database/row-security.js";
 
 // Runs on the branded tree only, against a migrated database. The fork's unit gate has no
 // database and skips it.

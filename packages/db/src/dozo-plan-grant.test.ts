@@ -4,7 +4,7 @@ import {
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
 import {
   DOZO_PLAN_GRANT_SELECT,
   grantedAllowanceCents,

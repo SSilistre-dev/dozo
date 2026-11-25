@@ -1,4 +1,4 @@
-import type { CliModelDriver, CliUsageLimit } from "../dozo-cli-driver.js";
+import type { CliModelDriver, CliUsageLimit } from "../../../cli-models/dozo-cli-driver.js";
 import { CLAUDE_CODE_COMMAND, claudeCodeEnv } from "./cli.js";
 import { claudeCodeModel } from "./provider.js";
 import { CLAUDE_CODE_PROVIDER_ID } from "./provider-id.js";

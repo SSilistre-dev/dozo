@@ -1,10 +1,10 @@
 import { resolveLoginFill } from "./bot-secrets.js";
-import type { ResolveCodeFill, ResolveSecretFill } from "./browser-tools.js";
+import type { ResolveCodeFill, ResolveSecretFill } from "./browser/browser-tools.js";
 import type { DeviceBrowserProvider } from "./dozo-device-browser.js";
-import type { RunContext } from "./run-context.js";
-import { recordVaultUse } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
-import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "./vault-card-use.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { recordVaultUse } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
+import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "./secrets/vault/vault-card-use.js";
 
 /**
  * What `browser_act` fill_secret and fill_code do in the user's own browser: a login linked to this

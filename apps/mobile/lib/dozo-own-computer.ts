@@ -5,7 +5,7 @@ import { knownServerText } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { mobilePlanLimitCopy } from "./dozo-store-build";
-import { rpcQuery } from "./query";
+import { rpcQuery } from "./query/query";
 
 /**
  * The line under the bot's Own computer switch (`ownComputerNote`): on a plan with no computer,

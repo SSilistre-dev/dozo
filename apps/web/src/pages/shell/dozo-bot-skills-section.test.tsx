@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
   stop: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const client = {
     me: api.me,
     skills: { list: api.list, start: api.start, stop: api.stop },
@@ -32,10 +32,10 @@ vi.mock("../../lib/rpc", () => {
     selectedSpaceId: () => null,
   };
 });
-vi.mock("../../components/SubscriptionGate", () => ({
+vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: api.billing }),
 }));
-vi.mock("./computer-panel", () => ({ ComputerPanel: () => null }));
+vi.mock("./computers/computer-panel", () => ({ ComputerPanel: () => null }));
 // Their own tests cover them; here only where they sit.
 vi.mock("../../components/teach/dozo-delete-skill", () => ({
   DeleteSkill: ({ skillId }: { skillId: string }) => (
@@ -47,7 +47,7 @@ vi.mock("./dozo-saved-values-review", () => ({
     <span data-testid="review" data-skill={skill.id} />
   ),
 }));
-vi.mock("./bot-settings-sections", () => ({
+vi.mock("./bots/bot-settings-sections", () => ({
   PanelSection: ({
     label,
     action,
@@ -145,7 +145,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import { ComputerPanel } from "./computer-panel";
+import { ComputerPanel } from "./computers/computer-panel";
 import { DozoBotSkillsSection } from "./dozo-bot-skills-section";
 
 const bot = { id: "bot-1", name: "Ada" } as Bot;

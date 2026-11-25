@@ -6,7 +6,7 @@ import { poolCooldownUntil } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { endModelRests, readActiveModelRests, recordModelRest } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { findConnectedModelCredential } from "./model-selection.js";
+import { findConnectedModelCredential } from "./models/model-selection.js";
 
 /**
  * Rests beyond the pool (packages/core/src/dozo-model-pool.ts): a model whose quota or usage

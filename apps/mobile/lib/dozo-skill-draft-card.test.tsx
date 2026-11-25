@@ -34,13 +34,13 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ card: "card", foreground: "fg", mutedForeground: "muted" }),
 }));
 vi.mock("./user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
-vi.mock("./query", () => ({
+vi.mock("./query/query", () => ({
   queryClient: "client",
   rpcQuery: (proc: string, input?: unknown) => ({ queryKey: [proc, input] }),
   useSave: (options: Save) => {
@@ -63,7 +63,7 @@ vi.mock("@tanstack/react-query", () => ({
     return read.enabled ? api.review : { data: undefined, error: null };
   },
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: (props: {
     label: string;
     onPress: () => void;

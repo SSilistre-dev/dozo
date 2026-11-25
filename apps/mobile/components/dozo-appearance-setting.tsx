@@ -3,15 +3,15 @@ import { isAppearancePreference } from "@rakazo/ui-tokens";
 import { DOZO_THEMES, dozoTheme } from "@rakazo/ui-tokens/dozo-themes";
 import { useSyncExternalStore } from "react";
 import { View } from "react-native";
-import { getCachedAppearancePreference, setAppearancePreference } from "../lib/appearance";
+import { getCachedAppearancePreference, setAppearancePreference } from "../lib/appearance/appearance";
 import type { DozoBubble } from "../lib/dozo-theme";
 import { getDozoBubble, getDozoTheme, subscribeDozoTheme } from "../lib/dozo-theme";
 import { setDozoBubble, setDozoTheme } from "../lib/dozo-theme-store";
-import { useThemedStyles } from "../lib/native";
-import { createSettingsPageStyles } from "../lib/settings-page-styles";
-import { MenuPicker } from "./menu-picker";
-import { NativeSegmentedControl } from "./native-segmented-control";
-import { SettingsGroup, SettingsLabel } from "./settings-group";
+import { useThemedStyles } from "../lib/native/native";
+import { createSettingsPageStyles } from "../lib/settings/settings-page-styles";
+import { MenuPicker } from "./ui/menu-picker";
+import { NativeSegmentedControl } from "./native/native-segmented-control";
+import { SettingsGroup, SettingsLabel } from "./settings/settings-group";
 
 /**
  * General settings' Appearance as the web has it: System, Light, Dark and the six named themes in

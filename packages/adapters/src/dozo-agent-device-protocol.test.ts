@@ -8,7 +8,7 @@ import {
   agentTurnRequest,
 } from "./dozo-agent-device-protocol.js";
 import { deviceAgentIds, parseDeviceCapabilities } from "./dozo-device-capabilities.js";
-import { hostComputerDeadlineMs, hostComputerRequest } from "./host-computer-protocol.js";
+import { hostComputerDeadlineMs, hostComputerRequest } from "./computers/host/host-computer-protocol.js";
 
 /** Examples of the wire format, for the desktop app's own tests to read as well. */
 const fixture = <T>(name: string): T =>

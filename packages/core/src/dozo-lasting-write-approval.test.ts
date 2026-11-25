@@ -1,6 +1,6 @@
 import { RUN_TRIGGERS } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { isOwnerStartedRun } from "./action-approval.js";
+import { isOwnerStartedRun } from "./runs/action-approval.js";
 import type { LastingWriteRun } from "./dozo-lasting-write-approval.js";
 import {
   lastingWriteHoldReason,

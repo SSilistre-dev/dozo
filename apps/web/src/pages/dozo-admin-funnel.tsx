@@ -5,7 +5,7 @@ import { Button, Spinner, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { errorText } from "../lib/dozo-error-text";
-import { useSpaceQueries } from "../lib/query";
+import { useSpaceQueries } from "../lib/query/query";
 
 /** A median wait, short: minutes under two hours, hours under two days, then days. */
 function useWait() {

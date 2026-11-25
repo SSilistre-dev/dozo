@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { announcementText } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
-import { queryClient, useSpaceQueries } from "../lib/query";
+import { queryClient, useSpaceQueries } from "../lib/query/query";
 import { DozoPastDue } from "./dozo-past-due";
 import { DozoVerifyReminder } from "./dozo-verify-reminder";
 

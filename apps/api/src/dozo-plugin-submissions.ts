@@ -1,6 +1,6 @@
 import { PLUGIN_SUBMISSIONS_PATH } from "@rakazo/contracts";
 import { Hono } from "hono";
-import { pluginSubmissionRoutes as upstreamRoutes } from "./plugin-submissions.js";
+import { pluginSubmissionRoutes as upstreamRoutes } from "./integrations/plugin-submissions.js";
 
 /**
  * Upstream's plugin submission routes. With DOZO_PLUGIN_SUBMISSIONS=closed (the production compose

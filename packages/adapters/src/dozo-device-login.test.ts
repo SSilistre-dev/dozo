@@ -10,7 +10,7 @@ import {
   revealBotSecret,
   storeBotSecret,
 } from "./bot-secrets.js";
-import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
+import { accountVault, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import {
   DEVICE_LOGIN_ONLY,
   deviceLoginOf,
@@ -18,8 +18,8 @@ import {
   rejectDeviceLoginReveal,
   unlinkDeviceLogin,
 } from "./dozo-device-login.js";
-import { EncryptedSecretStore } from "./secrets.js";
-import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
+import { LOGIN_CODE_FIELD } from "./secrets/vault/vault-card-use.js";
 
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 const scope = { userId: "user-1", spaceId: "space-1" };

@@ -2,11 +2,11 @@ import type { DozoBotChat, SpaceBot } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
 import { useMemo } from "react";
 import { useDozoSpaceChats } from "./dozo-bot-chats";
-import type { InboxItem } from "./inbox-spaces";
-import { inboxItemKey, inboxSignal } from "./inbox-spaces";
-import type { MobileBot } from "./mobile-types";
-import type { InboxSignal } from "./offscreen-unreads";
-import { useSnoozeClock } from "./use-snooze-clock";
+import type { InboxItem } from "./inbox/inbox-spaces";
+import { inboxItemKey, inboxSignal } from "./inbox/inbox-spaces";
+import type { MobileBot } from "./api/mobile-types";
+import type { InboxSignal } from "./inbox/offscreen-unreads";
+import { useSnoozeClock } from "./inbox/use-snooze-clock";
 
 /** An inbox row: upstream's, or one of a bot's extra chats under the bot's own row. */
 export type DozoInboxItem =

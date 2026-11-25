@@ -6,11 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { commandRulesRead } from "../../components/dozo-account-rows";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { queryClient, useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useSideInsets } from "../../lib/side-insets";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { queryClient, useSave } from "../../lib/query/query";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { useSideInsets } from "../../lib/layout/side-insets";
 import { errorText } from "../../lib/user-error";
 
 type Effect = DozoCommandRule["effect"];

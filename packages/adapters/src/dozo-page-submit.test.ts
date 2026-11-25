@@ -20,7 +20,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   },
 }));
 
-import { ComputerBrowserProvider } from "./computer-browser.js";
+import { ComputerBrowserProvider } from "./computers/screens/computer-browser.js";
 import type { DevicePage } from "./dozo-device-browser.test-support.js";
 import { fakeDeviceBrowser } from "./dozo-device-browser.test-support.js";
 import { couldSubmit, dozoNotePageSubmits, sendingSteps, submitsIn } from "./dozo-page-submit.js";
@@ -28,10 +28,10 @@ import { dozoPageSubmits } from "./dozo-page-submit-gate.js";
 import { dozoSendLimitCard, dozoSendLimitGate, dozoSendLimitHeld } from "./dozo-send-limit.js";
 import { userBrowserGate } from "./dozo-user-browser-gate.js";
 import { buildApprovalAskBlock } from "./dozo-user-computer-gate.js";
-import { detectPurchase } from "./purchase-gate.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolRequest } from "./run-tool-request.js";
-import { prepareToolRequest } from "./run-tool-request.js";
+import { detectPurchase } from "./payments/purchase-gate.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
+import { prepareToolRequest } from "./runs/tools/run-tool-request.js";
 
 const PAGE = "https://example.test/contact";
 // The refs of the page below: node i is e(10 + i).

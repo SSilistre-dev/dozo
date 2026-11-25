@@ -1,7 +1,7 @@
 import { BYOK_TIERS, sandboxAllowanceHours } from "@rakazo/contracts";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
 import { grantedAllowanceCents } from "./dozo-plan-grant.js";
 import {
   changePlanQuota,

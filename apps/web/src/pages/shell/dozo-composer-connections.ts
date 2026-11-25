@@ -1,7 +1,7 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import type { QueryClient } from "@tanstack/react-query";
-import type { SpaceQueries } from "../../lib/query";
-import type { RpcClient } from "../../lib/rpc";
+import type { SpaceQueries } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
 
 type ConnectionReads = { connections: Pick<RpcClient["connections"], "list" | "catalog"> };
 

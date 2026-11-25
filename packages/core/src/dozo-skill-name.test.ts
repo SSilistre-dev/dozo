@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSkillByName, mergeBuiltinSkills } from "./agent-skill.js";
+import { findSkillByName, mergeBuiltinSkills } from "./skills/agent-skill.js";
 import { skillNameKey } from "./dozo-skill-name.js";
 
 const SPACES = [" ", "\t", "\n", "\r\n", " ", " ", "﻿", "　"];

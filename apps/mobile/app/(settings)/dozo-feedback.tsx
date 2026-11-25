@@ -18,15 +18,15 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../components/settings-group";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../components/settings/settings-group";
 import { mobileDiagnostics, reportLine, useFeedbackStatus } from "../../lib/dozo-feedback";
 import type { FeedbackImage } from "../../lib/dozo-feedback-images";
 import { pickFeedbackImages } from "../../lib/dozo-feedback-images";
-import { native, useThemedStyles } from "../../lib/native";
-import { useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useSideInsets } from "../../lib/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { useSideInsets } from "../../lib/layout/side-insets";
 import { errorText } from "../../lib/user-error";
 
 /**

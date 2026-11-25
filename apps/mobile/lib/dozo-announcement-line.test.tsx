@@ -16,17 +16,17 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children?: ReactNode }) => <div role="status">{children}</div>,
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ mutedForeground: "muted", border: "border" }),
 }));
-vi.mock("./query", async () => {
+vi.mock("./query/query", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   return {
     queryClient: new QueryClient(),
     rpcQuery: (proc: string) => ({ queryKey: ["server", "space", proc, {}] }),
   };
 });
-vi.mock("./screen-query", () => ({
+vi.mock("./query/screen-query", () => ({
   useScreenQuery: (read: { queryKey: unknown[] }) => {
     state.reads.push(read.queryKey);
     return { data: state.data };
@@ -35,7 +35,7 @@ vi.mock("./screen-query", () => ({
 
 import { DozoAnnouncementLine } from "../components/dozo-announcement-line";
 import { dozoSiteChanged } from "./dozo-site-settings";
-import { queryClient as client } from "./query";
+import { queryClient as client } from "./query/query";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;

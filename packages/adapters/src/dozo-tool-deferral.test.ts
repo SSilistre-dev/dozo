@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin.tool-definition.js";
-import { partitionTools } from "./builtin-tool-bridge.js";
+import { partitionTools } from "./tools/builtin-tool-bridge.js";
 
 describe("built-ins listed to the model", () => {
   const { listed, deferred } = partitionTools(builtinAgentTools);

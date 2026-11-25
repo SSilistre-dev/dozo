@@ -6,7 +6,7 @@ import {
   readOnlyPipeline,
   redactSecrets,
 } from "@rakazo/core";
-import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
+import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approvals/approval-ask.js";
 import {
   commandAsked,
   commandRuleMatch,
@@ -16,11 +16,11 @@ import {
 import { isPhoneTool, phoneCard, phoneGate } from "./dozo-phone.js";
 import { dozoSendLimitCard, dozoSendLimitHeld } from "./dozo-send-limit.js";
 import { isUserBrowserTool, userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 import {
   USER_COMPUTER_SHELL_TOOL,
   userComputerGate as upstreamUserComputerGate,
-} from "./run-tools-user-computer.js";
+} from "./runs/tools/run-tools-user-computer.js";
 
 export { isPhoneTool } from "./dozo-phone.js";
 export { routesToUserBrowser } from "./dozo-user-browser-gate.js";

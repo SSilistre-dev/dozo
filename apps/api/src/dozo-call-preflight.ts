@@ -5,9 +5,9 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { deadlineSignal, withAbort } from "@rakazo/core";
-import { mayUsePrivateEndpoint } from "./mcp-servers.js";
+import { mayUsePrivateEndpoint } from "./integrations/mcp-servers.js";
 import type { RouterContext } from "./routes/context.js";
-import { catalogEntry, loadDefaultVoiceCredential } from "./voice.js";
+import { catalogEntry, loadDefaultVoiceCredential } from "./calls/voice.js";
 
 /**
  * Longest the whole check takes, finding the voice and the model included. The addresses get

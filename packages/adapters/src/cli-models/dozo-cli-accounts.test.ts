@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { claudeCodeDriver } from "../providers/cli-model/claude-code/dozo-driver.js";
 import type { CliAccountsDeps } from "./dozo-cli-accounts.js";
 import {
   cancelCliLogin,
@@ -18,7 +18,7 @@ import {
 import { cliAccountRef } from "./dozo-cli-driver.js";
 import { accountHomeIds, cliAccountsRoot, createAccountHome } from "./dozo-cli-homes.js";
 
-const FAKE_CLI = fileURLToPath(new URL("./claude-code/fake-cli.test-support.mjs", import.meta.url));
+const FAKE_CLI = fileURLToPath(new URL("../providers/cli-model/claude-code/fake-cli.test-support.mjs", import.meta.url));
 const ACCOUNTS_CLI = fileURLToPath(new URL("./dozo-fake-cli.test-support.mjs", import.meta.url));
 const PROVIDER = claudeCodeDriver.provider;
 const HOME_REF = cliAccountRef({ kind: "home" });

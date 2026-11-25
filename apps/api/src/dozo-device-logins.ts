@@ -11,7 +11,7 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { readBoundedBody } from "./http-body.js";
+import { readBoundedBody } from "./http/http-body.js";
 
 /**
  * The routes a computer's desktop app uses to link a login from its password manager into the

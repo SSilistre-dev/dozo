@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ summary: vi.fn(), revenue: vi.fn() }));
 
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/query/query", () => ({
   useSpaceQueries: () => ({
     dozoAdmin: {
       billing: {

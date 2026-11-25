@@ -3,7 +3,7 @@ import {
   connectorReadRequiresApproval,
   isOwnerStartedRun,
   planActionGate,
-} from "./action-approval.js";
+} from "./runs/action-approval.js";
 
 // What the meeting prep template relies on: its runs are started by a routine, so they begin with
 // outside content assumed, and the first calendar read must still not wait for a person. The

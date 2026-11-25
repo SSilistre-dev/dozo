@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNow } from "@rakazo/chat-ui/hooks";
 import { useQuery } from "@tanstack/react-query";
-import { dateLocaleForUi, useUiLocale } from "./i18n";
-import { accountRpcQuery, queryClient } from "./query";
-import { useRosterSignals } from "./roster-signals";
+import { dateLocaleForUi, useUiLocale } from "./i18n/i18n";
+import { accountRpcQuery, queryClient } from "./query/query";
+import { useRosterSignals } from "./api/roster-signals";
 
 /**
  * Which of the person's models rest now, after their quota ran out or their key was refused, as a

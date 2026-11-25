@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { retainRunConversation } from "./conversation-memory.js";
-import { compactHistory } from "./history-compaction.js";
+import { retainRunConversation } from "./memory/conversation-memory.js";
+import { compactHistory } from "./runtime/context/history-compaction.js";
 
 /**
  * A bot's extra chat is a thread with no owner column; the runtime reads it as its bot's own

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import {
   endModelRests,
   readActiveModelRests,
@@ -8,7 +8,7 @@ import {
   recordModelConnectionCooldown,
   recordModelRest,
 } from "./dozo-model-pool-store.js";
-import { asSystem, runAsTenant } from "./row-security.js";
+import { asSystem, runAsTenant } from "./database/row-security.js";
 
 // Runs against a migrated database only: DATABASE_URL is the runtime login, which row security
 // applies to. The fork's unit gate has no database and skips it.

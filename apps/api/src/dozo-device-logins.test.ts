@@ -17,7 +17,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 }));
 
 import { mountDeviceLoginRoutes } from "./dozo-device-logins.js";
-import { mountUserDeviceRoutes } from "./user-devices.js";
+import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 
 const HANDLE = "AbCdEfGhIjKlMnOpQrStUv";
 const PATH = "/api/devices/self/dozo-logins";

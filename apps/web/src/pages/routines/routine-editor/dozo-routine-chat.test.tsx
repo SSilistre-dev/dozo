@@ -12,11 +12,11 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../../lib/query/rpc", () => {
   const rpc = { dozoChats: { setRoutineChat: api.setRoutineChat } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoChats: {
@@ -36,7 +36,7 @@ vi.mock("../../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("../../lib/dozo-error-text", () => ({ toastError: api.toastError }));
+vi.mock("../../../lib/dozo-error-text", () => ({ toastError: api.toastError }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
   useLingui: () => ({
@@ -49,7 +49,7 @@ vi.mock("@rakazo/ui-web", () => ({
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
 }));
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../../lib/query/query";
 import { DozoRoutineChat } from "./dozo-routine-chat";
 
 const garden = {

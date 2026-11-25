@@ -24,7 +24,7 @@ import { learningReviewInstructions } from "./dozo-learning-review.prompt.js";
 import type { LearningChangeInput, LearningTurn } from "./dozo-learning-store.js";
 import { dozoRecordLearningTurn } from "./dozo-learning-turn.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
-import type { RunContext, RunState } from "./run-context.js";
+import type { RunContext, RunState } from "./runs/assembly/run-context.js";
 
 // The review end to end with a deterministic stub model, an in-memory store and notes. The SQL is
 // covered by dozo-learning-store.test.ts and dozo-learning.postgres.test.ts (the lease included).
@@ -81,8 +81,8 @@ vi.mock("./bot-secrets.js", async (importOriginal) => ({
     return store.hidden[`run-code:${runId}`] ?? [];
   },
 }));
-vi.mock("./purchase-service.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./purchase-service.js")>()),
+vi.mock("./payments/purchase-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./payments/purchase-service.js")>()),
   loadPurchaseRedactions: async () => store.hidden.purchase ?? [],
 }));
 vi.mock("./dozo-phone.js", async (importOriginal) => ({

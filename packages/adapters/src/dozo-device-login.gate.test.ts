@@ -2,12 +2,12 @@ import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { recordAuditEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
+import { accountVault, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import { encodeDeviceLogin } from "./dozo-device-login.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
-import { prepareToolRequest } from "./run-tool-request.js";
-import { EncryptedSecretStore } from "./secrets.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
+import { prepareToolRequest } from "./runs/tools/run-tool-request.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 
 const plans = vi.hoisted(() => [] as string[]);
 vi.mock("@rakazo/core", async (importOriginal) => {
@@ -26,7 +26,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: vi.fn(async () => {}),
 }));
 // Recording the effect a person answers is where an ask begins; the test stops there.
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => {
     throw new Error("asks the user");

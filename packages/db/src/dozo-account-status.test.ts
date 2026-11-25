@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { cancelDeactivatedAccountRuns } from "./account-status.js";
-import type { PrismaClient } from "./client.js";
-import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
+import { cancelDeactivatedAccountRuns } from "./account/account-status.js";
+import type { PrismaClient } from "./database/client.js";
+import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./database/transaction-retry.js";
 
 // Runs on the branded tree only: the transaction options are a brand rule on account-status.ts.
 

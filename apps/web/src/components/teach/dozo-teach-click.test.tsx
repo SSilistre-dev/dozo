@@ -13,7 +13,7 @@ type Input = { kind: string; payload: Record<string, unknown> };
 
 const computerInput = vi.hoisted(() => vi.fn(async (_input: unknown) => ({ ok: true })));
 const keys = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: { computer: { input: computerInput }, dozoTeach: { keys } },
 }));
 

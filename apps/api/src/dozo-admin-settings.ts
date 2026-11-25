@@ -11,7 +11,7 @@ import {
   resolveMaxComputersPerUser,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { requireAdmin } from "./admins.js";
+import { requireAdmin } from "./auth/admins.js";
 import type { DozoAdminWiring } from "./dozo-admin.js";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";

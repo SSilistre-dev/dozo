@@ -3,9 +3,9 @@ import type * as Core from "@rakazo/core";
 import { isStuckWorkStatus, STUCK_WORK_EXPIRE_AFTER_MS, stuckWorkAction } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { markReadOutsideContent } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // The branded tool gate when Auto review sends an action to the approval model: a member who
 // picked only backup approval models (no primary, and none set for the deployment) has their
@@ -62,7 +62,7 @@ vi.mock("./run-auto-review.js", () => ({
     },
   }),
 }));
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => ({
     duplicate: false,
@@ -70,16 +70,16 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
   })),
   claimEffect: vi.fn(async () => true),
 }));
-vi.mock("./run-lifecycle.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   renewRunLease: vi.fn(async () => true),
   enqueueSteeringContinuation: vi.fn(async () => {}),
 }));
-vi.mock("./run-notifications.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-notifications.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   notifyRun: vi.fn(async () => {}),
 }));
-vi.mock("./run-context.js", async (importOriginal) => ({
+vi.mock("./runs/assembly/run-context.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   persistTurnCheckpoint: vi.fn(async () => {}),
 }));

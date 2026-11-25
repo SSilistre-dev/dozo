@@ -30,7 +30,7 @@ import {
   PHONE_REMINDERS_READ_TOOL,
 } from "./dozo-phone.tool-definition.js";
 import { phoneRemindersReadRequest, phoneRemindersValue } from "./dozo-phone-protocol.js";
-import { USER_DEVICE_OFFLINE_MESSAGE } from "./user-device-gateway.js";
+import { USER_DEVICE_OFFLINE_MESSAGE } from "./computers/host/user-device-gateway.js";
 
 const TOOL = PHONE_REMINDERS_READ_TOOL;
 const SECRET_TITLE = "Pick up the biopsy results";

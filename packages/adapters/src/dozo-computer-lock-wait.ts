@@ -1,8 +1,8 @@
 import { bestEffort } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { requeueComputerRun } from "./run-lifecycle.js";
-import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
-import { wakeRun } from "./wake-run.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { requeueComputerRun } from "./runs/lifecycle/run-lifecycle.js";
+import type { TakeoverResumeCheckpoint } from "./runs/turn/takeover-resume.js";
+import { wakeRun } from "./runs/wakeups/wake-run.js";
 
 /**
  * `requeueComputerRun` for a run that found its bot's computer held. The run holding it starts

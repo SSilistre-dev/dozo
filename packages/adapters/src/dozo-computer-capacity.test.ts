@@ -5,13 +5,13 @@ import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { recordComputerRunStart } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { provisionComputer } from "./computer-lifecycle.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
+import { provisionComputer } from "./computers/computer-lifecycle.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
 import { ComputerCapacityError } from "./dozo-computer-budget.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { LocalAgentHomeStore } from "./home.js";
-import { HostAwareSandbox } from "./host-aware-sandbox.js";
-import { InMemoryJobQueue } from "./wakeup.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
+import { LocalAgentHomeStore } from "./storage/home.js";
+import { HostAwareSandbox } from "./computers/sandbox/host-aware-sandbox.js";
+import { InMemoryJobQueue } from "./runs/wakeups/wakeup.js";
 
 // Runs on the branded tree only: the lifecycle reaches the refusal through an anchored brand rule.
 // The doubles follow computer-reuse.test.ts.

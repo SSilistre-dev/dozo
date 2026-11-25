@@ -12,7 +12,7 @@ import { Pin, PinOff } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { errorText, toastError } from "../../lib/dozo-error-text";
-import { queryClient, useSave, useSpaceQueries } from "../../lib/query";
+import { queryClient, useSave, useSpaceQueries } from "../../lib/query/query";
 
 /** The caller's pins in one chat. Read again on the roster signal a pin change sends. */
 function usePins(threadId: string | undefined, enabled = true) {

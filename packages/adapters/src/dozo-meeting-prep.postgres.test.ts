@@ -10,8 +10,8 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { dozoCreateSchedule } from "./dozo-wait.js";
-import type { ScheduleToolDeps } from "./schedule-tools.js";
-import { createScheduleFromTool, listSchedulesFromTool } from "./schedule-tools.js";
+import type { ScheduleToolDeps } from "./tools/schedule-tools.js";
+import { createScheduleFromTool, listSchedulesFromTool } from "./tools/schedule-tools.js";
 
 // The meeting-prep scenario, end to end without a model: a fake calendar tool, the steps the
 // template's skill tells the bot to take, and the real schedule tools the bot would call. Runs on

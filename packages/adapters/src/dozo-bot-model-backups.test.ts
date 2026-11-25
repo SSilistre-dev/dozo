@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runBackupModels } from "./dozo-bot-model-backups.js";
-import { effectiveModelRole } from "./model-roles.js";
-import { runModelBackups } from "./run-model-start.js";
+import { effectiveModelRole } from "./models/model-roles.js";
+import { runModelBackups } from "./runs/turn/run-model-start.js";
 
 const fake = vi.hoisted(() => ({ read: vi.fn() }));
 const logger = vi.hoisted(() => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }));

@@ -40,8 +40,8 @@ import {
   saveDozoDailyDigest,
 } from "./dozo-daily-digest.js";
 import { DOZO_DIGEST_ROUTINE_PROMPT } from "./dozo-daily-digest.prompt.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { wakeRoutine } from "./run-routines.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { wakeRoutine } from "./runs/assembly/run-routines.js";
 
 const HOUR = 60 * 60_000;
 // 08:00 in Istanbul (UTC+3).

@@ -8,12 +8,12 @@ import {
   typedValuesFromRecording,
 } from "@rakazo/core";
 import { z } from "zod";
-import type { Prisma, PrismaClient } from "./client.js";
-import { ciphertextKeyId, decryptText, encryptText } from "./content-crypto.js";
-import { contentEncryptionOf } from "./content-encryption.js";
+import type { Prisma, PrismaClient } from "./database/client.js";
+import { ciphertextKeyId, decryptText, encryptText } from "./encryption/content-crypto.js";
+import { contentEncryptionOf } from "./encryption/content-encryption.js";
 import { storedTeachTargets, TEACH_TARGETS_KEY } from "./dozo-teaching-recordings.js";
-import { readJsonColumn } from "./json-column.js";
-import { runAsSystemInTransaction } from "./row-security.js";
+import { readJsonColumn } from "./database/json-column.js";
+import { runAsSystemInTransaction } from "./database/row-security.js";
 
 export { storedTeachTargets, TEACH_TARGETS_KEY } from "./dozo-teaching-recordings.js";
 

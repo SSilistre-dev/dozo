@@ -18,12 +18,12 @@ import {
 } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
-import { queryClient, useSave } from "../lib/query";
-import { recheckSessionOnUnauthorized } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { queryClient, useSave } from "../lib/query/query";
+import { recheckSessionOnUnauthorized } from "../lib/query/rpc";
+import { errorText } from "../../../../packages/i18n/src/user-error";
 import { SuccessPop } from "./ai/primitives";
-import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
-import { SettingsRow } from "./SettingsRows";
+import { useIdentityConfirmation } from "./account/ConfirmIdentityDialog";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * Settings > Data: the account as one file sealed with a password, and back. The password never

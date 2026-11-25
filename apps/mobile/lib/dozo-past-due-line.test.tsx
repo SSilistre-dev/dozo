@@ -27,14 +27,14 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children?: ReactNode }) => <div role="status">{children}</div>,
 }));
-vi.mock("./billing", () => ({ openBillingPage: api.openBillingPage }));
+vi.mock("./billing/billing", () => ({ openBillingPage: api.openBillingPage }));
 vi.mock("./dozo-store-build", () => ({
   get storeBuild() {
     return api.store;
   },
 }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
-vi.mock("./query", () => ({
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
+vi.mock("./query/query", () => ({
   queryClient: { setQueryData: api.setQueryData },
   rpcQuery: (proc: string) => ({ queryKey: [proc] }),
   useSave: (options: {
@@ -45,14 +45,14 @@ vi.mock("./query", () => ({
     run: () => options.save(undefined, api.rpc).catch((error: Error) => options.onFailed?.(error)),
   }),
 }));
-vi.mock("./screen-query", () => ({
+vi.mock("./query/screen-query", () => ({
   useScreenQuery: (read: { queryKey: string[] }, options?: { enabled?: boolean }) => {
     if (read.queryKey[0] === "me") return { data: api.me };
     api.enabled.push(options?.enabled ?? true);
     return { data: options?.enabled ? api.status : undefined };
   },
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>
       {label}

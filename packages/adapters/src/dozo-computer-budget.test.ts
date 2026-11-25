@@ -1,7 +1,7 @@
 import { ClientError } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dockerSandboxCapabilities } from "./docker-capabilities.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
 import {
   COMPUTERS_BUSY_CODE,
   COMPUTERS_BUSY_MESSAGE,

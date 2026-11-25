@@ -5,9 +5,9 @@ import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import { isOwnerRole, runAsSystem } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import type { BillingService } from "./billing.js";
+import type { BillingService } from "./billing/billing.js";
 import type { RouterContext } from "./routes/context.js";
-import { windowCounter } from "./window-counter.js";
+import { windowCounter } from "./http/window-counter.js";
 
 /**
  * The fork's product events (`DOZO_ANALYTICS_EVENTS`). Each is reported after the work it

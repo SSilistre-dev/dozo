@@ -10,8 +10,8 @@ import {
   dozoUnansweredEndpoints,
   dozoVoiceServerEndpoints,
 } from "./dozo-call-preflight.js";
-import type { ModelCredential } from "./model-selection.js";
-import { serializeOpenAiCompatibleVoiceSecret } from "./openai-compatible-voice.js";
+import type { ModelCredential } from "./models/model-selection.js";
+import { serializeOpenAiCompatibleVoiceSecret } from "./providers/voice/openai-compatible/openai-compatible-voice.js";
 
 const mocks = vi.hoisted(() => ({
   main: vi.fn(),
@@ -19,12 +19,12 @@ const mocks = vi.hoisted(() => ({
   secret: vi.fn(),
 }));
 
-vi.mock("./model-roles.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-roles.js")>()),
+vi.mock("./models/model-roles.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./models/model-roles.js")>()),
   resolveMemberMainModel: mocks.main,
 }));
-vi.mock("./model-selection.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-selection.js")>()),
+vi.mock("./models/model-selection.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./models/model-selection.js")>()),
   findConnectedModelCredential: mocks.connected,
   loadStoredModelSecret: mocks.secret,
 }));

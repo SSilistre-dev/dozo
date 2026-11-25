@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { Scale } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchAuthCapabilities } from "../lib/auth-capabilities";
-import type { SettingsNavItem } from "./settings-nav";
-import type { SettingsSection } from "./shell-overlay";
+import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
+import type { SettingsNavItem } from "./settings/settings-nav";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 
 /**
  * The settings sections under three quiet headings (dozo/design/settings-v2.html): the account's

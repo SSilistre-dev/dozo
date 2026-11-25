@@ -9,13 +9,13 @@ import {
   runStartedFromOutside,
 } from "@rakazo/core";
 import { readDozoCommandRules, readDozoHostedAsks, readRoutineWriter } from "@rakazo/db";
-import { reviewArgsTooLong } from "./auto-review.js";
+import { reviewArgsTooLong } from "./approvals/auto-review.js";
 import { runCameByToken } from "./dozo-token-run.js";
-import { routineTaskInstructions } from "./routine-watch.js";
-import type { RunContext } from "./run-context.js";
-import { isRunTainted } from "./run-context.js";
-import { commandWatchFromTool } from "./schedule-tools.js";
-import { refusal } from "./tool-refusal.js";
+import { routineTaskInstructions } from "./routines/routine-watch.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { isRunTainted } from "./runs/assembly/run-context.js";
+import { commandWatchFromTool } from "./tools/schedule-tools.js";
+import { refusal } from "./runs/turn/tool-refusal.js";
 
 /** The tool that runs a command on the bot's own computer. */
 export const HOSTED_SHELL_TOOL = "shell";

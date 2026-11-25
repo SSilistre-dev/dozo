@@ -17,7 +17,7 @@ import {
   UserDevices,
   userDeviceForwardSecret,
 } from "./dozo-user-device-gateway.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 // Runs on the branded tree only, against a migrated database (dozo/docker/postgres-tests.sh), as
 // the runtime login that row security applies to. The fork's unit gate has no database and skips

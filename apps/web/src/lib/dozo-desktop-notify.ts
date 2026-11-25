@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { requestBrowserNotificationPermission } from "./browser-notifications";
+import { requestBrowserNotificationPermission } from "./platform/browser-notifications";
 import { useEventListener } from "./use-event-listener";
 
 /**

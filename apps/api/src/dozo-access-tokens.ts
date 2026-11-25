@@ -15,9 +15,9 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { dozoTokenOwnBots, dozoTokenReachesBot } from "./dozo-token-bots.js";
-import { requireIdentityConfirmation } from "./identity-confirmation.js";
+import { requireIdentityConfirmation } from "./auth/identity-confirmation.js";
 import type { RouterContext } from "./routes/context.js";
-import { resolveThreadTarget } from "./thread-target.js";
+import { resolveThreadTarget } from "./threads/thread-target.js";
 
 function accessTokenDto(row: DozoAccessTokenRow): DozoAccessToken {
   return {

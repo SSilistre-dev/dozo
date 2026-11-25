@@ -1,7 +1,7 @@
 import type { DozoTeachStoredTarget } from "@rakazo/contracts";
 import { DozoTeachStoredTargetSchema } from "@rakazo/contracts";
 import * as z from "zod";
-import { JsonColumnMismatchError, readJsonColumn, reportJsonColumnOnce } from "./json-column.js";
+import { JsonColumnMismatchError, readJsonColumn, reportJsonColumnOnce } from "./database/json-column.js";
 
 /**
  * Where a teaching recording keeps what each recorded click hit, beside its events: its window,

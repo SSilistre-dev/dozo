@@ -7,11 +7,11 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useMatch } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { createSpaceRpc } from "../lib/rpc";
+import type { createSpaceRpc } from "../lib/query/rpc";
 import { useShellNavigation } from "./shell/use-shell-navigation";
-import { useSpaceBootstrap, useSpaceRoster } from "./shell/use-space-roster";
+import { useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
-import type { ThreadState } from "./shell/use-thread-state";
+import type { ThreadState } from "./shell/chat/use-thread-state";
 
 // The billing offer under the shell's own route repair: the address a page load opens is fixed
 // by the real navigation and roster hooks (`/app` becomes `/app/<chat>`), as the shell wires them.
@@ -29,25 +29,25 @@ vi.mock("../lib/bootstrap", () => ({
   primeSpaceBootstrap: vi.fn(),
   discardPrimedBootstrap: () => {},
 }));
-vi.mock("../lib/call-session", () => ({
+vi.mock("../lib/calls/call-session", () => ({
   getSnapshot: () => null,
   isLeavingSession: () => false,
 }));
-vi.mock("../lib/organizations", () => ({ leaveOrganization: async () => {} }));
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/spaces/organizations", () => ({ leaveOrganization: async () => {} }));
+vi.mock("../lib/query/query", () => ({
   queryClient: { getQueryData: () => undefined, setQueryData: () => {} },
   spaceSeedKey: () => [],
   lastChatKey: () => [],
   seedOnLeave: () => undefined,
 }));
-vi.mock("../lib/rpc", () => ({
+vi.mock("../lib/query/rpc", () => ({
   selectedSpaceId: () => "personal",
   selectSpace: () => true,
   rpc: { me: state.me, billing: { status: state.status } },
 }));
-vi.mock("../lib/tts", () => ({ speaker: { stop: () => {} } }));
-vi.mock("../lib/user-error", () => ({ errorText: () => "" }));
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/calls/tts", () => ({ speaker: { stop: () => {} } }));
+vi.mock("../../../../packages/i18n/src/user-error", () => ({ errorText: () => "" }));
+vi.mock("../lib/auth/auth", () => ({
   authClient: { useSession: () => ({ data: { user: { id: "user-a" } } }) },
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <RosterShell /> }));

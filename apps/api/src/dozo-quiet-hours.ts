@@ -4,7 +4,7 @@ import type { DozoQuietHours, DozoQuietRange } from "@rakazo/contracts";
 import { dozoQuietHoursOf } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { RouterContext } from "./routes/context.js";
-import { windowCounter } from "./window-counter.js";
+import { windowCounter } from "./http/window-counter.js";
 
 /** Suggestions one account may ask for a minute; each reads four weeks of its messages. */
 export const DOZO_QUIET_SUGGEST_PER_MINUTE = 5;

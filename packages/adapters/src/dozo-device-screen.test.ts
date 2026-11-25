@@ -9,7 +9,7 @@ import {
   COMPUTER_WITHOUT_SCREEN_INSTRUCTION,
   connectedComputerInstruction,
 } from "./dozo-device-screen.prompt.js";
-import { userTurnInstructions } from "./run-instructions.prompt.js";
+import { userTurnInstructions } from "./runs/assembly/run-instructions.prompt.js";
 
 function instructions(userComputer?: "connected" | "offline") {
   return userTurnInstructions({

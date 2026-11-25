@@ -1,4 +1,4 @@
-import { rpc } from "../../lib/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 
 /** The most keys one request carries (the server's limit). */

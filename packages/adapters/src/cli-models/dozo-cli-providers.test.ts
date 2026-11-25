@@ -7,9 +7,9 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listPiCatalog } from "../pi-models.js";
-import { scopedRuntimeModels } from "../pi-runtime-scope.js";
-import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { listPiCatalog } from "../runtime/pi/models/pi-models.js";
+import { scopedRuntimeModels } from "../runtime/pi/pi-runtime-scope.js";
+import { claudeCodeDriver } from "../providers/cli-model/claude-code/dozo-driver.js";
 import {
   cliAccountEnv,
   cliAccountOverrides,
@@ -29,7 +29,7 @@ import {
 } from "./dozo-cli-providers.js";
 import { cliModelRuntime } from "./dozo-cli-runtime.js";
 
-const FAKE_CLI = fileURLToPath(new URL("./claude-code/fake-cli.test-support.mjs", import.meta.url));
+const FAKE_CLI = fileURLToPath(new URL("../providers/cli-model/claude-code/fake-cli.test-support.mjs", import.meta.url));
 const PROVIDER = claudeCodeDriver.provider;
 const MODEL_ID = "claude-sonnet-5";
 const HOME_REF = cliAccountRef({ kind: "home" });

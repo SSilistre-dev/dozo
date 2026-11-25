@@ -20,8 +20,8 @@ vi.mock("react-native", () => ({
     </div>
   ),
 }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({ mutedForeground: "muted" }) }));
-vi.mock("../components/native-symbol", () => ({
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({ mutedForeground: "muted" }) }));
+vi.mock("../components/native/native-symbol", () => ({
   NativeSymbol: ({ ios, color }: { ios: string; color: string }) => (
     <i data-symbol={ios} data-color={color} />
   ),

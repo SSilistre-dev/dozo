@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import type { Prisma } from "./client.js";
-import { runAsSystemInTransaction } from "./row-security.js";
-import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
+import type { Prisma } from "./database/client.js";
+import { runAsSystemInTransaction } from "./database/row-security.js";
+import { securityEventMetadata, securityRequestCaller } from "./account/security-events.js";
 
 type Value = string | number | boolean | null;
 
