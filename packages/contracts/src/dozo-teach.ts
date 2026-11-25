@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { SkillPlaybookSchema, TaughtSkillSchema } from "./domain.js";
+import { SkillPlaybookSchema, TaughtSkillSchema } from "./skills/taught-skills.js";
 import { Id } from "./ids.js";
 
 /** A value typed while teaching, as its placeholder in the steps names it (`{{value N}}`). */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dozoQueueContract } from "./dozo-queue.js";
-import { appContract } from "./rpc.js";
+import { appContract } from "./rpc/app-contract.js";
 
 const check = (schema: unknown, value: unknown) =>
   (schema as { "~standard": { validate: (v: unknown) => Promise<{ issues?: unknown[] }> } })[

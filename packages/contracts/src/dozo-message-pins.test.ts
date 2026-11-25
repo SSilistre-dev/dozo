@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DOZO_MESSAGE_PINS_MAX, dozoMessagePinsContract } from "./dozo-message-pins.js";
-import { appContract } from "./rpc.js";
+import { appContract } from "./rpc/app-contract.js";
 
 const pinInput = dozoMessagePinsContract.pin["~orpc"].inputSchema!;
 const pinsOutput = dozoMessagePinsContract.pins["~orpc"].outputSchema!;

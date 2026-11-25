@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dozoMessagesContract } from "./dozo-message-revision.js";
-import { appContract } from "./rpc.js";
+import { appContract } from "./rpc/app-contract.js";
 
 const editInput = dozoMessagesContract.edit["~orpc"].inputSchema!;
 

@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
 import { planEndDays, planEndWarns } from "@rakazo/contracts";
-import { formatBillingDate } from "../lib/billing";
+import { formatBillingDate } from "@rakazo/i18n/billing";
 
 /**
  * When the plan in force renews or ends, and the days left; nothing when it has no end. A granted

@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./domain.js";
+import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./threads/thread.js";
 import { dozoMessagePinsContract } from "./dozo-message-pins.js";
 import { Id } from "./ids.js";
 

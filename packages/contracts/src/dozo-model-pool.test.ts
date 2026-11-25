@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DozoModelPoolSchema, dozoModelPoolContract } from "./dozo-model-pool.js";
-import { appContract } from "./rpc.js";
+import { appContract } from "./rpc/app-contract.js";
 
 const setInput = dozoModelPoolContract.set["~orpc"].inputSchema!;
 
