@@ -30,15 +30,16 @@ vi.mock("./inbox/inbox-spaces", () => ({
 }));
 
 import type { DozoBotChat } from "@rakazo/contracts";
+import type { MobileBot } from "./api/mobile-types";
 import type { DozoInboxItem } from "./dozo-inbox-chats";
 import {
   dozoInboxItemKey,
   dozoInboxItems,
   dozoInboxSignal,
+  dozoUpstreamItems,
   useDozoInboxItems,
 } from "./dozo-inbox-chats";
 import type { InboxItem } from "./inbox/inbox-spaces";
-import type { MobileBot } from "./api/mobile-types";
 
 const bot = (id: string) => ({ id, name: `Bot ${id}` }) as MobileBot;
 const botItem = (id: string): InboxItem => ({ type: "bot", bot: bot(id) });
@@ -105,6 +106,16 @@ it("counts a chat's own unread for the pills, and its key is its own id", () => 
   // Every other row is as upstream counts and names it.
   expect(dozoInboxSignal(botItem("a"))).toEqual({ unread: 5, attention: 6 });
   expect(dozoInboxItemKey(botItem("a"))).toBe("upstream-a");
+});
+
+it("hands upstream's code only the rows it knows, in order", () => {
+  const rows: DozoInboxItem[] = [
+    heading,
+    botItem("a"),
+    { type: "botChat", bot: bot("a"), chat: chat("a1", "a") },
+    botItem("b"),
+  ];
+  expect(dozoUpstreamItems(rows)).toEqual([heading, botItem("a"), botItem("b")]);
 });
 
 let root: Root;

@@ -8,6 +8,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
+import { useTeachClick } from "./dozo-teach-click";
 
 type Input = { kind: string; payload: Record<string, unknown> };
 
@@ -270,4 +271,50 @@ it("shows no ring for a press that becomes a drag, and hides the ring from assis
   await pointer(overlay, "pointermove", 200, 150);
   expect(container.querySelector('[data-testid="teach-click-ring"]')).toBeNull();
   await pointer(overlay, "pointerup", 200, 150);
+});
+
+it("hands a right-button drag to upstream as a right press", async () => {
+  const { overlay } = await mount();
+  await pointer(overlay, "pointerdown", 100, 50, { button: 2, buttons: 2 });
+  await pointer(overlay, "pointermove", 200, 150, { button: 2, buttons: 2 });
+  await pointer(overlay, "pointerup", 200, 150, { button: 2 });
+  await vi.waitFor(() => expect(types().at(-1)).toBe("up"));
+  expect(sent()[0]?.payload).toMatchObject({ type: "down", button: "right" });
+});
+
+it("hands a drag to upstream in a browser with no pointer events, as a mouse press", async () => {
+  vi.stubGlobal("PointerEvent", undefined);
+  const { overlay } = await mount();
+  await pointer(overlay, "pointerdown", 100, 50);
+  await pointer(overlay, "pointermove", 200, 150);
+  await pointer(overlay, "pointerup", 200, 150);
+  await vi.waitFor(() => expect(types().at(-1)).toBe("up"));
+  expect(types()[0]).toBe("down");
+  expect(types()).not.toContain("click");
+});
+
+it("names no recording on a click when it was given none", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const target = document.createElement("div");
+  document.body.append(target);
+  target.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, width: 640, height: 400, right: 640, bottom: 400 }) as DOMRect;
+  target.setPointerCapture = () => undefined;
+  target.hasPointerCapture = () => false;
+  function Bare() {
+    useTeachClick("bot-1", undefined, target);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  roots.push(root);
+  await act(async () => root.render(<Bare />));
+  await pointer(target, "pointerdown", 100, 50);
+  await pointer(target, "pointerup", 100, 50);
+  await vi.waitFor(() => expect(computerInput).toHaveBeenCalledOnce());
+  // The computer's default screen (1280 wide) stands in for a size not given, so 640 shown is half.
+  expect(sent()[0]).toEqual({
+    botId: "bot-1",
+    kind: "pointer",
+    payload: { x: 200, y: 100, button: "left", type: "click" },
+  });
 });

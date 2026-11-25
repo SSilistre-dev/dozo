@@ -262,3 +262,50 @@ it("speaks Turkish with the catalog the build ships", async () => {
   await vi.waitFor(() => expect(rows().map((row) => row[0])).toContain("Bot dışı"));
   expect(host.querySelector("[aria-label='CSV indir']")).not.toBeNull();
 });
+
+it("shows a dash for a count or cost the server could not tell, and for a live group with no name", async () => {
+  api.groups.model = [group({ name: null, detail: null, inputTokens: null, outputTokens: null })];
+  await show(<DozoUsageSettingsPanel />);
+  await vi.waitFor(() => expect(rows()).toEqual([["—", "3", "—", "—", "$0.42"]]));
+});
+
+it("draws an empty bar for a day with no known cost", async () => {
+  api.groups.day = [
+    group({ key: "2026-11-21", name: "2026-11-21", detail: null, costUsd: 2 }),
+    group({ key: "2026-11-20", name: "2026-11-20", detail: null, costUsd: null }),
+  ];
+  await show(<DozoUsageSettingsPanel />);
+  pick("Day");
+  await vi.waitFor(() =>
+    expect(
+      [...host.querySelectorAll<HTMLElement>("tbody [aria-hidden]")].map((bar) => bar.style.width),
+    ).toEqual(["100%", "0%"]),
+  );
+});
+
+it("keeps the grouping shown when the selected one is pressed again", async () => {
+  await show(<DozoUsageSettingsPanel />);
+  await vi.waitFor(() => expect(rows()).toHaveLength(1));
+  pick("Model");
+  await act(async () => undefined);
+  expect(host.querySelector("[aria-pressed=true]")?.textContent).toBe("Model");
+  expect(rows()).toHaveLength(1);
+});
+
+it("falls back to the model grouping when person stops being offered", async () => {
+  api.person = true;
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const panel = (
+    <QueryClientProvider client={client}>
+      <DozoUsageSettingsPanel />
+    </QueryClientProvider>
+  );
+  await act(async () => root.render(panel));
+  await vi.waitFor(() => expect(buttons()).toContain("Person"));
+  pick("Person");
+  await vi.waitFor(() => expect(rows().map((row) => row[0])).toContain("Adaada@example.test"));
+  api.person = false;
+  await act(async () => client.invalidateQueries({ queryKey: ["scope"] }));
+  await vi.waitFor(() => expect(buttons()).not.toContain("Person"));
+  await vi.waitFor(() => expect(rows()).toEqual([["smallopenai", "3", "1,200", "300", "$0.42"]]));
+});
