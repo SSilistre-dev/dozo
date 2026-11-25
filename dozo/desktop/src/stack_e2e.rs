@@ -210,9 +210,11 @@ async fn e2e_signs_in_with_the_hosted_account() {
         decide_with(&back, Some(&web), Some(&issuer)),
         Verdict::Window
     );
+    // The window also carries the sign-up cookie (`local_signup`): the hosted account's first
+    // sign-in creates the account here, which the server admits only with it.
     let callback = client
         .get(back)
-        .header("cookie", &nonce)
+        .header("cookie", format!("{nonce}; {}", signup_cookie(&root)))
         .send()
         .await
         .unwrap();
