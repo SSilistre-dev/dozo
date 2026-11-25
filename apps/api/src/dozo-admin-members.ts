@@ -120,7 +120,7 @@ export async function plansOf(
  * The billing statuses `hasBillingAccess` lets through, for a database filter; a test holds this
  * list to the function over every status a subscription can have.
  */
-export const LIVE_BILLING_STATUSES = ["trialing", "active"];
+export const LIVE_BILLING_STATUSES = ["trialing", "active", "past_due"];
 
 /** An organization whose plan in force is `tier` or above it, now: the rule of `tierInForce`. */
 function atLeast(tier: "pro" | "max", now: Date): Prisma.OrganizationWhereInput {

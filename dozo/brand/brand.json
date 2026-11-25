@@ -468,6 +468,12 @@
   ],
   "anchored": [
     {
+      "file": "packages/db/src/billing/billing.ts",
+      "find": "const ACCESS_STATUSES = new Set([\"trialing\", \"active\"]);\n",
+      "replace": "// Dozo: a paying customer whose card fails keeps the plan while the payment provider retries;\n// the payment failed mail asks them to update the card.\nconst ACCESS_STATUSES = new Set([\"trialing\", \"active\", \"past_due\"]);\n",
+      "reason": "plans: a past-due subscription keeps its plan during the payment provider's retries (Dozo's grace period); upstream #5211 ends access at the first failed payment"
+    },
+    {
       "file": "scripts/checks/bundle-size.budgets.json",
       "find": "  \"web-startup\": 860,\n",
       "replace": "  \"web-startup\": 880,\n",

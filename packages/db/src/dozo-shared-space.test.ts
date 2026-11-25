@@ -109,9 +109,9 @@ describe("shared space", () => {
     await expect(add(1)).rejects.toBeInstanceOf(SharedSpaceFullError);
   });
 
-  it("holds a subscription whose payment failed to Free until it is paid", async () => {
+  it("keeps a subscription in its grace period on its plan", async () => {
     const { add } = organization({ billing: paid("pro", "past_due"), files: [GB] });
-    await expect(add(MB)).rejects.toBeInstanceOf(SharedSpaceFullError);
+    await expect(add(MB)).resolves.toBe("kept");
   });
 
   it("keeps the files of a plan that ended, refuses new ones, and lets room be made", async () => {

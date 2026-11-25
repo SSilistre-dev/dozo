@@ -24,7 +24,7 @@ export const DOZO_ADMIN_RECENT_PAYMENTS = 20;
 /** A provider read is reused this long, so reloading the page does not read it again. */
 export const DOZO_ADMIN_REVENUE_CACHE_MS = 60_000;
 /** The subscription statuses that give the plan (`hasBillingAccess`). */
-export const DOZO_ADMIN_LIVE_STATUSES = ["trialing", "active"];
+export const DOZO_ADMIN_LIVE_STATUSES = ["trialing", "active", "past_due"];
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Chat-app contacts are internal rows with no sign-in; members are people.
 const people = { NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } };
