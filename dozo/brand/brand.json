@@ -468,6 +468,18 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/computers/sandbox/sandbox-allowance.test.ts",
+      "find": "    expect(await limit(\"active\", \"ultra\")).toBe(120_000_000);\n",
+      "replace": "    expect(await limit(\"active\", \"max\")).toBe(120_000_000);\n",
+      "reason": "plans: Dozo sells three tiers (standard, pro, max); upstream's Ultra is removed from the tier list (billing.ts rules), so the largest tier this case names is Max"
+    },
+    {
+      "file": "packages/adapters/src/computers/sandbox/sandbox-allowance.test.ts",
+      "find": "    expect(await limit(\"trialing\", \"ultra\")).toBe(3_000_000);\n",
+      "replace": "    expect(await limit(\"trialing\", \"max\")).toBe(3_000_000);\n",
+      "reason": "plans: Dozo sells three tiers (standard, pro, max); upstream's Ultra is removed from the tier list (billing.ts rules), so the largest tier this case names is Max"
+    },
+    {
       "file": "apps/api/src/billing/byok-plan.postgres.test.ts",
       "find": "        { tier: \"max\", monthlyPriceCents: 9900, computerSize: \"xlarge\", computerHours: 200 },\n        {\n          tier: \"ultra\",\n          monthlyPriceCents: 19900,\n          annualPriceCents: 190800,\n          computerSize: \"xlarge\",\n          computerHours: 600,\n        },\n      ],",
       "replace": "        { tier: \"max\", monthlyPriceCents: 9900, computerSize: \"xlarge\", computerHours: 200 },\n      ],",
