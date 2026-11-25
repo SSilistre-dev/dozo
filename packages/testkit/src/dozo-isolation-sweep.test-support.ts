@@ -9,15 +9,15 @@ import { fileURLToPath } from "node:url";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { confirmIdentity, findCanaries, readAnswer } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import {
-  DESIGNED_SHARING,
-  DESIGNED_SHARING_SOMETIMES,
-  ISOLATION_EXEMPTIONS,
-  NEVER_SHARED_KINDS,
-} from "./dozo-isolation-exemptions.js";
+import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
 import type { Procedure, Resolve } from "./dozo-isolation-inputs.test-support.js";
 import { generateInputs, mixedVariants, withOwn } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+import {
+  DESIGNED_SHARING,
+  DESIGNED_SHARING_SOMETIMES,
+  NEVER_SHARED_KINDS,
+} from "./dozo-isolation-sharing.js";
 
 /** Whether the table allows a member or guest to see the canary of `kind` through `path` some of the time. */
 const sharedSometimes = (path: string, kind: string) =>

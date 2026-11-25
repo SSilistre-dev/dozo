@@ -9,11 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { findCanaries, ISOLATION_LOGINS, readAnswer } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import {
-  DESIGNED_SHARING,
-  DESIGNED_SHARING_SOMETIMES,
-  ISOLATION_EXEMPTIONS,
-} from "./dozo-isolation-exemptions.js";
+import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
 import type { Procedure } from "./dozo-isolation-inputs.test-support.js";
 import {
   contractProcedures,
@@ -23,6 +19,7 @@ import {
   namesTarget,
 } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+import { DESIGNED_SHARING, DESIGNED_SHARING_SOMETIMES } from "./dozo-isolation-sharing.js";
 import { snapshot, snapshotDiff } from "./dozo-isolation-snapshot.test-support.js";
 import type { Call, Caller, Outcome } from "./dozo-isolation-sweep.test-support.js";
 import {
