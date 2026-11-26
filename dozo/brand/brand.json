@@ -14559,6 +14559,8 @@
     }
   ],
   "assets": {
+    "email-copy/welcome.json": "email-copy/welcome.json",
+    "email-copy/referral.json": "email-copy/referral.json",
     "apps/web/public/favicon.ico": "web/favicon.ico",
     "apps/web/public/favicon.png": "web/favicon.png",
     "apps/web/public/favicon.svg": "favicon.svg",
