@@ -1,9 +1,9 @@
-import { DOZO_SEIGAIHA } from "@rakazo/core";
+import { DOZO_SEAL, DOZO_SEIGAIHA } from "@rakazo/core";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, G, LinearGradient, Pattern, Rect, Stop } from "react-native-svg";
 import { translucentColor } from "../lib/appearance/color";
-import { useMobileTokens } from "../lib/native/native";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 
 const INK_OPACITY = 0.15;
 const SEAL_SIZE = 9;
@@ -61,9 +61,10 @@ export function DozoInboxSeigaiha() {
 /** The seal dot and "dozo", the same wordmark as the web sidebar's header. */
 export function DozoWordmark() {
   const tokens = useMobileTokens();
+  const seal = DOZO_SEAL[useResolvedAppearance()];
   return (
     <View style={styles.wordmark}>
-      <View style={[styles.seal, { backgroundColor: tokens.destructiveFill }]} />
+      <View style={[styles.seal, { backgroundColor: seal }]} />
       <Text accessibilityRole="header" style={[styles.name, { color: tokens.foreground }]}>
         dozo
       </Text>

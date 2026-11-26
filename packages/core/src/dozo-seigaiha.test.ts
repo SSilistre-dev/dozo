@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DOZO_SEIGAIHA } from "./dozo-seigaiha.js";
+import { DOZO_SEAL, DOZO_SEIGAIHA } from "./dozo-seigaiha.js";
 
 describe("the seigaiha tile", () => {
   const css = readFileSync(new URL("../../ui-web/src/dozo-shell.css", import.meta.url), "utf8");
@@ -26,5 +26,12 @@ describe("the seigaiha tile", () => {
     expect(centers).toEqual(DOZO_SEIGAIHA.centers);
     expect(css).toContain(`height: min(${DOZO_SEIGAIHA.fadeHeight}px, 100%)`);
     expect(css).toContain(`linear-gradient(black ${DOZO_SEIGAIHA.solidUntil * 100}%, transparent)`);
+  });
+});
+
+describe("the seal red", () => {
+  it("is the value the sidebar stylesheet draws, light and dark", () => {
+    const css = readFileSync(new URL("../../ui-web/src/dozo-shell.css", import.meta.url), "utf8");
+    expect(css).toContain(`--dozo-seal: light-dark(${DOZO_SEAL.light}, ${DOZO_SEAL.dark});`);
   });
 });
