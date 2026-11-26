@@ -161,11 +161,14 @@ a failure in any of them fails the gate:
   `dozo/upstream-workflows.txt` does not list fails the gate, so a sync that brings one stays red
   until it is reviewed (`dozo/SYNC.md`, Upstream's GitHub workflows).
 - The upstream-edit check: no upstream file may differ from the merge base of `HEAD` and
-  `upstream-main` (not its tip, which may be ahead after a sync), except the marked notice block at
+  the pristine upstream branch (not its tip, which may be ahead after a sync), except the marked notice block at
   the top of the root `README.md` and the three issue forms the fork replaces whole
   (`.github/ISSUE_TEMPLATE/config.yml`, `bug.yml`, `self-host.yml`; exact names, and a deleted one or
   one that names upstream fails). A non-zero count lists the files and fails. The root `Makefile` is
   the fork's own (the stage drops it): a root `Makefile` in the upstream ref fails the check too.
+  The branch is the fresher of local `upstream-main` and `origin/upstream-main` (no fetch): the
+  remote one when the local one is behind it, the local one when ahead (a sync not yet pushed), and
+  a failure when they diverged. The verdict line names the ref used.
   **A missing `upstream-main` ref fails the gate, locally and in CI; there is no opt-out.** Create
   it once: `git fetch upstream main && git branch upstream-main upstream/main` (the `upstream`
   remote: `dozo/SYNC.md`, Prerequisites). `DOZO_UPSTREAM_REF` names another ref and exists for tests.
@@ -323,7 +326,7 @@ and one JSON report per zone are in `<stage>/postgres-tests/`.
 | `DOZO_UNIT_SRC` | `<stage>/src` | Tree `unit` tests. Makes a verdict partial when set |
 | `DOZO_COVERAGE_MIN` | `90` | Web unit floor, per file, for the fork's `dozo-*` files |
 | `DOZO_BRAND_COVERAGE_MIN` | `97` | Brand floor in `olc`, per file and overall (separate so the web floor is unaffected) |
-| `DOZO_UPSTREAM_REF` | `upstream-main` | Ref of the upstream-edit check; tests only |
+| `DOZO_UPSTREAM_REF` | fresher of `upstream-main` and `origin/upstream-main` | Ref of the upstream-edit check, used as given; tests only |
 | `CI` | unset | When set, `olc`, `checks` and `unit` pull a missing Node image instead of failing |
 
 `sync.sh` runs the gates with `DOZO_QA_STEPS`, `DOZO_SKIP_BRAND` and `DOZO_UPSTREAM_REF` unset. The

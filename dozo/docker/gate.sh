@@ -36,8 +36,11 @@ COV_MIN="${DOZO_COVERAGE_MIN:-90}"
 # The brand codemod's own floor (percent), per file and overall. Just under what it measures today
 # (100 lines, 98.9 branches, 100 functions); a separate variable so the web unit floor is unaffected.
 BRAND_COV_MIN="${DOZO_BRAND_COVERAGE_MIN:-97}"
-# The pristine upstream branch the upstream-edit check compares with (override for tests only).
-UP_REF="${DOZO_UPSTREAM_REF:-upstream-main}"
+# The pristine upstream ref the upstream-edit check compares with. Unset: the fresher of the local
+# upstream-main and origin/upstream-main (pick_upstream_ref); set: that ref as given (tests only).
+UP_OVERRIDE="${DOZO_UPSTREAM_REF:-}"
+UP_LOCAL="upstream-main"
+UP_REMOTE="origin/upstream-main"
 # The upstream file the fork may edit inside the marked block at its top (the other exception: below).
 README_FILE="README.md"
 README_START="<!-- dozo:fork-notice:start -->"
@@ -386,13 +389,17 @@ olc() {
   # Compared with the merge base, not the tip of $UP_REF: after an aborted sync or a daily sync on
   # origin the ref is ahead, and everything upstream changed since would look like our edit. A check
   # that cannot run fails: without the ref, nothing says what upstream's files are.
-  if upstream_ref_ok; then
+  local pick=0 UP_REF
+  UP_REF=$(pick_upstream_ref) || pick=$?
+  if [ "$pick" = 2 ]; then fail "$UP_LOCAL and $UP_REMOTE have diverged: the pristine branch is only fast-forwarded, find out why before trusting the upstream-edit check"
+  elif [ "$pick" = 0 ]; then
     if base=$(git merge-base HEAD "$UP_REF" 2>/dev/null) && [ -n "$base" ]; then
       if ! bad=$(upstream_edits "$base"); then fail "upstream-edit check: git diff against the merge base failed"
-      elif [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE notice block, ${#OWNED_FILES[@]} issue forms): 0"
+      elif [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE notice block, ${#OWNED_FILES[@]} issue forms, merge base with $UP_REF): 0"
       else printf '%s\n' "$bad" | sed "s/^/[olc] upstream file differs from the merge base with $UP_REF: /"; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
     else fail "no merge base between HEAD and $UP_REF: the upstream-edit check cannot run"; fi
-  else fail "$UP_REF ref missing: the upstream-edit check cannot run. Create it: git fetch upstream main && git branch $UP_REF upstream/main"; fi
+  elif [ -n "$UP_OVERRIDE" ]; then fail "DOZO_UPSTREAM_REF=$UP_OVERRIDE is not a commit: the upstream-edit check cannot run"
+  else fail "$UP_LOCAL ref missing: the upstream-edit check cannot run. Create it: git fetch upstream main && git branch $UP_LOCAL upstream/main"; fi
   bad=$(owned_naming_upstream)
   [ -z "$bad" ] || { printf '%s\n' "$bad" | sed 's/^/[olc] owned issue form names upstream: /'; fail "owned issue forms name upstream: $(printf '%s\n' "$bad" | grep -c .)"; }
   # The legal pages write what only the owner can supply as [[NAME]] (dozo/LAUNCH-CHECKLIST.md,
@@ -448,6 +455,7 @@ selftest() {
     ok=0; echo "[olc] selftest timed_out: wrong verdict"
   fi
   selftest_owned || ok=0
+  selftest_upstream_ref || ok=0
   # Unlisted upstream workflows: a listed one, dozo-* and a neighbour by prefix are not reported.
   local wf; wf=$(mktemp -d "${TMPDIR:-/tmp}/dozo-wftest-XXXXXX") || return 1
   printf '# comment\na.yml\n' > "$wf/list"
@@ -456,8 +464,8 @@ selftest() {
   [ "$got" = $'a.yml.yml\nb.yaml' ] || { ok=0; echo "[olc] selftest upstream_workflows_unlisted: got '$got', want 'a.yml.yml, b.yaml'"; }
   # The shell logic of build.sh and lock.sh (stage overlay, dc env, lock owner), in a scratch repo.
   out=$(bash "$ROOT/dozo/docker/build.test.sh" 2>&1) || { ok=0; printf '%s\n' "$out"; }
-  if [ "$ok" = 1 ]; then echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms, workflow list and build.test.sh ok"
-  else fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms, workflow list or build.test.sh)"; fi
+  if [ "$ok" = 1 ]; then echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms, upstream ref choice, workflow list and build.test.sh ok"
+  else fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms, upstream ref choice, workflow list or build.test.sh)"; fi
 }
 # The allowed set of the upstream-edit check, in a scratch repository. For every owned file: a
 # changed one is not listed; a deleted one and one that names upstream are; a file whose name only
@@ -494,6 +502,37 @@ selftest_owned() (
   want "files outside the set" $'.github/ISSUE_TEMPLATE/other.yml\nREADME.md (outside the fork-notice block)'
   exit "$rc"
 )
+# Which ref the upstream-edit check compares with, in a scratch repository: the remote-tracking
+# branch when the local one is behind or alone, the local one when ahead, a failure when they
+# diverged, a missing one is a failure, and an override wins.
+selftest_upstream_ref() (
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/dozo-reftest-XXXXXX") || exit 1
+  trap 'rm -rf "$tmp"' EXIT
+  cd "$tmp" || exit 1
+  g() { git -c user.name=t -c user.email=t@example.invalid "$@"; }
+  rc=0
+  want() { # name override want-ref want-status
+    local got st=0; got=$(UP_OVERRIDE="$2" pick_upstream_ref) || st=$?
+    { [ "$got" = "$3" ] && [ "$st" = "$4" ]; } || { echo "[olc] selftest upstream ref $1: got '$got' ($st), want '$3' ($4)"; rc=1; }
+  }
+  g init -q && g commit -q --allow-empty -m a && g commit -q --allow-empty -m b || exit 1
+  a=$(g rev-parse HEAD~1); b=$(g rev-parse HEAD)
+  want "none" "" "" 1
+  g update-ref refs/heads/upstream-main "$a"
+  want "local only" "" upstream-main 0
+  g update-ref refs/remotes/origin/upstream-main "$b"
+  want "local behind origin" "" origin/upstream-main 0
+  g update-ref refs/remotes/origin/upstream-main "$a"
+  g update-ref refs/heads/upstream-main "$b"
+  want "local ahead of origin" "" upstream-main 0
+  g update-ref refs/heads/upstream-main "$a"
+  g checkout -q -b side "$a" && g commit -q --allow-empty -m c || exit 1
+  g update-ref refs/heads/upstream-main "$(g rev-parse HEAD)"
+  g update-ref refs/remotes/origin/upstream-main "$b"
+  want "diverged" "" "" 2
+  want "override wins" "$a" "$a" 0
+  exit "$rc"
+)
 expect_misses() { # name min fixture want
   local got; got=$(coverage_misses "$2" <<< "$3")
   [ "$got" = "$4" ] && return 0
@@ -507,7 +546,23 @@ check_wait() { # name want delay body: run body in the background, wait_gone it 
   echo "[olc] selftest wait_gone $1: got $WAIT_RC, want $2"; return 1
 }
 
-upstream_ref_ok() { git rev-parse --verify -q "$UP_REF^{commit}" >/dev/null; }
+# Prints the ref the upstream-edit check uses; no network. Returns 1 when none exists, 2 when the
+# local and the remote-tracking branch diverged. The remote one is shown as origin/upstream-main.
+pick_upstream_ref() {
+  local has_local=0 has_remote=0
+  if [ -n "$UP_OVERRIDE" ]; then
+    git rev-parse --verify -q "$UP_OVERRIDE^{commit}" >/dev/null || return 1
+    echo "$UP_OVERRIDE"; return 0
+  fi
+  git rev-parse --verify -q "refs/heads/$UP_LOCAL^{commit}" >/dev/null && has_local=1
+  git rev-parse --verify -q "refs/remotes/$UP_REMOTE^{commit}" >/dev/null && has_remote=1
+  if [ "$has_local$has_remote" = 00 ]; then return 1
+  elif [ "$has_remote" = 0 ]; then echo "$UP_LOCAL"
+  elif [ "$has_local" = 0 ]; then echo "$UP_REMOTE"
+  elif git merge-base --is-ancestor "refs/heads/$UP_LOCAL" "refs/remotes/$UP_REMOTE"; then echo "$UP_REMOTE"
+  elif git merge-base --is-ancestor "refs/remotes/$UP_REMOTE" "refs/heads/$UP_LOCAL"; then echo "$UP_LOCAL"
+  else return 2; fi
+}
 
 # Fork tests on the branded staged tree, in a container; nothing is written to the host.
 # Cost: a cold run installs everything (~40 s) and adds the coverage provider (~35 s). The volume
