@@ -2,7 +2,7 @@
 
 import { flush } from "@rakazo/core/test-async";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -91,7 +91,7 @@ it("waits for a bot again after signing out and into an account without one", as
 });
 
 it("is what the inbox calls, with the account's bots in place of upstream's effect", () => {
-  const inbox = readFileSync(fileURLToPath(new URL("../app/index.tsx", import.meta.url)), "utf8");
+  const inbox = readFileSync(join(import.meta.dirname, "../app/index.tsx"), "utf8");
   expect(inbox).toContain(
     "usePushWhenAccountHasBot(\n    hasSession && !onShareSelect,\n    bots.length > 0 || spaces.some((space) => space.bots.length > 0),\n  );",
   );
