@@ -14744,6 +14744,21 @@
       "reason": "seigaiha on mobile: a chat row is clear so the wave pattern behind the list shows through"
     },
     {
+      "file": "apps/mobile/components/inbox/inbox-swipe-content.ios.tsx",
+      "find": "  const foreground = useAnimatedStyle(() => ({\n    transform: [{ translateX: offset.value * DIRECTION }],\n  }));",
+      "replace": "  const page = tokens.background;\n  const foreground = useAnimatedStyle(() => ({\n    // Opaque only while the row is off centre, to cover the actions behind it.\n    backgroundColor: offset.value === 0 ? \"transparent\" : page,\n    transform: [{ translateX: offset.value * DIRECTION }],\n  }));",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the row's moving layer was filled with the page colour at rest, which hid the wave pattern behind every chat row and cut it off where the first row starts"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-swipe-content.ios.tsx",
+      "find": "<Animated.View style={[{ backgroundColor: tokens.background }, foreground]}>",
+      "replace": "<Animated.View style={foreground}>",
+      "reason": "seigaiha on mobile: the fill moved into the animated style above"
+    },
+    {
       "file": "apps/mobile/lib/inbox/inbox-route.test.tsx",
       "find": "vi.mock(\"../appearance/appearance\", () => ({ mobileTokens: () => ({}) }));\nvi.mock(\"../native/native\"",
       "replace": "vi.mock(\"../appearance/appearance\", () => ({ mobileTokens: () => ({}) }));\nvi.mock(\"../../components/dozo-inbox-seigaiha\", () => ({ dozoWordmarkItems: () => [] }));\nvi.mock(\"../native/native\"",
