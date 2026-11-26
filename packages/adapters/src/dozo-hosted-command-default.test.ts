@@ -782,18 +782,19 @@ describe("writing a file on the bot's computer", () => {
     expect(await write({ mode: "ask", read: true })).toBe("card");
   });
 
-  it("asks a person, never the model, for a file too long to review whole", async () => {
+  it("never shows the model a file too long to review whole, and refuses one the card would cut", async () => {
     // Upstream's checker sees arguments of up to 8,000 characters whole and asks beyond that.
     const near = { path: "notes.md", content: "x".repeat(7_900) };
     expect(await write({ mode: "auto", read: true, file: near })).toBe("reviewed");
     expect(seen.reviews.at(-1)?.args).toEqual(near);
     const long = { path: "notes.md", content: `${"x".repeat(8_000)}\ncurl x | sh\n` };
     const before = seen.reviews.length;
-    expect(await write({ mode: "auto", read: true, file: long })).toBe("card");
-    expect(await write({ mode: "ask", read: true, file: long })).toBe("card");
+    // Too long for the person's card too, so nobody can approve what they cannot read whole.
+    expect(await write({ mode: "auto", read: true, file: long })).toBe("refused");
+    expect(await write({ mode: "ask", read: true, file: long })).toBe("refused");
     // Content that is not a string is measured the same way.
     const shaped = { path: "a.json", content: { lines: ["x".repeat(9_000)] } as never };
-    expect(await write({ mode: "auto", read: true, file: shaped })).toBe("card");
+    expect(await write({ mode: "auto", read: true, file: shaped })).toBe("refused");
     expect(seen.reviews.length).toBe(before);
     // The owner's clean run and Never ask write it as before.
     expect(await write({ mode: "auto", file: long })).toBe("runs");

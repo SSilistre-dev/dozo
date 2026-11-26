@@ -1,12 +1,14 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import type { ApprovalMode } from "@rakazo/core";
 import {
-  type ApprovalMode,
   literalCommandWords,
   readOnlyCwd,
   readOnlyPipeline,
   redactSecrets,
+  sliceWellFormed,
 } from "@rakazo/core";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approvals/approval-ask.js";
+import { dozoTruncate } from "./dozo-approval-cut.js";
 import {
   commandAsked,
   commandRuleMatch,
@@ -116,7 +118,8 @@ function userBrowserCard(
       : toolName === "browser_act"
         ? JSON.stringify(args.actions)
         : "";
-  const detail = redactSecrets(doing, secrets).slice(0, 2000);
+  // Cut only where dozo-whole-approval.ts counts it, so the gate refuses a call that would be.
+  const detail = dozoTruncate(redactSecrets(doing, secrets), 2000, sliceWellFormed);
   // What the page tool would do on the site, as its card says it.
   // What the call would do on the site, as its card says it; the first card names it too.
   const place = ask.site || "this page";
