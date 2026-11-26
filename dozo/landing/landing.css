@@ -151,6 +151,18 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .period button:hover{color:var(--text)}
 .save{font-size:14px;color:var(--muted)}
 .tiers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0;position:relative}
+/* the dragon behind the plans: the mark's head on a scaled body, in the mark's red, faint. It lies
+   along the top of the cards and dips behind them; the cards are a little translucent. Beside the
+   heading row it keeps right of the heading and the period switch; on a phone, where the switch has
+   its own row, it spans the cards. */
+.scales{position:absolute;right:0;bottom:100%;width:min(660px,100% - 520px);transform:translateY(42.9%);opacity:var(--scale-a,.5);pointer-events:none;color:#C8372D}
+:root[data-theme="light"] .scales{--scale-a:.42}
+.scales svg{display:block;overflow:visible}
+.scales .body{stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
+.scales .fin,.scales .ink{fill:currentColor}.scales .spine{stroke:var(--bg);stroke-width:1.5;stroke-linejoin:round}
+.scales .horn,.scales .whisker{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round}.scales .whisker{stroke-width:1.7}
+.scales .visor{fill:var(--bg)}
+.scales .band path{fill:var(--bg);stroke:currentColor;stroke-width:1}
 .tier{display:grid;grid-row:span 5;grid-template-rows:subgrid;row-gap:0;justify-items:start;border-radius:24px;padding:24px;box-shadow:inset 0 0 0 1px var(--line);position:relative;background:color-mix(in srgb,var(--bg) 90%,transparent)}
 .tier h3{font-size:18px;font-weight:500;letter-spacing:-.015em}
 .price{margin-top:14px;color:var(--muted);font-size:14.5px;display:grid}
@@ -201,6 +213,7 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
 }
 @media (max-width:560px){
  .wrap{width:min(1200px,100% - 40px)}
+ .scales{width:100%}
  .does ul{grid-template-columns:minmax(0,1fr)}
  .top{height:auto;min-height:64px;flex-wrap:wrap}
  .nav{gap:2px;margin-left:auto}.nav .tgl{width:34px}.nav .pill{height:36px;padding:0 11px;font-size:14px}.langs a{padding:0 4px}
