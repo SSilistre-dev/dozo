@@ -21,6 +21,7 @@ Dozo is source available: its own files are under the Elastic License 2.0, the c
 - Self-hosted: free on your own server.
 - Desktop app for macOS, Windows and Linux: https://github.com/SSilistre-dev/dozo/releases/latest . It opens the hosted server, your own server, or runs a server on your computer. The macOS build is signed; the Windows and Linux builds are not signed yet.
 - Web app: https://app.dozo.bot (sign-up is open)
+- iOS app for iPhone and iPad: https://apps.apple.com/app/dozo-bot/id6837702832
 
 ## Plans (hosted, prices in US dollars as shown on the site)
 

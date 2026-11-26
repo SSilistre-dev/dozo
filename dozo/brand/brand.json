@@ -2972,8 +2972,8 @@
     {
       "file": "packages/contracts/src/clients/client-build.ts",
       "find": "export const IOS_APP_STORE_URL = \"https://apps.apple.com/app/rakazo/id6801531099\";\nexport const ANDROID_APK_URL =\n  \"https://github.com/elie222/rakazo/releases/download/android/rakazo.apk\";\nexport const ANDROID_APP_STORE_URL = \"https://play.google.com/store/apps/details?id=com.rakazo.app\";\n",
-      "replace": "export const IOS_APP_STORE_URL = \"https://dozo.bot/\";\nexport const ANDROID_APK_URL = \"https://dozo.bot/\";\nexport const ANDROID_APP_STORE_URL = \"https://dozo.bot/\";\n",
-      "reason": "Dozo has no App Store or Play listing and no APK: the app's update fallback opens the landing page"
+      "replace": "export const IOS_APP_STORE_URL = \"https://apps.apple.com/app/dozo-bot/id6837702832\";\nexport const ANDROID_APK_URL = \"https://dozo.bot/\";\nexport const ANDROID_APP_STORE_URL = \"https://dozo.bot/\";\n",
+      "reason": "the iOS links open Dozo's own App Store listing; Dozo has no Play listing and no APK, so the Android links open the landing page"
     },
     {
       "file": "apps/web/src/pages/shell/sidebar/sidebar-footer.tsx",

@@ -59,15 +59,17 @@ Closed pre-release state (lifted):
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the second hero and closing buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - Order: hero, the two ideas, "What it does." (`.does`: six short items, each read from the code; a new item needs the
-  same check, and nothing that ships only with a new mobile build), then the run-it-yourself section (`#get`: the "Desktop app." block and
+  same check, and nothing that ships only with a new mobile build), then the run-it-yourself section (`#get`: the "Apps." block and
   the self-hosting row), then "Hosted plans.", then the closing buttons. The header has no plans or
   pricing link; the plans are reached by scrolling. The first hero and closing button, "Download",
   links to `#get`; `landing.js` points it straight at the build for the visitor's system (the plain
-  macOS, Windows and Linux links under the hero button, found by `data-os`) and leaves it on `#get`
-  on a phone, on an unknown system and without the script.
-- The "Desktop app." block links the macOS, Windows and Linux installers by the fixed asset names of the
+  macOS, Windows, Linux and iOS links under the hero button, found by `data-os`; iPhone and iPad get
+  the App Store listing) and leaves it on `#get` on Android, on an unknown system and without the script.
+- The "Apps." block links the macOS, Windows and Linux installers by the fixed asset names of the
   latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
   `Dozo-Windows-x64-setup.exe`, `Dozo-Linux-x86_64.AppImage`), so a new release needs no edit here; renaming an asset breaks them.
+  The iOS link beside them opens the App Store listing (`apps.apple.com/app/dozo-bot/id6837702832`),
+  the same address as `IOS_APP_STORE_URL` in `dozo/brand/brand.json`. Android has no listing and no link.
   The links work only while the latest release is a published desktop release (`dozo-desktop-release`
   creates it as a draft; the server bundles never become latest).
   The "not signed yet" note (Windows and Linux; macOS is signed) is in the one `<p>` in that block,
@@ -84,7 +86,7 @@ Closed pre-release state (lifted):
   owner has set it and the code enforces it.
 - No decoration behind the plans: the dragon that was drawn there is removed (the owner wants that
   section quiet). The "Save 20%" saving is plain text beside the period switch, not inside it.
-- Download buttons (`.dlb`, hero row and the "Desktop app." block) are outlined in the muted ink, with
+- Download buttons (`.dlb`, hero row and the "Apps." block) are outlined in the muted ink, with
   a generic platform glyph and a download arrow; `landing.js` fills the visitor's own system
   (`.w`). Light theme: white pills and hairline card borders get an edge from `--draft-line`.
 - The demo scenes avoid plan and pricing words, so nothing in them reads as Dozo's own offer.
