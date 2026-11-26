@@ -1694,12 +1694,13 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./avatars/notification-avatar.js\";",
-      "replace": "export * from \"./dozo-avatar-art.js\";\nexport * from \"./dozo-chat-colors.js\";",
+      "replace": "export * from \"./dozo-avatar-art.js\";\nexport * from \"./dozo-chat-colors.js\";\nexport * from \"./dozo-seigaiha.js\";",
       "requires": [
         "packages/core/src/dozo-avatar-art.ts",
-        "packages/core/src/dozo-chat-colors.ts"
+        "packages/core/src/dozo-chat-colors.ts",
+        "packages/core/src/dozo-seigaiha.ts"
       ],
-      "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body"
+      "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body; the seigaiha tile the mobile inbox header draws (the sidebar's stylesheet draws the same one)"
     },
     {
       "file": "apps/web/src/styles.css",
@@ -14816,6 +14817,108 @@
       "find": "privateFolder(\"rakazo-claude-code-sessions\", false)",
       "replace": "privateFolder(\"dozo-claude-code-sessions\", false)",
       "reason": "the Claude Code CLI's private sessions folder on the server: the app's own name, like the working folder"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "react-native-safe-area-context\";\nimport { BotOrganizeModal }",
+      "replace": "react-native-safe-area-context\";\nimport { DozoInboxSeigaiha } from \"../components/dozo-inbox-seigaiha\";\nimport { BotOrganizeModal }",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "    <View style={styles.screen}>\n      {showToolbar ?",
+      "replace": "    <View style={styles.screen}>\n      {onShareSelect ? null : <DozoInboxSeigaiha />}\n      {showToolbar ?",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the wave pattern behind the header and the top of the list, first so every sibling draws over it; not in the share picker"
+    },
+    {
+      "file": "apps/mobile/lib/inbox/use-inbox-header.ts",
+      "find": "import { useLayoutEffect } from \"react\";\nimport { useUiLocale }",
+      "replace": "import { useLayoutEffect } from \"react\";\nimport { dozoWordmarkItems } from \"../../components/dozo-inbox-seigaiha\";\nimport { useUiLocale }",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/inbox/use-inbox-header.ts",
+      "find": "      headerTitle,\n      unstable_headerRightItems:",
+      "replace": "      headerTitle,\n      unstable_headerLeftItems: dozoWordmarkItems,\n      unstable_headerRightItems:",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the wordmark at the leading side of the Liquid Glass header, beside the organization menu when there is one"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "    listRowBackground(native.page),\n    ...visibility(key),",
+      "replace": "    listRowBackground(\"transparent\"),\n    ...visibility(key),",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: rows are clear so the wave pattern behind the list shows through"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "modifiers={[rowInsets, listRowSeparator(\"hidden\"), listRowBackground(native.page)]}",
+      "replace": "modifiers={[rowInsets, listRowSeparator(\"hidden\"), listRowBackground(\"transparent\")]}",
+      "reason": "seigaiha on mobile: the spacer rows are clear too"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "            foregroundStyle(native.page),\n            frame({ height }),",
+      "replace": "            foregroundStyle(\"transparent\"),\n            frame({ height }),",
+      "reason": "seigaiha on mobile: the top spacer is a rectangle that was filled with the page colour, which painted over the whole header strip where the wave pattern is strongest"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "import { native } from \"../../lib/native/native\";\nimport { canScrollNativeList",
+      "replace": "import { canScrollNativeList",
+      "reason": "seigaiha on mobile: the list no longer reads the page colour, so the import of the rule above is gone"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "      background={native.page}\n      modifiers={[\n        scrollContentBackground",
+      "replace": "      background=\"transparent\"\n      modifiers={[\n        scrollContentBackground",
+      "reason": "seigaiha on mobile: the list itself is clear (the screen behind it holds the page colour)"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-swipe-row.ios.tsx",
+      "find": "              listRowBackground(native.page),",
+      "replace": "              listRowBackground(\"transparent\"),",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: a chat row is clear so the wave pattern behind the list shows through"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-swipe-content.ios.tsx",
+      "find": "  const foreground = useAnimatedStyle(() => ({\n    transform: [{ translateX: offset.value * DIRECTION }],\n  }));",
+      "replace": "  const page = tokens.background;\n  const foreground = useAnimatedStyle(() => ({\n    // Opaque only while the row is off centre, to cover the actions behind it.\n    backgroundColor: offset.value === 0 ? \"transparent\" : page,\n    transform: [{ translateX: offset.value * DIRECTION }],\n  }));",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the row's moving layer was filled with the page colour at rest, which hid the wave pattern behind every chat row and cut it off where the first row starts"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-swipe-content.ios.tsx",
+      "find": "<Animated.View style={[{ backgroundColor: tokens.background }, foreground]}>",
+      "replace": "<Animated.View style={foreground}>",
+      "reason": "seigaiha on mobile: the fill moved into the animated style above"
+    },
+    {
+      "file": "apps/mobile/lib/inbox/inbox-route.test.tsx",
+      "find": "vi.mock(\"../appearance/appearance\", () => ({ mobileTokens: () => ({}) }));\nvi.mock(\"../native/native\"",
+      "replace": "vi.mock(\"../appearance/appearance\", () => ({ mobileTokens: () => ({}) }));\nvi.mock(\"../../components/dozo-inbox-seigaiha\", () => ({ dozoWordmarkItems: () => [] }));\nvi.mock(\"../native/native\"",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: upstream test fixture: the header hook now adds the wordmark item, drawn with react-native-svg, which this test does not load"
     },
     {"file": "packages/core/src/routines/schedule.ts", "find": "    return new Intl.DateTimeFormat(locale, { hour: \"numeric\", minute: \"2-digit\" }).format(\n      new Date(2000, 0, 1, hour, minute),\n    );\n", "replace": "    // Dozo: a UTC instant read by a UTC formatter, so no zone offset applies. A local date in 2000\n    // gets the zone's current offset in Hermes and its historical one in iOS Intl.\n    return new Intl.DateTimeFormat(locale, {\n      hour: \"numeric\",\n      minute: \"2-digit\",\n      timeZone: \"UTC\",\n    }).format(new Date(Date.UTC(2000, 0, 1, hour, minute)));\n", "reason": "routines: a schedule's clock read one hour early on iOS in zones whose offset changed since 2000 (Europe/Istanbul)"},
     {"file": "packages/i18n/src/cron.ts", "find": "export function cronLabels(locale: string): CronLabels {\n  if (locale === \"en\") return ENGLISH_CRON_LABELS;\n", "replace": "export function cronLabels(locale: string, clockLocale = locale): CronLabels {\n  if (locale === \"en\") {\n    if (clockLocale === \"en\") return ENGLISH_CRON_LABELS;\n    const english = ENGLISH_CRON_LABELS;\n    const clock = (time: string) => localizedClock(time, clockLocale);\n    return {\n      ...english,\n      atTime: (time) => english.atTime(clock(time)),\n      atTimes: (clocks) => english.atTimes?.(clocks.map(clock)) ?? \"\",\n      onThe1stAt: (time) => english.onThe1stAt(clock(time)),\n      onDayAt: (day, time) => english.onDayAt(day, clock(time)),\n    };\n  }\n", "reason": "routines: mobile writes the schedule's clock on the phone's 12 or 24 hour clock, as its next-run line does"},
