@@ -34,14 +34,14 @@ use std::io;
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
     None => {
-        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.16.0-9/manifest.json"
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.16.0-10/manifest.json"
     }
 };
 
 /// The server version this app expects: the one `MANIFEST` names. An installed older one is
 /// updated to it at the next start (`stack_update.rs`); when it is already installed, no manifest
 /// is read.
-const SERVER_VERSION: &str = "0.16.0-9";
+const SERVER_VERSION: &str = "0.16.0-10";
 
 /// Where the server on this computer sends in-app feedback to (`apps/api/src/dozo-feedback.ts`),
 /// named by the build (`DOZO_FEEDBACK_EMAIL`); without it the feedback is only kept.
