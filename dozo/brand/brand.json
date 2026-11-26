@@ -1964,6 +1964,33 @@
       "reason": "Dozo avatars on mobile: the avatar drawing reads a derived value, which this test's Reanimated stand-in lacks"
     },
     {
+      "file": "apps/mobile/components/thread/header/group-seats.tsx",
+      "find": "  if (parsed.kind === \"shape\") {\n    const [x, y, units] = SHIPPED_BOT_AVATAR_VIEWBOX.split(\" \").map(Number) as [\n      number,\n      number,\n      number,\n    ];\n    return {\n      box: [x, y, units],\n      outline: (paint) => <Path d={parsed.shapePath} {...paint} />,\n      face: (\n        <>\n          <Path d={parsed.shapePath} fill={parsed.color} />\n          <G fill={botEyeInk(parsed.color, page)}>\n            {avatarEyeRects(SHIPPED_BOT_AVATAR_EYES).map((rect) => (\n              <Rect key={rect.x} {...rect} />\n            ))}\n          </G>\n        </>\n      ),\n    };\n  }\n  const color = parsed.kind === \"color\" ? parsed.color : member.color;\n  const seed = avatarIdentitySeed(member.botId ?? member.name ?? color);\n  const outline = organicAvatarPath(seed);\n  const [x, y, units] = ORGANIC_AVATAR_VIEWBOX.split(\" \").map(Number) as [number, number, number];\n  return {\n    box: [x, y, units],\n    outline: (paint) => <Path d={outline} {...paint} />,\n    face: (\n      <>\n        <Path d={outline} fill={color} />\n        <G transform={`rotate(${organicAvatarEyeTilt(seed)})`} fill={botEyeInk(color, page)}>\n          {avatarEyeRects(ORGANIC_AVATAR_EYES).map((rect) => (\n            <Rect key={rect.x} {...rect} />\n          ))}\n        </G>\n      </>\n    ),\n  };",
+      "replace": "  return dozoSeatArt(member.botId ?? member.name, member.color, page.foreground);",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-shapes.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: a group header's member that is not a photo is the same still character as its avatar, not upstream's shape or generated body"
+    },
+    {
+      "file": "apps/mobile/components/thread/header/group-seats.tsx",
+      "find": "import {\n  avatarEyeRects,\n  avatarIdentitySeed,\n  botEyeInk,\n  ORGANIC_AVATAR_EYES,\n  ORGANIC_AVATAR_VIEWBOX,\n  organicAvatarEyeTilt,\n  organicAvatarPath,\n  SHIPPED_BOT_AVATAR_EYES,\n  SHIPPED_BOT_AVATAR_VIEWBOX,\n} from \"@rakazo/core\";\nimport type { ReactNode } from \"react\";\n",
+      "replace": "import type { ReactNode } from \"react\";\n",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-shapes.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the imports of the rule above, which no longer needs upstream's drawing helpers"
+    },
+    {
+      "file": "apps/mobile/components/thread/header/group-seats.tsx",
+      "find": "import { native, useMobileTokens, useResolvedAppearance } from \"../../../lib/native/native\";\n\ntype SeatMember",
+      "replace": "import { native, useMobileTokens, useResolvedAppearance } from \"../../../lib/native/native\";\nimport { dozoSeatArt } from \"../../bots/dozo-bot-shapes\";\n\ntype SeatMember",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-shapes.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the import of the still Dozo character that the first rule above draws, placed where Biome sorts it"
+    },
+    {
       "file": "packages/contracts/src/rpc/app-contract.ts",
       "find": "import { accountRpc } from \"../account/account-rpc.js\";\nimport { artifactsRpc } from \"../artifacts/artifacts-rpc.js\";",
       "replace": "import { accountRpc } from \"../account/account-rpc.js\";\nexport * from \"../dozo-admin.js\";\nimport { dozoAdminContract } from \"../dozo-admin.js\";\nexport * from \"../dozo-analytics.js\";\nimport { dozoEventsContract } from \"../dozo-analytics.js\";\nexport * from \"../dozo-usage.js\";\nimport { dozoUsageContract } from \"../dozo-usage.js\";\nexport * from \"../dozo-teach.js\";\nimport { dozoTeachContract } from \"../dozo-teach.js\";\nimport { artifactsRpc } from \"../artifacts/artifacts-rpc.js\";",

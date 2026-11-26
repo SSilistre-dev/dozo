@@ -5,7 +5,7 @@ import {
   dozoBotColor,
   dozoCharacterForLook,
 } from "@rakazo/core";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { Pressable } from "react-native";
 import Animated, {
@@ -18,26 +18,18 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Ellipse, G, Path, Rect } from "react-native-svg";
+import Svg, { G } from "react-native-svg";
 import { useAvatarOnScreen } from "../../lib/bots/avatar-life";
 import { useLogoAvatarClock } from "../../lib/bots/logo-avatar-clock";
 import { useMobileTokens } from "../../lib/native/native";
+import { drawPart, paintsFor } from "./dozo-bot-shapes";
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 type Frame = ReturnType<typeof dozoAvatarFrame>;
-type Shape = ComponentType<Record<string, string | number | undefined>>;
-
-const SHAPES: Record<DozoShape[1], Shape> = {
-  path: Path as unknown as Shape,
-  circle: Ellipse as unknown as Shape,
-  ellipse: Ellipse as unknown as Shape,
-  rect: Rect as unknown as Shape,
-};
 
 /** Below this size motion is off: unreadable, and wasted frames. The same as the web drawing. */
 const MIN_MOTION_SIZE = 32;
-const LINE_WIDTH = 2.6;
 const STILL: Frame = { headY: 0, featureScale: 1, featureOpacity: 1, eyeScaleY: 1 };
 /** The web's hop: 0.25 s, at 40% it is 8% of the size up and tilted 5 degrees. */
 const HOP_MS = 250;
@@ -120,34 +112,19 @@ export function DozoBotArt({
         ? dozoAvatarFrame(character, state, 0, seed)
         : STILL,
   );
-  const paint = {
-    body: { fill: tokens.foreground, fillRule: "evenodd" },
-    line: {
-      fill: "none",
-      stroke: tokens.foreground,
-      strokeWidth: LINE_WIDTH,
-      strokeLinecap: "round",
-    },
-    accent: { fill: accent },
-  } as const;
+  const paints = paintsFor(tokens.foreground, accent);
   const artwork = (
     <Svg width={size} height={size} viewBox="0 0 64 64" accessible={false}>
-      {dozoAvatarLayout(character).map(({ part, shapes, originX, originY }, index) => (
+      {dozoAvatarLayout(character).map((layoutPart, index) => (
         <Moving
           // The layout is fixed per character, so a group's place is its identity.
           key={index}
-          part={part}
-          originX={originX}
-          originY={originY}
+          part={layoutPart.part}
+          originX={layoutPart.originX}
+          originY={layoutPart.originY}
           frame={frame}
         >
-          {shapes.map(([, tag, kind, attrs], at) => {
-            const Tag = SHAPES[tag];
-            // A circle is an ellipse of equal radii: one element fewer for the native host to know.
-            const geometry =
-              tag === "circle" ? { ...attrs, rx: attrs.r, ry: attrs.r, r: undefined } : attrs;
-            return <Tag key={at} {...geometry} {...paint[kind]} />;
-          })}
+          {drawPart(layoutPart, paints)}
         </Moving>
       ))}
     </Svg>

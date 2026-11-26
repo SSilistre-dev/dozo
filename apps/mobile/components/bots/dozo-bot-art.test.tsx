@@ -15,6 +15,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DozoBotArt as DozoBotArtType } from "./dozo-bot-art";
 import { DozoBotArt } from "./dozo-bot-art";
+import { dozoSeatArt } from "./dozo-bot-shapes";
 
 const INK = "#141414";
 const motion = vi.hoisted(() => ({
@@ -195,6 +196,53 @@ describe("DozoBotArt", () => {
     const character = dozoCharacterForSeed("bot");
     expect(DOZO_CHARACTERS).toContain(character);
     expect(view.querySelectorAll("path").length).toBeGreaterThan(0);
+  });
+
+  describe("a group seat", () => {
+    const drawn = (view: HTMLElement) =>
+      Array.from(view.querySelectorAll("path, ellipse, rect"), (shape) => shape.outerHTML);
+    const draw = (node: ReactNode) => {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      const view = document.createElement("div");
+      const seat = createRoot(view);
+      act(() => seat.render(node));
+      return { view, seat };
+    };
+
+    it("draws the character its bot's picture draws, still", () => {
+      const art = dozoSeatArt("bot-1", botLookWithShape("#3EC5A8", 3), INK);
+      const picture = render({
+        identity: "bot-1",
+        color: botLookWithShape("#3EC5A8", 3),
+        activity: "working",
+      });
+      const { view, seat } = draw(art.face);
+      expect(art.box).toEqual([0, 0, 64]);
+      expect(drawn(view)).toEqual(drawn(picture));
+      act(() => seat.unmount());
+    });
+
+    it("draws a white bot with no identity and no colour in the page's ink, as its picture does", () => {
+      const white = draw(dozoSeatArt(undefined, "#FFFFFF", INK).face);
+      expect(
+        white.view.querySelector("[data-fill]:not([data-fill='none']):not([data-fill='#141414'])"),
+      ).toBeNull();
+      act(() => white.seat.unmount());
+      const bare = draw(dozoSeatArt(undefined, "", INK).face);
+      expect(drawn(bare.view).length).toBeGreaterThan(0);
+      act(() => bare.seat.unmount());
+    });
+
+    it("cuts a silhouette that grows by the stroke, its lines as wide as the line plus the stroke", () => {
+      const art = dozoSeatArt(undefined, "#3EC5A8", INK);
+      const { view, seat } = draw(art.outline({ fill: "black", stroke: "black", strokeWidth: 3 }));
+      expect(view.querySelector('[data-fill="black"][data-width="3"]')).not.toBeNull();
+      expect(view.querySelector('[data-fill="none"][data-width="5.6"]')).not.toBeNull();
+      act(() => seat.unmount());
+      const bare = draw(art.outline({ fill: "black" }));
+      expect(bare.view.querySelector(`[data-fill="none"][data-stroke="${INK}"]`)).not.toBeNull();
+      act(() => bare.seat.unmount());
+    });
   });
 
   it("holds a sleeper's eyes half shut, and starts no clock for it", () => {
