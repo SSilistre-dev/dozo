@@ -8,13 +8,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
-  Text: ({
-    children,
-    accessibilityRole,
-  }: {
-    children?: ReactNode;
-    accessibilityRole?: string;
-  }) => createElement("em", { "data-role": accessibilityRole }, children),
+  Text: ({ children, accessibilityRole }: { children?: ReactNode; accessibilityRole?: string }) =>
+    createElement("em", { "data-role": accessibilityRole }, children),
   View: ({
     children,
     style,
