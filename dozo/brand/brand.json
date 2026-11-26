@@ -8468,6 +8468,114 @@
       "reason": "bot API: the Turkish copy of the Access tokens row and its dialog in Security"
     },
     {
+      "file": "apps/mobile/components/cards/OutgoingDraftCard.tsx",
+      "find": "const toLabel = t`To`;",
+      "replace": "const toLabel = t({ message: \"To\", context: \"recipient\" });",
+      "reason": "e-mail draft card: the recipient label has its own catalog entry, because upstream's plain To is also the end of a date range and Turkish translates it Bitiş"
+    },
+    {
+      "file": "apps/web/src/components/messages/OutgoingDraftCard.tsx",
+      "find": "const toLabel = t`To`;",
+      "replace": "const toLabel = t({ message: \"To\", context: \"recipient\" });",
+      "reason": "e-mail draft card: the recipient label has its own catalog entry, because upstream's plain To is also the end of a date range and Turkish translates it Bitiş"
+    },
+    {
+      "file": "packages/i18n/locales/en/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"To\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"To\"",
+      "reason": "e-mail draft card: the source entry of the recipient label"
+    },
+    {
+      "file": "packages/i18n/locales/de/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Bis\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Bis\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/ko/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"종료\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"종료\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/hi/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"तक\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"तक\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/pt-BR/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Até\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Até\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/zh-CN/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/zh-TW/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/es/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Hasta\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Hasta\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/ru/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"По\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"По\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/fr/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Au\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Au\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/he/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"עד\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"עד\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/nl/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Aan\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Aan\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/ja/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"終了日\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"終了日\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/pl/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Do\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Do\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/th/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"ถึง\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"ถึง\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"To\"\nmsgstr \"Bitiş\"\n\n#. placeholder {0}: filters.dateRange.to",
+      "replace": "msgid \"To\"\nmsgstr \"Bitiş\"\n\n#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"Kime\"\n\n#. placeholder {0}: filters.dateRange.to",
+      "reason": "e-mail draft card: the Turkish recipient label Kime, next to the range end To that stays Bitiş"
+    },
+    {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Bota güvenilemedi\"\n\n#.",
       "replace": "msgstr \"Bota güvenilemedi\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"After {name}\"\nmsgstr \"{name} sonrası\"\n\n#.",
