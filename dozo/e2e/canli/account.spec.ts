@@ -191,7 +191,14 @@ test("Ayarlar → Modeller açılır (katalog yanıtları sayılır)", async ({ 
   });
   await settings.getByRole("button", { name: "Modeller", exact: true }).click();
   await expect(settings.getByRole("heading", { name: "Modeller" })).toBeVisible();
-  await expect(settings.getByText("Ana model")).toBeVisible();
+  // The main model section: its heading once the account has a model, or only the
+  // "connect a model" picker while it has none. A broken screen shows neither.
+  const main = settings.getByTestId("model-role-main");
+  await expect(
+    main
+      .getByText("Ana model", { exact: true })
+      .or(main.getByRole("button", { name: "Model bağla", exact: true })),
+  ).toBeVisible();
   // Settled: the count holds still for a second.
   let last = -1;
   await expect
