@@ -84,8 +84,11 @@ Closed pre-release state (lifted):
   `dozo-plans.ts`, and the default `RAKAZO_COMPUTER_SIZES` in `dozo/deploy/compose.deploy.yml`), and
   it fails when a page disagrees. No discount, tax line or other number: write one only once the
   owner has set it and the code enforces it.
-- No decoration behind the plans: the dragon that was drawn there is removed (the owner wants that
-  section quiet). The "Save 20%" saving is plain text beside the period switch, not inside it.
+- The dragon behind the plans (`.scales`) is decoration, drawn once per language page: the logo
+  mark as its head, in the mark's red, kept faint. Its body path is generated, not hand-drawn:
+  redraw it whole if the shape changes. The plan cards are slightly translucent so it shows
+  through; keep text contrast at 4.5 or more when changing either opacity. The "Save 20%" saving
+  is plain text beside the period switch, not inside it.
 - Download buttons (`.dlb`, hero row and the "Apps." block) are outlined in the muted ink, with
   a generic platform glyph and a download arrow; `landing.js` fills the visitor's own system
   (`.w`). Light theme: white pills and hairline card borders get an edge from `--draft-line`.
