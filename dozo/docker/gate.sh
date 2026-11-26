@@ -184,8 +184,11 @@ olc_job_end() { # $1 = step name, last line of its subshell: hands its failures 
     && mv "$tmp" "$OLC_TMP/$1.fails" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
 }
 olc_collect() {
-  local n f
-  wait
+  local n f p
+  # Each step's own job, never a bare `wait`: bash 5.3 also waits there for the last process
+  # substitution, and once that one was reaped it loops on "is not a child of this shell" forever.
+  # `jobs -p` can still list that reaped one: its single complaint is noise.
+  for p in $(jobs -p); do wait "$p" 2>/dev/null; done
   for n in "${OLC_STEPS[@]}"; do
     # Every step leaves its failures file (empty = passed). Without one: a step with no output file
     # never started, which is allowed only for the Node steps when the main shell already failed
