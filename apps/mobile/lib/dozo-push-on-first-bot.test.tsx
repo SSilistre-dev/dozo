@@ -8,13 +8,20 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const { registerPushToken, permission } = vi.hoisted(() => ({
-  registerPushToken: vi.fn(async () => undefined),
-  permission: { granted: false },
-}));
+const { registerPushToken, permission, platform, getPermissions, requestPermissions } = vi.hoisted(
+  () => ({
+    registerPushToken: vi.fn(async () => undefined),
+    permission: { granted: false },
+    platform: { OS: "android" },
+    getPermissions: vi.fn(),
+    requestPermissions: vi.fn(),
+  }),
+);
 vi.mock("./notifications/push", () => ({ registerPushToken }));
+vi.mock("react-native", () => ({ Platform: platform }));
 vi.mock("expo-notifications", () => ({
-  getPermissionsAsync: async () => ({ granted: permission.granted }),
+  getPermissionsAsync: getPermissions,
+  requestPermissionsAsync: requestPermissions,
 }));
 
 import { usePushWhenAccountHasBot } from "./dozo-push-on-first-bot";
@@ -38,6 +45,9 @@ async function show(enabled: boolean, hasBot: boolean) {
 beforeEach(() => {
   registerPushToken.mockClear();
   permission.granted = false;
+  platform.OS = "android";
+  getPermissions.mockReset().mockImplementation(async () => ({ granted: permission.granted }));
+  requestPermissions.mockReset();
   root = createRoot(document.createElement("div"));
 });
 
@@ -57,10 +67,22 @@ it("asks for nothing while signed out or choosing a share target", async () => {
   expect(registerPushToken).not.toHaveBeenCalled();
 });
 
-it("registers a device that allowed notifications without waiting for a bot, once", async () => {
+it("registers an Android device that allowed notifications without waiting for a bot, once", async () => {
   permission.granted = true;
   await show(true, false);
   expect(registerPushToken).toHaveBeenCalledOnce();
+  await show(true, true);
+  expect(registerPushToken).toHaveBeenCalledOnce();
+});
+
+it("makes no permission call on iOS until a bot exists, even for a device that allowed", async () => {
+  platform.OS = "ios";
+  permission.granted = true;
+  await show(true, false);
+  await show(true, false);
+  expect(getPermissions).not.toHaveBeenCalled();
+  expect(requestPermissions).not.toHaveBeenCalled();
+  expect(registerPushToken).not.toHaveBeenCalled();
   await show(true, true);
   expect(registerPushToken).toHaveBeenCalledOnce();
 });
