@@ -212,7 +212,6 @@
       { "file": "apps/mobile/app/(settings)/general.tsx", "text": "value: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/mobile/app/bot-settings.tsx", "text": "key: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/mobile/app/new-bot.tsx", "text": "currentSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "apps/mobile/components/bots/bot-avatar.tsx", "text": "avatarSet: \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "apps/mobile/components/media/pdf-preview.tsx", "text": "\"RakazoPdfView\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "\"RakazoDefaultApiBase\"", "reason": "Info.plist key read by the Siri intents" },
       { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "\"RakazoPendingVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
@@ -1876,6 +1875,87 @@
       "find": "            identity={identity}\n            organicIdentities={ORGANIC_PREVIEW_IDENTITIES}",
       "replace": "            identity={identity}",
       "reason": "Dozo avatars: upstream's eight generated bodies for a new bot would all be drawn as the same character; the six character tiles are the choice"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-avatar.tsx",
+      "find": "import { LogoAvatar } from \"./logo-avatar\";",
+      "replace": "import { DozoBotArt } from \"./dozo-bot-art\";",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the Rakazo avatar set draws the Dozo characters, as the web does; upstream's pill art is not shown"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-avatar.tsx",
+      "find": "      <LogoAvatar\n        color={color}",
+      "replace": "      <DozoBotArt\n        color={color}",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the element that draws the avatar, with the same props"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-avatar.tsx",
+      "find": "  if (usesLogoAvatar(props)) {",
+      "replace": "  if (mobileBotAvatarPresentation(props.color).kind !== \"image\") {",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: every avatar that is not a photo is drawn as a character, shapes and generated bodies included; a photo keeps upstream's drawing"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-avatar.tsx",
+      "find": "  SHIPPED_BOT_AVATAR_VIEWBOX,\n  usesLogoAvatar,\n} from \"@rakazo/core\";",
+      "replace": "  SHIPPED_BOT_AVATAR_VIEWBOX,\n} from \"@rakazo/core\";",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the import of the rule above, which no longer needs it"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-avatar.tsx",
+      "find": "  const resolved = botAvatarActivity(\n    { color, avatarSet: \"rakazo\" },\n    activity ??\n      (composing && (liveActivity === \"working\" || liveActivity === \"idle\")\n        ? \"writing\"\n        : liveActivity),\n  );",
+      "replace": "  const resolved =\n    activity ??\n    (composing && (liveActivity === \"working\" || liveActivity === \"idle\")\n      ? \"writing\"\n      : liveActivity);",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: every drawn bot moves with its activity, as on the web; upstream keeps a shape or generated body still because only its logo art animated"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-avatar.tsx",
+      "find": "  avatarWorkingDot,\n  botAvatarActivity,\n  botEyeInk,",
+      "replace": "  avatarWorkingDot,\n  botEyeInk,",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the import of the rule above, which no longer needs it"
+    },
+    {
+      "file": "apps/mobile/components/bots/bot-look-picker.tsx",
+      "find": "{SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, index) => (",
+      "replace": "{SHIPPED_BOT_AVATAR_SHAPE_KEYS.slice(0, 6).map((key, index) => (",
+      "reason": "Dozo avatars on mobile: the editor offers each of the six characters once; upstream's eight shapes would show two of them twice"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "            identity={identity}\n            organicIdentities={ORGANIC_PREVIEW_IDENTITIES}",
+      "replace": "            identity={identity}",
+      "reason": "Dozo avatars on mobile: upstream's generated bodies for a new bot would all be drawn as the same character; the six character tiles are the choice"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "  newBotPreviewIdentity,\n  ORGANIC_PREVIEW_IDENTITIES,\n} from \"@rakazo/core\";",
+      "replace": "  newBotPreviewIdentity,\n} from \"@rakazo/core\";",
+      "reason": "Dozo avatars on mobile: the import of the rule above, which no longer needs it"
+    },
+    {
+      "file": "apps/mobile/lib/bots/avatar-life.test.tsx",
+      "find": "    useAnimatedStyle: (worklet: () => unknown) => worklet(),\n    useReducedMotion: () => motion.reducedMotion,",
+      "replace": "    useAnimatedStyle: (worklet: () => unknown) => worklet(),\n    useDerivedValue: (worklet: () => unknown) => ({ value: worklet() }),\n    useReducedMotion: () => motion.reducedMotion,",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-art.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the avatar drawing reads a derived value, which this test's Reanimated stand-in lacks"
     },
     {
       "file": "packages/contracts/src/rpc/app-contract.ts",
