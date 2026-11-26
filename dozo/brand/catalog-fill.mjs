@@ -46,8 +46,72 @@ export function catalogEntries(text) {
   return entries;
 }
 
-const asString = (lines) =>
-  lines.map((line, i) => (i === 0 ? line.replace(/^msgid /, "msgstr ") : line));
+const PLURAL_HEADER = /\{\s*[\w.]+\s*,\s*(plural|selectordinal)\s*,/g;
+
+/** The index of the `}` that closes the `{` at `open`, or -1. */
+function closingBrace(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * The ICU message with every `plural` and `selectordinal` block given the categories `language`
+ * has and the block lacks, each with the `other` branch's text. Existing branches stay as written.
+ */
+export function withPluralCategories(message, language) {
+  let result = "";
+  let from = 0;
+  PLURAL_HEADER.lastIndex = 0;
+  for (let match = PLURAL_HEADER.exec(message); match; match = PLURAL_HEADER.exec(message)) {
+    if (match.index < from) continue;
+    const end = closingBrace(message, match.index);
+    if (end === -1) break;
+    const body = message.slice(match.index + match[0].length, end);
+    const branches = [];
+    const head = body.match(/^\s*offset:\s*\d+/)?.[0].trimStart() ?? "";
+    let rest = body.slice(head.length ? body.indexOf(head) + head.length : 0);
+    for (let m = rest.match(/^\s*(\S+?)\s*\{/); m; m = rest.match(/^\s*(\S+?)\s*\{/)) {
+      const open = m[0].length - 1;
+      const close = closingBrace(rest, open);
+      if (close === -1) break;
+      branches.push({
+        selector: m[1],
+        text: withPluralCategories(rest.slice(open + 1, close), language),
+      });
+      rest = rest.slice(close + 1);
+    }
+    const other = branches.find((branch) => branch.selector === "other");
+    if (other && rest.trim() === "") {
+      const type = match[1] === "plural" ? "cardinal" : "ordinal";
+      const categories = new Intl.PluralRules(language, { type }).resolvedOptions()
+        .pluralCategories;
+      for (const category of categories)
+        if (!branches.some((branch) => branch.selector === category))
+          branches.push({ selector: category, text: other.text });
+      const inner = branches.map((branch) => `${branch.selector} {${branch.text}}`).join(" ");
+      result += `${message.slice(from, match.index)}${match[0]} ${head ? `${head} ` : ""}${inner}}`;
+    } else result += message.slice(from, end + 1);
+    from = end + 1;
+    PLURAL_HEADER.lastIndex = from;
+  }
+  return result + message.slice(from);
+}
+
+const joinedId = (lines) =>
+  lines.map((line) => unquote(line.slice(line.indexOf('"') + 1, -1))).join("");
+
+/** The English source as the translation: the id's own lines, with plural categories the language needs added. */
+function asString(lines, language) {
+  const id = joinedId(lines);
+  const message = withPluralCategories(id, language);
+  if (message === id)
+    return lines.map((line, i) => (i === 0 ? line.replace(/^msgid /, "msgstr ") : line));
+  return [`msgstr ${JSON.stringify(message)}`];
+}
 
 /**
  * The catalogs to rewrite: `read(rel)` returns a file's text (the branded one if the brand step
@@ -70,7 +134,9 @@ export function fillCatalogs(root, read) {
     for (const [key, entry] of fromSource) {
       if (have.has(key)) continue;
       blocks.push(
-        [...entry.comments, ...entry.context, ...entry.id, ...asString(entry.id)].join("\n"),
+        [...entry.comments, ...entry.context, ...entry.id, ...asString(entry.id, language)].join(
+          "\n",
+        ),
       );
     }
     if (blocks.length === 0) continue;

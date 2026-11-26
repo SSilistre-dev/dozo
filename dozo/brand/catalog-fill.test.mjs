@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { catalogEntries, fillCatalogs } from "./catalog-fill.mjs";
 import { apply, configFile, read, tree } from "./brand.test-support.mjs";
+import { catalogEntries, fillCatalogs, withPluralCategories } from "./catalog-fill.mjs";
 
 // The step that gives the Turkish-only ids their English source in the other catalogs.
 
@@ -54,6 +54,23 @@ describe("fillCatalogs", () => {
         '#: c.tsx\nmsgctxt "recipient"\nmsgid "To"\nmsgstr "To"\n\n' +
         '#: d.tsx\nmsgid ""\n"Line one\\n"\n"Line two"\nmsgstr ""\n"Line one\\n"\n"Line two"\n',
     );
+  });
+
+  it("gives a plural message the categories the language has, keeping the branches it wrote", () => {
+    const message =
+      "{count, plural, =0 {None} one {# item} other {# items in {n, plural, other {x}}}}";
+    const root = tree({
+      ...files,
+      [po("tr")]: catalog(`#: e.tsx\nmsgid ${JSON.stringify(message)}\nmsgstr "x"`),
+      [po("pl")]: GERMAN,
+    });
+    const text = fillCatalogs(root, readFrom(root)).changed.get(po("pl"));
+    const filled = JSON.parse(text.match(/\nmsgstr ("\{count.*")\n$/)[1]);
+    assert.equal(
+      filled,
+      "{count, plural, =0 {None} one {# item} other {# items in {n, plural, other {x} one {x} few {x} many {x}}} few {# items in {n, plural, other {x} one {x} few {x} many {x}}} many {# items in {n, plural, other {x} one {x} few {x} many {x}}}}",
+    );
+    assert.equal(withPluralCategories(filled, "pl"), filled);
   });
 
   it("finds nothing to do on a catalog it already filled, and on one that has the id with its own words", () => {
