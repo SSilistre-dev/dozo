@@ -299,7 +299,10 @@
       { "file": "packages/i18n/locales/th/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
       { "file": "packages/i18n/locales/tr/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
       { "file": "packages/i18n/locales/zh-CN/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
-      { "file": "packages/i18n/locales/zh-TW/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" }
+      { "file": "packages/i18n/locales/zh-TW/messages.po", "text": "support@rakazo.com", "count": 2, "reason": "catalog entry of the self-hosted support prompt, which Dozo switches off (anchored rule in self-hosted-support.ts); the text can never be shown" },
+      { "file": "packages/adapters/src/runtime/pi/pi-runtime-transcript.ts", "text": "void rakazoHistory;", "reason": "property names of the stored message tags, discarded before the provider sees the message; never shown" },
+      { "file": "packages/adapters/src/runtime/pi/pi-runtime-transcript.ts", "text": "void rakazoMessageId;", "reason": "property names of the stored message tags, discarded before the provider sees the message; never shown" },
+      { "file": "packages/adapters/src/runtime/pi/pi-runtime-transcript.ts", "text": "void rakazoCreatedAt;", "reason": "property names of the stored message tags, discarded before the provider sees the message; never shown" }
     ],
     "paths": [
       {
@@ -682,24 +685,6 @@
       "find": "  \"reflect_memory\",\n  \"schedule_create\",\n  \"schedule_list\",\n  \"search_history\",",
       "replace": "  \"reflect_memory\",\n  \"search_history\",",
       "reason": "the schedule tools (about 1090 tokens) are offered to every run and used in few turns: reach them through find_tool"
-    },
-    {
-      "file": "packages/adapters/src/runtime/context/context-selection.ts",
-      "find": "import type { VerbatimMcpServers } from \"../../mcp/verbatim-mcp-result.js\";\nimport { isVerbatimMcpResult",
-      "replace": "import type { VerbatimMcpServers } from \"../../mcp/verbatim-mcp-result.js\";\nimport { alignHistoryStart } from \"../../dozo-history-window.js\";\nimport { isVerbatimMcpResult",
-      "requires": [
-        "packages/adapters/src/dozo-history-window.ts"
-      ],
-      "reason": "import of the fork's stable history window, used by the rule below"
-    },
-    {
-      "file": "packages/adapters/src/runtime/context/context-selection.ts",
-      "find": "    if (earlier) earlierTokens += group.tokens;\n  }\n  const selectedIndexes",
-      "replace": "    if (earlier) earlierTokens += group.tokens;\n  }\n  used -= alignHistoryStart(\n    messages,\n    groups,\n    selected,\n    protectedGroupIndexes,\n    currentStart,\n    exchangeLimit,\n  );\n  const selectedIndexes",
-      "requires": [
-        "packages/adapters/src/dozo-history-window.ts"
-      ],
-      "reason": "a cut long history started one exchange later every turn and was rewritten to the prompt cache each turn: start it at content-picked messages so it holds for several turns"
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-records.ts",
@@ -2391,8 +2376,8 @@
     },
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
-      "find": "        limitCents: creditShare(granted._sum.creditCents) + extraCents,",
-      "replace": "        limitCents:\n          Math.max(\n            creditShare(granted._sum.creditCents),\n            dozoGrantedAllowanceCents(organization?.dozoPlanGrant, now, planLimits),\n          ) + extraCents,",
+      "find": "        limitCents: creditShare(granted.cents) + extraCents,",
+      "replace": "        limitCents:\n          Math.max(\n            creditShare(granted.cents),\n            dozoGrantedAllowanceCents(organization?.dozoPlanGrant, now, planLimits),\n          ) + extraCents,",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2488,8 +2473,8 @@
     },
     {
       "file": "apps/api/src/billing/billing.ts",
-      "find": "import { applyAccessGrants } from \"../auth/access-grants.js\";\nimport type { ScheduleLifecycleEmail }",
-      "replace": "import { applyAccessGrants } from \"../auth/access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace, withPlanHours } from \"../dozo-billing.js\";\nimport type { ScheduleLifecycleEmail }",
+      "find": "import { applyAccessGrants, grantCreditCode } from \"../auth/access-grants.js\";\nimport type { ScheduleLifecycleEmail }",
+      "replace": "import { applyAccessGrants, grantCreditCode } from \"../auth/access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace, withPlanHours } from \"../dozo-billing.js\";\nimport type { ScheduleLifecycleEmail }",
       "requires": [
         "apps/api/src/dozo-billing.ts"
       ],
@@ -3840,8 +3825,8 @@
     },
     {
       "file": "apps/api/src/billing/billing.ts",
-      "find": "from \"./computer-usage.js\";\nimport { createPartnerSales }",
-      "replace": "from \"./computer-usage.js\";\nimport { statusPlanEnd } from \"../dozo-plan-end.js\";\nimport { createPartnerSales }",
+      "find": "from \"./computer-usage.js\";\nimport type { CreditCode }",
+      "replace": "from \"./computer-usage.js\";\nimport { statusPlanEnd } from \"../dozo-plan-end.js\";\nimport type { CreditCode }",
       "requires": [
         "apps/api/src/dozo-plan-end.ts"
       ],
@@ -8659,8 +8644,8 @@
     },
     {
       "file": "packages/adapters/src/providers/cli-model/claude-code/cli.ts",
-      "find": "import { createInterface } from \"node:readline\";\n\n/**\n * Runs the official",
-      "replace": "import { createInterface } from \"node:readline\";\nimport { cliAccountEnv } from \"../../../cli-models/dozo-cli-driver.js\";\n\n/**\n * Runs the official",
+      "find": "import { cliEnv, stopProcessTree } from \"../../../cli-models/cli-process.js\";\n\n/**\n * Runs the official",
+      "replace": "import { cliEnv, stopProcessTree } from \"../../../cli-models/cli-process.js\";\nimport { cliAccountEnv } from \"../../../cli-models/dozo-cli-driver.js\";\n\n/**\n * Runs the official",
       "requires": [
         "packages/adapters/src/cli-models/dozo-cli-driver.ts"
       ],
@@ -8668,8 +8653,8 @@
     },
     {
       "file": "packages/adapters/src/providers/cli-model/claude-code/cli.ts",
-      "find": "  for (const [key, value] of Object.entries(source)) {\n",
-      "replace": "  for (const [key, value] of Object.entries(cliAccountEnv(source))) {\n",
+      "find": "  const env = cliEnv(source, [\"CLAUDE_CONFIG_DIR\"]);\n",
+      "replace": "  const env = cliEnv(cliAccountEnv(source), [\"CLAUDE_CONFIG_DIR\"]);\n",
       "requires": [
         "packages/adapters/src/cli-models/dozo-cli-driver.ts"
       ],
@@ -8788,8 +8773,8 @@
     },
     {
       "file": "packages/adapters/src/providers/cli-model/claude-code/stream.ts",
-      "find": "        if (!event) throw await exitError(child, \"before replying\");\n        if (event.type === \"system\") {",
-      "replace": "        if (!event) throw await exitError(child, \"before replying\");\n        noteCliEvent(event);\n        if (event.type === \"system\") {",
+      "find": "            if (!event) throw await exitError(running, \"before replying\");\n            if (event.type === \"system\") {",
+      "replace": "            if (!event) throw await exitError(running, \"before replying\");\n            noteCliEvent(event);\n            if (event.type === \"system\") {",
       "requires": [
         "packages/adapters/src/cli-models/dozo-cli-driver.ts"
       ],
@@ -14556,6 +14541,48 @@
         "packages/adapters/src/dozo-whole-approval.ts"
       ],
       "reason": "whole approval: the refusal"
+    },
+    {
+      "file": "packages/adapters/src/runtime/acp/acp-runtime.ts",
+      "find": "export const ACP_TOOL_SERVER = \"rakazo\";",
+      "replace": "export const ACP_TOOL_SERVER = \"dozo\";",
+      "reason": "tool names the model sees through an agent CLI (mcp__<server>__<tool>), as for the Claude Code CLI's TOOL_SERVER; every user of it goes through the constant"
+    },
+    {
+      "file": "packages/adapters/src/providers/agent-cli/opencode/opencode-agent.ts",
+      "find": "const AGENT = \"rakazo\";",
+      "replace": "const AGENT = \"dozo\";",
+      "reason": "the agent name OpenCode is configured with and can show or tell the model; every user of it goes through the constant"
+    },
+    {
+      "file": "packages/adapters/src/runtime/acp/acp-runtime.ts",
+      "find": "privateFolder(\"rakazo-agent-cli\", false)",
+      "replace": "privateFolder(\"dozo-agent-cli\", false)",
+      "reason": "an agent CLI's private folder on the person's computer, which the CLI can name to the model: the app's own name"
+    },
+    {
+      "file": "packages/adapters/src/runtime/acp/acp-runtime.ts",
+      "find": "join(tmpdir(), \"rakazo-agent-cli-turn-\")",
+      "replace": "join(tmpdir(), \"dozo-agent-cli-turn-\")",
+      "reason": "an agent CLI turn's working folder, which the CLI tells the model as its folder: the app's own name"
+    },
+    {
+      "file": "packages/adapters/src/providers/agent-cli/antigravity/antigravity-agent.ts",
+      "find": "privateFolder(\"rakazo-antigravity-home\", false)",
+      "replace": "privateFolder(\"dozo-antigravity-home\", false)",
+      "reason": "the agent CLI's private home on the person's computer, which the CLI can name to the model: the app's own name"
+    },
+    {
+      "file": "packages/adapters/src/providers/cli-model/claude-code/sessions.ts",
+      "find": "privateFolder(\"rakazo-claude-code\", true)",
+      "replace": "privateFolder(\"dozo-claude-code\", true)",
+      "reason": "the Claude Code CLI's working folder, which the CLI tells the model as its folder: the app's own name"
+    },
+    {
+      "file": "packages/adapters/src/providers/cli-model/claude-code/sessions.ts",
+      "find": "privateFolder(\"rakazo-claude-code-sessions\", false)",
+      "replace": "privateFolder(\"dozo-claude-code-sessions\", false)",
+      "reason": "the Claude Code CLI's private sessions folder on the server: the app's own name, like the working folder"
     }
   ],
   "assets": {
