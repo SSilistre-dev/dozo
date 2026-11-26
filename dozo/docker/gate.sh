@@ -398,6 +398,7 @@ olc() {
       elif [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE notice block, ${#OWNED_FILES[@]} issue forms, merge base with $UP_REF): 0"
       else printf '%s\n' "$bad" | sed "s/^/[olc] upstream file differs from the merge base with $UP_REF: /"; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
     else fail "no merge base between HEAD and $UP_REF: the upstream-edit check cannot run"; fi
+  elif [ -n "$UP_OVERRIDE" ]; then fail "DOZO_UPSTREAM_REF=$UP_OVERRIDE is not a commit: the upstream-edit check cannot run"
   else fail "$UP_LOCAL ref missing: the upstream-edit check cannot run. Create it: git fetch upstream main && git branch $UP_LOCAL upstream/main"; fi
   bad=$(owned_naming_upstream)
   [ -z "$bad" ] || { printf '%s\n' "$bad" | sed 's/^/[olc] owned issue form names upstream: /'; fail "owned issue forms name upstream: $(printf '%s\n' "$bad" | grep -c .)"; }
