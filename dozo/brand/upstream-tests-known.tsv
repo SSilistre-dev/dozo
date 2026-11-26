@@ -53,7 +53,6 @@ apps/mobile/lib/thread/send/unsent-queue-restart.test.ts	signs in without asking
 apps/web/src/App.test.tsx	keeps the sign-in page mounted while a signed-out session refetches	b	closed registration: the fork's sign-in page waits for the auth capabilities before it shows
 apps/web/src/pages/shell/composer/github-star-prompt.test.tsx	asks after the sixth message and never again once dismissed	a	the repository URL is the fork's
 apps/web/src/pages/shell/sidebar/sidebar-footer.test.tsx	offers Google Play on Android	b	the mobile app link opens the App Store only and is hidden on Android: Dozo has no Play listing (sidebar-footer.tsx rule)
-apps/web/src/pages/shell/sidebar/sidebar-footer.test.tsx	opens integrations and keeps the existing account actions and links	b	no hosted docs in the account menu
 apps/web/src/components/ai/CollaborationMarker.test.tsx	collaboration transcript markers animates the active bot glyph from its run status	b	the Dozo avatar art replaces upstream's
 apps/web/src/components/ai/CollaborationMarker.test.tsx	collaboration transcript markers shows a centred peer event with its avatar and full label	b	the Dozo avatar art replaces upstream's
 apps/web/src/components/integrations/plugin-marketplace.test.tsx	plugin detail offers the shared troubleshooting guide for a documented sign-in error	b	Dozo has no docs site: no troubleshooting link
