@@ -3,9 +3,9 @@ import { DOZO_ORGANIZATION_LOGO_UPLOAD_MAX_LENGTH } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { SettingsRow } from "../components/SettingsRows";
-import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
+import { SettingsRow } from "../components/settings/SettingsRows";
+import { errorText } from "../lib/dozo-error-text";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 import { DozoOrganizationLogoTile } from "./shell/dozo-organization-mark";
 
 /** The pictures the server can use; it checks the bytes and draws the stored logo itself. */

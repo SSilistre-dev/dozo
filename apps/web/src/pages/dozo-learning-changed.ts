@@ -1,4 +1,4 @@
-import { queryClient } from "../lib/query";
+import { queryClient } from "../lib/query/query";
 
 /** The reads a learning change makes out of date: the learned list, the bot's notes and budget. */
 const LEARNING_READS = new Set(["dozoLearning.get", "memory.list", "memory.budget"]);

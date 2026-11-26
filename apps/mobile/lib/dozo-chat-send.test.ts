@@ -1,15 +1,15 @@
 import type { RpcInput } from "@rakazo/contracts";
 import { resolveComposerSendPlan } from "@rakazo/core";
 import { expect, it, vi } from "vitest";
-import { answerThreadMessage } from "./thread-answer";
-import type { SendAttempt, SendPayload } from "./thread-feedback";
-import { deliverSend } from "./thread-feedback";
+import { answerThreadMessage } from "./thread/thread-answer";
+import type { SendAttempt, SendPayload } from "./thread/send/thread-feedback";
+import { deliverSend } from "./thread/send/thread-feedback";
 
-vi.mock("./haptics", () => ({ hapticSuccess: vi.fn() }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({}));
+vi.mock("./native/haptics", () => ({ hapticSuccess: vi.fn() }));
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({}));
 
 const plan = resolveComposerSendPlan({ text: "hello", mentions: [], hasAttachments: false });
 const attempt = {

@@ -145,7 +145,7 @@ General) before the first push, disable the workflows below in Settings > Action
 files causes modify/delete conflicts on every sync. Disabled workflows keep merging cleanly. Keep
 `dozo-gate.yml` and `dozo-sync.yml` enabled.
 
-Upstream ships 23 workflows, listed in `dozo/upstream-workflows.txt`. A new upstream workflow
+Upstream ships 29 workflows, listed in `dozo/upstream-workflows.txt`. A new upstream workflow
 arrives enabled and would run on the first push, so `make olc` fails (exit 2) on any file under
 `.github/workflows` not named `dozo-*` and not in that list, naming it. Sort the new one into the
 groups below, disable it the same way before the sync branch is pushed, then add its name to the
@@ -154,6 +154,7 @@ list. A removed one: delete its name.
 Safe to leave on (no secrets, no publishing):
 - `computer-replay.yml`: path-filtered runtime tests on a stock runner.
 - `topology-verification.yml`: manual only, no secrets.
+- `test-suites.yml`: reusable only (`workflow_call`), no secrets; nothing starts it while `ci.yml` is off.
 
 Must disable:
 - `ci.yml`: on main it publishes images to ghcr, can deploy over SSH (`PRODUCTION_DEPLOY_ENABLED`), pushes EAS updates.
@@ -164,14 +165,18 @@ Must disable:
 - `translation-catalogs.yml`: pushes a branch and opens a PR with `GH_DEPENDENCY_UPDATES_PAT`.
 - `weekly-dependencies.yml`: pushes commits and PRs with that PAT and calls Codex.
 - `model-catalog-bump.yml`: pushes commits and PRs with that PAT.
+- `pr-screenshots-manual.yml`: manual only; calls `pr-screenshots.yml` with the same PAT, agent and S3 secrets.
 - `pr-screenshots.yml`: bot commits with the PAT, runs Codex or Claude, needs `CLAUDE_CODE_OAUTH_TOKEN` and S3 secrets.
 - `issue-triage.yml`: needs `CLAUDE_CODE_OAUTH_TOKEN`, labels issues automatically.
-- `nightly-verification.yml`, `playwright.yml`, `publish-playwright-report.yml`: need S3 secrets; the first runs nightly and would fail.
+- `nightly-verification.yml`, `playwright.yml`, `publish-playwright-report.yml`, `publish-playwright-history.yml`: need S3 secrets; the first runs nightly and would fail, the last is reusable only.
+- `exploratory-qa.yml`: weekly and manual; runs an agent with `MODEL_API_KEY` and opens issues. Off by itself while the variable `EXPLORATORY_AGENT_ENABLED` is unset.
 
 Irrelevant (disable to save runner minutes and noise):
 - `preview-build.yml`: builds an image only `preview-deploy.yml` consumes.
 - `desktop-macos-screenshot.yml`, `mobile-android-screenshots.yml`: desktop/mobile are out of phase 1.
-- `www-indexnow.yml`: pings IndexNow for rakazo.com after a Vercel deploy.
+- `mobile-ios-simulator.yml`: unsigned iOS Simulator build on pull requests that touch the mobile app or the lockfile; it asks for a runner label (`xcode-27`) this repository does not have, so its job would wait until it times out.
+- `dependency-security.yml`: `pnpm audit` on pull requests that touch the lockfile and nightly; the nightly half scans images published under this repository's name on ghcr, which do not exist. No secrets.
+- `security.yml`: dependency review and CodeQL on every pull request, on main and nightly. No secrets; it writes code-scanning results. Re-enable it if we want upstream's scanning on our pull requests.
 - `review-bot.yml`: hands off between Qodo/CodeRabbit/Greptile, which we do not use.
 
 If we later want upstream's tests back, re-enable `ci.yml` only after removing its publish/deploy

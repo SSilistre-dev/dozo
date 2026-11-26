@@ -4,8 +4,8 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./mobile-types";
-import type { ThreadListScroll } from "./thread-list-scroll";
+import type { MobileSnapshot } from "./api/mobile-types";
+import type { ThreadListScroll } from "./thread/scroll/thread-list-scroll";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -16,21 +16,24 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("expo-router", () => ({ useFocusEffect: () => undefined }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api", () => ({ rpc: state.rpc, selectedSpaceId: () => "space-1" }));
-vi.mock("./api-live", () => ({ subscribeThread: state.subscribe }));
-vi.mock("./conversation-cleared", () => ({ onConversationCleared: () => () => undefined }));
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api", () => ({ rpc: state.rpc, selectedSpaceId: () => "space-1" }));
+vi.mock("./api/api-live", () => ({ subscribeThread: state.subscribe }));
+vi.mock("./thread/conversation-cleared", () => ({ onConversationCleared: () => () => undefined }));
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./haptics", () => ({ getHapticsEnabled: () => false, hapticSuccess: vi.fn() }));
-vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback = "error") => fallback }));
-vi.mock("./response-streaming", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/verified-scope", () => ({ isVerifiedScopeCurrent: () => true }));
+vi.mock("./platform/store-review", () => ({ noteRunCompleted: vi.fn() }));
+vi.mock("./native/haptics", () => ({ getHapticsEnabled: () => false, hapticSuccess: vi.fn() }));
+vi.mock("./api/user-error", () => ({ errorText: (_: unknown, fallback = "error") => fallback }));
+vi.mock("./preferences/response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => false,
   subscribeResponseStreaming: () => () => {},
 }));
 const scope = { sessionGeneration: 1, selectionId: "space-1", namespace: "ns" };
-vi.mock("./saved-chats", () => ({
+vi.mock("./inbox/saved-chats", () => ({
+  currentSavedChatsScope: () => null,
   liveSavedChatsScope: async () => scope,
   savedChatsScope: async () => scope,
   savedChatTarget: () => "unused",
@@ -38,9 +41,9 @@ vi.mock("./saved-chats", () => ({
   writeSavedThread: state.writeSaved,
 }));
 
-import { useThreadSnapshot } from "./thread-history";
-import { useThreadPaging } from "./thread-paging";
-import { useThreadSync } from "./thread-sync";
+import { useThreadSnapshot } from "./thread/thread-history";
+import { useThreadPaging } from "./thread/thread-paging";
+import { useThreadSync } from "./thread/thread-sync";
 
 const snapshot = (overrides: Partial<MobileSnapshot>): MobileSnapshot =>
   ({

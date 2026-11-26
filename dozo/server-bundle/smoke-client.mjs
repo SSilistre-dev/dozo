@@ -11,6 +11,8 @@
 // Usage: SMOKE_REPLY=<the fake model's answer> node smoke-client.mjs <web-url> <model-base-url> [restored]
 //        node smoke-client.mjs <web-url> - reset <dozo-local-account.mjs> <server folder>
 import { spawnSync } from "node:child_process";
+import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const [base, modelUrl, mode, accountCommand, home] = process.argv.slice(2);
 const restored = mode === "restored";
@@ -20,7 +22,15 @@ const fail = (line) => {
   step(`FAILED: ${line}`);
   process.exit(2);
 };
-let cookie = "";
+// The single-account server (RAKAZO_DESKTOP_STACK_TOKEN) admits a signup only from the app's own
+// window, which carries a cookie derived from the stack token (packages/core/src/node/local-signup.ts);
+// this client stands in for that window, with the token the start wrote to the home folder.
+const stackToken = /^STACK_TOKEN=(.+)$/m.exec(
+  readFileSync(`${process.env.DOZO_HOME}/secrets.env`, "utf8"),
+)?.[1];
+let cookie = stackToken
+  ? `rakazo_local_signup=${createHmac("sha256", stackToken).update("rakazo:local-signup").digest("hex")}`
+  : "";
 
 async function call(path, init = {}) {
   const res = await fetch(`${base}${path}`, {

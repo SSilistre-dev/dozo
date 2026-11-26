@@ -1,8 +1,8 @@
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as SendLimit from "./dozo-send-limit.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // The branded gate, wired to the daily send limit (dozo/brand/brand.json). Runs on the staged tree.
 
@@ -29,7 +29,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: vi.fn(async () => {}),
 }));
 // Recording the effect is where the call goes on; the test stops there.
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => {
     throw new Error("recorded");
@@ -38,7 +38,7 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
 
 function gate(
   name: string,
-  options: { readOnly?: boolean; approved?: boolean; token?: boolean } = {},
+  options: { readOnly?: boolean; approved?: boolean; token?: boolean; ask?: boolean } = {},
 ) {
   const args = { to: "someone@example.test", text: "hello" };
   const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
@@ -57,6 +57,8 @@ function gate(
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
   const ctx = {
@@ -85,7 +87,7 @@ function gate(
     },
     trust: {
       loadApprovalRules: async () => [],
-      loadAutoReviewPreference: async () => ({ enabled: false, skipApprovals: true }),
+      loadAutoReviewPreference: async () => ({ enabled: false, skipApprovals: !options.ask }),
       loadTrustedConnectors: async () => new Set(),
       receivedOutsideMessage: async () => false,
     },
@@ -140,7 +142,7 @@ describe("gateToolCall: the daily send limit", () => {
 
   it("puts what the user's own computer decides, its browser's page tools included, through the limit too", async () => {
     // The page tools of the user's own browser are approved by their own gate; the limit counts on top.
-    await gate("user_computer_shell", { approved: true }).catch(() => undefined);
+    await gate("user_computer_shell", { approved: true, ask: true }).catch(() => undefined);
     expect(limit.calls[0]).toEqual({
       call: expect.objectContaining({
         name: "user_computer_shell",

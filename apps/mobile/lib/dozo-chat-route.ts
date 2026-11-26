@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { dozoChatParam, dozoSavedChatTarget } from "./dozo-chat-target";
-import { reportMobileError } from "./monitoring";
-import { queryClient, rpcQuery } from "./query";
-import { readSavedThread, savedChatsScope } from "./saved-chats";
-import { useInboxBot } from "./search-inbox";
+import { reportMobileError } from "./platform/monitoring";
+import { queryClient, rpcQuery } from "./query/query";
+import { readSavedThread, savedChatsScope } from "./inbox/saved-chats";
+import { useInboxBot } from "./search/search-inbox";
 
 /** What the route shows: a chat (an extra chat's id, none for the main chat), or the bot's profile. */
 export type DozoRouteChat =

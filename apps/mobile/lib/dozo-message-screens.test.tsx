@@ -56,25 +56,25 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ui.params,
   useRouter: () => ({ back: ui.back, dismissTo: ui.dismissTo }),
 }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
-vi.mock("./native", () => ({
+vi.mock("./appearance/appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("./native/native", () => ({
   native: { page: "page", groupedPage: "grouped", fill: "fill", label: "label" },
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./screen-header", () => ({
+vi.mock("./navigation/screen-header", () => ({
   useScreenHeader: (header: typeof ui.header) => {
     ui.header = header;
   },
 }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./user-error", () => ({
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async () => ({
@@ -84,9 +84,9 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./roster-signals", () => ({ useRosterSignals: () => undefined }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/roster-signals", () => ({ useRosterSignals: () => undefined }));
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <ul>{children}</ul>,
   SettingsRow: ({ title, onPress }: { title: string; onPress: () => void }) => (
     <li>
@@ -101,7 +101,7 @@ import { Alert } from "react-native";
 import DozoEditMessage from "../app/dozo-edit-message";
 import DozoPins from "../app/dozo-pins";
 import { setDozoEditOpener, useDozoMessageActions } from "./dozo-message-actions";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let root: Root;
 let container: HTMLDivElement;

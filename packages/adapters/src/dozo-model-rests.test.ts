@@ -12,20 +12,20 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordModelRest: db.record,
   endModelRests: db.end,
 }));
-vi.mock("./model-selection.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-selection.js")>()),
+vi.mock("./models/model-selection.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./models/model-selection.js")>()),
   findConnectedModelCredential: db.resolve,
 }));
 const model = vi.hoisted(() => ({ resolve: vi.fn(), billing: vi.fn() }));
-vi.mock("./run-model.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./run-model.js")>()),
+vi.mock("./runs/turn/run-model.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./runs/turn/run-model.js")>()),
   resolveModelKey: model.resolve,
   modelCreditBillingEnabled: model.billing,
 }));
 
 import { POOL_COOLDOWN_DEFAULT_MS, POOL_REFUSED_COOLDOWN_MS } from "@rakazo/core";
 import { backupsPastRests, modelPicked, recordRest, startPastRest } from "./dozo-model-rests.js";
-import { startRunModel } from "./run-model-start.js";
+import { startRunModel } from "./runs/turn/run-model-start.js";
 
 const prisma = { marker: "prisma" } as never;
 const deps = { prisma, secretStore: { load: vi.fn() } } as never;

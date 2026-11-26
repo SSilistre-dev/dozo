@@ -59,7 +59,8 @@ export type FixtureOptions = {
   oidc?: boolean;
   /** Google sign-in, its network replaced per test as upstream's `oidc.test.ts` does. */
   google?: boolean;
-  singleAccount?: boolean;
+  /** Admits a sign-up only from the requests it accepts, as the desktop stack's own window does. */
+  admitsSignup?: (headers: Headers | undefined) => boolean;
 };
 
 export function fixture({
@@ -69,18 +70,13 @@ export function fixture({
   signups = "true",
   oidc = false,
   google = false,
-  singleAccount = false,
+  admitsSignup,
 }: FixtureOptions = {}) {
   const messages: TransactionalEmail[] = [];
   const devices = vi.fn(async () => ({ count: 0 }));
   const banned = new Set<string>();
   const mailCounts = new Map<string, number>();
-  /** Accounts with a workspace; tracked only where a single-person deployment asks. */
-  const members = singleAccount ? new Set<string>() : null;
-  vi.mocked(bootstrapUserSpace).mockImplementation(async (_prisma, user) => {
-    members?.add(user.id);
-    return { spaceId: "space-1" } as never;
-  });
+  vi.mocked(bootstrapUserSpace).mockImplementation(async () => ({ spaceId: "space-1" }) as never);
   const authData = {
     user: [] as Record<string, unknown>[],
     account: [] as Record<string, unknown>[],
@@ -102,12 +98,7 @@ export function fixture({
     $executeRaw: vi.fn(async () => 0),
     $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     spaceMember: {
-      findFirst: vi.fn(async ({ where }: { where: { userId: string | { in: string[] } } }) => {
-        if (!members) return { spaceId: "space-1" };
-        const ids = typeof where.userId === "string" ? [where.userId] : where.userId.in;
-        const userId = ids.find((id) => members.has(id));
-        return userId ? { spaceId: "space-1", userId } : null;
-      }),
+      findFirst: vi.fn(async () => ({ spaceId: "space-1" })),
     },
     user: {
       findUnique: vi.fn(async () => null),
@@ -178,7 +169,7 @@ export function fixture({
       webOrigin: web,
       signupsEnabled: signups,
       signupAllowlist: allowlist,
-      singleAccount,
+      admitsSignup,
       ...(oidc
         ? {
             oidc: {
@@ -390,7 +381,6 @@ export function fixture({
     messages,
     devices,
     banned,
-    members,
     legacy,
     auth,
     call,

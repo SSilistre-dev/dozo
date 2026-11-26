@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
-import { resolveThreadTarget } from "./thread-target.js";
+import { resolveThreadTarget } from "./threads/thread-target.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;

@@ -1,8 +1,8 @@
 import { deadlineSignal, withAbort } from "@rakazo/core";
-import type { startCall } from "./call-session";
+import type { startCall } from "./calls/call-session";
 import { toastError } from "./dozo-error-text";
-import { reportClientError } from "./monitoring";
-import { rpc } from "./rpc";
+import { reportClientError } from "./platform/monitoring";
+import { rpc } from "./query/rpc";
 
 /**
  * The two ways into the call check, which load it when a call is placed or answered. They stay in

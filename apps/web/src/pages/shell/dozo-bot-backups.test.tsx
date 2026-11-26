@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = {
     dozoBotModelBackups: { get: api.get, set: api.set },
     models: { credentials: api.credentials, forRole: api.forRole },
@@ -93,7 +93,7 @@ vi.mock("../model-settings/role-model-picker", () => ({
   ),
 }));
 
-import { QueryUserProvider } from "../../lib/query";
+import { QueryUserProvider } from "../../lib/query/query";
 import { DozoBotBackups } from "./dozo-bot-backups";
 
 let container: HTMLDivElement;

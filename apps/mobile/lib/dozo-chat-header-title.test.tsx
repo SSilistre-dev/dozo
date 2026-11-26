@@ -12,7 +12,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
 }));
-vi.mock("../components/chat-header-title", () => ({
+vi.mock("../components/thread/header/chat-header-title", () => ({
   ChatHeaderTitle: ({ routeKey }: { routeKey: string }) =>
     createElement("b", { "data-title": routeKey }),
 }));

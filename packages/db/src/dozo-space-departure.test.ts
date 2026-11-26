@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
-import { leaveSpace, removeSpaceMember } from "./space-members.js";
-import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
+import type { PrismaClient } from "./database/client.js";
+import { Prisma } from "./database/client.js";
+import { leaveSpace, removeSpaceMember } from "./spaces/space-members.js";
+import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./database/transaction-retry.js";
 
 // Runs on the branded tree only: the transaction options are a brand rule on space-members.ts.
 

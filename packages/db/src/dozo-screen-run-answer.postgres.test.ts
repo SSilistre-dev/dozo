@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
-import { createThreadMessage } from "./messages.js";
-import { asSystem, runAsTenant } from "./row-security.js";
-import { answerRunInput } from "./thread-ask.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
+import { createThreadMessage } from "./threads/messages.js";
+import { asSystem, runAsTenant } from "./database/row-security.js";
+import { answerRunInput } from "./threads/thread-ask.js";
 
 // Allow for this run on a card for input on the bot's screen (dozo/brand/brand.json,
-// packages/db/src/thread-ask.ts; the gate is packages/adapters/src/dozo-screen-run.ts). Runs on the
+// packages/db/src/threads/thread-ask.ts; the gate is packages/adapters/src/dozo-screen-run.ts). Runs on the
 // branded tree only, against a migrated database; the fork's unit gate has no database and skips it.
 
 const describePostgres =

@@ -12,10 +12,10 @@ import {
   createProvider,
   lazyStream,
 } from "@earendil-works/pi-ai";
-import { registerLocalProvider as registerServerModels } from "../pi-local-provider.js";
+import { registerLocalProvider as registerServerModels } from "../runtime/pi/models/pi-local-provider.js";
 import { acpAgentDriver } from "./acp/dozo-acp-agent.js";
 import { ACP_AGENTS } from "./acp/dozo-acp-catalog.js";
-import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { claudeCodeDriver } from "../providers/cli-model/claude-code/dozo-driver.js";
 import { codexAgentDriver } from "./codex/dozo-codex-agent.js";
 import type { AgentDriver } from "./dozo-agent.js";
 import { AGENT_OWN_MODEL, enabledAgentProviders } from "./dozo-agent.js";
@@ -29,7 +29,7 @@ import {
 import { accountHome } from "./dozo-cli-homes.js";
 import type { PersonalCliAccessCheck } from "./personal-access.js";
 
-export { LOCAL_PROVIDER_ID } from "../pi-local-provider.js";
+export { LOCAL_PROVIDER_ID } from "../runtime/pi/models/pi-local-provider.js";
 
 /** The tools a person may use as models on their own computer. */
 export const CLI_MODEL_DRIVERS: readonly CliModelDriver[] = [claudeCodeDriver];

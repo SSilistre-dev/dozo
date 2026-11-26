@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { DozoCallCheck } from "@rakazo/contracts";
-import type { startCall } from "./call-session";
+import type { startCall } from "./calls/call-session";
 
 type Call = Parameters<typeof startCall>[0];
 

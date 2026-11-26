@@ -1,8 +1,8 @@
 import type { DozoCommandComputer, DozoCommandRuleEffect, DozoCommandRuleView } from "@rakazo/core";
 import { commandRuleCwd, literalCommandWords } from "@rakazo/core";
 import { z } from "zod";
-import type { Prisma, PrismaClient } from "./client.js";
-import { readJsonColumn } from "./json-column.js";
+import type { Prisma, PrismaClient } from "./database/client.js";
+import { readJsonColumn } from "./database/json-column.js";
 
 /**
  * The tools whose "Always allow this command" answer saves a command rule here instead of a rule

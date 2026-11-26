@@ -5,8 +5,8 @@ import { act, Children, createElement, createRef, isValidElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ThreadComposerHandle } from "../components/thread-composer";
-import { ThreadComposer } from "../components/thread-composer";
+import type { ThreadComposerHandle } from "../components/composer/thread-composer";
+import { ThreadComposer } from "../components/composer/thread-composer";
 
 const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 
@@ -17,10 +17,13 @@ const input = vi.hoisted(() => ({
   select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+// No native keyboard module here: the composer's keyboard view falls back to a plain view.
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
+vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   rpc: mentionApi.rpc,
   captureApiRequestContext: mentionApi.capture,
   currentApiBase: () => "https://api.test",
@@ -76,7 +79,7 @@ vi.mock("expo-file-system", () => {
   }
   return { Directory, File, Paths: { cache: "cache" } };
 });
-vi.mock("./session", () => ({
+vi.mock("./api/session", () => ({
   currentSessionGeneration: () => mentionApi.generation,
   subscribeSessionGeneration: () => () => {},
 }));
@@ -92,12 +95,22 @@ vi.mock("react-native", () => {
     children,
     testID,
     style,
+    accessibilityLabel,
   }: {
     children?: ReactNode;
     testID?: string;
     style?: object;
+    accessibilityLabel?: string;
   }) =>
-    createElement("div", { "data-testid": testID, "data-style": JSON.stringify(style) }, children);
+    createElement(
+      "div",
+      {
+        "data-testid": testID,
+        "data-style": JSON.stringify(style),
+        "aria-label": accessibilityLabel,
+      },
+      children,
+    );
   return {
     AppState: {
       addEventListener: (_type: string, listener: (state: string) => void) => {
@@ -195,7 +208,7 @@ vi.mock("react-native", () => {
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({ children }: { children?: ReactNode }) => children,
 }));
-vi.mock("../components/glass-surface", () => ({
+vi.mock("../components/native/glass-surface", () => ({
   GlassSurface: ({
     children,
     shape = "capsule",
@@ -207,12 +220,13 @@ vi.mock("../components/glass-surface", () => ({
   }) =>
     createElement("div", { "data-glass": shape, "data-style": JSON.stringify(style) }, children),
 }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../components/bot-avatar", () => ({
+vi.mock("../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/models/model-mark", () => ({ ModelMarkIcon: () => null }));
+vi.mock("../components/bots/bot-avatar", () => ({
   BotAvatar: ({ identity, size }: { identity?: string; size?: number }) =>
     createElement("span", { "data-avatar": identity, "data-size": size }),
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ link: "token-link" }),
   useResolvedAppearance: () => "light",
 }));
@@ -222,7 +236,7 @@ const dictation = vi.hoisted(() => ({
   cancel: vi.fn(),
   onWords: (_text: string, _final?: boolean) => {},
 }));
-vi.mock("./composer-dictation", () => ({
+vi.mock("./composer/composer-dictation", () => ({
   useComposerDictation: (opts: { onWords: (text: string, final?: boolean) => void }) => {
     dictation.onWords = opts.onWords;
     return dictation;
@@ -238,7 +252,7 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   botId: "bot-1",
   onCall: false,
   sending: false,
-  styles: { circleButton: {}, composerFill: {} },
+  styles: { composerFill: {} },
   attachActions: [{ id: "library", title: "Photo library" }],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
@@ -251,7 +265,7 @@ let container: HTMLDivElement;
 const composer = createRef<ThreadComposerHandle>();
 const render = (changes: Partial<typeof props> = {}) =>
   act(() => root.render(<ThreadComposer ref={composer} {...props} {...changes} />));
-const attachButton = () => container.querySelector('[data-glass="circle"]');
+const attachButton = () => container.querySelector('[aria-label="Attach file"]');
 const call = () => container.querySelector('button[aria-label="Call"]');
 
 beforeEach(() => {

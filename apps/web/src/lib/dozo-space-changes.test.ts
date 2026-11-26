@@ -4,9 +4,9 @@ import { expect, it, vi } from "vitest";
 // Runs on the branded tree only: a brand rule adds the cache share and the usage breakdown to the
 // reads a run change covers.
 
-vi.mock("./query", () => ({ queryClient: new QueryClient() }));
+vi.mock("./query/query", () => ({ queryClient: new QueryClient() }));
 
-import { spaceChanged } from "./space-changes";
+import { spaceChanged } from "./query/space-changes";
 
 it("reads the cache share again when a run changes", async () => {
   const client = new QueryClient();

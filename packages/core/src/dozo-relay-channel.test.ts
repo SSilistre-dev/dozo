@@ -1,6 +1,6 @@
 import { RELAY_MAX_MESSAGE_BYTES, RELAY_PAIRING_TTL_MS } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { deferred, flush } from "./async.test-support.js";
+import { deferred, flush } from "./primitives/async.test-support.js";
 import { containsBytes, relayPipe } from "./dozo-relay.test-support.js";
 import type { RelayChannel, RelayCrypto } from "./dozo-relay-channel.js";
 import {

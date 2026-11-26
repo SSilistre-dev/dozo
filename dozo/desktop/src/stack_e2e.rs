@@ -210,9 +210,11 @@ async fn e2e_signs_in_with_the_hosted_account() {
         decide_with(&back, Some(&web), Some(&issuer)),
         Verdict::Window
     );
+    // The window also carries the sign-up cookie (`local_signup`): the hosted account's first
+    // sign-in creates the account here, which the server admits only with it.
     let callback = client
         .get(back)
-        .header("cookie", &nonce)
+        .header("cookie", format!("{nonce}; {}", signup_cookie(&root)))
         .send()
         .await
         .unwrap();
@@ -307,6 +309,7 @@ async fn e2e_updates_and_goes_back() {
         reqwest::Client::new()
             .post(format!("{web}{path}"))
             .header("origin", &web)
+            .header("cookie", signup_cookie(&root))
             .header("content-type", "application/json")
             .body(
                 r#"{"email":"owner@example.test","password":"update-Password-123","name":"Owner"}"#,
@@ -545,6 +548,17 @@ async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
     (local, root, ports)
 }
 
+/// What the app's window sends with a sign-up on this server (`local_signup`): the server admits
+/// no account without it.
+fn signup_cookie(root: &Path) -> String {
+    let secrets = stack_setup::secrets(&root.join("secrets")).unwrap();
+    format!(
+        "{}={}",
+        crate::local_signup::COOKIE,
+        crate::local_signup::key(secrets.get("STACK_TOKEN"))
+    )
+}
+
 /// "Let Bots Use This Computer" against this server: sign up, pair with the app's own pairing
 /// code, connect with its socket, and see the server list this computer as connected.
 async fn e2e_this_computer_connects(root: &Path, ports: Ports) {
@@ -576,6 +590,7 @@ async fn e2e_this_computer_connects(root: &Path, ports: Ports) {
         .post(web.join("/api/auth/sign-up/email").unwrap())
         .header("content-type", "application/json")
         .header("origin", web.as_str().trim_end_matches('/'))
+        .header("cookie", signup_cookie(root))
         .body(r#"{"email":"owner@example.test","password":"e2e-Password-123","name":"Owner"}"#)
         .send()
         .await

@@ -4,7 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./mobile-types";
+import type { MobileMessage } from "./api/mobile-types";
 
 const store = vi.hoisted(() => ({
   value: null as string | null,

@@ -7,17 +7,16 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
 } from "@rakazo/ui-web";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Check, Copy, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useCopyText } from "../lib/copy-text";
 import { toastError } from "../lib/dozo-error-text";
-import { queryClient, useSave, useSpaceQueries } from "../lib/query";
-import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
-import { SettingsRow } from "./SettingsRows";
+import { queryClient, useSave, useSpaceQueries } from "../lib/query/query";
+import { useIdentityConfirmation } from "./account/ConfirmIdentityDialog";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * Personal access tokens for the bot API, from Settings > General > Security: one row that opens
@@ -189,28 +188,26 @@ function CreateToken({
         value={name}
         onChange={(event) => setName(event.target.value)}
       />
-      <NativeSelect
+      <OptionSelect
         aria-label={t`Bot`}
         className="w-full"
         value={botId}
-        onChange={(event) => setBotId(event.target.value)}
-      >
-        <NativeSelectOption value="">{t`All bots`}</NativeSelectOption>
-        {bots.data?.map((bot) => (
-          <NativeSelectOption key={bot.id} value={bot.id}>
-            {bot.name}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
-      <NativeSelect
+        options={[
+          { value: "", label: t`All bots` },
+          ...(bots.data ?? []).map((bot) => ({ value: bot.id, label: bot.name })),
+        ]}
+        onValueChange={(value) => setBotId(value)}
+      />
+      <OptionSelect
         aria-label={t`Expires`}
         className="w-full"
         value={lasting ? "never" : "90"}
-        onChange={(event) => setLasting(event.target.value === "never")}
-      >
-        <NativeSelectOption value="90">{t`Expires in 90 days`}</NativeSelectOption>
-        <NativeSelectOption value="never">{t`Never expires`}</NativeSelectOption>
-      </NativeSelect>
+        options={[
+          { value: "90", label: t`Expires in 90 days` },
+          { value: "never", label: t`Never expires` },
+        ]}
+        onValueChange={(value) => setLasting(value === "never")}
+      />
       {identityDialog}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel}>

@@ -53,16 +53,18 @@ function named(id, prefix) {
   throw new Error(`${id} not found in packages/contracts/src`);
 }
 
-/** A namespace written inline in rpc.ts (`  accessGrants: {`). */
+/** A namespace written inline in one of upstream's topic contracts (`  accessGrants: {`). */
 function inline(namespace) {
-  const lines = readFileSync(new URL("rpc.ts", SRC), "utf8").split("\n");
-  const start = lines.findIndex((line) => line === `  ${namespace}: {`);
-  assert.notEqual(start, -1, `rpc.ts has no ${namespace} namespace`);
-  return procedures(block(lines, start), namespace);
+  const texts = readdirSync(SRC, { recursive: true })
+    .filter((name) => name.endsWith("-rpc.ts"))
+    .map((name) => readFileSync(new URL(name, SRC), "utf8").split("\n"));
+  const found = texts.filter((lines) => lines.includes(`  ${namespace}: {`));
+  assert.equal(found.length, 1, `${namespace} is not in exactly one *-rpc.ts`);
+  return procedures(block(found[0], found[0].indexOf(`  ${namespace}: {`)), namespace);
 }
 
 // How each fenced namespace reaches the router: the fork's own contracts by name (mounted by brand
-// rules in rpc.ts), upstream's inline in rpc.ts.
+// rules in rpc/app-contract.ts), upstream's inline in its topic contract.
 const contract = {
   dozoAdmin: () => named("dozoAdminContract", "dozoAdmin"),
   dozoSiteSettings: () => named("dozoSiteSettingsContract", "dozoSiteSettings"),

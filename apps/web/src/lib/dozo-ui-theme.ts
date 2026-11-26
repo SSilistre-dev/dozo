@@ -1,11 +1,11 @@
-import { createStoredPreference } from "./stored-preference";
-import type { AppearancePreference, ResolvedAppearance } from "./ui-appearance";
-import { applyUiAppearance, setUiAppearance as setUpstreamAppearance } from "./ui-appearance";
+import { createStoredPreference } from "./preferences/stored-preference";
+import type { AppearancePreference, ResolvedAppearance } from "./preferences/ui-appearance";
+import { applyUiAppearance, setUiAppearance as setUpstreamAppearance } from "./preferences/ui-appearance";
 
 // The named theme and the message colour of Settings > Appearance, per device like upstream's
 // Light and Dark. public/dozo-boot.js applies both before first paint; this applies a change.
 
-export { getUiAppearancePreference } from "./ui-appearance";
+export { getUiAppearancePreference } from "./preferences/ui-appearance";
 
 // Here, not beside the theme list in @rakazo/ui-tokens/dozo-themes: the startup code reads these,
 // and importing that module would bring the list into the startup bundle. public/dozo-boot.js

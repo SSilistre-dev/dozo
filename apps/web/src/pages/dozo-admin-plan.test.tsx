@@ -9,17 +9,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ setPlan: vi.fn(), toastError: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoAdmin: { setPlan: api.setPlan } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoAdmin: { users: { key: () => ["users"] }, user: { key: () => ["user"] } },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error && error.message ? error.message : fallback,
 }));
@@ -69,13 +69,38 @@ vi.mock("@rakazo/ui-web", () => ({
     <button type="button" {...props} />
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  OptionSelect: ({
+    options,
+    value,
+    onValueChange,
+    size: _size,
+    "data-testid": testId,
+    ...props
+  }: {
+    options: { value: string; label: string; disabled?: boolean }[];
+    value: string | null;
+    onValueChange: (value: string) => void;
+    size?: string;
+    "data-testid"?: string;
+  } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+    <select
+      data-testid={testId}
+      {...props}
+      value={value ?? ""}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
   toast: { error: api.toastError },
 }));
 
 import type { DozoAdminPlan } from "@rakazo/contracts";
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoPlanAction, DozoPlanSummary } from "./dozo-admin-plan";
 
 type Plan = { tier: "standard" | "pro" | "max"; grantedUntil: string | null };

@@ -5,10 +5,10 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { useMobileTokens } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
-import { NativeActionButton } from "../native-action-button";
+import { useMobileTokens } from "../../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { errorText } from "../../lib/api/user-error";
+import { NativeActionButton } from "../native/native-action-button";
 
 type SkillDraft = Extract<MessageBlock, { kind: "skill_draft" }>;
 

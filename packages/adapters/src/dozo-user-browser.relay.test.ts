@@ -10,8 +10,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
 import { recordConsent, userBrowserGate } from "./dozo-user-browser-gate.js";
 import { UserDeviceHub, UserDevices } from "./dozo-user-device-gateway.js";
-import type { RunContext } from "./run-context.js";
-import { createUserDeviceToken, hashUserDeviceToken } from "./user-device-gateway.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { createUserDeviceToken, hashUserDeviceToken } from "./computers/host/user-device-gateway.js";
 
 // The real relay, end to end: a migrated database, the server's own device hub and gateway, and
 // the desktop app's own runner connecting to it over its socket (dozo/desktop/tests/relay_e2e.sh

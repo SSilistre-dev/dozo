@@ -2,8 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import type { UsageSummary } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { queryClient, rpcQuery } from "../lib/query";
-import { SettingsRow } from "./settings-group";
+import { queryClient, rpcQuery } from "../lib/query/query";
+import { SettingsRow } from "./settings/settings-group";
 
 export const commandRulesRead = () => rpcQuery("dozoCommandRules/list");
 

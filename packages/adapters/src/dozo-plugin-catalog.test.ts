@@ -17,17 +17,17 @@ import {
   imageSource,
   storedCatalogImage,
 } from "./dozo-plugin-catalog.js";
-import { createFaviconResolver } from "./favicon.js";
-import { fetchSafeWebBytes, fetchSafeWebText } from "./web-ssrf.js";
+import { createFaviconResolver } from "./web/favicon.js";
+import { fetchSafeWebBytes, fetchSafeWebText } from "./web/web-ssrf.js";
 
 // The defaults reach the network and Postgres; each is replaced so the tests stay offline.
-vi.mock("./web-ssrf.js", async (original) => ({
-  ...(await original<typeof import("./web-ssrf.js")>()),
+vi.mock("./web/web-ssrf.js", async (original) => ({
+  ...(await original<typeof import("./web/web-ssrf.js")>()),
   fetchSafeWebText: vi.fn(),
   fetchSafeWebBytes: vi.fn(),
 }));
-vi.mock("./favicon.js", async (original) => ({
-  ...(await original<typeof import("./favicon.js")>()),
+vi.mock("./web/favicon.js", async (original) => ({
+  ...(await original<typeof import("./web/favicon.js")>()),
   createFaviconResolver: vi.fn(),
 }));
 vi.mock("@rakazo/db", async (original) => ({

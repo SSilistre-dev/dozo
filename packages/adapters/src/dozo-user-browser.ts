@@ -9,7 +9,7 @@ import {
   browserResultForModel,
   browserSnapshotFromTool,
   redactBrowserResult,
-} from "./browser-tools.js";
+} from "./browser/browser-tools.js";
 import type { DeviceBrowserEvent } from "./dozo-device-browser.js";
 import {
   DeviceBrowserProvider,
@@ -27,9 +27,9 @@ import {
   userBrowserAsk,
   userBrowserRoute,
 } from "./dozo-user-browser-gate.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
-import { pageBrowserTool as computerPageBrowserTool } from "./run-tools-computer.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
+import { pageBrowserTool as computerPageBrowserTool } from "./runs/tools/run-tools-computer.js";
 
 /**
  * The page tools (`browser_navigate`, `browser_snapshot`, `browser_act`) on the user's own

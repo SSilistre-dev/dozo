@@ -239,9 +239,6 @@ Each is upstream's own behaviour for a build without the piece, not new code.
   is signed in to, and that server sends with the Dozo bundle id as the topic, but only once it has
   an APNs key of the owner's team (`dozo/deploy/README.md`, Mobile app ids). Until then no call
   push arrives.
-- Chat math: a formula in a reply (`$…$`, `$$…$$`) shows as its TeX in the code style, not drawn
-  (`packages/chat-ui/src/dozo-markdown-math.native.ts`). Drawing it needs a browser engine in a web
-  view and KaTeX served to it, and the relay carries neither (the diagram view has the same limit).
 - Over-the-air updates: off. A new version is a new build.
 - Passkeys: the app asks for the server's domain as an associated domain. The server's association
   files carry the Dozo ids, and exist only once the deployment sets the Apple team id and the

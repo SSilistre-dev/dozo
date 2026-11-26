@@ -3,10 +3,10 @@ import { modelSupportsRole } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
 import type { QueryClient } from "@tanstack/react-query";
 import { isCancelledError, queryOptions } from "@tanstack/react-query";
-import type { SpaceQueries } from "../../lib/query";
-import { spaceQueries } from "../../lib/query";
-import type { RpcClient } from "../../lib/rpc";
-import { selectedSpaceId } from "../../lib/rpc";
+import type { SpaceQueries } from "../../lib/query/query";
+import { spaceQueries } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
+import { selectedSpaceId } from "../../lib/query/rpc";
 
 type CatalogReads = { models: Pick<RpcClient["models"], "forRole"> };
 type WholeRead = () => Promise<ModelCatalogEntry[]>;

@@ -1,5 +1,5 @@
 import { DozoCacheSavings } from "./dozo-cache-savings";
-import { PlanUsage as UpstreamPlanUsage } from "./PlanUsage";
+import { PlanUsage as UpstreamPlanUsage } from "./billing/PlanUsage";
 
 /** Settings > Usage's allowances and credits, then this period's cache share. */
 export function PlanUsage() {

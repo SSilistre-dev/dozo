@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const read = async () => [];
   // The query helpers are built from this client, so the reads a save invalidates must exist.
   const rpc = Object.assign(read, {

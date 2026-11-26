@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { fetchFresh } from "@rakazo/core/query";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -6,10 +7,9 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
-import { rpc } from "./api";
-import { passwordResetCapabilities, signUp } from "./api-auth";
-import type * as Endpoint from "./endpoint";
-import { confirmUnsentSendLoss } from "./unsent-send-warning";
+import type * as Endpoint from "./api/endpoint";
+import { passwordResetCapabilities, signUp } from "./auth/api-auth";
+import { confirmUnsentSendLoss } from "./thread/send/unsent-send-warning";
 
 // Runs on the branded tree (`make qa`). A server with a mail provider opens no session at sign-up:
 // the screen answers with "Check your email" and does not go into the app.
@@ -76,7 +76,7 @@ vi.mock("react-native", () => {
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
     prominence = "primary",
@@ -91,19 +91,24 @@ vi.mock("../components/native-action-button", () => ({
     </button>
   ),
 }));
-vi.mock("../components/social-sign-in-buttons", () => ({ SocialSignInButtons: () => null }));
-vi.mock("./native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
+vi.mock("../components/settings/social-sign-in-buttons", () => ({
+  SocialSignInButtons: () => null,
+}));
+vi.mock("./native/native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
 vi.mock("react-native-svg", () => ({ default: () => null, Path: () => null }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ currentApiBase: () => server.base, rpc: vi.fn() }));
-vi.mock("./endpoint", async (importOriginal) => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({ currentApiBase: () => server.base }));
+// The screen asks the server who just signed in through the shared query client.
+vi.mock("@rakazo/core/query", () => ({ fetchFresh: vi.fn() }));
+vi.mock("./query/query", () => ({ queryClient: {}, rpcQuery: vi.fn(() => ({})) }));
+vi.mock("./api/endpoint", async (importOriginal) => ({
   ...(await importOriginal<typeof Endpoint>()),
   displayApiHost: () => "one.example.invalid",
   usesCustomApiBase: () => false,
 }));
-vi.mock("./session", () => ({ loadSessionToken: vi.fn().mockResolvedValue(null) }));
-vi.mock("./api-auth", () => ({
+vi.mock("./api/session", () => ({ loadSessionToken: vi.fn().mockResolvedValue(null) }));
+vi.mock("./auth/api-auth", () => ({
   passwordResetCapabilities: vi.fn(),
   requestPasswordReset: vi.fn(),
   sendSignInCode: vi.fn(),
@@ -111,14 +116,14 @@ vi.mock("./api-auth", () => ({
   signInWithCode: vi.fn(),
   signUp: vi.fn(),
 }));
-vi.mock("./incoming-share", () => ({ hasIncomingShare: () => false }));
-vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
-vi.mock("./passkey", () => ({
+vi.mock("./composer/incoming-share", () => ({ hasIncomingShare: () => false }));
+vi.mock("./auth/sso", () => ({ continueWithSso: vi.fn() }));
+vi.mock("./auth/passkey", () => ({
   passkeysAvailable: vi.fn().mockResolvedValue(false),
   signInWithPasskey: vi.fn(),
 }));
-vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
-vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
+vi.mock("./thread/send/unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
+vi.mock("./api/user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 vi.mock("./dozo-relay-fetch", () => ({
   isRelayGone: () => false,
   relayApprovalCodeOf: async () => null,
@@ -127,7 +132,7 @@ vi.mock("./dozo-relay-fetch", () => ({
 vi.mock("./dozo-relay-sign-in", () => ({
   askComputerForSignIn: async () => "sign-in-on-computer",
 }));
-vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./platform/app-foreground", () => ({ useAppForeground: () => true }));
 
 const capabilities = {
   passwordAuth: true,
@@ -144,6 +149,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(passwordResetCapabilities).mockResolvedValue(capabilities);
   vi.mocked(confirmUnsentSendLoss).mockResolvedValue(true);
+  vi.mocked(fetchFresh).mockResolvedValue({ needsSignupSurvey: false });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -166,7 +172,6 @@ async function type(field: HTMLInputElement | null, value: string) {
 }
 async function signUpWith(result: { verificationRequired: boolean }) {
   vi.mocked(signUp).mockResolvedValue(result);
-  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: false } as never);
   await act(async () => root.render(<SignIn />));
   await type(input("Name"), "Ada");
   await type(input("Email"), " ada@example.test ");
@@ -182,7 +187,7 @@ it("a sign-up that needs the mailbox shows Check your email and does not enter t
   expect(text()).toContain("Check your email");
   expect(button("Back to sign in")).toBeDefined();
   expect(router.replace).not.toHaveBeenCalled();
-  expect(rpc).not.toHaveBeenCalled();
+  expect(fetchFresh).not.toHaveBeenCalled();
   expect(host.querySelector("input")).toBeNull();
 });
 

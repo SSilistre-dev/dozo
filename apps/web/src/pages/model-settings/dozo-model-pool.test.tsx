@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
   now: Date.UTC(2026, 10, 20, 12),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoModelPool: { get: api.get, set: api.set } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });

@@ -6,8 +6,8 @@ import {
   runReadHistory,
   runReadOutsideContent,
 } from "./dozo-read-outside.js";
-import type { RunContext } from "./run-context.js";
-import { isRunTainted, markReadOutsideContent } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { isRunTainted, markReadOutsideContent } from "./runs/assembly/run-context.js";
 
 // markReadOutsideContent is the branded one (dozo/brand/brand.json). Runs on the staged tree.
 

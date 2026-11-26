@@ -24,10 +24,10 @@ import {
 import { exportChat } from "./dozo-chat-export.js";
 import { messageBody } from "./dozo-chat-markdown.js";
 import { dozoTokenBotIds, dozoTokenReachesBot } from "./dozo-token-bots.js";
-import { requestBodyLimit } from "./request-body-limit.js";
+import { requestBodyLimit } from "./http/request-body-limit.js";
 import type { createRouter } from "./router.js";
-import { isStopMessage } from "./thread-stop.js";
-import { throttleKey, windowCounter } from "./window-counter.js";
+import { isStopMessage } from "./threads/thread-stop.js";
+import { throttleKey, windowCounter } from "./http/window-counter.js";
 
 export const DOZO_MCP_PATH = "/api/v1/dozo/mcp";
 /** RFC 9728: the endpoint's path inserted after the well-known prefix. */

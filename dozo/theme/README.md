@@ -1,6 +1,6 @@
 # Dozo theme overlay
 `theme.json` maps the Dozo palette (`dozo/design/dozo.css`) onto upstream's instance-theme
-schema (`apps/web/src/instance-theme.ts`), using token names from `packages/ui-tokens`.
+schema (`apps/web/server/instance-theme.ts`), using token names from `packages/ui-tokens`.
 
 ## Tokens set (mockup variable -> tokens; both themes unless noted)
 

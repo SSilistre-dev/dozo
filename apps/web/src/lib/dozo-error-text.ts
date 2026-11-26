@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
+import { errorText as upstreamErrorText } from "@rakazo/i18n/user-error";
 import { toast } from "@rakazo/ui-web";
-import { errorText as upstreamErrorText } from "./user-error";
 
 /**
  * Upstream's `errorText` without the server's own words. A failure the server answered (it carries

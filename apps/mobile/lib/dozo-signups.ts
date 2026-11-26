@@ -1,4 +1,4 @@
-import type { AuthMode } from "./auth-routing";
+import type { AuthMode } from "./auth/auth-routing";
 
 /**
  * Closed registration on the sign-in screen. The server says in its public capabilities whether

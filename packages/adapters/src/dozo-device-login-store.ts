@@ -4,11 +4,11 @@ import { VAULT_ITEM_LIMIT } from "@rakazo/contracts";
 import { ClientError, retry } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import { newVaultItemName } from "./bot-secrets.js";
+import { newVaultItemName } from "./secrets/bot-secrets.js";
 import { readDeviceCapabilities } from "./dozo-device-capabilities.js";
 import { encodeDeviceLogin } from "./dozo-device-login.js";
-import { persistPreparedSecret } from "./secret-persistence.js";
-import { sealVaultValue } from "./vault-values.js";
+import { persistPreparedSecret } from "./secrets/secret-persistence.js";
+import { sealVaultValue } from "./secrets/vault/vault-values.js";
 
 /**
  * The vault side of a login linked to a computer's password manager. The item is an ordinary

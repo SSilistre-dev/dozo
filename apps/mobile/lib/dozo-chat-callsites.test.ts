@@ -28,22 +28,25 @@ const asking = Object.fromEntries(
 
 /** Names the chat on screen through `dozoChatTarget` (or, for a helper's card, `dozoHelperTarget`). */
 const MIGRATED: Record<string, string> = {
-  "lib/thread-read.ts": "dozoChatTarget(",
-  "lib/thread-live.ts": "dozoChatTarget(",
-  "lib/thread-sync.ts": "dozoChatTarget(",
-  "lib/thread-window.ts": "dozoChatTarget(",
-  "lib/thread-paging.ts": "dozoChatTarget(",
-  "lib/thread-feedback.ts": "dozoChatTarget(",
-  "lib/thread-send.ts": "dozoChatTarget(",
-  "lib/thread-answer.ts": "dozoChatTarget(",
+  "lib/thread/thread-read.ts": "dozoChatTarget(",
+  "lib/thread/thread-live.ts": "dozoChatTarget(",
+  "lib/thread/thread-sync.ts": "dozoChatTarget(",
+  "lib/thread/thread-window.ts": "dozoChatTarget(",
+  "lib/thread/thread-paging.ts": "dozoChatTarget(",
+  "lib/thread/send/thread-feedback.ts": "dozoChatTarget(",
+  "lib/thread/send/thread-send.ts": "dozoChatTarget(",
+  "lib/thread/thread-answer.ts": "dozoChatTarget(",
   "app/peer-chat.tsx": "dozoChatTarget(",
+  "components/cards/OutgoingDraftCard.tsx": "dozoChatTarget(",
+  "components/cards/ToolQuestionCard.tsx": "dozoChatTarget(",
+  "components/thread/thread-run-error.ts": "dozoChatTarget(",
   "components/thread/special-message-card.tsx": "dozoHelperTarget(",
 };
 
 /** Not about a chat on screen, or about a bot's main chat only. Why, per file. */
 const MAIN_ONLY: Record<string, string> = {
-  "lib/api-live.ts": "the stream's own type: it takes the target the screen built",
-  "lib/api.ts":
+  "lib/api/api-live.ts": "the stream's own type: it takes the target the screen built",
+  "lib/api/api.ts":
     "the avatar reads the answer of a read the screen named; consent reads the target's bot",
   "lib/dozo-bot-chats.ts": "names the chat it changes itself, as chatBotId with chatId",
   "lib/dozo-chat-export.ts": "takes the target the caller built, an extra chat's included",
@@ -51,12 +54,17 @@ const MAIN_ONLY: Record<string, string> = {
     "asks which thread is the bot's main chat, to tell a notification's chat; it names no chat of its own",
   "lib/dozo-queue.ts":
     "bot or group only: the contract has no chat target, so an extra chat shows no waiting line",
-  "lib/call-session.ts": "a call is the bot's main chat's; an extra chat starts none",
-  "lib/incoming-calls.ts": "a call is the bot's main chat's",
-  "lib/use-inbox-chat-actions.ts": "the inbox lists bots and groups, whose chat is the main one",
-  "lib/bot-lifecycle.ts": "clearing works in a bot's main chat only; an extra chat is archived",
+  "lib/calls/call-deps.ts": "a call is the bot's main chat's; an extra chat starts none",
+  "lib/calls/incoming-calls.ts": "a call is the bot's main chat's",
+  "lib/inbox/preload-chats.ts": "the inbox lists bots and groups, whose chat is the main one",
+  "lib/inbox/use-inbox-chat-actions.ts":
+    "the inbox lists bots and groups, whose chat is the main one",
+  "lib/bots/bot-lifecycle.ts":
+    "clearing works in a bot's main chat only; an extra chat is archived",
   "app/bot-settings.tsx": "clearing works in a bot's main chat only; an extra chat is archived",
   "app/computer.tsx": "the computer screen takes over the bot's computer in its main chat",
+  "lib/personal-calendar/use-device-calendar.ts":
+    "the device calendar is the bot's own, asked by bot and device; no chat is involved",
   "app/(settings)/archived-bots.tsx": "opens an archived bot's main chat to restore it",
 };
 
@@ -114,10 +122,10 @@ it("keeps every key and announcement of the chat on screen to the chat's own", (
   expect(screen).toContain("dozoEchoedSeqs(snap, { botId, groupId, chatId })");
   expect(screen).not.toContain("(snap.groupId ?? snap.botId) === threadKey");
   expect(screen).toMatch(/: chatId\s*\? undefined\s*: titleBot\?\.threadStatus/);
-  const sync = readFileSync(join(mobile, "lib/thread-sync.ts"), "utf8");
+  const sync = readFileSync(join(mobile, "lib/thread/thread-sync.ts"), "utf8");
   expect(sync).toContain("onRefreshed(dozoChatKey({ botId: targetBotId");
   expect(sync).not.toContain("onRefreshed(targetGroupId ?? targetBotId)");
-  const read = readFileSync(join(mobile, "lib/thread-read.ts"), "utf8");
+  const read = readFileSync(join(mobile, "lib/thread/thread-read.ts"), "utf8");
   expect(read).toContain("[botId, groupId, chatId, navigation, readInOrder, readOnly]");
   const card = readFileSync(join(mobile, "components/thread/mcp-app-card.tsx"), "utf8");
   expect(card).toContain("dozoOfferKey(target, chatId)");
@@ -127,7 +135,7 @@ it("keeps every key and announcement of the chat on screen to the chat's own", (
 
 // Metro bundles the phone app, which has no Node: a server-only import (`node:*`, the database or
 // adapter packages, the logging root that pulls in async_hooks) breaks the Android build, not the
-// tests. The phone reports through `./monitoring` or `@rakazo/logging/monitoring`.
+// tests. The phone reports through `./platform/monitoring` or `@rakazo/logging/monitoring`.
 it("imports nothing the phone cannot bundle", () => {
   const SERVER_ONLY =
     /^(?!import type\b).*\bfrom\s+["'](node:[^"']*|@rakazo\/(?:db|adapters)(?:\/[^"']*)?|@rakazo\/logging)["']/gm;

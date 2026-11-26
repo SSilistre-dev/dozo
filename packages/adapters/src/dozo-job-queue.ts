@@ -3,7 +3,7 @@ import { getLogger } from "@rakazo/logging";
 import type { Runner, RunnerOptions } from "graphile-worker";
 import { parseCrontab, run } from "graphile-worker";
 import type { Pool } from "pg";
-import { jobQueueLogger } from "./wakeup.js";
+import { jobQueueLogger } from "./runs/wakeups/wakeup.js";
 
 /**
  * Graphile's own check for jobs that have come due. New jobs arrive by notification at once; this

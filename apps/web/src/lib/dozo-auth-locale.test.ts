@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 
-vi.mock("./i18n", () => ({ getActiveUiLocale: () => "tr" }));
+vi.mock("./locale/i18n", () => ({ getActiveUiLocale: () => "tr" }));
 
 import { sendUiLocale } from "./dozo-auth-locale";
 

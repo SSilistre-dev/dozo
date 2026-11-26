@@ -70,7 +70,13 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
         sandboxProvider: "fake",
       },
       events: createThreadEvents(prisma),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn().mockResolvedValue(undefined) },
+      jobs: {
+        enqueue: vi.fn(),
+        enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
+        cancelIn: async () => undefined,
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       memoryProviders: { resolve: async () => null },
       dataDir,
@@ -364,8 +370,13 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     expect(JSON.stringify(requests[0]!.history)).toContain("Earlier garden note.");
     expect(request).not.toContain("Main chat only.");
     const extra = await snapshot(actor, { chatBotId: botId, chatId });
-    expect(texts(extra)).toContain(`"kind":"steps"`);
-    expect(texts(extra)).toContain("Web search");
+    // The tool call is recorded on the extra chat. Its step joins the reply the run saves when it
+    // goes on, so it is not a message of its own while the run waits for the answer.
+    expect(
+      await system.event.count({
+        where: { threadId: chatId, runId: run.id, type: "agent.tool.called" },
+      }),
+    ).toBe(1);
     expect(texts(extra)).toContain("Indoors or outdoors?");
     expect(texts(await snapshot(actor, { botId }))).not.toContain("Indoors or outdoors?");
     expect((await system.run.findUniqueOrThrow({ where: { id: run.id } })).status).toBe(

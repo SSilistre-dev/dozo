@@ -3,11 +3,11 @@ import type { Actor } from "@rakazo/contracts";
 import type { TeachRecordingEvent } from "@rakazo/core";
 import { computerInputForDomKey, pollUntil, sanitizeTeachRecordingEvent } from "@rakazo/core";
 import * as z from "zod";
-import { toComputerRef } from "./computer-support.js";
+import { toComputerRef } from "./computers/screens/computer-support.js";
 import { expireTaughtSkillTeaching } from "./dozo-teach-expire.js";
 import { withTeachClickTarget } from "./dozo-teach-targets.js";
-import type { TeachingSessionDeps } from "./teaching-session.js";
-import { getActiveTeachingSession, parseRecording } from "./teaching-session.js";
+import type { TeachingSessionDeps } from "./bots/teaching-session.js";
+import { getActiveTeachingSession, parseRecording } from "./bots/teaching-session.js";
 
 /** The most actions the computer takes in one call. */
 const ACTIONS_PER_CALL = 24;

@@ -7,8 +7,7 @@
     "expo-calendar@58.0.8",
     "expo-contacts@58.0.11",
     "expo-crypto@58.0.8",
-    "expo-location@58.0.20",
-    "katex@0.16.47"
+    "expo-location@58.0.20"
   ],
   "integrity": {
     "@noble/curves@2.4.0": "sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==",

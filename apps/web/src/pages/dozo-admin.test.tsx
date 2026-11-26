@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = {
     dozoAdmin: {
       setSuspended: api.setSuspended,
@@ -32,7 +32,7 @@ vi.mock("../lib/rpc", () => {
   };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     me: { queryOptions: () => ({ queryKey: ["me"], queryFn: () => api.me() }) },
@@ -60,11 +60,11 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error && error.message ? error.message : fallback,
 }));
-vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
+vi.mock("../components/WindowChrome", () => ({ WindowChrome: () => null }));
 // The plan beside each account, and an account's own page, have their own test files.
 vi.mock("./dozo-admin-plan", () => ({ DozoPlanAction: () => null }));
 vi.mock("./dozo-admin-account", () => ({
@@ -127,8 +127,33 @@ vi.mock("@rakazo/ui-web", () => {
     ),
     buttonVariants: () => "",
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect: ({
+      options,
+      value,
+      onValueChange,
+      size: _size,
+      "data-testid": testId,
+      ...props
+    }: {
+      options: { value: string; label: string; disabled?: boolean }[];
+      value: string | null;
+      onValueChange: (value: string) => void;
+      size?: string;
+      "data-testid"?: string;
+    } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+      <select
+        data-testid={testId}
+        {...props}
+        value={value ?? ""}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
     ListSearchInput: (props: {
       query: string;
       setQuery: (query: string) => void;
@@ -146,7 +171,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoAdminPage } from "./dozo-admin";
 import type * as Nav from "./dozo-admin-nav";
 

@@ -2,10 +2,10 @@ import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { dozoBotTokenTainted } from "../dozo-token-marks.js";
-import { createRuntimeModels } from "../pi-runtime-models.js";
-import { withRuntimeModels } from "../pi-runtime-scope.js";
-import type { RunRuntimeEnv } from "../run-runtime.js";
-import { userComputerOwner } from "../run-tools-user-computer.js";
+import { createRuntimeModels } from "../runtime/pi/pi-runtime-models.js";
+import { withRuntimeModels } from "../runtime/pi/pi-runtime-scope.js";
+import type { RunRuntimeEnv } from "../runs/assembly/run-runtime.js";
+import { userComputerOwner } from "../runs/tools/run-tools-user-computer.js";
 import { AGENT_OWN_RUNS_ONLY, AGENT_TOKEN_TEXT, withAgentRuntime } from "./dozo-agent.js";
 import { agentModeEnabled } from "./dozo-agent-modes.js";
 import { localCliHost } from "./dozo-cli-driver.js";
@@ -81,6 +81,7 @@ export async function ownRun(prisma: PrismaClient, runId: string): Promise<strin
       sourceRole: run.sourceMessage.role,
       // A chat app's run has its own trigger, which the rule above already refuses.
       messagingChannelRun: false,
+      ownerComputerRoutine: false,
       runUserId: run.userId,
       botUserId: run.bot.userId,
     }) !== undefined;

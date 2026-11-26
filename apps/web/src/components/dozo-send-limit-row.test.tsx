@@ -7,11 +7,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), toastError: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoSendLimit: { set: api.set } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoSendLimit: {
@@ -36,11 +36,36 @@ vi.mock("@rakazo/ui-web", () => ({
       {children}
     </label>
   ),
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  OptionSelect: ({
+    options,
+    value,
+    onValueChange,
+    size: _size,
+    "data-testid": testId,
+    ...props
+  }: {
+    options: { value: string; label: string; disabled?: boolean }[];
+    value: string | null;
+    onValueChange: (value: string) => void;
+    size?: string;
+    "data-testid"?: string;
+  } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+    <select
+      data-testid={testId}
+      {...props}
+      value={value ?? ""}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoSendLimitRow } from "./dozo-send-limit-row";
 
 let container: HTMLDivElement;

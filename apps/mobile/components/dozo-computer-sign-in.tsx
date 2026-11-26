@@ -3,12 +3,12 @@ import { useRouter } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAppForeground } from "../lib/app-foreground";
+import { useAppForeground } from "../lib/platform/app-foreground";
 import { isRelayGone, relayApprovalCodeOf, subscribeRelayState } from "../lib/dozo-relay-fetch";
 import type { ComputerSignIn } from "../lib/dozo-relay-sign-in";
 import { askComputerForSignIn } from "../lib/dozo-relay-sign-in";
-import { useMobileTokens } from "../lib/native";
-import { NativeActionButton } from "./native-action-button";
+import { useMobileTokens } from "../lib/native/native";
+import { NativeActionButton } from "./native/native-action-button";
 
 /**
  * Sign-in when the app's server is a paired computer. No password is asked here: a code someone

@@ -10,7 +10,7 @@ import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
 
 const computerInput = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const keys = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: { computer: { input: computerInput }, dozoTeach: { keys } },
 }));
 
@@ -181,4 +181,21 @@ it("does nothing to focus when nothing but the page has it", async () => {
 it("takes no layout box of its own", async () => {
   const { container } = await mount();
   expect((container.firstElementChild as HTMLElement).style.display).toBe("contents");
+});
+
+it("leaves an Escape inside a dialog to that dialog, and takes one on the page", async () => {
+  await mount();
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  const inside = document.createElement("div");
+  dialog.append(inside);
+  document.body.append(dialog);
+  const plain = document.createElement("div");
+  document.body.append(plain);
+  await act(async () => {
+    inside.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    plain.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  await vi.waitFor(() => expect(keys).toHaveBeenCalledOnce());
+  expect(keys).toHaveBeenCalledWith(expect.objectContaining({ keys: ["Escape"] }), undefined);
 });

@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
-import { SettingsRow } from "../components/settings-group";
-import { currentApiBase, subscribeApiBase } from "./api";
+import { SettingsRow } from "../components/settings/settings-group";
+import { currentApiBase, subscribeApiBase } from "./api/api";
 import { calendarAvailable } from "./dozo-phone-calendar";
 import { isRelayServer } from "./dozo-relay-endpoint";
 

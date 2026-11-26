@@ -48,7 +48,7 @@ vi.mock("@rakazo/ui-web", () => {
     writeClipboard: api.write,
   };
 });
-vi.mock("../../lib/artifact-open", () => ({ downloadArtifactBytes: api.download }));
+vi.mock("../../lib/pages/artifact-open", () => ({ downloadArtifactBytes: api.download }));
 vi.mock("../../lib/dozo-error-text", () => ({ toastError: api.toastError }));
 
 import type { DozoChatExportMenuProps } from "./dozo-chat-export-menu";

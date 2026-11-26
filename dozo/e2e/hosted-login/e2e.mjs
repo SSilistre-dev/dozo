@@ -4,7 +4,7 @@
 // real browser through every case; `serve` keeps a hosted server and one computer's server up for
 // the desktop window test. Exit 0 pass, 2 fail.
 import { execFile } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync } from "node:crypto";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -109,6 +109,21 @@ function computer(op, base, issuer) {
     DOZO_WEB_PORT: String(web),
     ...(issuer ? { DOZO_HOSTED_LOGIN_ISSUER: issuer } : {}),
   });
+}
+
+/**
+ * What the app's window carries for the server on this computer (dozo/desktop/src/local_signup.rs):
+ * the single-account server admits a new account only to a request with this cookie, derived from
+ * the stack token its start wrote to the home folder.
+ */
+async function asAppWindow(context, base) {
+  const secrets = await readFile(path.join(COMPUTERS[base].home, "secrets.env"), "utf8");
+  const token = /^STACK_TOKEN=(.*)$/m.exec(secrets)?.[1];
+  check(token, `no stack token in ${base}'s secrets`);
+  const value = createHmac("sha256", token).update("rakazo:local-signup").digest("hex");
+  await context.addCookies([
+    { name: "rakazo_local_signup", value, domain: "127.0.0.1", path: "/api/auth" },
+  ]);
 }
 
 /** psql as the owner of a server's database, from its own secrets file. */
@@ -286,6 +301,7 @@ async function cases(browser) {
   await step("servers up: hosted with one key, a new computer with the issuer", async () => {
     await hosted("start", { signing: first });
     await computer("start", LOCAL, HOSTED);
+    await asAppWindow(person, LOCAL);
     const keys = await (await fetch(`${HOSTED}/api/auth/dozo/hosted-login/keys`)).json();
     check(keys.keys.length === 1, "one published key");
   });
@@ -343,6 +359,7 @@ async function cases(browser) {
     async () => {
       await psql(`${STATE}/hosted`, 54529, `DELETE FROM "user" WHERE email = '${ada}'`);
       const fresh = watch(await browser.newContext());
+      await asAppWindow(fresh, LOCAL);
       let other = await startHostedSignIn(fresh, LOCAL);
       await hostedSignUp(other, eve);
       await agree(other, eve);
@@ -379,6 +396,7 @@ async function cases(browser) {
       // A release without hosted sign-in: the computer's own account.
       doing("start the computer without hosted sign-in");
       await computer("start", LEGACY);
+      await asAppWindow(owner, LEGACY);
       await tab.goto(`${LEGACY}/sign-up`);
       await openEmailForm(tab);
       await tab.getByPlaceholder("Your name").fill("Owner");

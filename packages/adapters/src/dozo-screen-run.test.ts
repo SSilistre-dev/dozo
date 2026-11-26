@@ -1,9 +1,9 @@
 import type { AutoReviewProvider, AutoReviewResult } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { markReadOutsideContent } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // Allow for this run on a card for input on the bot's screen, through the branded tool gate
 // (dozo-screen-run.ts wired in by dozo/brand/brand.json). Runs on the staged tree.
@@ -18,7 +18,7 @@ const seen = vi.hoisted(() => ({
   /** Whether a connection serves the deployment's primary approval model. */
   connected: false,
 }));
-vi.mock("./model-selection.js", async (importOriginal) => ({
+vi.mock("./models/model-selection.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   findConnectedModelCredential: vi.fn(async () => (seen.connected ? { id: "credential-1" } : null)),
 }));
@@ -29,7 +29,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   readDozoHostedAsks: vi.fn(async () => false),
   readRoutineWriter: vi.fn(async () => undefined),
 }));
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () =>
     seen.approvedEffect
@@ -38,16 +38,16 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
   ),
   claimEffect: vi.fn(async () => true),
 }));
-vi.mock("./run-lifecycle.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   renewRunLease: vi.fn(async () => true),
   enqueueSteeringContinuation: vi.fn(async () => {}),
 }));
-vi.mock("./run-notifications.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-notifications.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   notifyRun: vi.fn(async () => {}),
 }));
-vi.mock("./run-context.js", async (importOriginal) => ({
+vi.mock("./runs/assembly/run-context.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   persistTurnCheckpoint: vi.fn(async () => {}),
 }));
@@ -163,6 +163,7 @@ function context(
     source: { ownerStartedRun, messagingChannelRun: run === "channel" },
     tools: { connector: new Map(), connectedPlugins: [] },
     state: {
+      outsideText: "",
       tainted: !ownerStartedRun || Boolean(options.read),
       earlierAttempt: undefined,
       approval: {},
@@ -186,6 +187,7 @@ function context(
             : [],
       }),
       loadOwnerWords: async () => "Fill in the form",
+      loadEarlierOwnerMessages: async () => [],
       receivedOutsideMessage: async () => run === "message",
       routineNamesNewSite: async () => false,
       loadTrustedSites: async () => new Set<string>(),
@@ -211,6 +213,8 @@ function request(name: string, args: Record<string, unknown>, approved = false):
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
 }

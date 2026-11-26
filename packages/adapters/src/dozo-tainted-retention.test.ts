@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RunContext } from "./run-context.js";
-import { markReadOutsideContent } from "./run-context.js";
-import { createReplyState } from "./run-progress.js";
-import { completeRun } from "./run-turn.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { completeRun } from "./runs/lifecycle/run-complete.js";
+import { createReplyState } from "./runs/lifecycle/run-progress.js";
 
-// The branded run turn, where the turn of a run that read outside content is not retained
+// The branded run completion, where the turn of a run that read outside content is not retained
 // (dozo/brand/brand.json). Runs on the staged tree.
 
 vi.mock("./dozo-token-run.js", async (importOriginal) => ({

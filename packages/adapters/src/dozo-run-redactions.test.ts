@@ -6,8 +6,8 @@ import { loadRunRedactions } from "./dozo-run-redactions.js";
 
 const calls = vi.hoisted(() => [] as unknown[][]);
 
-vi.mock("./bot-secrets.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./bot-secrets.js")>()),
+vi.mock("./secrets/bot-secrets.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./secrets/bot-secrets.js")>()),
   loadCommandVariables: async (_p: unknown, _s: unknown, scope: unknown) => {
     calls.push(["command", scope]);
     return { env: { API_KEY: "sk-variable" }, used: [], redactions: ["sk-variable"] };
@@ -25,8 +25,8 @@ vi.mock("./bot-secrets.js", async (importOriginal) => ({
     return [`code-of-${runId}`];
   },
 }));
-vi.mock("./purchase-service.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./purchase-service.js")>()),
+vi.mock("./payments/purchase-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./payments/purchase-service.js")>()),
   loadPurchaseRedactions: async (_deps: unknown, scope: unknown) => {
     calls.push(["purchase", scope]);
     return ["4242424242424242"];

@@ -5,9 +5,9 @@ import { planLimitCopy } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Alert, Linking } from "react-native";
-import { currentApiBase } from "./api";
+import { currentApiBase } from "./api/api";
 import { mobilePlanLimitCopy, storePlanLimitNotice } from "./dozo-store-build";
-import { queryClient, rpcQuery } from "./query";
+import { queryClient, rpcQuery } from "./query/query";
 
 /** The web app's Billing, served from the same origin as the API. */
 export function webBillingUrl(apiBase: string): string {

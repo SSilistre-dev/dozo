@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { TeachRecordingEvent } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { isCiphertext } from "./content-crypto.js";
+import { isCiphertext } from "./encryption/content-crypto.js";
 import {
   cacheTeachSuggestions,
   expireAllTeachValues,
@@ -12,7 +12,7 @@ import {
   readTeachValues,
   takeTeachValues,
 } from "./dozo-teach-values.js";
-import { JsonColumnMismatchError } from "./json-column.js";
+import { JsonColumnMismatchError } from "./database/json-column.js";
 
 const at = "2026-01-01T00:00:00.000Z";
 const events: TeachRecordingEvent[] = [

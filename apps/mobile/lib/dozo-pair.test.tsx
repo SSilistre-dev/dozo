@@ -6,7 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import DozoPairScreen from "../app/dozo-pair";
-import type { ScreenHeaderAction } from "./screen-header";
+import type { ScreenHeaderAction } from "./navigation/screen-header";
 
 type Button = { text: string; onPress?: () => void };
 const state = vi.hoisted(() => ({
@@ -61,21 +61,21 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("expo-linking", () => ({ useLinkingURL: () => state.link }));
 vi.mock("expo-router", () => ({ useRouter: () => router }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./screen-header", () => ({
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({}) }));
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./navigation/screen-header", () => ({
   useScreenHeader: (header: typeof state.header) => {
     state.header = header;
   },
 }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.invalid",
   flushPendingSignOut: relay.flush,
 }));
-vi.mock("./session", () => ({ loadSessionToken: relay.token }));
+vi.mock("./api/session", () => ({ loadSessionToken: relay.token }));
 vi.mock("./dozo-relay-endpoint", () => ({ displayApiHost: (url: string) => new URL(url).host }));
-vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: relay.confirm }));
-vi.mock("./api-server", () => ({ saveApiBase: relay.saveApiBase }));
+vi.mock("./thread/send/unsent-send-warning", () => ({ confirmUnsentSendLoss: relay.confirm }));
+vi.mock("./api/api-server", () => ({ saveApiBase: relay.saveApiBase }));
 vi.mock("./dozo-relay-connection", () => ({ readPairingOffer: relay.read, pairRelay: relay.pair }));
 vi.mock("./dozo-relay-fetch", () => ({
   adoptRelayConnection: relay.adopt,

@@ -9,15 +9,15 @@ import { fileURLToPath } from "node:url";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { confirmIdentity, findCanaries, readAnswer } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import {
-  DESIGNED_SHARING,
-  DESIGNED_SHARING_SOMETIMES,
-  ISOLATION_EXEMPTIONS,
-  NEVER_SHARED_KINDS,
-} from "./dozo-isolation-exemptions.js";
+import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
 import type { Procedure, Resolve } from "./dozo-isolation-inputs.test-support.js";
 import { generateInputs, mixedVariants, withOwn } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+import {
+  DESIGNED_SHARING,
+  DESIGNED_SHARING_SOMETIMES,
+  NEVER_SHARED_KINDS,
+} from "./dozo-isolation-sharing.js";
 
 /** Whether the table allows a member or guest to see the canary of `kind` through `path` some of the time. */
 const sharedSometimes = (path: string, kind: string) =>
@@ -489,7 +489,9 @@ export async function waitingRunKept(
     if (answer.status < 400) problems.push(`a foreigner cancelled ${target.label}'s waiting run`);
   }
   const run = await world.db.run.findUniqueOrThrow({ where: { id: runId } });
-  if (run.status !== "queued") problems.push(`${target.label}'s waiting run is ${run.status}`);
+  if (run.status !== "queued") {
+    problems.push(`${target.label}'s waiting run is ${JSON.stringify(run)}`);
+  }
   const own = await readAnswer(
     world.app,
     world.A.cookie,
@@ -497,7 +499,10 @@ export async function waitingRunKept(
     { runId },
     target.spaceId,
   );
-  if (own.status !== 200) problems.push(`the owner could not cancel it: ${own.status}`);
+  if (own.status !== 200) {
+    const now = await world.db.run.findUnique({ where: { id: runId } });
+    problems.push(`the owner could not cancel it: ${own.status} ${JSON.stringify(now)}`);
+  }
   await releaseWaitingRun(world.db, target);
   return problems;
 }

@@ -1,7 +1,5 @@
 import { ClientError } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dockerSandboxCapabilities } from "./docker-capabilities.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
 import {
   COMPUTERS_BUSY_CODE,
   COMPUTERS_BUSY_MESSAGE,
@@ -9,6 +7,8 @@ import {
   hostComputerMemory,
   throwIfComputersBusy,
 } from "./dozo-computer-budget.js";
+import { dockerComputer } from "./providers/computer/docker/docker-computer.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
 
 // Runs on the branded tree only: the provider and the capability reach this file through anchored
 // rules.
@@ -123,6 +123,6 @@ describe("the Docker provider", () => {
   });
 
   it("declares the memory read as a capability", () => {
-    expect(dockerSandboxCapabilities.memory).toBe(hostComputerMemory);
+    expect(dockerComputer.capabilities.memory).toBe(hostComputerMemory);
   });
 });

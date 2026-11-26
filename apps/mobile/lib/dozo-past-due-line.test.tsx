@@ -27,15 +27,15 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children?: ReactNode }) => <div role="status">{children}</div>,
 }));
-vi.mock("./billing", () => ({ openBillingPage: api.openBillingPage }));
+vi.mock("./billing/billing", () => ({ openBillingPage: api.openBillingPage }));
 vi.mock("./dozo-store-build", () => ({
   get storeBuild() {
     return api.store;
   },
 }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
-vi.mock("./query", () => ({
-  queryClient: { setQueryData: api.setQueryData },
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
+vi.mock("./query/query", () => ({
+  queryClient: { setQueryData: api.setQueryData, cancelQueries: async () => undefined },
   rpcQuery: (proc: string) => ({ queryKey: [proc] }),
   useSave: (options: {
     save: (input: undefined, send: unknown) => Promise<unknown>;
@@ -45,14 +45,14 @@ vi.mock("./query", () => ({
     run: () => options.save(undefined, api.rpc).catch((error: Error) => options.onFailed?.(error)),
   }),
 }));
-vi.mock("./screen-query", () => ({
+vi.mock("./query/screen-query", () => ({
   useScreenQuery: (read: { queryKey: string[] }, options?: { enabled?: boolean }) => {
     if (read.queryKey[0] === "me") return { data: api.me };
     api.enabled.push(options?.enabled ?? true);
     return { data: options?.enabled ? api.status : undefined };
   },
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>
       {label}
@@ -125,8 +125,12 @@ describe("DozoPastDueLine", () => {
     await render();
     await act(async () => container.querySelector("button")?.click());
     expect(api.rpc).toHaveBeenCalledWith("billing/portal", { client: "mobile" });
-    expect(api.openBillingPage).toHaveBeenCalledWith("https://billing.example.com/session");
-    expect(api.setQueryData).toHaveBeenCalledWith(["billing/status"], after);
+    expect(api.openBillingPage).toHaveBeenCalledWith(
+      "https://billing.example.com/session",
+      api.rpc,
+    );
+    expect(api.setQueryData).toHaveBeenCalledWith(["billing/status"], expect.any(Function));
+    expect(api.setQueryData.mock.calls[0]?.[1]()).toEqual(after);
   });
 
   it("says so when the portal does not open", async () => {

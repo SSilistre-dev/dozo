@@ -1,7 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import type * as ComputerLifecycleModule from "./computers/computer-lifecycle.js";
 
 // Runs on the branded tree only: the brand rules in run-assembly-capabilities.ts and
 // run-model-turn.ts pick the connection a run starts on from its pool and hand the pool on.
@@ -17,7 +17,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ),
 }));
 
-vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
+vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
   acquireDedicatedScreenLeaseFence: async (
@@ -29,9 +29,9 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
 }));
 
 import { skipsPoolMember } from "./dozo-model-pool.js";
-import { createRunExecutor } from "./executor.js";
-import { serializeModelSecret } from "./model-secret.js";
-import { withModelRoles } from "./testing/model-roles.js";
+import { createRunExecutor } from "./runs/executor/executor.js";
+import { serializeModelSecret } from "./models/model-secret.js";
+import { withModelRoles } from "./models/model-roles.test-support.js";
 
 const USER_ID = "user-1";
 const MAIN = { provider: "openrouter", modelId: "openai/gpt-4o" };
@@ -138,6 +138,8 @@ async function runTurn() {
       },
       attempt: {
         create: vi.fn(async () => ({ id: "attempt-1" })),
+        findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
         update: vi.fn(),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
@@ -156,7 +158,11 @@ async function runTurn() {
         findFirst: vi.fn(async () => null),
       },
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
-      computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      computer: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ scope: "dedicated", state: "running" })),
+      },
+      routine: { findUnique: vi.fn(async () => null) },
       connection: { findMany: vi.fn(async () => []) },
       userModelPreference: {
         findMany: vi.fn(async () => []),
@@ -179,7 +185,7 @@ async function runTurn() {
       taughtSkill: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
-      scratchpadItem: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
       externalEffect: { findMany: vi.fn(async () => []) },
       userActionApprovalRule: { findMany: vi.fn(async () => []) },
       userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },

@@ -611,10 +611,11 @@ unit_tests() {
 # tree, where the fork's dozo-* files and the brand rules' output both are. The checks list files
 # with `git ls-files`, so the tree is copied (without node_modules) into a throwaway repository with
 # every file added and nothing committed. The Node image has no git, so the step runs in an image of
-# its own: the Node image plus git, built once (the only part that needs the network, retried) and
+# its own: the Node image plus git and the few npm packages two checks load (yaml, Lingui; the tree is not installed), built once (the only part that needs the network, retried) and
 # kept under a tag of what it is made of, so the run itself needs no network. It is in qa and CI,
 # not in olc.
-CHECKS_RECIPE="RUN apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends git && rm -rf /var/lib/apt/lists/*"
+CHECKS_RECIPE="RUN apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN npm install --prefix /deps --no-audit --no-fund --loglevel=error yaml@2.9.1 @lingui/cli@6.12.0 @lingui/conf@6.12.0 @lingui/format-po@6.12.0"
 CHECKS_IMAGE="dozo-checks:$(printf '%s\n%s' "$NODE_IMAGE" "$CHECKS_RECIPE" | cksum | cut -d" " -f1)"
 checks_image() {
   docker image inspect "$CHECKS_IMAGE" >/dev/null 2>&1 && return 0
@@ -636,6 +637,7 @@ repo_checks() {
       mkdir /w; tar -C /src --exclude=./node_modules --exclude="*/node_modules" -cf - . | tar -C /w -xf -
       git config --global --add safe.directory /w  # the copy is owned by the host user, git runs as root
       cd /w; git init -q; git add -A
+      ln -s /deps/node_modules /w/node_modules  # after git add: the two checks that load yaml and Lingui need them, nothing else does
       node --test scripts/checks/*.test.mjs > /tmp/checks.log 2>&1 && rc=0 || rc=$?
       [ "$rc" -eq 0 ] || cat /tmp/checks.log
       echo "[checks] $(grep -E "^ℹ (tests|pass|fail) " /tmp/checks.log | paste -sd " ")"

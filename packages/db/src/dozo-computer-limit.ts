@@ -1,10 +1,10 @@
 import { ClientError } from "@rakazo/core";
-import type { PrismaClient } from "./client.js";
-import { resolveMaxComputersPerUser } from "./computers.js";
+import type { PrismaClient } from "./database/client.js";
+import { resolveMaxComputersPerUser } from "./computers/computers.js";
 import { DOZO_PLAN_GRANT_SELECT, paidTierOf, tierInForce } from "./dozo-plan-grant.js";
 import { readPlanLimits } from "./dozo-plan-quotas.js";
 import { readSiteSettings } from "./dozo-site-settings.js";
-import { runAsSystemInTransaction } from "./row-security.js";
+import { runAsSystemInTransaction } from "./database/row-security.js";
 
 /** What a client switches on: the user's computers are shared Team Computers, so archiving frees none. */
 export const SHARED_COMPUTER_LIMIT_CODE = "computer_limit_shared";

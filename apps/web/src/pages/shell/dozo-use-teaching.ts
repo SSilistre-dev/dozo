@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { enqueueTeachComputerInput } from "../../components/teach/teach-computer-input-chain";
-import { useTeaching as upstreamUseTeaching } from "./use-teaching";
+import { useTeaching as upstreamUseTeaching } from "./bots/use-teaching";
 
 /**
  * Upstream's teaching hook, except that Stop first waits for the bot's input still on its way to

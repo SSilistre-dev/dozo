@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { DozoTokenCaller } from "./dozo-access-tokens.js";
 import { dozoBotApiDeps, mountDozoBotApi } from "./dozo-bot-api.js";
 import { createChat } from "./dozo-bot-chats.js";
-import { createMessagingInboundHandler } from "./messaging-inbound.js";
+import { createMessagingInboundHandler } from "./messaging/messaging-inbound.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 import { handleHttpError, handleRpcError } from "./rpc-errors.js";
@@ -296,8 +296,11 @@ describePostgres("a bot's extra chats through the bot API and chat apps (Postgre
     const jobs = {
       enqueue: vi.fn(async () => undefined),
       enqueueIn: vi.fn(async () => undefined),
+      enqueueManyIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
+      pendingUntil: vi.fn(async () => ({ until: null, own: false })),
+      releaseFollowersIn: vi.fn(async () => undefined),
     };
     const recorder = new MessagingDelivery({
       prisma: system,

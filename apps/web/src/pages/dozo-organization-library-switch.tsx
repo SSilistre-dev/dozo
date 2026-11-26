@@ -3,7 +3,7 @@ import { Label, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 
 type Change = { skillId: string; on: boolean; mode: "share" | "use" };
 

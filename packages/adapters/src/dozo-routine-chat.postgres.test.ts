@@ -15,11 +15,11 @@ import { DOZO_ROUTINE_CATCH_UP_MS, saveDozoQuietHours } from "./dozo-quiet-hours
 import { dozoRoutineChatNote } from "./dozo-routine-chat.js";
 import { dozoSendLimitGate } from "./dozo-send-limit.js";
 import { dozoCreateSchedule } from "./dozo-wait.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import type { RunContext } from "./run-context.js";
-import { retryRoutineRun, wakeRoutine } from "./run-routines.js";
-import type { ScheduleToolDeps } from "./schedule-tools.js";
-import { createScheduleFromTool } from "./schedule-tools.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { retryRoutineRun, wakeRoutine } from "./runs/assembly/run-routines.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import type { ScheduleToolDeps } from "./tools/schedule-tools.js";
+import { createScheduleFromTool } from "./tools/schedule-tools.js";
 
 // Runs on the branded tree only, against a migrated database (dozo/docker/postgres-tests.sh, in
 // UTC and two other database time zones). The fork's unit gate has no database and skips it.
@@ -48,6 +48,7 @@ describePostgres("the chat a routine posts in (PostgreSQL)", () => {
           enqueued.push(job);
         },
         enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
         cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,

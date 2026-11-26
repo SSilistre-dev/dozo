@@ -17,7 +17,7 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createAgentSkillsService } from "./agent-skills.js";
+import { createAgentSkillsService } from "./bots/agent-skills.js";
 import {
   BUILTIN_SKILL_NAMES,
   dozoAfterLibraryChange,

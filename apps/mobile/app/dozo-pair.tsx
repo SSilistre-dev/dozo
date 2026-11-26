@@ -5,8 +5,8 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { currentApiBase, flushPendingSignOut } from "../lib/api";
-import { saveApiBase } from "../lib/api-server";
+import { currentApiBase, flushPendingSignOut } from "../lib/api/api";
+import { saveApiBase } from "../lib/api/api-server";
 import { linkedOffer } from "../lib/dozo-pair-link";
 import type { RelayPairingError } from "../lib/dozo-relay-connection";
 import { pairRelay, readPairingOffer } from "../lib/dozo-relay-connection";
@@ -19,11 +19,11 @@ import {
   relayDeps,
   relayPairingStore,
 } from "../lib/dozo-relay-fetch";
-import { useMobileTokens } from "../lib/native";
-import { useScreenHeader } from "../lib/screen-header";
-import { loadSessionToken } from "../lib/session";
-import { useSideInsets } from "../lib/side-insets";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
+import { useMobileTokens } from "../lib/native/native";
+import { useScreenHeader } from "../lib/navigation/screen-header";
+import { loadSessionToken } from "../lib/api/session";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 /** Links already acted on: each arrives once, so a later visit never brings an old one back. */
 const usedLinks = new Set<string>();
@@ -51,7 +51,9 @@ export default function DozoPairScreen() {
   const link = Linking.useLinkingURL();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // Not a `useSave`: pairing replaces the server the app talks to, which a save pinned to the old
+  // server would take for a reason to show nothing.
+  const [connecting, setConnecting] = useState(false);
   const running = useRef(false);
 
   const failure = (kind: RelayPairingError["kind"] | undefined) =>
@@ -100,7 +102,7 @@ export default function DozoPairScreen() {
       if (!(await agrees(offer))) return;
       // Asked before pairing: a computer that pairs is the app's server right after.
       if (!(await confirmUnsentSendLoss("server-switch"))) return;
-      setPending(true);
+      setConnecting(true);
       const { connection, pairing } = await pairRelay(offer, relayDeps);
       adoptRelayConnection(connection);
       const saved = await saveApiBase(connection.origin);
@@ -122,7 +124,7 @@ export default function DozoPairScreen() {
       setError(failure((caught as RelayPairingError).kind));
     } finally {
       running.current = false;
-      setPending(false);
+      setConnecting(false);
     }
   }
 
@@ -136,10 +138,10 @@ export default function DozoPairScreen() {
   useScreenHeader({
     title: t`Your computer`,
     action: {
-      label: pending ? t`Connecting…` : t`Connect`,
+      label: connecting ? t`Connecting…` : t`Connect`,
       onPress: () => void connect(draft),
       disabled: !draft.trim(),
-      busy: pending,
+      busy: connecting,
     },
   });
 
@@ -157,7 +159,7 @@ export default function DozoPairScreen() {
           autoCapitalize="none"
           autoComplete="off"
           autoCorrect={false}
-          editable={!pending}
+          editable={!connecting}
           onChangeText={(value) => {
             setDraft(value);
             setError(null);

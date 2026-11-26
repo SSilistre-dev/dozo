@@ -3,12 +3,12 @@ import { deferred } from "@rakazo/core/test-async";
 import type * as DbModule from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
-import { ComputerBusyError } from "./computer-lifecycle.js";
+import type * as ComputerLifecycleModule from "./computers/computer-lifecycle.js";
+import { ComputerBusyError } from "./computers/computer-lifecycle.js";
 import { requeueBehindComputerLock } from "./dozo-computer-lock-wait.js";
-import { createRunExecutor } from "./executor.js";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { startNextWaitingRun } from "./run-lifecycle.js";
+import { createRunExecutor } from "./runs/executor/executor.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { startNextWaitingRun } from "./runs/lifecycle/run-lifecycle.js";
 
 const acquire = vi.hoisted(() => vi.fn());
 
@@ -16,7 +16,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof DbModule>()),
   settleReleasedTakeoverCards: vi.fn(),
 }));
-vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
+vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: acquire,
 }));
@@ -182,7 +182,8 @@ describe("the run executor", () => {
       id: "run-1",
       spaceId: "space-1",
       botId: "bot-1",
-      status: "queued",
+      // Only a run held for a takeover takes its computer before its model turn.
+      status: "waiting_takeover",
       leaseFence: 0,
       checkpoint: null,
       startedAt: null,
@@ -206,6 +207,13 @@ describe("the run executor", () => {
           computer: { scope: "team" },
         })),
       },
+      attempt: {
+        findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
+        create: vi.fn(async () => ({ id: "attempt-1" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
       // Held when the claim checks, released by the time the run is back in line.
       computerExecutionLease: {
         findFirst: vi
@@ -218,6 +226,7 @@ describe("the run executor", () => {
       prisma,
       jobs: { enqueue },
       events: { publishSpaceChange: vi.fn() },
+      secrets: [],
     } as unknown as Parameters<typeof createRunExecutor>[0]);
     await executor.continueRun("run-1", "worker-1");
     expect(prisma.computerExecutionLease.findFirst).toHaveBeenLastCalledWith({

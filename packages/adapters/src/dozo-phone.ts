@@ -3,7 +3,7 @@ import { containsSecret, deadlineSignal, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { uncertainEffectResult } from "./approval-effect.js";
+import { uncertainEffectResult } from "./approvals/approval-effect.js";
 import type { DeviceCapability } from "./dozo-device-capabilities.js";
 import {
   PHONE_CALENDAR_CREATE_TOOL,
@@ -51,11 +51,11 @@ import {
 import type { DozoMarkDb } from "./dozo-token-marks.js";
 import { dozoBotTokenTainted, runCameByToken } from "./dozo-token-run.js";
 import type { ConnectedPhone } from "./dozo-user-device-gateway.js";
-import type { RunContext } from "./run-context.js";
-import { isRunTainted, markReadOutsideContent } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
-import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./user-device-gateway.js";
-import type { UserDeviceGateway } from "./user-device-protocol.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { isRunTainted, markReadOutsideContent } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
+import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./computers/host/user-device-gateway.js";
+import type { UserDeviceGateway } from "./computers/host/user-device-protocol.js";
 
 /**
  * The user's own phone: its calendar (phone_calendar_read), one person in its contacts

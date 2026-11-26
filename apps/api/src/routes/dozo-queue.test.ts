@@ -1,7 +1,7 @@
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../thread-stop.js";
+import { STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../threads/thread-stop.js";
 import type { RouterContext } from "./context.js";
 import { dozoQueueRoutes, loadDozoQueue } from "./dozo-queue.js";
 
@@ -16,9 +16,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@rakazo/adapters", () => ({ wakeRun: mocks.wakeRun }));
-vi.mock("../thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
-vi.mock("../thread-stop.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../thread-stop.js")>()),
+vi.mock("../threads/thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
+vi.mock("../threads/thread-stop.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../threads/thread-stop.js")>()),
   finishThreadStop: mocks.finishThreadStop,
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({

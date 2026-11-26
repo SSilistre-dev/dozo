@@ -59,26 +59,26 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn(), back: ui.back, canGoBack: () => true }),
   useLocalSearchParams: () => ui.params,
 }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
-vi.mock("./native", () => ({
+vi.mock("./appearance/appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("./native/native", () => ({
   native: { groupedPage: "grouped", secondaryLabel: "secondary", tertiaryLabel: "tertiary" },
   useResolvedAppearance: () => "dark",
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./screen-header", () => ({
+vi.mock("./navigation/screen-header", () => ({
   useScreenHeader: (header: Header) => {
     ui.header = header;
   },
 }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./user-error", () => ({
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async (spaceId: string | null = "space") => ({
@@ -88,10 +88,10 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./pick-attachments", () => ({ pickFromLibrary: ui.pick }));
-vi.mock("./routine", () => ({ deviceTimeZone: () => "Europe/Berlin" }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./composer/pick-attachments", () => ({ pickFromLibrary: ui.pick }));
+vi.mock("./routines/routine", () => ({ deviceTimeZone: () => "Europe/Berlin" }));
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
     onPress,
@@ -108,7 +108,7 @@ vi.mock("../components/native-action-button", () => ({
     </button>
   ),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) => (
     <ul>
       {children}
@@ -165,7 +165,7 @@ vi.mock("../components/settings-group", () => ({
 import DozoFeedback from "../app/(settings)/dozo-feedback";
 import { mobileDiagnostics } from "./dozo-feedback";
 import { pickFeedbackImages } from "./dozo-feedback-images";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let answers: Record<string, unknown>;
 let root: Root;
@@ -369,10 +369,10 @@ describe("what the app says about itself", () => {
 
   it("falls back to UTC when the device cannot name its zone", async () => {
     vi.resetModules();
-    vi.doMock("./routine", () => ({ deviceTimeZone: () => undefined }));
+    vi.doMock("./routines/routine", () => ({ deviceTimeZone: () => undefined }));
     const { mobileDiagnostics: again } = await import("./dozo-feedback");
     expect(again().timeZone).toBe("UTC");
-    vi.doUnmock("./routine");
+    vi.doUnmock("./routines/routine");
   });
 });
 

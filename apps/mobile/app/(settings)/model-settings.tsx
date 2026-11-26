@@ -1,18 +1,21 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ModelSettings } from "@rakazo/contracts";
+import type { ModelSettings, ThinkingLevel } from "@rakazo/contracts";
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
   catalogEntryFor,
-  connectionModels,
+  connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelDefaultThinkingLevel,
   modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsThinkingLevels,
 } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -25,18 +28,19 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LimitField } from "../../components/model-connection-fields";
-import { createModelsStyles } from "../../components/model-connection-styles";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSwitch } from "../../components/native-switch";
-import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
-import { native, useThemedStyles } from "../../lib/native";
-import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useScreenQuery } from "../../lib/screen-query";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { settingsTarget } from "../../lib/settings-target";
-import { errorText } from "../../lib/user-error";
+import { LimitField } from "../../components/models/model-connection-fields";
+import { createModelsStyles } from "../../components/models/model-connection-styles";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSwitch } from "../../components/native/native-switch";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import type { MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { settingsTarget } from "../../lib/query/settings-target";
 
 type ModelRoute = { credentialId: string; modelId: string; spaceId?: string };
 
@@ -58,7 +62,7 @@ function modelRead(
     ]);
     const credential = credentials.find((item) => item.id === credentialId);
     if (!credential) throw new Error(notFound);
-    if (!connectionModels(credential, catalog).some((entry) => entry.id === modelId)) return null;
+    if (!connectionServesModel(credential, catalog, modelId)) return null;
     return { credential, entry: catalogEntryFor(catalog, credential.provider, modelId) };
   };
   return {
@@ -169,12 +173,18 @@ function ModelSettingsForm(route: ModelRoute) {
   const shown = loaded;
   const { credential } = shown;
   const provider = credential.provider;
-  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
+  const thinkingLevels = modelSettingsThinkingLevels(credential, entry);
+  const own = credentialModelSettings(credential, modelId);
+  const saved = modelSettingsFields(own, entry, {
+    level: modelDefaultThinkingLevel(credential, modelId),
+    levels: thinkingLevels,
+  });
   const fields = draft?.on === shown ? draft.fields : saved;
   const dirty = (Object.keys(fields) as (keyof ModelSettingsFields)[]).some(
     (key) => fields[key] !== saved[key],
   );
-  const defaults = modelSettingsDefaults(provider, entry);
+  const runs = credential.modelDefaults?.[modelId];
+  const defaults = modelSettingsDefaults(provider, entry, runs);
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
 
   function update(patch: Partial<ModelSettingsFields>) {
@@ -188,7 +198,13 @@ function ModelSettingsForm(route: ModelRoute) {
 
   function save() {
     Keyboard.dismiss();
-    const request = modelSettingsRequest({ fields, provider, entry });
+    const request = modelSettingsRequest({
+      fields,
+      provider,
+      entry,
+      runs,
+      followedThinkingLevel: own.thinkingLevel ? undefined : saved.thinkingLevel,
+    });
     if (request.status === "invalid") {
       announce({
         error:
@@ -240,15 +256,18 @@ function ModelSettingsForm(route: ModelRoute) {
                 disabled={pending}
               />
             </View>
-            <View style={[styles.modelRow, styles.singleRow]}>
-              <Text style={styles.modelLabel}>{t`Supports thinking`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Supports thinking`}
-                value={fields.reasoning}
-                onValueChange={(reasoning) => update({ reasoning })}
-                disabled={pending}
-              />
-            </View>
+            <MenuPicker
+              label={t`Thinking`}
+              choices={thinkingLevels.map((level) => ({
+                key: level,
+                label: thinkingLevelLabel(level),
+              }))}
+              value={fields.thinkingLevel}
+              onChange={(thinkingLevel) =>
+                update({ thinkingLevel: thinkingLevel as ThinkingLevel })
+              }
+              disabled={pending}
+            />
           </View>
         ) : null}
         {fields.images ? (

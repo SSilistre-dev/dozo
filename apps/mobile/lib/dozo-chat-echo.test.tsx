@@ -6,15 +6,15 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { dozoEchoedSeqs } from "./dozo-chat-target";
-import type { MobileSnapshot } from "./mobile-types";
-import type { SendAttempt, SendPayload } from "./thread-feedback";
+import type { MobileSnapshot } from "./api/mobile-types";
+import type { SendAttempt, SendPayload } from "./thread/send/thread-feedback";
 import {
   clearFailedSends,
   configureUnsentSends,
   restoreUnsentSends,
   useThreadFeedback,
-} from "./thread-feedback";
-import { useThreadRead } from "./thread-read";
+} from "./thread/send/thread-feedback";
+import { useThreadRead } from "./thread/thread-read";
 
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
@@ -22,15 +22,15 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-router", () => ({ useNavigation: () => ({ isFocused: () => true }) }));
 vi.mock("expo-secure-store", () => ({}));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc: vi.fn() }));
-vi.mock("./live-notifications", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({ rpc: vi.fn() }));
+vi.mock("./notifications/live-notifications", () => ({
   resumeLiveNotifications: vi.fn(),
   dismissThreadNotifications: vi.fn(async () => {}),
 }));
-vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
+vi.mock("./api/network-cache", () => ({ clearNetworkCache: vi.fn() }));
 
 type Chat = { botId?: string; groupId?: string; chatId?: string };
 

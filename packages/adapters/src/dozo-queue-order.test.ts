@@ -1,7 +1,7 @@
 import { queueStartOrder } from "@rakazo/core";
 import { expect, it, vi } from "vitest";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { startNextWaitingRun } from "./run-lifecycle.js";
+import type { ExecutorDeps } from "./runs/executor/executor-deps.js";
+import { startNextWaitingRun } from "./runs/lifecycle/run-lifecycle.js";
 
 /**
  * The line shown to people (`planQueue`) and the run that starts next are read from one order:

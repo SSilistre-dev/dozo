@@ -3,8 +3,8 @@ import type { DozoTeachStoredTarget } from "@rakazo/contracts";
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import { storedTeachTargets, TEACH_TARGETS_KEY } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { toComputerRef } from "./computer-support.js";
-import type { TeachComputerInput } from "./teaching-session.js";
+import { toComputerRef } from "./computers/screens/computer-support.js";
+import type { TeachComputerInput } from "./bots/teaching-session.js";
 
 /*
  * What a click hit while teaching. No computer provider can say which element is under a point,

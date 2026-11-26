@@ -30,7 +30,7 @@ import {
   readTeachValues,
   storedTeachTargets,
 } from "@rakazo/db";
-import { expireStaleComputerControl, holdsComputerControl } from "./computer-control.js";
+import { expireStaleComputerControl, holdsComputerControl } from "./computers/computer-control.js";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
 import {
   checkTeachLabels,

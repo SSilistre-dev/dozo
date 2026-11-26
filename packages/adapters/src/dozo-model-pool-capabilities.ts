@@ -1,4 +1,4 @@
-import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
+import type { ModelCredentialAuthKind } from "./runtime/pi/models/pi-catalog-availability.js";
 
 /**
  * Which kinds of connection may join a model pool: every kind a person connects with their own

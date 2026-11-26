@@ -23,17 +23,17 @@ vi.mock("@rakazo/ui-web", () => ({
   Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
   Spinner: () => null,
 }));
-vi.mock("../../components/ComputerMaintenanceActions", () => ({
+vi.mock("../../components/computers/ComputerMaintenanceActions", () => ({
   ComputerMaintenanceActions: () => null,
 }));
-vi.mock("../../components/SubscriptionGate", () => ({
+vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: null, showPlans: () => undefined }),
 }));
 
-import { reduceComputerStatus } from "../../lib/thread-events";
+import { reduceComputerStatus } from "../../lib/query/thread-events";
 import { BOOT_WAIT_MS, computerWait, SCREEN_WAIT_MS } from "./dozo-screen-wait";
-import type { ComputerState } from "./use-computer";
-import { useComputerControls, useComputerState } from "./use-computer";
+import type { ComputerState } from "./computers/use-computer";
+import { useComputerControls, useComputerState } from "./computers/use-computer";
 
 const SCREEN = "https://screen.example.test/view?token=placeholder";
 const computerIn = (state: ComputerStatus["state"], botId = "bot-1") =>
@@ -81,6 +81,7 @@ function Window() {
     }),
     refreshGroupThread: vi.fn(),
     onUpgrade: vi.fn(),
+    onSendError: vi.fn(),
   });
   const { computer } = state;
   return (

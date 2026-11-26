@@ -13,8 +13,8 @@ import { learningMode, recordLearningTurn } from "./dozo-learning-store.js";
 import { onlyOwnerReads, runReadPhone } from "./dozo-phone.js";
 import { runReadOutsideContent } from "./dozo-read-outside.js";
 import { runCameByToken } from "./dozo-token-run.js";
-import type { RunContext } from "./run-context.js";
-import { resolveConnectedRunModel, resolveRunModel } from "./run-model.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { resolveConnectedRunModel, resolveRunModel } from "./runs/turn/run-model.js";
 
 /**
  * Only the bot owner's own direct chat teaches it: the owner's message started the run in the

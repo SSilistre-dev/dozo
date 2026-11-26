@@ -1,10 +1,10 @@
 import { t } from "@lingui/core/macro";
-import { embeddableScreenUrl as directScreenUrl } from "./computer";
+import { embeddableScreenUrl as directScreenUrl } from "./computers/computer";
 import { isRelayOrigin } from "./dozo-relay-connection";
 import {
   apiBaseWarning as directApiBaseWarning,
   displayApiHost as directApiHost,
-} from "./endpoint";
+} from "./api/endpoint";
 
 /**
  * The endpoint helpers for screens that also see a paired computer. Only JavaScript's `fetch`
@@ -12,7 +12,7 @@ import {
  * a computer's live screen in a web view) cannot, so those say no here instead of failing later.
  */
 
-export { normalizeApiBase, usesCustomApiBase } from "./endpoint";
+export { normalizeApiBase, usesCustomApiBase } from "./api/endpoint";
 
 const originOf = (url: string) => {
   try {

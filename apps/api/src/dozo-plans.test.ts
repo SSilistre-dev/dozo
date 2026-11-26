@@ -1,15 +1,20 @@
 import type { BillingSubscriptionSnapshot, SandboxProvider } from "@rakazo/adapter-kit";
 import { BillingEmulator, sandboxAllowanceUsedUp } from "@rakazo/adapters";
 import type { Actor, ByokTier } from "@rakazo/contracts";
-import { BYOK_TIERS, byokTierPriceCents, sandboxAllowanceHours } from "@rakazo/contracts";
+import {
+  appContract,
+  BYOK_TIERS,
+  byokTierPriceCents,
+  sandboxAllowanceHours,
+} from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { hasModelAccess, memberHasModelAccess, planComputerSize } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService } from "./billing/billing.js";
 import { PlanNotOfferedError } from "./dozo-billing.js";
-import { createReferrals } from "./referrals.js";
+import { createReferrals } from "./billing/referrals.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
 
@@ -78,18 +83,22 @@ vi.mock("@rakazo/db", async (original) => ({
     if (snapshot) store.account.subscribedAt ??= new Date();
     return true;
   },
-  claimCheckoutLease: async () => "lease-1",
-  checkoutLeaseHeld: async () => true,
-  lockCheckoutLease: async () => true,
-  renewCheckoutLease: async () => undefined,
-  releaseCheckoutLease: async () => undefined,
   releaseByokTrialCheckouts: async () => undefined,
   reserveByokTrialCheckout: async () => {
     store.trialHolds += 1;
     return { expiresAt: new Date() };
   },
 }));
-vi.mock("./access-grants.js", () => ({ applyAccessGrants: async () => undefined }));
+// The lease is a row in the database; here the one organization has no other checkout to wait for.
+vi.mock("./billing/checkout-lease.js", async (original) => ({
+  ...(await original<typeof import("./billing/checkout-lease.js")>()),
+  withCheckoutLease: async (
+    _prisma: unknown,
+    _organizationId: string,
+    work: (underLease: <R>(write: (tx: never) => Promise<R>) => Promise<R>) => Promise<unknown>,
+  ) => work((write) => write({} as never)),
+}));
+vi.mock("./auth/access-grants.js", () => ({ applyAccessGrants: async () => undefined }));
 
 /** Computer hours run this period, as the usage query answers. */
 const runs: { kind: string; hours: number }[] = [];
@@ -121,6 +130,19 @@ const prisma = {
       },
     }),
   },
+  // The size the computer has stored is the largest, so the answer is the plan's own limit.
+  computer: {
+    findUnique: async () => ({
+      size: "xlarge",
+      space: {
+        organization: {
+          modelCredits: store.credits,
+          billing: store.account,
+          dozoPlanGrant: store.grant,
+        },
+      },
+    }),
+  },
   billingAccount: { findUnique: async () => store.account },
   dozoPlanGrant: { findUnique: async () => store.grant },
   modelCreditAccount: {
@@ -142,6 +164,7 @@ const prisma = {
   accessGrant: {
     aggregate: async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } }),
   },
+  computerAllowanceGrant: { aggregate: async () => ({ _sum: { amountCents: null } }) },
   referral: { findUnique: async () => null },
   dozoPlanQuota: { findMany: async () => store.quotas },
   member: { count: async () => 1 },
@@ -205,6 +228,19 @@ describe("Dozo plans", () => {
       "Premium",
       "Premium Plus",
     ]);
+  });
+
+  it("has no fourth tier: checkout, funding and plan change refuse upstream's Ultra", () => {
+    const { checkout, selectFunding, changeTier } = appContract.billing;
+    const accepts = (procedure: { "~orpc": { inputSchema?: unknown } }, input: unknown) =>
+      (
+        procedure["~orpc"].inputSchema as { safeParse: (value: unknown) => { success: boolean } }
+      ).safeParse(input).success;
+    const named = { tier: "ultra", client: "web" };
+    expect(accepts(checkout, named)).toBe(false);
+    expect(accepts(selectFunding, { funding: "byok", ...named })).toBe(false);
+    expect(accepts(changeTier, named)).toBe(false);
+    expect(accepts(changeTier, { tier: "max" })).toBe(true);
   });
 
   it("makes Free cost nothing and include no hosted computer", () => {
@@ -372,7 +408,7 @@ describe("a Premium subscriber", () => {
       sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents),
     );
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
   });
 
   it("is shown the vCPUs and memory the host starts each plan's computer with", async () => {
@@ -389,9 +425,9 @@ describe("a Premium subscriber", () => {
   it("starts its computer at the size of the plan it is on now", async () => {
     const context = setup();
     await subscribe(context);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("large");
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("large");
     await context.billing.changeTier(actor, "max");
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("xlarge");
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("xlarge");
   });
 
   it("can move to Premium Plus but not to Free, which is cancelling", async () => {
@@ -440,7 +476,7 @@ describe("a Premium subscriber", () => {
     });
     expect(hasModelAccess(store.credits, store.account!.status)).toBe(true);
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(true);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("standard");
   });
 });
 
@@ -464,7 +500,7 @@ describe("a plan an admin granted", () => {
       computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents),
     });
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
   });
 
   it("is Free again once it has ended: no computer, the first tier's size", async () => {
@@ -472,7 +508,7 @@ describe("a plan an admin granted", () => {
     const status = await setup().billing.status(actor);
     expect(status).toMatchObject({ byokTier: "standard", computerHoursLeft: 0 });
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(true);
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("standard");
   });
 
   it("names the granted plan and its shared space in the status, and Free's once it ended", async () => {
@@ -517,7 +553,7 @@ describe("a plan an admin granted", () => {
       byokPriceCents: BYOK_TIERS.pro.monthlyPriceCents,
       computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.max.computerAllowanceCents),
     });
-    await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.max.computerSize);
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe(BYOK_TIERS.max.computerSize);
     store.grant = grant("pro", 30);
     await context.billing.changeTier(actor, "max");
     await expect(context.billing.status(actor)).resolves.toMatchObject({ byokTier: "max" });

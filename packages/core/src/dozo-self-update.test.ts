@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { chooseUpdateStrategy, validateUpdateRequest } from "./compose-update.js";
-import { isOfficialRepoUrl, OFFICIAL_REPO_URL } from "./self-update.js";
+import { chooseUpdateStrategy, validateUpdateRequest } from "./deployment/compose-update.js";
+import { isOfficialRepoUrl, OFFICIAL_REPO_URL } from "./deployment/self-update.js";
 
 // Runs on the branded tree only: until Dozo publishes its own server image, no repository is
 // official, so an update never pulls upstream's unbranded image.

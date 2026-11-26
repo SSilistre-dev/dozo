@@ -1,10 +1,11 @@
 import { Trans } from "@lingui/react/macro";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, buttonVariants, Label, Switch } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
-import { useSave } from "../lib/query";
-import { listUserDevices } from "../lib/user-devices";
-import { SettingsGroup, SettingsRow } from "./SettingsRows";
+import { useSave } from "../lib/query/query";
+import { listUserDevices } from "../lib/auth/user-devices";
+import { SettingsGroup, SettingsRow } from "./settings/SettingsRows";
 
 /**
  * The address an older Dozo desktop app opens its own Settings window for, and does nothing else
@@ -106,7 +107,8 @@ function useDesktopSettings(bridge: DesktopBridge) {
       let seen: DesktopSettings | null = null;
       // Each answer comes when something changed; the app is never asked on a timer.
       while (active) {
-        const next: DesktopSettings | null = await bridge.settings(seen).catch(() => null);
+        const next: DesktopSettings | null =
+          (await bestEffort("read the desktop settings", bridge.settings(seen))) ?? null;
         if (!active) return;
         if (!next) {
           // Refused: what is shown stays, and before anything was shown the old row stands in.

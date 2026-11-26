@@ -1,12 +1,12 @@
 import { BYOK_TIERS, PLAN_LIMIT_CODES, SHARED_SPACE_FULL_MESSAGE } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { Prisma } from "./database/client.js";
 import type { PlanGrant } from "./dozo-plan-grant.js";
 import { DOZO_PLAN_GRANT_SELECT, paidTierOf, tierInForce } from "./dozo-plan-grant.js";
 import type { PlanLimitsByTier } from "./dozo-plan-quotas.js";
 import { readPlanLimits } from "./dozo-plan-quotas.js";
-import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
+import { runAsSystem, runAsSystemInTransaction } from "./database/row-security.js";
 
 /** The organization's files already fill its plan's shared space, so a new one is refused. */
 export class SharedSpaceFullError extends ClientError {

@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
-import { useSpaceQueries } from "../lib/query";
-import { useSpaceRpc } from "../lib/space-rpc";
+import { useSpaceQueries } from "../lib/query/query";
+import { useSpaceRpc } from "../lib/query/space-rpc";
 import { DozoLocalModels } from "./dozo-local-models";
-import { ModelSettingsOverlay as UpstreamModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { ModelSettingsOverlay as UpstreamModelSettingsOverlay } from "./model-settings/ModelSettingsOverlay";
 
 /** The local-model panel for the account page: it keeps a current main model and fills an empty one. */
 function AccountLocalModels() {

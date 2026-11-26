@@ -1,30 +1,29 @@
 # Upstream lines that read a chat's bot from its thread, each read against a bot's extra chats
 # (dozo/db/thread-bot-guard.mjs). Rewrite with --write only after reading every new line.
-apps/api/src/mcp-approval.ts	const eventBotId = message.botId ?? thread.botId ?? input.botId;
-apps/api/src/mcp-approval.ts	const eventBotId = message.botId ?? message.thread?.botId;
-apps/api/src/search.ts	const targetColumn = target === "bot" ? Prisma.sql`t."botId"` : Prisma.sql`t."groupId"`;
-apps/api/src/search.ts	INNER JOIN bots b ON b.id = t."botId"
-apps/web/src/pages/shell/use-space-roster.ts	setRoutinesBotId(bootstrap.thread.botId ?? null);
-apps/web/src/pages/shell/use-space-roster.ts	const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
-apps/web/src/pages/shell/use-thread-sync.ts	(seed?.thread?.botId === active.id ? seed.thread : undefined));
-packages/adapters/src/background-helpers.ts	!backgroundHelpersAllowed({ threadBotId: thread.botId, botId: bot.id, trigger: run.trigger })
-packages/adapters/src/conversation-memory.ts	if (!thread || thread.spaceId !== run.spaceId || (thread.botId !== run.botId && !thread.groupId))
-packages/adapters/src/history-compaction.ts	if (!thread.botId) return;
-packages/adapters/src/history-compaction.ts	? (message.botId ?? thread.botId!)
-packages/adapters/src/history-compaction.ts	botId: thread.botId,
-packages/adapters/src/history-compaction.ts	botId: thread.botId!,
-packages/adapters/src/history-compaction.ts	botId: thread.botId,
-packages/adapters/src/history-compaction.ts	botId: thread.botId,
-packages/adapters/src/history-compaction.ts	botId: thread.botId,
-packages/adapters/src/history-compaction.ts	{ botId: thread.botId, threadId, generations: [previousGeneration] },
-packages/adapters/src/run-model-turn.ts	threadBotId: thread.botId,
-packages/adapters/src/run-turn.ts	threadBotId: thread.botId,
-packages/db/src/content-export.ts	const foreign = Boolean(botId) && thread.botId !== botId;
-packages/db/src/history-retrieval.ts	? Prisma.sql`COALESCE(t."botId", ${scope.botId})`
-packages/db/src/history-retrieval.ts	SELECT 1 FROM bots b WHERE b.id = t."botId" AND b."spaceId" = ${scope.spaceId}
-packages/db/src/history-retrieval.ts	)) OR (t."botId" IS NULL AND EXISTS (
-packages/db/src/history-retrieval.ts	AND (t."botId" = ${scope.botId} OR (t."botId" IS NULL AND EXISTS (
-packages/db/src/history-retrieval.ts	? Prisma.sql`AND (t."botId" = ${input.botId} OR EXISTS (
-packages/db/src/history-retrieval.ts	LEFT JOIN bots b ON b.id = t."botId" LEFT JOIN chat_groups g ON g.id = t."groupId"
-packages/db/src/history-retrieval.ts	SELECT ${columns}, t."botId" FROM messages m JOIN threads t ON t.id = m."threadId"
-packages/db/src/unread-inbox-chats.ts	EXISTS (SELECT 1 FROM bots b WHERE b.id = t."botId"
+apps/api/src/content/search.ts	const targetColumn = target === "bot" ? Prisma.sql`t."botId"` : Prisma.sql`t."groupId"`;
+apps/api/src/content/search.ts	INNER JOIN bots b ON b.id = t."botId" AND b."spaceId" = t."spaceId"
+apps/api/src/integrations/mcp-approval.ts	const eventBotId = message.botId ?? thread.botId ?? input.botId;
+apps/web/src/pages/shell/chat/use-thread-sync.ts	(seed?.thread?.botId === active.id ? seed.thread : undefined));
+apps/web/src/pages/shell/sidebar/use-space-roster.ts	setRoutinesBotId(bootstrap.thread.botId ?? null);
+apps/web/src/pages/shell/sidebar/use-space-roster.ts	const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
+packages/adapters/src/mcp/mcp-server-removal.ts	const eventBotId = message.botId ?? message.thread?.botId;
+packages/adapters/src/meetings/meeting-chat.ts	thread.botId === run.botId &&
+packages/adapters/src/memory/conversation-memory.ts	if (!thread || thread.spaceId !== run.spaceId || (thread.botId !== run.botId && !thread.groupId))
+packages/adapters/src/runs/lifecycle/run-complete.ts	threadBotId: thread.botId,
+packages/adapters/src/runtime/context/history-compaction.ts	if (!thread.botId) return;
+packages/adapters/src/runtime/context/history-compaction.ts	? (message.botId ?? thread.botId!)
+packages/adapters/src/runtime/context/history-compaction.ts	botId: thread.botId,
+packages/adapters/src/runtime/context/history-compaction.ts	botId: thread.botId!,
+packages/adapters/src/runtime/context/history-compaction.ts	botId: thread.botId,
+packages/adapters/src/runtime/context/history-compaction.ts	botId: thread.botId,
+packages/adapters/src/runtime/context/history-compaction.ts	botId: thread.botId,
+packages/adapters/src/runtime/context/history-compaction.ts	{ botId: thread.botId, threadId, generations: [previousGeneration] },
+packages/db/src/history/content-export.ts	const foreign = Boolean(botId) && thread.botId !== botId;
+packages/db/src/history/history-retrieval.ts	? Prisma.sql`COALESCE(t."botId", ${scope.botId})`
+packages/db/src/history/history-retrieval.ts	SELECT 1 FROM bots b WHERE b.id = t."botId" AND b."spaceId" = ${scope.spaceId}
+packages/db/src/history/history-retrieval.ts	)) OR (t."botId" IS NULL AND EXISTS (
+packages/db/src/history/history-retrieval.ts	AND (t."botId" = ${scope.botId} OR (t."botId" IS NULL AND EXISTS (
+packages/db/src/history/history-retrieval.ts	? Prisma.sql`AND (t."botId" = ${input.botId} OR EXISTS (
+packages/db/src/history/history-retrieval.ts	LEFT JOIN bots b ON b.id = t."botId" LEFT JOIN chat_groups g ON g.id = t."groupId"
+packages/db/src/history/history-retrieval.ts	SELECT ${columns}, t."botId" FROM messages m JOIN threads t ON t.id = m."threadId"
+packages/db/src/threads/unread-inbox-chats.ts	EXISTS (SELECT 1 FROM bots b WHERE b.id = t."botId"

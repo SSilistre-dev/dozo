@@ -23,7 +23,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
-import { AvatarStudioPopover } from "../pages/shell/avatar-studio-popover";
+import { AvatarStudioPopover } from "../pages/shell/bots/avatar-studio-popover";
 
 const repo = (path: string) => readFileSync(join(import.meta.dirname, "../../../..", path), "utf8");
 
@@ -97,8 +97,8 @@ it("shows the same names on the Avatar Studio tabs", async () => {
 
 it("takes every place that names a set from the one function", () => {
   for (const file of [
-    "apps/web/src/pages/shell/avatar-studio-popover.tsx",
-    "apps/web/src/pages/AccountSettingsOverlay.tsx",
+    "apps/web/src/pages/shell/bots/avatar-studio-popover.tsx",
+    "apps/web/src/pages/settings/AccountSettingsOverlay.tsx",
     "apps/mobile/app/(settings)/general.tsx",
     "apps/mobile/app/bot-settings.tsx",
   ]) {

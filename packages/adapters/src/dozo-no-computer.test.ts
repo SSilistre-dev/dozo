@@ -1,6 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import type * as ComputerLifecycleModule from "./computers/computer-lifecycle.js";
 import { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from "./dozo-device-screen.prompt.js";
 import {
   CLOUD_COMPUTER_TOOL_NAMES,
@@ -11,13 +11,13 @@ import {
   noCloudComputerInstruction,
   noComputerFilesInstruction,
 } from "./dozo-no-computer.prompt.js";
-import { createRunExecutor } from "./executor.js";
-import { EncryptedSecretStore } from "./secrets.js";
-import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
+import { createRunExecutor } from "./runs/executor/executor.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
+import { USER_COMPUTER_SCREEN_TOOLS } from "./computers/host/user-computer-tools.js";
 
 const provisionComputer = vi.hoisted(() => vi.fn());
 
-vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
+vi.mock("./computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
@@ -26,8 +26,8 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
 
 // A Free member runs on a model connection of their own; the bench runs on the deployment's, whose
 // metering is not under test here.
-vi.mock("./model-credit-observer.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./model-credit-observer.js")>()),
+vi.mock("./models/credits/model-credit-observer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./models/credits/model-credit-observer.js")>()),
   hostedModelCreditObserver: async () => ({}),
 }));
 
@@ -155,6 +155,8 @@ function fakePrisma(plan: Plan, reads: string[]) {
     },
     task: { findUniqueOrThrow: () => ({ id: run.taskId, prompt: "Find me a flight to Izmir" }) },
     computer: { updateMany: () => ({ count: 1 }) },
+    // No operator granted extra computer allowance.
+    computerAllowanceGrant: { aggregate: () => ({ _sum: { amountCents: null } }) },
     externalEffect: {
       create: ({ data }: { data: Record<string, unknown> }) => ({
         id: `effect-${String(data.idempotencyKey)}`,
@@ -221,6 +223,7 @@ async function ownerRun(options: {
   const userDevices = options.userComputer
     ? {
         connected: vi.fn(async () => (options.userComputer === "connected" ? device : null)),
+        list: vi.fn(async () => []),
         pairedSince: vi.fn(async () => null),
         async *request() {},
       }

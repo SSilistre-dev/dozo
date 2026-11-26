@@ -5,8 +5,8 @@ import type { AuditEvent } from "@rakazo/contracts";
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { queryClient, useSpaceQueries } from "../lib/query";
-import { SettingsRow } from "./SettingsRows";
+import { queryClient, useSpaceQueries } from "../lib/query/query";
+import { SettingsRow } from "./settings/SettingsRows";
 
 const PAGE_SIZE = 30;
 

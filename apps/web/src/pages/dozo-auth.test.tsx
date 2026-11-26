@@ -41,12 +41,12 @@ vi.mock("@rakazo/ui-web", () => ({
     </select>
   ),
 }));
-vi.mock("../lib/i18n", () => ({
+vi.mock("../lib/locale/i18n", () => ({
   getActiveUiLocale: () => mocks.active,
   setUiLocale: mocks.setUiLocale,
 }));
 
-vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: mocks.capabilities }));
+vi.mock("../lib/auth/auth-capabilities", () => ({ fetchAuthCapabilities: mocks.capabilities }));
 vi.mock("@rakazo/contracts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/contracts")>()),
   signInProviders: (capabilities: { providers?: { id: string }[] }) => capabilities.providers ?? [],
@@ -59,7 +59,7 @@ vi.mock("./dozo-code-sign-in", () => ({
 vi.mock("./dozo-hosted-login", () => ({
   HostedSignIn: () => <div data-testid="hosted">hosted</div>,
 }));
-vi.mock("./Auth", () => ({
+vi.mock("./auth/Auth", () => ({
   submitClass: "submit",
   AuthFrame: ({
     title,

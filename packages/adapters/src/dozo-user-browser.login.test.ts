@@ -1,18 +1,18 @@
 import { installAuditEventStore } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { storeBotSecret } from "./bot-secrets.js";
-import { accountVault, fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
+import { storeBotSecret } from "./secrets/bot-secrets.js";
+import { accountVault, fakeAuditLog, fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import type { DeviceBrowserEvent } from "./dozo-device-browser.js";
 import { fakeDeviceBrowser, seededDevicePages } from "./dozo-device-browser.test-support.js";
 import { DEVICE_LOGIN_ONLY, encodeDeviceLogin } from "./dozo-device-login.js";
 import { pageBrowserTool } from "./dozo-user-browser.js";
 import { userBrowserGate } from "./dozo-user-browser-gate.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
-import { EncryptedSecretStore } from "./secrets.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 
-vi.mock("./run-tools-computer.js", () => ({
+vi.mock("./runs/tools/run-tools-computer.js", () => ({
   pageBrowserTool: vi.fn(async () => "the bot's computer"),
 }));
 

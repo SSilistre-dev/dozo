@@ -26,17 +26,17 @@ vi.mock("react-native", () => ({
   View: ({ children, style }: { children?: ReactNode; style?: { paddingLeft?: number } }) =>
     createElement("span", { "data-indent": style?.paddingLeft }, children),
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   native: { secondaryLabel: "grey", label: "black", fillPressed: "pressed" },
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./ripple", () => ({ androidRipple: () => undefined }));
-vi.mock("../components/home-styles", () => ({
+vi.mock("./appearance/ripple", () => ({ androidRipple: () => undefined }));
+vi.mock("../components/inbox/inbox-styles", () => ({
   INBOX_ROW: { padding: 16, gap: 12, avatarSize: 62 },
   COMPACT_INBOX_ROW: { padding: 12, gap: 10 },
-  createHomeStyles: () => ({ rowPressed: "pressed", unreadDot: "dot" }),
+  createInboxStyles: () => ({ rowPressed: "pressed", unreadDot: "dot" }),
 }));
-vi.mock("../components/drag-safe-pressable", () => ({
+vi.mock("../components/ui/drag-safe-pressable", () => ({
   DragSafePressable: (props: {
     accessibilityLabel: string;
     accessibilityState: { selected: boolean };
@@ -62,14 +62,14 @@ vi.mock("../components/drag-safe-pressable", () => ({
       props.children,
     ),
 }));
-vi.mock("../components/inbox-rows", async () => {
+vi.mock("../components/inbox/inbox-rows", async () => {
   const { createContext } = await import("react");
   return {
     CompactRowsContext: createContext(false),
     SelectedChatContext: createContext<string | null>(null),
   };
 });
-vi.mock("./inbox-changes", () => ({ openChatFromInbox: api.opener }));
+vi.mock("./inbox/inbox-changes", () => ({ openChatFromInbox: api.opener }));
 vi.mock("./dozo-bot-chats", () => ({
   dozoChatRoute: (botId: string, chatId: string, name: string) => ({
     pathname: "/thread",
@@ -83,8 +83,8 @@ vi.mock("./dozo-bot-chats", () => ({
 
 import type { DozoBotChat } from "@rakazo/contracts";
 import { DozoInboxChatRow } from "../components/dozo-inbox-chat-row";
-import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
-import type { MobileBot } from "./mobile-types";
+import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
+import type { MobileBot } from "./api/mobile-types";
 
 const bot = { id: "bot-1", name: "Ada" } as MobileBot;
 const chat = (overrides: Partial<DozoBotChat> = {}): DozoBotChat => ({

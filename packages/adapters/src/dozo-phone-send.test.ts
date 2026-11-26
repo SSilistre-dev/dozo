@@ -1,7 +1,7 @@
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as SendLimit from "./dozo-send-limit.js";
-import type * as Gate from "./run-tool-gate.js";
+import type * as Gate from "./runs/tools/run-tool-gate.js";
 
 // A send to an address the bot learned from the user's phone contacts, through the branded gate
 // (dozo/brand/brand.json). Runs on the staged tree. The search goes through the real dispatch
@@ -19,7 +19,7 @@ vi.mock("./dozo-send-limit.js", async (importOriginal) => {
     },
   };
 });
-vi.mock("./run-tool-gate.js", async (importOriginal) => {
+vi.mock("./runs/tools/run-tool-gate.js", async (importOriginal) => {
   const real = await importOriginal<typeof Gate>();
   const { isPhoneTool, phoneGate } = await import("./dozo-phone.js");
   return {
@@ -56,18 +56,18 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: vi.fn(async () => {}),
 }));
 // Recording the send's effect is where it goes on, asked or not; the test stops there.
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => {
     throw new Error("recorded");
   }),
 }));
 
-import { createApprovedEffectReplayQueue } from "./approval-effect.js";
+import { createApprovedEffectReplayQueue } from "./approvals/approval-effect.js";
 import { PHONE_CONTACTS_SEARCH_TOOL } from "./dozo-phone.tool-definition.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
-import { applyTool } from "./run-tools.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
+import { applyTool } from "./runs/tools/run-tools.js";
 
 const EMAIL = "ada@example.test";
 const MODES = {
@@ -156,6 +156,8 @@ async function sendPlan(ctx: ReturnType<typeof context>, name: string, to: strin
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
   sends.length = 0;

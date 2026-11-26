@@ -16,8 +16,8 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { errorText } from "../../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { formatRelativeTime } from "../../lib/relative-time";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
 
 /**
  * The browser saves new cookies to disk about every 30 seconds, and only the disk knows their

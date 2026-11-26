@@ -4,7 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./mobile-types";
+import type { MobileMessage } from "./api/mobile-types";
 
 // Runs on the branded tree: the message procedures exist once the brand rules apply.
 
@@ -26,10 +26,10 @@ vi.mock("@lingui/core/macro", async (importOriginal) => ({
   ph: (named: Record<string, unknown>) => Object.values(named)[0],
 }));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async () => ({
@@ -39,9 +39,9 @@ vi.mock("./api", () => ({
   }),
   rpc: api.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./dozo-blocked-people", () => ({ blockPerson: api.block }));
-vi.mock("./roster-signals", () => ({
+vi.mock("./api/roster-signals", () => ({
   useRosterSignals: (read: () => unknown, enabled: boolean) => {
     if (enabled) api.rosterReads.push(read);
   },
@@ -58,7 +58,7 @@ import {
   useDozoChatPins,
   useDozoMessageActions,
 } from "./dozo-message-actions";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 type Answers = Record<string, unknown>;
 let answers: Answers;

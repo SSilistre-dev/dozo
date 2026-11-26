@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ events: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { audit: { events: api.events } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
@@ -38,7 +38,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
 }));
 
-import { queryClient } from "../lib/query";
+import { queryClient } from "../lib/query/query";
 import { DozoActivityLogRow, dozoActivityAction } from "./dozo-activity-log";
 
 let container: HTMLDivElement;

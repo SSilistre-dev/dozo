@@ -134,18 +134,18 @@ packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const sockets = n
 packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const server = createServer((request, response) => {	device	test relay only (never in the server)
 packages/adapters/src/dozo-send-limit.ts	module	const SENDING_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["send_email", "message_agent"]);	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-send-limit.ts	module	const limitAsks = new WeakMap<Record<string, unknown>, number>();	request	count keyed by a tool-call object's identity
-packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn read	const ledger: DozoLedger = {	local	per-call local, dies with the call
-packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn read	const queue = customers.slice(0, DOZO_LEDGER_MAX_CUSTOMERS);	local	per-call local, dies with the call
-packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	let unclassified = 0;	local	per-call local, dies with the call
-packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const creditIntents = new Set(	local	per-call local, dies with the call
-packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const ourIntents = new Set([...creditIntents, ...invoices.filter(isOurs).flatMap(intentsOf)]);	local	per-call local, dies with the call
-packages/adapters/src/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const entries: DozoLedgerEntry[] = [];	local	per-call local, dies with the call
 packages/adapters/src/dozo-token-run.ts	module	const tokenRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-token-run.ts	module	const MAKING_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-token-run.ts	module	const ASKING_READS = new Set(["list_secrets"]);	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-token-run.ts	module	const LIST_ARGS = new Set(["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"]);	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-user-browser-gate.ts	module	const asks = new WeakMap<Record<string, unknown>, UserBrowserAsk>();	request	ask keyed by a tool-call object's identity
 packages/adapters/src/dozo-user-browser.ts	module	const providers = new WeakMap<RunContext, DeviceBrowserProvider>();	run	browser provider keyed by the run's own context object
+packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn read	const ledger: DozoLedger = {	local	per-call local, dies with the call
+packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn read	const queue = customers.slice(0, DOZO_LEDGER_MAX_CUSTOMERS);	local	per-call local, dies with the call
+packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	let unclassified = 0;	local	per-call local, dies with the call
+packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const creditIntents = new Set(	local	per-call local, dies with the call
+packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const ourIntents = new Set([...creditIntents, ...invoices.filter(isOurs).flatMap(intentsOf)]);	local	per-call local, dies with the call
+packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const entries: DozoLedgerEntry[] = [];	local	per-call local, dies with the call
 packages/auth/src/dozo-hosted-login.ts	module	const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);	global-safe	constant set of fixed words, never changed after load
 packages/auth/src/dozo-hosted-login.ts	module	const CLOSED_PATHS = new Set([	global-safe	constant set of fixed words, never changed after load
 packages/auth/src/dozo-hosted-login.ts	fn issuerKeys	let keys = new Map<string, KeyObject>();	global-safe	the issuer's public signing keys by key id; public data
@@ -230,15 +230,21 @@ packages/i18n/src/dozo-server-text.ts	module	export const SERVER_SENTENCE_PREFIX
 packages/i18n/src/dozo-server-text.ts	module	export const SIGN_IN_LABELS: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
 apps/api/src/app.ts	fn buildApp	const dozoJobPool =	global-safe	wiring of billing's job pool: a handle, no data
 apps/api/src/app.ts	fn buildApp	const dozoBilling =	global-safe	wiring of billing's mail service: no data
-apps/api/src/account-import.ts	class AccountImporter	this.repos = dozoReportingRepos(createRepos(deps.prisma), deps)	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let incomplete = false;	local	per-call local, dies with the call
-packages/adapters/src/computer-lifecycle.ts	fn provisionComputerUnannounced	let ref = await provision();	local	per-call local, dies with the call
-packages/adapters/src/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
-packages/core/src/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled
+apps/api/src/account/account-import.ts	class AccountImporter	this.repos = dozoReportingRepos(createRepos(deps.prisma), deps)	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let provisioned: ComputerRef | undefined;	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let incomplete = false;	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let ref = await provision();	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let providerReadyMs = 0;	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let preparationMs = 0;	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	const sizing =	local	per-call local, dies with the call
+packages/adapters/src/computers/computer-lifecycle.ts	fn provisionComputerUnannounced	let released = false;	local	per-call local, dies with the call
+packages/adapters/src/tools/builtin-skills.prompt.ts	module	const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];	global-safe	empty constant list, never filled
+packages/core/src/primitives/user-error.ts	module	const ERROR_GUIDES: Readonly<Record<string, string>> = {};	global-safe	empty constant map, never filled
 packages/adapters/src/dozo-page-submit.ts	module	const found = new WeakMap<object, number>();	request	count keyed by the identity of one tool call's action list; dies with the call
 packages/adapters/src/dozo-page-submit.ts	module	const SINGLE_LINE_FIELD = new Set([	global-safe	constant set of fixed input types, never changed after load
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const parents = new Map<DomNode, DomNode>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-page-submit.ts	fn submitsIn	const byId = new Map<string, DomNode>();	local	per-call local, dies with the call
-packages/adapters/src/run-tool-gate.ts	fn gateToolCall	let gateDecision: "ask" | "allow" = plan === "ask" || plan === "judge" ? "ask" : "allow";	request	one tool call's decision, set by its own review closure inside the call; nothing outlives the call
+packages/adapters/src/runs/tools/run-tool-gate.ts	fn gateToolCall	let gateDecision: "ask" | "allow" = plan === "ask" || plan === "judge" ? "ask" : "allow";	request	one tool call's decision, set by its own review closure inside the call; nothing outlives the call
+packages/db/src/billing/billing.ts	module	const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-approval-cut.ts	module	let cuts = 0;	global-safe	a count of cuts, read only as the change across one synchronous card build; holds no person data

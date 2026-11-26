@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BillingStatusSchema } from "./billing.js";
-import { COMPUTER_SIZE_SPECS } from "./computer.js";
+import { BillingStatusSchema } from "./billing/billing.js";
+import { COMPUTER_SIZE_SPECS } from "./computers/computer.js";
 import { offerComputerSpec } from "./dozo-computer-size.js";
 
 // Runs on the branded tree only: the offer carries `computerSpec` once the brand rules are applied.

@@ -37,8 +37,8 @@ vi.mock("react-native", () => ({
   Linking: { openURL: native.openURL },
 }));
 vi.mock("expo-router", () => ({ router: { push: native.push } }));
-vi.mock("./api", () => ({ currentApiBase: () => "https://dozo.example.invalid" }));
-vi.mock("./query", () => ({
+vi.mock("./api/api", () => ({ currentApiBase: () => "https://dozo.example.invalid" }));
+vi.mock("./query/query", () => ({
   rpcQuery: (proc: string) => ({ queryKey: [proc] }),
   queryClient: {
     fetchQuery: async () => {

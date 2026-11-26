@@ -14,7 +14,7 @@ import type { ComponentProps } from "react";
 import { Suspense } from "react";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { preloadPluginsOverlay, warmPluginsOverlay } from "./dozo-plugins-overlay-chunk";
-import type { PluginsOverlay as LoadedPluginsOverlay } from "./PluginsOverlay";
+import type { PluginsOverlay as LoadedPluginsOverlay } from "./plugins/PluginsOverlay";
 import { IntegrationRowsSkeleton } from "./plugins/dozo-integrations-skeleton";
 
 type PluginsOverlayProps = ComponentProps<typeof LoadedPluginsOverlay>;
@@ -55,7 +55,7 @@ function PluginsOverlaySkeleton({ onClose }: { onClose: () => void }) {
             disabled
             aria-label={t`Search apps`}
             placeholder={t`Search apps`}
-            className="h-11 rounded-xl px-4 md:text-body-lg"
+            size="xl"
           />
         </div>
         <div className="flex-1 overflow-hidden px-8 py-6">

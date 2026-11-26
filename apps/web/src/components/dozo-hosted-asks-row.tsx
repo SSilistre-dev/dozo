@@ -3,8 +3,8 @@ import { Label, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
-import { SettingsRow } from "./SettingsRows";
+import { useSave, useSpaceQueries } from "../lib/query/query";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * Whether commands that change something on the bot's computer ask first, under the account's

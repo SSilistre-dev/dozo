@@ -1,7 +1,8 @@
 /** @jsxRuntime automatic */
 import { render } from "react-email";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DOZO_MARK, DozoFooter, DozoHeader } from "./dozo-email-shell.js";
+import { writeEmailCopyDir } from "./email-copy/email-copy.test-support.js";
 import {
   accountDeletionEmail,
   identityCodeEmail,
@@ -11,6 +12,11 @@ import {
 } from "./email.js";
 import { welcomeEmail } from "./welcome-email.js";
 
+// The repository holds no wording of a lifecycle mail, so the welcome mail reads fake copy.
+const copyDir = writeEmailCopyDir({ welcome: true });
+beforeEach(() => {
+  vi.stubEnv("EMAIL_COPY_DIR", copyDir);
+});
 afterEach(() => vi.unstubAllEnvs());
 
 describe("DOZO_MARK", () => {

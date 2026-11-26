@@ -1,6 +1,6 @@
 import type * as NodeFsPromises from "node:fs/promises";
 import path from "node:path";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";

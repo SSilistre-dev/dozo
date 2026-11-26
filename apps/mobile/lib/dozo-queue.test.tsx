@@ -13,10 +13,10 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async () => ({
@@ -26,22 +26,22 @@ vi.mock("./api", () => ({
   }),
   rpc: api.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./roster-signals", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/roster-signals", () => ({
   useSpaceChanges: (kind: string, onChange: () => unknown) => {
     if (kind === "runs") api.runsChanged = onChange;
   },
 }));
-vi.mock("./screen-query", async () => {
+vi.mock("./query/screen-query", async () => {
   const { useQuery } = await import("@tanstack/react-query");
-  const { queryClient } = await import("./query");
+  const { queryClient } = await import("./query/query");
   return {
     useScreenQuery: (read: Parameters<typeof useQuery>[0]) => useQuery(read, queryClient),
   };
 });
 
 import { queueLine, queueSheet, stopText, useDozoQueue } from "./dozo-queue";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 const item = (over: Partial<DozoQueueItem>): DozoQueueItem => ({
   id: "run-1",

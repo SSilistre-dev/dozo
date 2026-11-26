@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ThreadAnswerContext } from "./thread-answer";
-import { answerThreadMessage } from "./thread-answer";
+import type { ThreadAnswerContext } from "./thread/thread-answer";
+import { answerThreadMessage } from "./thread/thread-answer";
 
-vi.mock("./haptics", () => ({ hapticSuccess: vi.fn() }));
+vi.mock("./native/haptics", () => ({ hapticSuccess: vi.fn() }));
 
 /** What the mobile client throws for a gateway answer: a status and no API code. */
 const gateway = () => Object.assign(new Error("Bad gateway"), { status: 502, code: undefined });

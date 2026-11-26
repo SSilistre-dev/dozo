@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { useSpaceQueries } from "../lib/query";
+import { useSpaceQueries } from "../lib/query/query";
 
 /**
  * How much of this period's model input came back from the cache, as one number; pressing it

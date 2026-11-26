@@ -1,8 +1,8 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 import { Id } from "./ids.js";
-import { modelChoiceListSchema } from "./model-connections.js";
-import { ModelRoleChoiceSchema } from "./model-roles.js";
+import { modelChoiceListSchema } from "./models/model-connections.js";
+import { ModelRoleChoiceSchema } from "./models/model-roles.js";
 
 /**
  * A bot's own ordered backup models, the same rows a member's model settings hold. Empty: the

@@ -3,8 +3,8 @@ import { paymentPastDue } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
 import { toastError } from "../lib/dozo-error-text";
-import { rpc } from "../lib/rpc";
-import { useBilling } from "./SubscriptionGate";
+import { rpc } from "../lib/query/rpc";
+import { useBilling } from "./billing/SubscriptionGate";
 
 /**
  * One line while the subscription is past due, for the member who manages billing, with the way

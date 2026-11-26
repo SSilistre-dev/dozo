@@ -2,7 +2,7 @@ import { flush } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const load = vi.hoisted(() => vi.fn());
-vi.mock("./PluginsOverlay", () => load());
+vi.mock("./plugins/PluginsOverlay", () => load());
 
 beforeEach(() => {
   vi.resetModules();

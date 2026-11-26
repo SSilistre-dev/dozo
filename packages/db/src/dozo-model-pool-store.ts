@@ -1,6 +1,6 @@
 import type { PoolCooldownReason } from "@rakazo/core";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { Prisma } from "./database/client.js";
 
 /**
  * The fork's model pool tables (migration `20261231130000_dozo_model_pool`): which of a person's

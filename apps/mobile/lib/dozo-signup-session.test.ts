@@ -1,22 +1,22 @@
-vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("./settings/ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { signIn, signUp } from "./api-auth.js";
-import { jsonResponse } from "./api-test-helpers";
-import { restoreSessionToken } from "./session.js";
+import { signIn, signUp } from "./auth/api-auth.js";
+import { jsonResponse } from "./api/api-test-helpers";
+import { restoreSessionToken } from "./api/session.js";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
-vi.mock("./live-notifications.js", () => ({
+vi.mock("./notifications/live-notifications.js", () => ({
   resumeLiveNotifications: vi.fn(async () => undefined),
   stopLiveNotifications: vi.fn(async () => undefined),
 }));
-vi.mock("./network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
+vi.mock("./api/network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
 
 // A server with a mail provider opens no session at sign-up (`token: null`) and refuses an
 // unverified account's password sign-in with EMAIL_NOT_VERIFIED. The app keeps no session from

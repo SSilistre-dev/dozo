@@ -36,6 +36,7 @@ vi.mock("@rakazo/db", async () => {
     bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
     leaveInvitedSpaces: vi.fn(async () => ({ ownedOrganizationIds: [] })),
     personalOrganizationIds: vi.fn(async () => []),
+    clearAccountIdentity: vi.fn(async () => undefined),
     recordSecurityEvent: vi.fn(async () => undefined),
   };
 });
@@ -436,29 +437,33 @@ describe("a deactivated account", () => {
   });
 });
 
-describe("a single-person deployment with a mail provider", () => {
-  it("is claimed by the first address that proves its mailbox, then closes", async () => {
-    const f = fixture({ singleAccount: true });
-    await f.signUp("owner@example.test");
-    // A sign-up that has not proved its address has not claimed the deployment.
-    expect(f.members?.size).toBe(0);
+describe("a deployment that admits sign-ups only from some requests, with a mail provider", () => {
+  it("makes an account only for an accepted request, which still proves its mailbox", async () => {
+    let accepted = true;
+    const f = fixture({ admitsSignup: () => accepted });
+    // An accepted sign-up that has not proved its address has no session.
+    expect(await f.signUp("owner@example.test")).not.toMatch(sessionCookie);
     await f.verifiedAccount("second@example.test");
-    expect(f.members?.has(String(f.stored("second@example.test")?.id))).toBe(true);
+    accepted = false;
     const sent = f.messages.length;
 
+    const stranger = await f.register("stranger@example.test");
     const asked = await f.call("/email-otp/send-verification-otp", {
       email: "someone@example.test",
       type: "sign-in",
     });
 
+    expect(stranger.status).toBe(400);
+    expect(await stranger.json()).toMatchObject({ code: "REGISTRATION_CLOSED" });
+    expect(f.stored("stranger@example.test")).toBeUndefined();
     expect(asked.status).toBe(200);
     expect(f.messages).toHaveLength(sent);
-    const owner = await f.signIn(
-      f.cookieOf(await f.openLink(undefined, undefined, "owner@example.test")),
-      password,
-      "owner@example.test",
-    );
-    expect(owner.status).toBe(403);
-    expect(await owner.json()).toMatchObject({ code: "REGISTRATION_CLOSED" });
+    // The account an accepted request made is not undone by the deployment closing later: it
+    // gets its session once it proves its mailbox, and the stranger's address got no mail to prove.
+    const proved = await f.openLink(undefined, undefined, "owner@example.test");
+    const owner = await f.signIn(f.cookieOf(proved), password, "owner@example.test");
+    expect(owner.status).toBe(200);
+    expect(f.cookieOf(owner)).toMatch(sessionCookie);
+    expect(f.mailsTo("stranger@example.test")).toHaveLength(0);
   });
 });

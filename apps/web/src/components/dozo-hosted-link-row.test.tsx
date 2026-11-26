@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ capabilities: vi.fn(), start: vi.fn(), assign: vi.fn() }));
 
-vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: api.capabilities }));
+vi.mock("../lib/auth/auth-capabilities", () => ({ fetchAuthCapabilities: api.capabilities }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
@@ -17,7 +17,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("./SettingsRows", () => ({
+vi.mock("./settings/SettingsRows", () => ({
   SettingsRow: ({
     label,
     control,
@@ -34,8 +34,8 @@ vi.mock("./SettingsRows", () => ({
     </div>
   ),
 }));
-vi.mock("../pages/Auth", () => ({ AuthFrame: () => null, submitClass: "" }));
-vi.mock("../lib/auth", () => ({ authClient: { useSession: () => ({}) } }));
+vi.mock("../pages/auth/Auth", () => ({ AuthFrame: () => null, submitClass: "" }));
+vi.mock("../lib/auth/auth", () => ({ authClient: { useSession: () => ({}) } }));
 
 import { DozoHostedLinkRow } from "./dozo-hosted-link-row";
 

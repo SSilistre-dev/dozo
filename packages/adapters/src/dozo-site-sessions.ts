@@ -3,7 +3,7 @@ import { ClientError } from "@rakazo/core";
 import { hostSite } from "@rakazo/core/egress";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import { SITE_SESSIONS_SCRIPT } from "./dozo-site-sessions.script.js";
-import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { sandboxKindCapabilities } from "./computers/sandbox/sandbox-kind-capabilities.js";
 
 /**
  * Sites the bot's browser holds cookies for, read and ended inside the bot's computer by

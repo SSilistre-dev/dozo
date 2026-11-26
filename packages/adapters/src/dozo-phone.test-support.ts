@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolCall } from "./runs/tools/run-tool-gate.js";
 
 /** The phone tests' fake phone, run and effects (dozo-phone*.test.ts). */
 

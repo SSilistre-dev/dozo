@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, TaughtSkill } from "@rakazo/contracts";
-import { savedSkillLiterals, TEACH_NAME_TAKEN } from "@rakazo/core";
+import { errorCode, savedSkillLiterals, TEACH_NAME_TAKEN } from "@rakazo/core";
+import { errorText } from "@rakazo/i18n/user-error";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { useMemo, useState } from "react";
 import type { TeachValueChoice } from "../../components/teach/dozo-teach-value-row";
@@ -9,8 +10,7 @@ import {
   TeachValueRow,
   valueDecisionOf,
 } from "../../components/teach/dozo-teach-value-row";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorCode, errorText } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 
 /**
  * A saved skill whose steps still type text verbatim (saved before values were decided about):

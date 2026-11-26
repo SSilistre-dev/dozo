@@ -2,11 +2,11 @@ import { useLingui } from "@lingui/react/macro";
 import type { ChatExportRange } from "@rakazo/contracts";
 import { chatExportSince } from "@rakazo/contracts";
 import { Alert, Share } from "react-native";
-import { rpc } from "./api";
-import { resolveMobileAppearance } from "./appearance";
+import { rpc } from "./api/api";
+import { resolveMobileAppearance } from "./appearance/appearance";
 import type { DozoChatTarget } from "./dozo-chat-target";
-import { presentMessageActionSheet } from "./message-action-sheet";
-import { errorText } from "./user-error";
+import { presentMessageActionSheet } from "./messages/message-action-sheet";
+import { errorText } from "./api/user-error";
 
 export type ChatExportTarget = DozoChatTarget;
 

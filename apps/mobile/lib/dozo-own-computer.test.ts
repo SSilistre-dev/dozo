@@ -14,7 +14,7 @@ const native = vi.hoisted(() => ({
   me: { userId: "maker" } as { userId: string } | undefined,
   members: undefined as { canManage: boolean } | undefined,
 }));
-vi.mock("./query", () => ({ rpcQuery: (proc: string) => ({ queryKey: [proc] }) }));
+vi.mock("./query/query", () => ({ rpcQuery: (proc: string) => ({ queryKey: [proc] }) }));
 vi.mock("react-native", () => ({ Alert: { alert: native.alert } }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey, enabled }: { queryKey: string[]; enabled?: boolean }) => ({

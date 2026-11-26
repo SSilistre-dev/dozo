@@ -5,8 +5,8 @@ import { act, createContext, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type * as Api from "./api";
-import type { MobileMessage } from "./mobile-types";
+import type * as Api from "./api/api";
+import type { MobileMessage } from "./api/mobile-types";
 
 vi.mock("react-native", async () => {
   const { createElement, useImperativeHandle } = await import("react");
@@ -80,11 +80,12 @@ vi.mock("react-native-reanimated", async () => {
 });
 
 vi.mock("expo-secure-store", () => ({}));
-vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
-vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
-vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
+vi.mock("../components/thread/routine-event-row", () => ({ RoutineEventRows: () => null }));
+vi.mock("./notifications/live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
+vi.mock("./api/network-cache", () => ({ clearNetworkCache: vi.fn() }));
+vi.mock("./artifacts/artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   native: { fill: "fill", fillPressed: "fill-pressed" },
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
@@ -94,16 +95,17 @@ vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
+  useNativeLinkConfirm: () => vi.fn(),
 }));
 
-vi.mock("../components/message-caption", () => ({
+vi.mock("../components/messages/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
 }));
-vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
-vi.mock("../components/native-symbol", () => ({
+vi.mock("../components/bots/bot-avatar", () => ({ BotAvatar: () => <i /> }));
+vi.mock("../components/native/native-symbol", () => ({
   NativeSymbol: ({ ios }: { ios: string }) => <i data-symbol={ios} />,
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
     onPress,
@@ -127,30 +129,38 @@ vi.mock("../components/native-action-button", () => ({
 }));
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
-vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
-vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
-vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
-vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
-vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
-vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("../components/media/audio-attachment", () => ({ AudioAttachment: () => null }));
+vi.mock("../components/cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
+vi.mock("../components/cards/ComputerCard", () => ({ ComputerCard: () => null }));
+vi.mock("./pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
-vi.mock("../components/inline-image-attachment", () => ({
+vi.mock("../components/media/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (
     <button type="button" aria-label={name} onClick={onOpen} />
   ),
 }));
-vi.mock("../components/change-undo", () => ({
+vi.mock("../components/cards/change-undo", () => ({
   ChangeUndo: () => null,
   isUndoableChange: () => false,
 }));
 
-vi.mock("./api", async (original) => ({
+vi.mock("./api/api", async (original) => ({
   ...(await original<typeof Api>()),
   rpc: vi.fn(async () => ({ ok: true })),
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
 }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
-import { rpc } from "./api";
+import { rpc } from "./api/api";
 import { DozoChatContext } from "./dozo-chat-target";
 
 let container: HTMLDivElement;
@@ -206,21 +216,22 @@ const stop = () =>
 
 // The helper's card is in one chat, and Stop names it: a stop that named the bot would look for the
 // card in the bot's main chat.
-it("stops a helper in an extra chat as that chat's", () => {
+it("stops a helper in an extra chat as that chat's", async () => {
   show("chat-1");
-  act(() => stop()?.click());
-  expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
-    chatBotId: "bot-1",
-    chatId: "chat-1",
-    messageId: "card-1",
-  });
+  await act(async () => stop()?.click());
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "threads/stopHelper",
+    { chatBotId: "bot-1", chatId: "chat-1", messageId: "card-1" },
+    expect.anything(),
+  );
 });
 
-it("stops a helper in a bot's main chat as before", () => {
+it("stops a helper in a bot's main chat as before", async () => {
   show(undefined);
-  act(() => stop()?.click());
-  expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
-    botId: "bot-1",
-    messageId: "card-1",
-  });
+  await act(async () => stop()?.click());
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "threads/stopHelper",
+    { botId: "bot-1", messageId: "card-1" },
+    expect.anything(),
+  );
 });

@@ -62,32 +62,32 @@ vi.mock("@expo/ui/community/menu", () => ({
     return <>{children}</>;
   },
 }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
-vi.mock("./native", () => ({
+vi.mock("./appearance/appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("./native/native", () => ({
   native: { groupedPage: "grouped", secondaryLabel: "secondary" },
   useResolvedAppearance: () => "dark",
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./i18n", () => ({ dateLocaleForUi: () => "en-US", useUiLocale: () => "en" }));
-vi.mock("./screen-header", () => ({
+vi.mock("./i18n/i18n", () => ({ dateLocaleForUi: () => "en-US", useUiLocale: () => "en" }));
+vi.mock("./navigation/screen-header", () => ({
   useScreenHeader: (header: Header) => {
     ui.header = header;
   },
 }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./roster-signals", () => ({
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api/roster-signals", () => ({
   useRosterSignals: (read: () => unknown, enabled: boolean) => {
     if (enabled) ui.rosterReads.push(read);
   },
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async (spaceId: string | null = "space") => ({
@@ -97,8 +97,8 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("../components/native-segmented-control", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../components/native/native-segmented-control", () => ({
   NativeSegmentedControl: ({
     options,
     onChange,
@@ -122,7 +122,7 @@ vi.mock("../components/native-segmented-control", () => ({
     </nav>
   ),
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
     onPress,
@@ -137,7 +137,7 @@ vi.mock("../components/native-action-button", () => ({
     </button>
   ),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <ul>{children}</ul>,
   SettingsRow: ({
     title,
@@ -210,7 +210,7 @@ import { DozoCommandsRow, dozoUsageLink } from "../components/dozo-account-rows"
 import { DozoGeneralRows } from "../components/dozo-general-rows";
 import { DozoModelPoolSwitch } from "../components/dozo-model-pool-switch";
 import { dozoActivityAction } from "./dozo-activity";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let answers: Record<string, unknown>;
 let root: Root;

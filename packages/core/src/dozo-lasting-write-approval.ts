@@ -65,7 +65,8 @@ export function routineWriterIsOwner(writer: string | undefined): boolean {
 /**
  * Whether the input that started a run came from someone other than the bot's owner. The owner's
  * words are isOwnerStartedRun's (their message, a follow-up they wrote, the close of their call) and
- * their own connected chat app, in a run that acts for the bot's owner; and a routine's prompt when
+ * their own connected chat app, in a run that acts for the bot's owner; and a routine's prompt (a routine run
+ * is owner-started upstream, whoever wrote it, so only this decides it) when
  * the owner last wrote it (routineWriterIsOwner) and no change trigger appended what its watch read.
  * Every other trigger (another bot, a webhook or email, a spawned bot, a ticket, a helper's result,
  * a provider's callback), a new one included, is outside.
@@ -75,8 +76,10 @@ export async function runStartedFromOutside(
   routineFromOwner: LastingWriteChecks["routineFromOwner"],
 ): Promise<boolean> {
   if (run.nonOwnerChatRun || !run.botOwnerRun) return true;
-  if (run.ownerStartedRun || run.trigger === "messaging") return false;
+  // Upstream counts a routine's run as the owner's (isOwnerStartedRun), so it is read before that:
+  // its prompt is the owner's words only when the owner last wrote it.
   if (run.trigger === "routine") return run.watchFired || !(await routineFromOwner());
+  if (run.ownerStartedRun || run.trigger === "messaging") return false;
   return true;
 }
 

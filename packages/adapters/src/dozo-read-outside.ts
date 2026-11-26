@@ -1,6 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import type { RunContext, RunState } from "./run-context.js";
-import { historyReplaysOutsideContent } from "./tool-step-calls.js";
+import type { RunContext, RunState } from "./runs/assembly/run-context.js";
+import { historyReplaysOutsideContent } from "./runs/turn/tool-step-calls.js";
 
 /** Attempts, by their run state, whose model took in outside content. */
 const readStates = new WeakSet<RunState>();

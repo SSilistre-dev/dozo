@@ -1,8 +1,8 @@
 import { cn } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { desktopBridge, windowChromeKind } from "../../lib/desktop";
-import { queryClient, useSpaceQueries } from "../../lib/query";
+import { desktopBridge, windowChromeKind } from "../../lib/platform/desktop";
+import { queryClient, useSpaceQueries } from "../../lib/query/query";
 
 /** The logo of the organization the open Space belongs to; read again on the roster signal. */
 export function useDozoOrganizationMark() {

@@ -12,7 +12,7 @@ import { Pin, PinOff } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { errorText, toastError } from "../../lib/dozo-error-text";
-import { queryClient, useSave, useSpaceQueries } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 
 /** The caller's pins in one chat. Read again on the roster signal a pin change sends. */
 function usePins(threadId: string | undefined, enabled = true) {
@@ -25,13 +25,7 @@ function usePins(threadId: string | undefined, enabled = true) {
   return { pins: pins.data?.pins, key: queries.dozoMessages.pins.key({ input }) };
 }
 
-/** Reads every open chat's pins again; the roster signal carries a pin change. */
-export function dozoPinsChanged(client = queryClient): Promise<void> {
-  return client.invalidateQueries({
-    predicate: ({ queryKey: [path] }) =>
-      Array.isArray(path) && path.slice(-2).join(".") === "dozoMessages.pins",
-  });
-}
+export { dozoPinsChanged } from "../../lib/dozo-stream-changed";
 
 /** Pin or Unpin in a message's More menu, once the chat's pins are known. */
 export function DozoPinMenuItem({

@@ -28,8 +28,8 @@ import {
   withPoolMembers,
   withRunModelPool,
 } from "./dozo-model-pool.js";
-import { serializeModelSecret } from "./model-secret.js";
-import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
+import { serializeModelSecret } from "./models/model-secret.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./runtime/pi/models/pi-oauth.js";
 
 const now = Date.UTC(2026, 10, 20, 12);
 const HOUR = 60 * 60_000;

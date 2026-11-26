@@ -17,10 +17,10 @@ import { isPhonePlatform, PHONE_PLATFORMS } from "./dozo-phone-protocol.js";
 import {
   UserDeviceHub as UpstreamUserDeviceHub,
   UserDevices as UpstreamUserDevices,
-} from "./user-device-gateway.js";
+} from "./computers/host/user-device-gateway.js";
 
 export { isPhonePlatform, PHONE_PLATFORMS } from "./dozo-phone-protocol.js";
-export * from "./user-device-gateway.js";
+export * from "./computers/host/user-device-gateway.js";
 
 /** Upstream's window: a connection row whose heartbeat is older lost its holding process. */
 export const STALE_AFTER_MS = 75_000;

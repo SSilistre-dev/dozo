@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appContract } from "./rpc.js";
+import { appContract } from "./rpc/app-contract.js";
 
 // The iOS and Android apps in people's hands lag the server by days or weeks, and the server checks
 // every call against this contract. These are the calls the mobile app as built for the first

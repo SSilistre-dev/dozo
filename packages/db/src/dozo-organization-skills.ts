@@ -1,9 +1,9 @@
 import { ClientError, skillNameKey } from "@rakazo/core";
-import { availableInSpace } from "./availability.js";
-import { isOwnerRole } from "./billing.js";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
-import { IsolationError } from "./scope.js";
+import { availableInSpace } from "./spaces/availability.js";
+import { isOwnerRole } from "./billing/billing.js";
+import type { PrismaClient } from "./database/client.js";
+import { Prisma } from "./database/client.js";
+import { IsolationError } from "./database/scope.js";
 
 type Scope = { spaceId: string; userId: string };
 type Raw = Pick<PrismaClient, "$queryRaw">;

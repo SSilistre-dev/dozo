@@ -28,21 +28,21 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert }, Share: { share: api.share } }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: api.push }) }));
-vi.mock("./api", () => ({ rpc: api.rpc }));
-vi.mock("./appearance", () => ({ resolveMobileAppearance: () => "dark" }));
-vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
+vi.mock("./api/api", () => ({ rpc: api.rpc }));
+vi.mock("./appearance/appearance", () => ({ resolveMobileAppearance: () => "dark" }));
+vi.mock("./messages/message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
 vi.mock("./dozo-message-actions", () => ({ useDozoChatPins: () => api.pins }));
 vi.mock("./dozo-trust-bot", () => ({ useDozoTrustActions: () => api.trust }));
 vi.mock("./dozo-bot-chats", () => ({ useDozoNewChat: () => ({ run: api.newChat }) }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("../components/bot-profile-menu", () => ({
+vi.mock("../components/bots/bot-profile-menu", () => ({
   useBotProfileActions: api.upstream,
   botProfileMenuOptions: () => ({}),
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>
       {label}

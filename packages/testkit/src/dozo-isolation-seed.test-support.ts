@@ -550,6 +550,7 @@ export async function seedExtras(
       data: {
         spaceId,
         userId: owner.userId,
+        connectorId: "iso",
         provider: "iso",
         displayName: mark("connection"),
         status: "connected",
@@ -616,6 +617,69 @@ export async function seedExtras(
     target,
     "messaging, tool server, model connection, connection, capability, computer update: system inserts (each needs an outside provider)",
   );
+  // Invitations to the owner's own address, in the owner's organization: the invitee's calls
+  // (preview, accept) are the owner's own, and anyone else's must be refused by the address.
+  await step("invitation", async () => {
+    for (const key of ["invitationId", "cancelInvitationId"] as const) {
+      const invitation = await system.invitation.create({
+        data: {
+          id: `iso-invitation-${rand()}`,
+          organizationId: ids.organizationId!,
+          email: owner.email.toLowerCase(),
+          role: "member",
+          status: "pending",
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          inviterId: owner.userId,
+        },
+      });
+      ids[key] = invitation.id;
+    }
+  });
+  // Finished meetings of the owner's, with their transcripts. No meeting provider is configured, so
+  // none can be made through the API: system inserts in the shape a finished one is left in. The
+  // ones sharing or deleting a transcript carry no canary: sharing copies the transcript into a
+  // file of the Space, deleting empties it.
+  await step("meeting", async () => {
+    const turns = (text: string) => JSON.stringify([{ speaker: "iso", startMs: 0, text }]);
+    const make = async (key: "meetingId" | "shareMeetingId" | "deleteMeetingId", text: string) => {
+      const meeting = await system.meetingSession.create({
+        data: {
+          spaceId,
+          botId,
+          userId: owner.userId,
+          provider: "iso",
+          platform: "zoom",
+          status: "ready",
+          transcript: turns(text),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+      ids[key] = meeting.id;
+    };
+    await make("meetingId", mark("meetingtranscript"));
+    await make("shareMeetingId", "iso plain transcript");
+    await make("deleteMeetingId", "iso plain transcript");
+  });
+  // A grant and a comment on the target's page; the page's other children (a revision request, a
+  // picture) need a model and stored bytes, and are named through the page (see the exemptions).
+  await step("page review", async () => {
+    const pageId = ids.pageId;
+    if (!pageId) throw new Error("no page");
+    const grant = await system.pageGrant.create({
+      data: { pageId, recipientEmail: `iso-${rand()}@example.test`, firstVersion: 1 },
+    });
+    ids.pageGrantId = grant.id;
+    const comment = await system.pageComment.create({
+      data: {
+        pageId,
+        authorId: owner.userId,
+        version: 1,
+        section: "iso",
+        body: mark("pagecomment"),
+      },
+    });
+    ids.pageCommentId = comment.id;
+  });
   await step("command rule", async () => {
     const id = randomUUID();
     await system.$executeRaw`
@@ -636,13 +700,15 @@ export async function seedExtras(
 }
 
 /**
- * A run queued on the target's second bot, made fresh, and kept waiting the way the product's own
- * waiting runs are: another run of the bot holds its computer. The recovery scan leaves a queued run
- * whose bot's computer lease belongs to another run (`findRunRecoveryBlockers`,
- * packages/adapters/src/run-recovery.ts), and a start that does reach it finds the computer taken
- * and puts the run back to waiting (`startClaimedAttempt`, packages/adapters/src/run-attempt.ts).
- * The lease reaches less than two lease lengths ahead, so it is not taken for an abandoned
- * takeover hold, and it names no run, so it is the holder's alone to release: `releaseWaitingRun`.
+ * A run queued on the target's second bot, made fresh, and kept waiting until the test ends:
+ * its `wakeAt` is a day ahead, as a run backing off after a failure has, so nothing starts it.
+ * The claim takes a queued run only once `wakeAt` is due, the reconciler's re-enqueue and the
+ * wake scan leave a later `wakeAt` alone, and a run releasing its bot's computer starts only a
+ * next run that is due (`startNextWaitingRun`, packages/adapters/src/runs/lifecycle/run-lifecycle.ts).
+ * A queued run alone is not held by a computer lease any more: ordinary turns claim the computer
+ * on first use, and the recovery scan blocks a run only for a lease past two lease lengths whose
+ * holder is a live run. The lease stays as it was, so the bot's computer is taken as before, and it
+ * names no run, so it is the holder's alone to release: `releaseWaitingRun`.
  */
 export async function seedWaitingRun(db: PrismaClient, owner: Person, target: Target) {
   const system = asSystem(db);
@@ -683,6 +749,7 @@ export async function seedWaitingRun(db: PrismaClient, owner: Person, target: Ta
       userId: owner.userId,
       status: "queued",
       trigger: "user",
+      wakeAt: new Date(Date.now() + 24 * 60 * 60_000),
     },
   });
   ids.waitingRunId = run.id;

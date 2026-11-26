@@ -2,16 +2,16 @@ import { useLingui } from "@lingui/react/macro";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert, Linking, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SettingsGroup, SettingsSwitch } from "../../components/settings-group";
+import { SettingsGroup, SettingsSwitch } from "../../components/settings/settings-group";
 import { contactsAvailable } from "../../lib/dozo-phone-contacts";
 import type { PhoneKind } from "../../lib/dozo-phone-device";
 import { phoneDevice } from "../../lib/dozo-phone-device";
 import { locationAvailable } from "../../lib/dozo-phone-location";
 import { remindersAvailable } from "../../lib/dozo-phone-reminders";
-import { native, useThemedStyles } from "../../lib/native";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { errorText } from "../../lib/api/user-error";
 
 /**
  * What bots may read from this phone, and add to it. Each kind is off until switched on here, and is kept on this

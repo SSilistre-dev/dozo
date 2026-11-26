@@ -2,7 +2,7 @@ import { Trans } from "@lingui/react/macro";
 import { TabsTrigger } from "@rakazo/ui-web";
 import { QueryClientContext, useQuery } from "@tanstack/react-query";
 import { useContext } from "react";
-import { useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query/query";
 
 /** The studio tab that holds the description field and the picture drawn from it. */
 export const DOZO_AVATAR_GENERATE_TAB = "generate";

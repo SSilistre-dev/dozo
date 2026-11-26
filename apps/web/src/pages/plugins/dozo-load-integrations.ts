@@ -1,6 +1,6 @@
 import type { Connection } from "@rakazo/contracts";
-import { optionalCatalogFeedProbe } from "../../lib/optional-catalog-feed";
-import { rpc } from "../../lib/rpc";
+import { optionalCatalogFeedProbe } from "../../lib/integrations/optional-catalog-feed";
+import { rpc } from "../../lib/query/rpc";
 
 /**
  * What the integrations page lists, with every read sent at once. The catalog call reconciles

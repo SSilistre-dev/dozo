@@ -12,7 +12,13 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** The old name stays only in these identifiers (dozo/brand/README.md, "Identifiers"). */
-const KEPT = ['"scheme":["rakazo","dozo"]', "Rakazo.icon", '"targetName":"RakazoWidgets"'];
+const KEPT = [
+  '"scheme":["rakazo","dozo"]',
+  "Rakazo.icon",
+  '"targetName":"RakazoWidgets"',
+  '"targetName":"RakazoWatch"',
+  '"targetName":"RakazoWatchComplications"',
+];
 
 /** The application id and iOS bundle id (the `com.rakazo.app` literal rule in brand.json). */
 const DOZO_ID = "dev.ssilistre.dozo";

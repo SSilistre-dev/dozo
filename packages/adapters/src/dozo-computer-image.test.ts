@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSandboxProvider } from "./sandbox-factory.js";
+import { createSandboxProvider } from "./computers/sandbox/sandbox-factory.js";
 
 // Runs on the branded tree (`make qa`): the brand rules add the check to sandbox-factory.ts.
 

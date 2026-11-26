@@ -1,10 +1,10 @@
 import type { DozoOrganizationMark } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { Image, StyleSheet, View } from "react-native";
-import { native, useThemedStyles } from "./native";
-import { queryClient, rpcQuery } from "./query";
-import { useRosterSignals } from "./roster-signals";
-import { useScreenQuery } from "./screen-query";
+import { native, useThemedStyles } from "./native/native";
+import { queryClient, rpcQuery } from "./query/query";
+import { useRosterSignals } from "./api/roster-signals";
+import { useScreenQuery } from "./query/screen-query";
 
 export const organizationMarkRead = () => rpcQuery("dozoOrganizationLogo/mark");
 

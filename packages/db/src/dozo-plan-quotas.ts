@@ -9,7 +9,7 @@ import {
   sandboxAllowanceHours,
 } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
-import type { PrismaClient } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
 import { recordAdminChange } from "./dozo-admin-change.js";
 
 type Write = Pick<PrismaClient, "$transaction">;

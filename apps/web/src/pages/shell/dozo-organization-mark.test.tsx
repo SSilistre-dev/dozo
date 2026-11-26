@@ -7,11 +7,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ mark: vi.fn(), desktop: undefined as unknown }));
 
-vi.mock("../../lib/desktop", async (importOriginal) => ({
+vi.mock("../../lib/platform/desktop", async (importOriginal) => ({
   ...(await importOriginal<typeof Desktop>()),
   desktopBridge: () => api.desktop,
 }));
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoOrganizationLogo: {
@@ -25,8 +25,8 @@ vi.mock("../../lib/query", async (importOriginal) => ({
   }),
 }));
 
-import type * as Desktop from "../../lib/desktop";
-import type * as Query from "../../lib/query";
+import type * as Desktop from "../../lib/platform/desktop";
+import type * as Query from "../../lib/query/query";
 import { DozoSidebarStart, dozoOrganizationMarkChanged } from "./dozo-organization-mark";
 
 const LOGO = "data:image/webp;base64,UklGRg==";

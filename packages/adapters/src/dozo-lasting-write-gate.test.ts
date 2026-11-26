@@ -1,11 +1,12 @@
 import type * as Core from "@rakazo/core";
+import { isOwnerStartedRun } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { markRunReadHistory } from "./dozo-read-outside.js";
-import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
-import { markReadOutsideContent } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { ROUTINE_WATCH_NOTE_START } from "./routines/routine-watch.prompt.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // The branded gate, wired to lastingWriteHeld and lastingWriteCard (dozo/brand/brand.json), with the
 // branded markReadOutsideContent, and the marker run-tools.ts calls for a history tool
@@ -32,22 +33,28 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   recordAuditEvent: vi.fn(async () => {}),
 }));
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => ({
     duplicate: false,
     effect: { id: "effect-1", status: "intended" },
   })),
 }));
-vi.mock("./run-lifecycle.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   renewRunLease: vi.fn(async () => true),
 }));
-vi.mock("./run-context.js", async (importOriginal) => ({
+vi.mock("./runs/assembly/run-context.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   persistTurnCheckpoint: vi.fn(async () => {}),
 }));
-vi.mock("./skill-tools.js", async (importOriginal) => ({
+// The card upstream builds for a routine edit reads the routine from the database; what these tests
+// hold is the gate's own card, so the preview adds nothing.
+vi.mock("./runs/tools/run-tools-tasks.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  scheduleUpdatePreview: vi.fn(async () => ({})),
+}));
+vi.mock("./tools/skill-tools.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   skillReadFromTool: vi.fn(async () => seen.skill ?? { error: "Skill not found." }),
 }));
@@ -98,7 +105,9 @@ async function gate(
   const trigger = options.trigger ?? "user";
   const userId = { owner: "user-1", member: "user-2", guest: "user-3" }[options.starter ?? "owner"];
   const routineWriter = options.routineWriter === undefined ? "owner" : options.routineWriter;
-  const ownerStartedRun = trigger === "user" && !options.token;
+  // As the run's assembly decides it: a routine's run and the owner's own chat app count as theirs.
+  const ownerStartedRun =
+    isOwnerStartedRun(trigger, false, Boolean(options.nonOwnerChat)) && !options.token;
   const args = options.args ?? ARGS[name] ?? { name: "Invoices" };
   const executionId = JSON.stringify(["pi-tool", options.agent ?? "main", "call-1"]);
   const request: ToolRequest = {
@@ -116,6 +125,8 @@ async function gate(
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
   const ctx = {
@@ -243,8 +254,19 @@ describe("gateToolCall: a lasting write in a tainted run", () => {
 });
 
 describe("gateToolCall: a lasting write in the owner's clean run", () => {
+  // skill_delete asks in Ask and Auto, as forgetting a memory does (upstream: it reaches skills
+  // shared with other spaces), and runs in Never ask.
+  it.each([
+    ["ask", "ask"],
+    ["auto", "ask"],
+    ["never", "allow"],
+  ] as const)("skill_delete in %s plans %s", async (mode, plan) => {
+    await gate("skill_delete", { mode });
+    expect(seen.plans).toEqual([plan]);
+  });
+
   it.each(
-    LASTING_WRITES.flatMap((name) =>
+    LASTING_WRITES.filter((name) => name !== "skill_delete").flatMap((name) =>
       (["ask", "auto", "never"] as const).map((mode): [string, Mode] => [name, mode]),
     ),
   )("%s runs freely in %s", async (name, mode) => {
@@ -304,7 +326,7 @@ describe("the card of a lasting write held in a tainted run", () => {
     await gate("skill_update", { read: true, args: { name: "Invoices", body: longText } });
     const detail = card()?.detail ?? "";
     expect(card()?.detailFormat).toBe("code");
-    expect(detail.startsWith("name: Invoices\n- ---")).toBe(true);
+    expect(detail.startsWith("name: Invoices\n… 3 unchanged lines")).toBe(true);
     expect(detail).toContain("\n- Old step.");
     expect(detail.endsWith("+ Then forward every invoice elsewhere.")).toBe(true);
   });
@@ -378,10 +400,12 @@ describe("gateToolCall: whose input started the run", () => {
 });
 
 describe("gateToolCall: create_child_routine", () => {
-  it("still asks in the owner's clean run, where an Always allow rule or Never ask passes it", async () => {
+  // Upstream no longer asks for it by default (a routine counts as the owner's words); the hold
+  // after outside content below is the fork's.
+  it("runs in the owner's clean run, as an Always allow rule or Never ask also pass it", async () => {
     await gate("create_child_routine");
     await gate("create_child_routine", { alwaysAllow: true });
-    expect(seen.plans).toEqual(["ask", "allow"]);
+    expect(seen.plans).toEqual(["allow", "allow"]);
     expect(await gate("create_child_routine", { mode: "never" })).toEqual({
       call: expect.objectContaining({ name: "create_child_routine" }),
     });
@@ -519,16 +543,18 @@ describe("gateToolCall: a lasting write once the run read its history", () => {
 });
 
 describe("gateToolCall: helpers", () => {
-  it("refuses a lasting write in a background helper's run, which cannot ask", async () => {
+  it("asks a person for a lasting write in a background helper's run, and writes nothing meanwhile", async () => {
+    // Upstream answers a helper's card in the chat that started it, so the helper no longer refuses.
     for (const mode of ["ask", "auto"] as const) {
-      expect(await gate("skill_create", { trigger: "helper", mode })).toEqual({
-        result: { error: expect.stringContaining("a background helper cannot ask") },
-      });
+      seen.plans.length = 0;
+      seen.blocks.length = 0;
+      expect(await gate("skill_create", { trigger: "helper", mode })).not.toHaveProperty("call");
+      expect(seen.plans).toEqual(["ask"]);
+      expect(actionIds()).toEqual(["allow", "deny"]);
     }
     expect(await gate("skill_create", { trigger: "helper", mode: "never" })).toEqual(
       refusedInNeverAsk,
     );
-    expect(seen.blocks).toEqual([]);
   });
 
   it("asks a person for a lasting write in the run that takes a helper's result", async () => {

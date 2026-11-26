@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { waitForModelOAuth } from "./model-auth";
-import { rpc } from "./rpc";
+import { waitForModelOAuth } from "./models/model-auth";
+import { rpc } from "./query/rpc";
 
-vi.mock("./rpc", () => ({
+vi.mock("./query/rpc", () => ({
   rpc: { models: { completeOAuth: vi.fn() } },
 }));
 
@@ -18,7 +18,12 @@ describe("waitForModelOAuth interval", () => {
     try {
       completeOAuth.mockResolvedValueOnce({ status: "pending" });
       completeOAuth.mockResolvedValueOnce({ status: "ready" });
-      const waiting = waitForModelOAuth("login-id", undefined, undefined, 1000);
+      const waiting = waitForModelOAuth(
+        { loginId: "login-id", expiresInSeconds: 600 },
+        undefined,
+        undefined,
+        1000,
+      );
 
       await vi.advanceTimersByTimeAsync(999);
       expect(completeOAuth).toHaveBeenCalledTimes(1);

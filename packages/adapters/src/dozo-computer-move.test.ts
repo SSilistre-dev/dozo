@@ -17,7 +17,7 @@ import path from "node:path";
 import type { AdapterContext, PortableFile, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { teamBrowserProfileName } from "./computer-workspace.js";
+import { teamBrowserProfileName } from "./computers/computer-workspace.js";
 import type { MovingComputer } from "./dozo-computer-move.js";
 import {
   absentPath,
@@ -32,8 +32,8 @@ import {
   switchDueKey,
   switchLeaseKey,
 } from "./dozo-computer-move.js";
-import { LocalAgentHomeStore } from "./home.js";
-import { knownSandboxKinds } from "./sandbox-kind-capabilities.js";
+import { LocalAgentHomeStore } from "./storage/home.js";
+import { knownSandboxKinds } from "./computers/sandbox/sandbox-kind-capabilities.js";
 
 const A = "botalpha";
 const B = "botbeta";

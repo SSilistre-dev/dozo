@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AccessGrantInputSchema } from "./domain.js";
+import { AccessGrantInputSchema } from "./billing/access-grants.js";
 import { Id } from "./ids.js";
 
 /**

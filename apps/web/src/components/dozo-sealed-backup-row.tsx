@@ -5,6 +5,7 @@ import {
   SEALED_MIN_PASSWORD_LENGTH,
   SEALED_OPEN_MIN_PASSWORD_LENGTH,
 } from "@rakazo/core/dozo-sealed-file";
+import { errorText } from "@rakazo/i18n/user-error";
 import {
   Button,
   Dialog,
@@ -18,12 +19,11 @@ import {
 } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
-import { queryClient, useSave } from "../lib/query";
-import { recheckSessionOnUnauthorized } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { queryClient, useSave } from "../lib/query/query";
+import { recheckSessionOnUnauthorized } from "../lib/query/rpc";
+import { useIdentityConfirmation } from "./account/ConfirmIdentityDialog";
 import { SuccessPop } from "./ai/primitives";
-import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
-import { SettingsRow } from "./SettingsRows";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * Settings > Data: the account as one file sealed with a password, and back. The password never

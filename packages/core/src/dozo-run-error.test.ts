@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { normalizeRunError } from "./run-error.js";
+import { normalizeRunError } from "./runs/run-error.js";
 
 // Runs on the branded tree only: the brand rules make a named provider the sentence's subject and
 // know the busy-host message.

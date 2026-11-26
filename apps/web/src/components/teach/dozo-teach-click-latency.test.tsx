@@ -16,7 +16,7 @@ const ROUND_TRIP_MS = 80;
 const HANDLER_MS = 120;
 
 const computerInput = vi.hoisted(() => vi.fn(async (_input: unknown) => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: { computer: { input: computerInput }, dozoTeach: { keys: vi.fn() } },
 }));
 
@@ -86,7 +86,7 @@ it("lands a click on the computer one round trip sooner than a press and a relea
   await act(async () => {
     for (const type of ["down", "up"]) {
       void enqueueTeachComputerInput("bot-1", async () => {
-        await (await import("../../lib/rpc")).rpc.computer.input({
+        await (await import("../../lib/query/rpc")).rpc.computer.input({
           botId: "bot-1",
           kind: "pointer",
           payload: { x: 0, y: 0, button: "left", type },

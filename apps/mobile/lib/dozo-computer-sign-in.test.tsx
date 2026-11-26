@@ -24,10 +24,10 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("expo-router", () => ({ useRouter: () => router }));
-vi.mock("../lib/native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("../lib/app-foreground", () => ({ useAppForeground: () => app.foreground }));
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({}) }));
+vi.mock("./platform/app-foreground", () => ({ useAppForeground: () => app.foreground }));
 vi.mock("../lib/dozo-relay-sign-in", () => ({ askComputerForSignIn: app.ask }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress(): void }) => (
     <button type="button" onClick={onPress}>
       {label}

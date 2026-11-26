@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ devices: vi.fn() }));
 
-vi.mock("../lib/user-devices", () => ({ listUserDevices: api.devices }));
-vi.mock("../lib/rpc", () => ({
+vi.mock("../lib/auth/user-devices", () => ({ listUserDevices: api.devices }));
+vi.mock("../lib/query/rpc", () => ({
   rpc: {},
   rpcForSpace: () => ({}),
   createSpaceRpc: () => ({}),
@@ -46,7 +46,7 @@ vi.mock("@rakazo/ui-web", () => ({
     />
   ),
 }));
-vi.mock("./SettingsRows", () => ({
+vi.mock("./settings/SettingsRows", () => ({
   SettingsGroup: ({ title, children }: { title?: ReactNode; children: ReactNode }) => (
     <section>
       {title}

@@ -6,8 +6,10 @@ import type { ReactNode } from "react";
 import { act, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { isLeavingSession, startCall } from "../../lib/call-session";
-import { rpc } from "../../lib/rpc";
+import { callAutoLanguage } from "../../lib/calls/call-language-preference";
+import type { CallState } from "../../lib/calls/call-session";
+import { getSnapshot, isLeavingSession, startCall } from "../../lib/calls/call-session";
+import { rpc } from "../../lib/query/rpc";
 import { IncomingCall } from "./IncomingCall";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -23,13 +25,14 @@ vi.mock("@rakazo/ui-web", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
+  getSnapshot: vi.fn(() => null),
   isLeavingSession: vi.fn(() => false),
   prepareCallAudio: vi.fn(),
   startCall: vi.fn(),
   useCallSession: () => null,
 }));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     threads: { answerCall: vi.fn(), endCall: vi.fn() },
     notifications: { declineIncomingCall: vi.fn() },
@@ -93,6 +96,7 @@ beforeEach(() => {
   vi.mocked(rpc.notifications.declineIncomingCall).mockReset();
   vi.mocked(rpc.threads.endCall).mockReset();
   vi.mocked(isLeavingSession).mockReturnValue(false);
+  vi.mocked(getSnapshot).mockReturnValue(null);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -231,6 +235,43 @@ it("hangs up an answer that lands after the call view is gone", async () => {
     { context: { spaceId: "space-1" } },
   );
 });
+
+it.each([false, true])(
+  "keeps the chosen language mode when answering (newer call: %s)",
+  async (newerCall) => {
+    const answerResult = deferred<{ opening: string; reason: string }>();
+    vi.mocked(rpc.threads.answerCall).mockReturnValueOnce(answerResult.promise);
+    vi.mocked(rpc.threads.endCall).mockResolvedValue({ ok: true });
+    callAutoLanguage.set(true);
+    try {
+      render([bot("call-1", start + 45_000)]);
+      const answer = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Answer",
+      )!;
+      await act(async () => answer.click());
+      expect(rpc.threads.answerCall).toHaveBeenCalledOnce();
+      expect(startCall).not.toHaveBeenCalled();
+      if (newerCall) vi.mocked(getSnapshot).mockReturnValue({ botId: "other-bot" } as CallState);
+      await act(async () => answerResult.resolve({ opening: "Ready?", reason: "Review" }));
+      if (newerCall) {
+        expect(startCall).not.toHaveBeenCalled();
+        expect(rpc.threads.endCall).toHaveBeenCalledWith(
+          { botId: "bot-1", callId: "call-1" },
+          { context: { spaceId: "space-1" } },
+        );
+        vi.mocked(getSnapshot).mockReturnValue(null);
+        render([bot("call-1", start + 45_000)]);
+        expect(container.querySelector('[data-testid="incoming-call"]')).toBeNull();
+      } else {
+        expect(startCall).toHaveBeenCalledWith(
+          expect.objectContaining({ autoLanguage: true, transcribe: undefined }),
+        );
+      }
+    } finally {
+      callAutoLanguage.set(false);
+    }
+  },
+);
 
 it("sends nothing for an answer that lands while the page reloads for another session", async () => {
   const deliver = deferred<{ opening: string; reason: string }>();

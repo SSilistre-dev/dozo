@@ -1,6 +1,6 @@
 import { isComputerAllowanceUsed, planLimitNotice } from "@rakazo/contracts";
 import { planLimitCopy } from "@rakazo/i18n/run-error";
-import { useBilling } from "../../components/SubscriptionGate";
+import { useBilling } from "../../components/billing/SubscriptionGate";
 
 /**
  * What the computer screen shows for a failure: a start refused for hours reads its sentence and

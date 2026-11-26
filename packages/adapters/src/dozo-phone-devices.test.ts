@@ -8,8 +8,8 @@ import {
 import { offerPhoneTools, phoneRoute } from "./dozo-phone.js";
 import { PHONE_TOOL_NAMES } from "./dozo-phone.tool-definition.js";
 import { UserDevices, userDeviceForwardSecret } from "./dozo-user-device-gateway.js";
-import { withHostComputerScreen } from "./host-computer-device.js";
-import type { RunContext } from "./run-context.js";
+import { withHostComputerScreen } from "./computers/host/host-computer-device.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 type Device = {
   id: string;

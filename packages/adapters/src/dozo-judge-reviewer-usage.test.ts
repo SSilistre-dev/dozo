@@ -1,9 +1,9 @@
 import type { AutoReviewProvider, AutoReviewRequest } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { markReadOutsideContent } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import { markReadOutsideContent } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // A backup approval model's review through the real autoReviewCheckerProvider (connection check,
 // key, usage): only the model call itself is scripted. Runs on the staged tree.
@@ -23,7 +23,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
     seen.usage.push(attribution);
   }),
 }));
-vi.mock("./model-selection.js", async (importOriginal) => ({
+vi.mock("./models/model-selection.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   findConnectedModelCredential: vi.fn(
     async (
@@ -38,11 +38,11 @@ vi.mock("./model-selection.js", async (importOriginal) => ({
     },
   ),
 }));
-vi.mock("./run-model.js", async (importOriginal) => ({
+vi.mock("./runs/turn/run-model.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   resolveModelKey: vi.fn(async () => ({ apiKey: "test-key" })),
 }));
-vi.mock("./auto-review-factory.js", () => ({
+vi.mock("./approvals/auto-review-factory.js", () => ({
   // The model call: it reports usage as a real judge does, then passes.
   createAutoReviewProvider: (
     _kind: string,
@@ -67,7 +67,7 @@ vi.mock("./auto-review-factory.js", () => ({
     },
   }),
 }));
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => ({
     duplicate: false,
@@ -119,6 +119,7 @@ function context(trigger: string) {
     source: { ownerStartedRun: trigger === "user", messagingChannelRun: false },
     tools: { connector: new Map(), connectedPlugins: [] },
     state: {
+      outsideText: "",
       tainted: trigger !== "user",
       earlierAttempt: undefined,
       approval: {},
@@ -133,6 +134,7 @@ function context(trigger: string) {
         backups: [{ provider: "backup", modelId: "backup-1", thinkingLevel: undefined }],
       }),
       loadOwnerWords: async () => "Set up the project",
+      loadEarlierOwnerMessages: async () => [],
       receivedOutsideMessage: async () => false,
       routineNamesNewSite: async () => false,
       loadTrustedSites: async () => new Set<string>(),
@@ -158,6 +160,8 @@ function request(name: string, args: Record<string, unknown>): ToolRequest {
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
 }

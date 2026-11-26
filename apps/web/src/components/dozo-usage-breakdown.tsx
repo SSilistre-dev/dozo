@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { DozoUsageGroup, DozoUsageGrouping, UsageSummary } from "@rakazo/contracts";
+import type { DozoUsageGroup, DozoUsageGrouping } from "@rakazo/contracts";
 import { dozoLocalDay } from "@rakazo/core";
 import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import {
@@ -14,30 +14,28 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import type { RefObject } from "react";
 import { useState } from "react";
-import { downloadArtifactBytes } from "../lib/artifact-open";
 import { toastError } from "../lib/dozo-error-text";
-import { useSpaceQueries } from "../lib/query";
-import { UsageSettingsPanel as UpstreamUsageSettingsPanel } from "../pages/AccountSettingsOverlay";
+import { downloadArtifactBytes } from "../lib/pages/artifact-open";
+import { useSpaceQueries } from "../lib/query/query";
+import { UsageSettingsPanel as UpstreamUsageSettingsPanel } from "../pages/settings/UsageSettingsPanel";
 import { IconTooltip } from "./IconTooltip";
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Settings > Usage: upstream's totals, then the caller's spend grouped by model, bot or routine,
- * which replaces upstream's per-model table. The server groups and renders the CSV, from the
- * caller's own records only.
+ * Settings > Usage: upstream's panel, which loads its own totals, then the caller's spend grouped
+ * by model, bot or routine. The server groups and renders the CSV, from the caller's own records
+ * only.
  */
 export function DozoUsageSettingsPanel({
-  usage,
   panelRef,
 }: {
-  usage?: UsageSummary | null;
   panelRef?: RefObject<HTMLDivElement | null>;
 }) {
   return (
     <>
-      <UpstreamUsageSettingsPanel usage={usage && { ...usage, models: [] }} panelRef={panelRef} />
-      {usage?.models?.length ? <DozoUsageBreakdown /> : null}
+      <UpstreamUsageSettingsPanel panelRef={panelRef} />
+      <DozoUsageBreakdown />
     </>
   );
 }

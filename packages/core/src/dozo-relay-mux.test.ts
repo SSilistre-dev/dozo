@@ -11,7 +11,7 @@ import {
   RelayFrameType,
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deferred, flush } from "./async.test-support.js";
+import { deferred, flush } from "./primitives/async.test-support.js";
 import { containsBytes, relayPipe } from "./dozo-relay.test-support.js";
 import {
   acceptHostChannel,

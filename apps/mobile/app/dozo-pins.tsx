@@ -2,11 +2,11 @@ import { useLingui } from "@lingui/react/macro";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SettingsGroup, SettingsRow } from "../components/settings-group";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { pinLabel, useDozoPins } from "../lib/dozo-message-actions";
-import { native, useThemedStyles } from "../lib/native";
-import { useScreenHeader } from "../lib/screen-header";
-import { useSideInsets } from "../lib/side-insets";
+import { native, useThemedStyles } from "../lib/native/native";
+import { useScreenHeader } from "../lib/navigation/screen-header";
+import { useSideInsets } from "../lib/layout/side-insets";
 
 /**
  * The messages the person pinned in one chat, newest first. Choosing one goes back to the chat,

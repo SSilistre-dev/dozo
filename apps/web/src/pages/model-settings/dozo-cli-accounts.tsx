@@ -2,11 +2,11 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoCliTool } from "@rakazo/contracts";
 import { Button, Checkbox, Input } from "@rakazo/ui-web";
 import { useState } from "react";
-import { SettingsRow } from "../../components/SettingsRows";
+import { SettingsRow } from "../../components/settings/SettingsRows";
 import { toastError } from "../../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import type { RpcClient } from "../../lib/rpc";
-import { rpc } from "../../lib/rpc";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { TOOLS_KEY, useCliTools } from "./dozo-cli-providers";
 
 export { dozoCliAccountsChanged, useDozoCliProviders } from "./dozo-cli-providers";
@@ -59,7 +59,7 @@ function LoginSteps({ tool }: { tool: DozoCliTool }) {
       <Input
         aria-label={t`Code`}
         placeholder={t`Code`}
-        className="h-8 w-40"
+        className="w-40"
         value={code}
         onChange={(event) => setCode(event.target.value)}
       />

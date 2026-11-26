@@ -17,14 +17,14 @@ const calls = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   currentApiBase: () => state.base,
   endpointChangeInProgress: () => state.switching,
   savePendingSignOut: calls.pending,
   deliverSignOutRecord: calls.deliver,
 }));
-vi.mock("./api-server", () => ({ clearSpace: async () => state.cleared }));
-vi.mock("./session", () => ({
+vi.mock("./api/api-server", () => ({ clearSpace: async () => state.cleared }));
+vi.mock("./api/session", () => ({
   currentSessionGeneration: () => state.generation,
   saveSessionToken: calls.save,
 }));

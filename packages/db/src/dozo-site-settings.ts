@@ -1,12 +1,12 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { signupPolicyFromEnv, signupsOpen } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import type { PrismaClient } from "./client.js";
-import { resolveMaxComputersPerUser } from "./computers.js";
-import { retryWhileDatabaseUnavailable } from "./database-outage.js";
-import { ChangeLatch } from "./event-stream.js";
-import { runAsSystemInTransaction } from "./row-security.js";
-import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
+import type { PrismaClient } from "./database/client.js";
+import { resolveMaxComputersPerUser } from "./computers/computers.js";
+import { retryWhileDatabaseUnavailable } from "./database/database-outage.js";
+import { ChangeLatch } from "./threads/event-stream.js";
+import { runAsSystemInTransaction } from "./database/row-security.js";
+import { securityEventMetadata, securityRequestCaller } from "./account/security-events.js";
 
 type Read = Pick<PrismaClient, "$queryRaw">;
 type Write = Pick<PrismaClient, "$transaction">;

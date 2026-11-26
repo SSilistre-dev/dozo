@@ -15,11 +15,11 @@ const api = vi.hoisted(() => ({
   mark: vi.fn(),
 }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/auth/auth", () => ({
   authClient: { useSession: () => api.session, sendVerificationEmail: api.send },
 }));
-vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: api.capabilities }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../lib/auth/auth-capabilities", () => ({ fetchAuthCapabilities: api.capabilities }));
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   authErrorText: (error: { code?: string }, fallback: string) =>
     error.code === "TOO_MANY_REQUESTS" ? "Too many attempts" : fallback,
 }));
@@ -40,7 +40,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
 }));
-vi.mock("./Auth", () => ({
+vi.mock("./auth/Auth", () => ({
   submitClass: "submit",
   PasswordResetPage: () => <p>upstream reset form</p>,
   AuthFrame: ({

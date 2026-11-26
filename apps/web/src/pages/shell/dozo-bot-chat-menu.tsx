@@ -13,8 +13,8 @@ import {
 import { Archive, Bell, BellDot, Clock, Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toastError } from "../../lib/dozo-error-text";
-import { useSave } from "../../lib/query";
-import { rpc as selectedSpaceRpc } from "../../lib/rpc";
+import { useSave } from "../../lib/query/query";
+import { rpc as selectedSpaceRpc } from "../../lib/query/rpc";
 import { useListKey } from "./dozo-bot-chats";
 import { DozoChatExportMenu } from "./dozo-chat-export-menu";
 

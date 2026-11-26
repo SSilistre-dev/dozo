@@ -21,23 +21,24 @@ out=$(docker run --rm -v "$VOLUME:/cache:ro" "$IMAGE" sh -c '
   done') || { echo "unit-trees: cannot read volume $VOLUME" >&2; exit 2; }
 # A tree made before the owner note existed is still told apart when its key is that of one of this
 # repository's checkouts (the key is the first 12 hex of the sha256 of the staged tree's path).
-declare -A known=()
+# One "key<TAB>path" line each, not an associative array: macOS ships bash 3.2.
+known=""
 while IFS= read -r wt; do
   [ -n "$wt" ] || continue
   path="$wt/dozo/.stage/src"
-  known[$(printf %s "$path" | sha256sum | cut -c1-12)]="$path"
+  known+="$(printf %s "$path" | sha256sum | cut -c1-12)"$'\t'"$path"$'\n'
 done < <(git -C "$(dirname "${BASH_SOURCE[0]}")" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
 dead=()
 printf '%-14s %8s  %-8s %s\n' key size state owner
 while IFS=$'\t' read -r key kb owner; do
   [ -n "$key" ] || continue
-  [ -n "$owner" ] || owner="${known[$key]:-}"
+  [ -n "$owner" ] || owner="$(printf %s "$known" | awk -F'\t' -v k="$key" '$1 == k { print $2; exit }')"
   if [ -z "$owner" ]; then state=unknown
   elif [ -d "$owner" ]; then state=live
   else state=dead; dead+=("$key"); fi
   printf '%-14s %6s MB  %-8s %s\n' "$key" "$(( kb / 1024 ))" "$state" "${owner:--}"
 done <<< "$out"
-for key in "${dead[@]}"; do
+for key in ${dead[@]+"${dead[@]}"}; do
   echo "remove: docker run --rm -v $VOLUME:/cache $IMAGE rm -rf /cache/trees/$key /cache/trees/$key.owner"
 done
 exit 0

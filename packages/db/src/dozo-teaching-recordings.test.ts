@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type * as JsonColumn from "./json-column.js";
+import type * as JsonColumn from "./database/json-column.js";
 
 const column = vi.hoisted(() => ({ broken: false }));
-vi.mock("./json-column.js", async (importOriginal) => {
+vi.mock("./database/json-column.js", async (importOriginal) => {
   const actual = await importOriginal<typeof JsonColumn>();
   return {
     ...actual,

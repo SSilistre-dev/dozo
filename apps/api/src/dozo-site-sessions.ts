@@ -17,7 +17,7 @@ import {
   releaseComputerControl,
   takeComputerControl,
   waitingTakeoverRun,
-} from "./computer-control.js";
+} from "./computers/computer-control.js";
 import type { RouterContext } from "./routes/context.js";
 import { computerContext } from "./routes/shared.js";
 

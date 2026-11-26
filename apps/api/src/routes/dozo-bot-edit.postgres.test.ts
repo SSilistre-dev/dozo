@@ -17,8 +17,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { handleRpcError } from "../rpc-errors.js";
-import type { WebhookDeps } from "../webhook.js";
-import { mountWebhookHttpRoutes, WEBHOOK_SECRET_KIND } from "../webhook.js";
+import type { WebhookDeps } from "../webhooks/webhook.js";
+import { mountWebhookHttpRoutes, WEBHOOK_SECRET_KIND } from "../webhooks/webhook.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;

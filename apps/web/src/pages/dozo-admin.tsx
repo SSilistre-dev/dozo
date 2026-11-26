@@ -7,8 +7,7 @@ import {
   buttonVariants,
   Input,
   ListSearchInput,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
@@ -18,14 +17,14 @@ import { Suspense, useDeferredValue, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageLoading } from "../components/PageLoading";
+import { WindowChrome } from "../components/WindowChrome";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 import { DozoAdminAccount } from "./dozo-admin-account";
 import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 import { DozoPlanAction } from "./dozo-admin-plan";
 import { Row, Rows } from "./dozo-admin-rows";
 import { NotFoundPage } from "./dozo-not-found";
-import { WindowChrome } from "./WindowChrome";
 
 /**
  * The hosted deployment's admin page, at `/admin` and every address under it that has no route
@@ -283,44 +282,38 @@ function AdminPanel({ ownId }: { ownId: string }) {
           placeholder={t`Search by email`}
         />
         <div className="flex flex-wrap gap-2">
-          <NativeSelect
+          <OptionSelect<ByokTier | "">
             aria-label={t`Plan`}
             value={plan}
-            onChange={(event) => setPlan(event.target.value as ByokTier | "")}
-          >
-            <NativeSelectOption value="">{t`All plans`}</NativeSelectOption>
-            {PLANS.map((tier) => (
-              <NativeSelectOption key={tier} value={tier}>
-                {BYOK_TIERS[tier].name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-          <NativeSelect
+            options={[
+              { value: "", label: t`All plans` },
+              ...PLANS.map((tier) => ({ value: tier, label: BYOK_TIERS[tier].name })),
+            ]}
+            onValueChange={(value) => setPlan(value)}
+          />
+          <OptionSelect<Status | "">
             aria-label={t`Status`}
             value={status}
-            onChange={(event) => setStatus(event.target.value as Status | "")}
-          >
-            <NativeSelectOption value="">{t`Any status`}</NativeSelectOption>
-            <NativeSelectOption value="active">{t`Active`}</NativeSelectOption>
-            <NativeSelectOption value="suspended">{t`Suspended`}</NativeSelectOption>
-          </NativeSelect>
-          <NativeSelect
+            options={[
+              { value: "", label: t`Any status` },
+              { value: "active", label: t`Active` },
+              { value: "suspended", label: t`Suspended` },
+            ]}
+            onValueChange={(value) => setStatus(value)}
+          />
+          <OptionSelect<DozoAdminUsersSort>
             aria-label={t`Sort`}
             value={sort}
-            onChange={(event) => setSort(event.target.value as DozoAdminUsersSort)}
-          >
-            {SORTS.map((value) => (
-              <NativeSelectOption key={value} value={value}>
-                {
-                  {
-                    newest: t`Newest first`,
-                    oldest: t`Oldest first`,
-                    email: t`By email`,
-                  }[value]
-                }
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={SORTS.map((value) => ({
+              value,
+              label: {
+                newest: t`Newest first`,
+                oldest: t`Oldest first`,
+                email: t`By email`,
+              }[value],
+            }))}
+            onValueChange={(value) => setSort(value)}
+          />
         </div>
         <Rows testId="admin-users">
           {list.map((user) => (

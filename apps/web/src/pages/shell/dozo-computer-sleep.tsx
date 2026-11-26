@@ -2,9 +2,9 @@ import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Moon } from "lucide-react";
-import { runsOnUserMachine } from "../../lib/computer-sandbox";
+import { runsOnUserMachine } from "../../lib/computers/computer-sandbox";
 import { toastError } from "../../lib/dozo-error-text";
-import { useSave } from "../../lib/query";
+import { useSave } from "../../lib/query/query";
 
 /**
  * Puts the bot's computer to sleep from its header, so it stops using computer hours now instead of

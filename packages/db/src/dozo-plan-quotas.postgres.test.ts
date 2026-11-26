@@ -1,9 +1,9 @@
 import { BYOK_TIERS } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Prisma, PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import type { Prisma, PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import { changePlanQuota, computerHoursCents, readPlanLimits } from "./dozo-plan-quotas.js";
-import { asSystem, runAsSystemInTransaction } from "./row-security.js";
+import { asSystem, runAsSystemInTransaction } from "./database/row-security.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it.

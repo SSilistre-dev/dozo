@@ -16,11 +16,11 @@ const api = vi.hoisted(() => ({
   copied: false,
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoAccessTokens: { create: api.create, revoke: api.revoke } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoAccessTokens: {
@@ -32,7 +32,7 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("./ConfirmIdentityDialog", () => ({
+vi.mock("./account/ConfirmIdentityDialog", () => ({
   useIdentityConfirmation: () => ({
     withIdentityConfirmation: <T,>(action: () => Promise<T>) => {
       api.confirmed();
@@ -41,7 +41,7 @@ vi.mock("./ConfirmIdentityDialog", () => ({
     identityDialog: null,
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -60,16 +60,39 @@ vi.mock("@rakazo/ui-web", () => ({
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   Input: (props: ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: ({ children, ...props }: ComponentProps<"select">) => (
-    <select {...props}>{children}</select>
+  OptionSelect: ({
+    options,
+    value,
+    onValueChange,
+    size: _size,
+    "data-testid": testId,
+    ...props
+  }: {
+    options: { value: string; label: string; disabled?: boolean }[];
+    value: string | null;
+    onValueChange: (value: string) => void;
+    size?: string;
+    "data-testid"?: string;
+  } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+    <select
+      data-testid={testId}
+      {...props}
+      value={value ?? ""}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   ),
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   toast: { error: api.toastError },
   useCopyText: () => [api.copied, api.copy],
 }));
 
-import type * as Query from "../lib/query";
-import { queryClient } from "../lib/query";
+import type * as Query from "../lib/query/query";
+import { queryClient } from "../lib/query/query";
 import { DozoAccessTokensRow } from "./dozo-access-tokens";
 
 let container: HTMLDivElement;

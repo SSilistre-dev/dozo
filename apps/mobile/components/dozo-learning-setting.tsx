@@ -1,11 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoLearningMode } from "@rakazo/contracts";
 import { Alert } from "react-native";
-import { rpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { errorText } from "../lib/user-error";
-import { MenuPicker } from "./menu-picker";
-import { SettingsGroup } from "./settings-group";
+import { rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
+import { errorText } from "../lib/api/user-error";
+import { MenuPicker } from "./ui/menu-picker";
+import { SettingsGroup } from "./settings/settings-group";
 
 /**
  * Under the bot's memory, for its owner only: how it learns from their chat, the same three modes

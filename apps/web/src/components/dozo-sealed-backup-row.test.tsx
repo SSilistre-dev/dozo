@@ -23,7 +23,7 @@ const api = vi.hoisted(() => ({
   onImported: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { export: { accountToken: api.token } };
   return {
     rpc,
@@ -33,7 +33,7 @@ vi.mock("../lib/rpc", () => {
     recheckSessionOnUnauthorized: api.recheck,
   };
 });
-vi.mock("./ConfirmIdentityDialog", () => ({
+vi.mock("./account/ConfirmIdentityDialog", () => ({
   useIdentityConfirmation: () => ({
     withIdentityConfirmation: <T,>(action: () => Promise<T>) => {
       api.confirmed();
@@ -49,7 +49,7 @@ vi.mock("./dozo-sealed-backup-codec", async (importOriginal) => {
     sealAccountExport: (zip: Blob, password: string) => codec.sealAccountExport(zip, password, KDF),
   };
 });
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -62,7 +62,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("./ai/primitives", () => ({
   SuccessPop: ({ label }: { label: string }) => <span data-testid="success">{label}</span>,
 }));
-vi.mock("./SettingsRows", () => ({
+vi.mock("./settings/SettingsRows", () => ({
   SettingsRow: ({
     label,
     control,

@@ -20,8 +20,8 @@ import {
 } from "@rakazo/ui-web";
 import { ImagePlus, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { downloadArtifactBytes } from "../lib/artifact-open";
-import { desktopBridge } from "../lib/desktop";
+import { downloadArtifactBytes } from "../lib/pages/artifact-open";
+import { desktopBridge } from "../lib/platform/desktop";
 import { errorText } from "../lib/dozo-error-text";
 import type { FeedbackImage } from "../lib/dozo-feedback-images";
 import {
@@ -29,7 +29,7 @@ import {
   FEEDBACK_IMAGE_ACCEPT,
   feedbackImageBytes,
 } from "../lib/dozo-feedback-images";
-import { useSave } from "../lib/query";
+import { useSave } from "../lib/query/query";
 import { useFeedbackStatus } from "./dozo-feedback";
 
 /** What the app says about itself: surface, browser, language and time zone, nothing else. */

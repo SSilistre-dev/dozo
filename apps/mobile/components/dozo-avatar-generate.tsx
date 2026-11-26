@@ -2,13 +2,13 @@ import { useLingui } from "@lingui/react/macro";
 import { DOZO_AVATAR_PROMPT_MAX_CHARS } from "@rakazo/contracts";
 import { useState } from "react";
 import { Text, View } from "react-native";
-import { useMobileTokens } from "../lib/native";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { errorText } from "../lib/user-error";
-import { BotAvatar } from "./bot-avatar";
-import { GrowingTextInput } from "./growing-text-input";
-import { NativeActionButton } from "./native-action-button";
+import { useMobileTokens } from "../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
+import { errorText } from "../lib/api/user-error";
+import { BotAvatar } from "./bots/bot-avatar";
+import { GrowingTextInput } from "./ui/growing-text-input";
+import { NativeActionButton } from "./native/native-action-button";
 
 /**
  * Draws a bot's avatar from a few words, in the avatar sheet: description, Generate, then the

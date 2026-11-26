@@ -17,7 +17,7 @@ import {
   runAsSystem,
   tierInForce,
 } from "@rakazo/db";
-import { requireAdmin } from "./admins.js";
+import { requireAdmin } from "./auth/admins.js";
 import type { RouterContext } from "./routes/context.js";
 
 export const DOZO_ADMIN_RECENT_PAYMENTS = 20;

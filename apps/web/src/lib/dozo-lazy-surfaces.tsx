@@ -1,23 +1,28 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../components/ErrorBoundary";
-import type {
-  DozoOrganizationLibrarySwitch as LoadedDozoOrganizationLibrarySwitch,
-} from "../pages/dozo-organization-library-switch";
+import type { SkillDraftCard as LoadedSkillDraftCard } from "../components/teach/dozo-skill-draft-card";
+import type { TeachCaptureOverlay as LoadedTeachCaptureOverlay } from "../components/teach/dozo-teach-capture-overlay";
+import type { DozoOrganizationLibrarySwitch as LoadedDozoOrganizationLibrarySwitch } from "../pages/dozo-organization-library-switch";
 import type { DozoAvatarGeneratePanel as LoadedDozoAvatarGeneratePanel } from "../pages/shell/dozo-avatar-generate-panel";
 import type { DozoBotBackups as LoadedDozoBotBackups } from "../pages/shell/dozo-bot-backups";
 import type { DozoBotSkillsSection as LoadedDozoBotSkillsSection } from "../pages/shell/dozo-bot-skills-section";
+import type {
+  DozoPinMenuItem as LoadedDozoPinMenuItem,
+  DozoPinnedMessages as LoadedDozoPinnedMessages,
+} from "../pages/shell/dozo-message-pins";
 import type { OwnComputerRow as LoadedOwnComputerRow } from "../pages/shell/dozo-own-computer-row";
 import type { SiteSessionsControl as LoadedSiteSessionsControl } from "../pages/shell/dozo-site-sessions";
-import { lazyComponent } from "./preload-recovery";
+import { lazyComponent } from "./platform/preload-recovery";
 
 // The fork's screens that are not needed to draw the first page: each loads when it is first shown,
 // so the code the app starts with stays under its budget (scripts/checks/bundle-size.budgets.json).
 // Anchored rules in dozo/brand/brand.json import these names where upstream's screens place them.
 // Each one sits inside something the person opens (the bot panel, the computer window, the model
-// settings, the avatar studio); a screen
-// in the thread itself, or one the first page reads helpers from, stays a plain import. Nothing
-// shows while the code is on its way; `preloadDozoSurfaces` fetches them once the app is idle, so
+// settings, the avatar studio), or shows only when the server or a recording asks for it (a draft
+// card, the capture overlay, the lines under the page, the pins). What the first page draws, and
+// the small helpers it reads from these screens (`dozo-stream-changed.ts`), stay plain imports.
+// Nothing shows while the code is on its way; `preloadDozoSurfaces` fetches them once the app is idle, so
 // opening the panel right after the page has drawn is the only time anything moves. A chunk that
 // cannot load leaves the panel's own "Could not load" line in its place, never the app.
 
@@ -28,6 +33,10 @@ const loadSkillsSection = () => import("../pages/shell/dozo-bot-skills-section")
 const loadOwnComputerRow = () => import("../pages/shell/dozo-own-computer-row");
 const loadOrganizationLibrary = () => import("../pages/dozo-organization-library-switch");
 const loadBotBackups = () => import("../pages/shell/dozo-bot-backups");
+const loadSkillDraftCard = () => import("../components/teach/dozo-skill-draft-card");
+const loadTeachCaptureOverlay = () => import("../components/teach/dozo-teach-capture-overlay");
+const loadAnnouncementLines = () => import("../components/dozo-announcement-lines");
+const loadMessagePins = () => import("../pages/shell/dozo-message-pins");
 
 const LazyDozoAvatarGeneratePanel = lazyComponent(() =>
   loadAvatarPanel().then((module) => module.DozoAvatarGeneratePanel),
@@ -46,6 +55,22 @@ const LazyOwnComputerRow = lazyComponent(() =>
 );
 const LazyDozoBotBackups = lazyComponent(() =>
   loadBotBackups().then((module) => module.DozoBotBackups),
+);
+
+const LazySkillDraftCard = lazyComponent(() =>
+  loadSkillDraftCard().then((module) => module.SkillDraftCard),
+);
+const LazyTeachCaptureOverlay = lazyComponent(() =>
+  loadTeachCaptureOverlay().then((module) => module.TeachCaptureOverlay),
+);
+const LazyAnnouncementLines = lazyComponent(() =>
+  loadAnnouncementLines().then((module) => module.DozoAnnouncementLines),
+);
+const LazyPinMenuItem = lazyComponent(() =>
+  loadMessagePins().then((module) => module.DozoPinMenuItem),
+);
+const LazyPinnedMessages = lazyComponent(() =>
+  loadMessagePins().then((module) => module.DozoPinnedMessages),
 );
 
 const LazyOrganizationLibrarySwitch = lazyComponent(() =>
@@ -68,6 +93,10 @@ export function preloadDozoSurfaces() {
     loadOwnComputerRow(),
     loadOrganizationLibrary(),
     loadBotBackups(),
+    loadSkillDraftCard(),
+    loadTeachCaptureOverlay(),
+    loadAnnouncementLines(),
+    loadMessagePins(),
   ]);
 }
 
@@ -169,6 +198,52 @@ export function DozoBotBackups(props: ComponentProps<typeof LoadedDozoBotBackups
   return (
     <Held failed={null}>
       <LazyDozoBotBackups {...props} />
+    </Held>
+  );
+}
+
+/** A taught skill's draft in the thread; the thread draws without it until a draft appears. */
+export function SkillDraftCard(props: ComponentProps<typeof LoadedSkillDraftCard>) {
+  return (
+    <Held>
+      <LazySkillDraftCard {...props} />
+    </Held>
+  );
+}
+
+/** Mounted only while a skill is being recorded, which is the only time it has anything to do. */
+export function TeachCaptureOverlay(props: ComponentProps<typeof LoadedTeachCaptureOverlay>) {
+  if (!props.enabled) return null;
+  return (
+    <Held>
+      <LazyTeachCaptureOverlay {...props} />
+    </Held>
+  );
+}
+
+/** The failed-payment, verify-address and announcement lines; none shows while they load or fail. */
+export function DozoAnnouncementLines() {
+  return (
+    <Held failed={null}>
+      <LazyAnnouncementLines />
+    </Held>
+  );
+}
+
+/** Pin or Unpin in a message's More menu; the item joins the menu once its code is there. */
+export function DozoPinMenuItem(props: ComponentProps<typeof LoadedDozoPinMenuItem>) {
+  return (
+    <Held failed={null}>
+      <LazyPinMenuItem {...props} />
+    </Held>
+  );
+}
+
+/** The chat header's pin, drawn only while the chat has pinned messages. */
+export function DozoPinnedMessages(props: ComponentProps<typeof LoadedDozoPinnedMessages>) {
+  return (
+    <Held failed={null}>
+      <LazyPinnedMessages {...props} />
     </Held>
   );
 }

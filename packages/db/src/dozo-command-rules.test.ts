@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Prisma } from "./client.js";
+import type { Prisma } from "./database/client.js";
 import {
   dozoCommandComputer,
   dozoSpaceHasComputer,

@@ -11,7 +11,7 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { requireAdmin } from "./admins.js";
+import { requireAdmin } from "./auth/admins.js";
 import { readBillingSummary } from "./dozo-admin-billing.js";
 import { withComputerSpecs } from "./dozo-computer-size.js";
 import type { RouterContext } from "./routes/context.js";

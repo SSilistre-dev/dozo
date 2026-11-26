@@ -1,12 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
-import { formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
+import { errorCode, formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
+import { errorText } from "@rakazo/i18n/user-error";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorCode, errorText } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { BuiCard } from "../ai/primitives";
 import { DeleteSkill } from "./dozo-delete-skill";
 import type { TeachValueChoice } from "./dozo-teach-value-row";
@@ -175,7 +176,7 @@ export function SkillDraftCard({
   });
 
   // The write already succeeded, so a failed thread refresh is not reported as its failure.
-  const refresh = () => onRefresh().catch(() => undefined);
+  const refresh = () => bestEffort("refresh the thread after saving a skill", onRefresh());
 
   const save = useSave({
     save: (input: Sent, rpc) => rpc.dozoTeach.save(draft(input)),
@@ -336,10 +337,10 @@ export function SkillDraftCard({
                   />
                   <Button
                     variant="secondary"
-                    size="icon-sm"
+                    size="icon-xs"
                     aria-label={t`Remove ${label}`}
                     disabled={busy}
-                    className="absolute -top-2 -right-2 size-6 rounded-full border border-border"
+                    className="absolute -top-2 -right-2 rounded-full border border-border"
                     onClick={() => removeTarget.run(target.id)}
                   >
                     <XIcon className="size-3" />
@@ -350,7 +351,8 @@ export function SkillDraftCard({
                       disabled={busy}
                       value={labels[target.id] ?? ""}
                       maxLength={LABEL_MAX}
-                      className="h-7 text-body-sm"
+                      size="sm"
+                      className="text-body-sm"
                       onChange={(event) =>
                         setLabels((current) => ({
                           ...current,

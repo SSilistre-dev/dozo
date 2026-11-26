@@ -21,7 +21,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: vi.fn(async () => {}),
 }));
 // Recording the effect is where an allowed or asked call goes on; the test stops there.
-vi.mock("./run-effects.js", async (importOriginal) => ({
+vi.mock("./runs/lifecycle/run-effects.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEffect: vi.fn(async () => {
     throw new Error("recorded");
@@ -45,13 +45,13 @@ import {
   phoneRemindersReadTool,
 } from "./dozo-phone.tool-definition.js";
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
-import { toAgentTool } from "./pi-runtime-tools.js";
-import type { RunContext } from "./run-context.js";
-import { gateToolCall } from "./run-tool-gate.js";
-import type { ToolRequest } from "./run-tool-request.js";
-import { prepareToolRequest } from "./run-tool-request.js";
-import { READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
-import { userComputerOwner } from "./run-tools-user-computer.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { gateToolCall } from "./runs/tools/run-tool-gate.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
+import { prepareToolRequest } from "./runs/tools/run-tool-request.js";
+import { READ_ONLY_AGENT_TOOLS } from "./runs/tools/run-tool-selection.js";
+import { userComputerOwner } from "./runs/tools/run-tools-user-computer.js";
+import { toAgentTool } from "./runtime/pi/tools/pi-runtime-tools.js";
 
 const RANGE = { from: "2026-11-22T00:00:00+03:00", to: "2026-11-29T00:00:00+03:00" };
 const SOON = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
@@ -184,6 +184,8 @@ function gate(
     heldForApproval: false,
     purchase: undefined,
     cardUse: undefined,
+    settingsChange: false,
+    ignoresAllowRules: false,
     loginUse: undefined,
   };
   return gateToolCall(ctx, request, undefined).then(
@@ -243,7 +245,13 @@ describe("the phone's approval", () => {
 
   it("refuses a block, a token's run and a run that is not the owner's, even once allowed", async () => {
     expect(
-      await userComputerGate(context({ consent: true }).ctx, true, PHONE_CALENDAR_READ_TOOL, {}),
+      await userComputerGate(
+        context({ consent: true }).ctx,
+        true,
+        PHONE_CALENDAR_READ_TOOL,
+        {},
+        "never",
+      ),
     ).toBe("deny");
     const token = context({ consent: true, token: true });
     expect(await gate(token.ctx)).not.toBe("recorded");
@@ -316,9 +324,9 @@ describe("contacts and location through the gate", () => {
       "recorded",
     );
     expect(plans).toEqual(["deny", "deny"]);
-    expect(await userComputerGate(context({ consent: true }).ctx, true, name, { ...args })).toBe(
-      "deny",
-    );
+    expect(
+      await userComputerGate(context({ consent: true }).ctx, true, name, { ...args }, "never"),
+    ).toBe("deny");
   });
 
   it("asks for a precise location every time, in Never ask too", async () => {
@@ -417,6 +425,7 @@ describe("who a run reaches the phone for", () => {
       messagingChannelRun: input.channel,
       runUserId: input.runUser,
       botUserId: owner,
+      ownerComputerRoutine: false,
     });
     const allowed = label.startsWith("the owner") || label.startsWith("a follow-up");
     expect(reached).toBe(allowed ? owner : undefined);
@@ -463,9 +472,9 @@ describe("writes to the phone through the gate", () => {
       "recorded",
     );
     expect(plans).toEqual(["deny", "deny"]);
-    expect(await userComputerGate(context({ card: true }).ctx, true, name, { ...args })).toBe(
-      "deny",
-    );
+    expect(
+      await userComputerGate(context({ card: true }).ctx, true, name, { ...args }, "never"),
+    ).toBe("deny");
   });
 
   it("reminders asks a bot's first read and allows it once allowed, in every mode", async () => {

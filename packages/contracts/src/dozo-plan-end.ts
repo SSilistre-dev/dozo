@@ -1,4 +1,4 @@
-import type { BillingStatus } from "./billing.js";
+import type { BillingStatus } from "./billing/billing.js";
 
 /**
  * When the plan in force ends, or renews when it goes on, as the billing status carries it. A

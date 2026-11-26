@@ -10,7 +10,7 @@ import {
   dozoLearningLine,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
-import { ClientError, retry } from "@rakazo/core";
+import { byteLength, ClientError, retry } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
@@ -32,8 +32,7 @@ import {
   saveLearningChanges,
   settleLearningWrite,
 } from "./dozo-learning-store.js";
-import { editMemory } from "./memory-tools.js";
-import { byteLength } from "./utf8.js";
+import { editMemory } from "./memory/memory-tools.js";
 
 // What a review's answer may change in the bot's notes, how a change and its undo are written
 // so the notes and the list of changes never disagree, and the owner's own edits.
@@ -206,7 +205,7 @@ export function applyLearningOps(
   for (const op of adds) {
     if (turnedDown(op.text)) continue;
     const current = joinLines(lines);
-    const edit = editMemory(current, op.text, "", maxBytes);
+    const edit = editMemory(current, [{ action: "add", content: op.text }], maxBytes);
     if ("error" in edit || edit.content === current) continue;
     lines = linesOf(edit.content);
     applied.push({ kind: "add", before: null, after: op.text });

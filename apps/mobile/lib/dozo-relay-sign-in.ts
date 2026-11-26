@@ -5,15 +5,15 @@ import {
   RelaySessionSchema,
 } from "@rakazo/contracts";
 import { Platform } from "react-native";
-import type { PendingSignOut } from "./api";
+import type { PendingSignOut } from "./api/api";
 import {
   currentApiBase,
   deliverSignOutRecord,
   endpointChangeInProgress,
   savePendingSignOut,
-} from "./api";
-import { clearSpace } from "./api-server";
-import { currentSessionGeneration, saveSessionToken } from "./session";
+} from "./api/api";
+import { clearSpace } from "./api/api-server";
+import { currentSessionGeneration, saveSessionToken } from "./api/session";
 
 /**
  * A paired phone's sign-in, asked of the computer it is paired with

@@ -1,7 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { ComputerLimitError, ensureComputerRecord } from "./computers.js";
+import type { PrismaClient } from "./database/client.js";
+import { ComputerLimitError, ensureComputerRecord } from "./computers/computers.js";
 import {
   changeSiteSettings,
   DOZO_SITE_SETTINGS_UNSET,

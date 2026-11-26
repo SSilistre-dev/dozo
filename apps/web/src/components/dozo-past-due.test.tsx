@@ -11,8 +11,8 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("./SubscriptionGate", () => ({ useBilling: () => ({ status: api.status }) }));
-vi.mock("../lib/rpc", () => ({ rpc: { billing: { portal: api.portal } } }));
+vi.mock("./billing/SubscriptionGate", () => ({ useBilling: () => ({ status: api.status }) }));
+vi.mock("../lib/query/rpc", () => ({ rpc: { billing: { portal: api.portal } } }));
 vi.mock("../lib/dozo-error-text", () => ({ toastError: api.toastError }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({

@@ -10,11 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ status: vi.fn(), generate: vi.fn() }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoAvatarGenerate: { generate: api.generate } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoAvatarGenerate: {
@@ -31,7 +31,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../lib/query/query";
 import { DozoAvatarGenerateTab } from "./dozo-avatar-generate";
 import { DozoAvatarGeneratePanel } from "./dozo-avatar-generate-panel";
 

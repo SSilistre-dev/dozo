@@ -1,7 +1,7 @@
 import type { ComputerObservation } from "@rakazo/adapter-kit";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
-import { emptyRecording, recordTeachingInputEvent } from "./teaching-session.js";
+import { emptyRecording, recordTeachingInputEvent } from "./bots/teaching-session.js";
 
 // Runs on the branded tree, where the fork's hooks sit in `recordTeachingInputEvent`: what the
 // screen showed just before a click lands is kept with the recording, and never stands in its way.
@@ -59,6 +59,9 @@ function setup(observe: () => Promise<ComputerObservation>) {
     prisma: {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
       taughtSkill: { findFirst: vi.fn(async () => current) },
+      bot: tx.bot,
+      // The computer's size, which the plan caps: no organization, so the smallest.
+      computer: { findUnique: vi.fn(async () => ({ size: "standard", space: { organization: null } })) },
     },
     sandbox: {
       observe: vi.fn(async () => {

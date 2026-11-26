@@ -1,4 +1,5 @@
 import type { DozoClientEvent } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging/best-effort";
 
 type Client = {
   me(): Promise<{ productEvents?: boolean }>;
@@ -20,9 +21,10 @@ export function sendEvent(client: Client, event: DozoClientEvent): void {
       return false;
     },
   );
-  void accepted
-    .then((on) => (on ? client.dozoEvents.track(event) : undefined))
-    .catch(() => undefined);
+  void bestEffort(
+    "send a product event",
+    accepted.then((on) => (on ? client.dozoEvents.track(event) : undefined)),
+  );
 }
 
 /** Asks the server again on the next event; for tests. */

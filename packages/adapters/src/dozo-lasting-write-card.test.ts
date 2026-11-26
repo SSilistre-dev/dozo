@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lastingWriteCard } from "./dozo-lasting-write-card.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolRequest } from "./run-tool-request.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolRequest } from "./runs/tools/run-tool-request.js";
 
 // Reads the branded approvalDetailLength (dozo/brand/brand.json). Runs on the staged tree.
 
 const current = vi.hoisted(() => ({ skill: undefined as Record<string, unknown> | undefined }));
-vi.mock("./skill-tools.js", async (importOriginal) => ({
+vi.mock("./tools/skill-tools.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   skillReadFromTool: vi.fn(async () => current.skill ?? { error: "Skill not found." }),
 }));
@@ -86,13 +86,15 @@ describe("lastingWriteCard", () => {
     const shown = await detail("skill_update", { name: "Invoices", content });
     expect(shown).toContain("\n- Old step.");
     expect(shown).toContain("\n+ New step.");
-    expect(shown?.startsWith("name: Invoices\n- ---")).toBe(true);
+    // The diff leaves the unchanged frontmatter out, and removes none of it.
+    expect(shown?.startsWith("name: Invoices\n… 3 unchanged lines")).toBe(true);
   });
 
   it("keeps the current description and name when the update leaves them out", async () => {
     const shown = await detail("skill_update", { skillId: "skill-1", body: "New step." });
-    expect(shown).toContain("+ description: Forward invoices");
-    expect(shown).toContain("+ name: Invoices");
+    // Left out, the description and name stay as they are: the diff removes neither.
+    expect(shown).toContain("\n+ New step.");
+    expect(shown).not.toMatch(/\n- (?:description|name):/);
   });
 
   it("shows the arguments in full when the update would be refused", async () => {

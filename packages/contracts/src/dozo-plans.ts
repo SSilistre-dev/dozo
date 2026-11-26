@@ -1,4 +1,4 @@
-import type { ByokTier, ByokTierTerms } from "./billing.js";
+import type { ByokTier, ByokTierTerms } from "./billing/billing.js";
 
 /**
  * Dozo's plans, laid over upstream's own-model tiers. Tier ids and price lookup keys stay

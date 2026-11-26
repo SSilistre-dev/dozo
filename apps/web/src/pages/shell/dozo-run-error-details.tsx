@@ -3,8 +3,8 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, planHasNoComputer, planLimitOf } from "@rakazo/contracts";
 import { QueryClientContext, useQuery } from "@tanstack/react-query";
 import { useContext } from "react";
-import { useBilling } from "../../components/SubscriptionGate";
-import { useSpaceQueries } from "../../lib/query";
+import { useBilling } from "../../components/billing/SubscriptionGate";
+import { useSpaceQueries } from "../../lib/query/query";
 
 /**
  * The raw failure under a run error, for the deployment's admins only. Everyone else has the

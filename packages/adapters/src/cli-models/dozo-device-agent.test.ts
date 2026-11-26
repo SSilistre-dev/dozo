@@ -9,9 +9,9 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connectionOutReason, poolResetAt } from "../dozo-model-pool.js";
-import type { HostComputerRequest } from "../host-computer-protocol.js";
-import { restoreTurnCheckpoint } from "../turn-checkpoint.js";
-import { UserDeviceOfflineError } from "../user-device-gateway.js";
+import type { HostComputerRequest } from "../computers/host/host-computer-protocol.js";
+import { restoreTurnCheckpoint } from "../runs/turn/turn-checkpoint.js";
+import { UserDeviceOfflineError } from "../computers/host/user-device-gateway.js";
 import {
   AGENT_BRIDGE_PAUSED,
   AGENT_INTERRUPTED_ERROR,

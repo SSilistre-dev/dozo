@@ -10,10 +10,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { Alert } from "react-native";
 import { blockPerson } from "./dozo-blocked-people";
-import type { MobileMessage } from "./mobile-types";
-import { queryClient, rpcQuery, useSave } from "./query";
-import { useRosterSignals } from "./roster-signals";
-import { errorText } from "./user-error";
+import type { MobileMessage } from "./api/mobile-types";
+import { queryClient, rpcQuery, useSave } from "./query/query";
+import { useRosterSignals } from "./api/roster-signals";
+import { errorText } from "./api/user-error";
 
 /**
  * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the messages Edit

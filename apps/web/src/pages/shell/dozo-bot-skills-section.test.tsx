@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
   stop: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const client = {
     me: api.me,
     skills: { list: api.list, start: api.start, stop: api.stop },
@@ -32,10 +32,10 @@ vi.mock("../../lib/rpc", () => {
     selectedSpaceId: () => null,
   };
 });
-vi.mock("../../components/SubscriptionGate", () => ({
+vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: api.billing }),
 }));
-vi.mock("./computer-panel", () => ({ ComputerPanel: () => null }));
+vi.mock("./computers/computer-panel", () => ({ ComputerPanel: () => null }));
 // Their own tests cover them; here only where they sit.
 vi.mock("../../components/teach/dozo-delete-skill", () => ({
   DeleteSkill: ({ skillId }: { skillId: string }) => (
@@ -47,7 +47,7 @@ vi.mock("./dozo-saved-values-review", () => ({
     <span data-testid="review" data-skill={skill.id} />
   ),
 }));
-vi.mock("./bot-settings-sections", () => ({
+vi.mock("./bots/bot-settings-sections", () => ({
   PanelSection: ({
     label,
     action,
@@ -145,7 +145,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import { ComputerPanel } from "./computer-panel";
+import { ComputerPanel } from "./computers/computer-panel";
 import { DozoBotSkillsSection } from "./dozo-bot-skills-section";
 
 const bot = { id: "bot-1", name: "Ada" } as Bot;
@@ -270,9 +270,7 @@ it("shows a recording in progress from the list, and its teacher can stop it", a
   await vi.waitFor(() => expect(row()?.textContent).toContain("Recording: goal s4"));
   api.list.mockResolvedValue([skill("s4", "draft", "")]);
   await click(byText("Stop teaching"));
-  await vi.waitFor(() =>
-    expect(api.stop).toHaveBeenCalledWith({ skillId: "s4" }),
-  );
+  await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith({ skillId: "s4" }));
   await vi.waitFor(() => expect(row()).toBeNull());
 });
 
@@ -440,12 +438,20 @@ it("gets the computer section as the shell builds it: a ComputerPanel that opens
   // passes it would hide the section without an error. The tree under test is the branded one.
   const read = (file: string) => readFileSync(join(import.meta.dirname, file), "utf8");
   const shell = read("../Shell.tsx");
-  expect(shell).toContain('import { ComputerPanel } from "./shell/computer-panel";');
+  expect(shell).toContain('import { ComputerPanel } from "./shell/computers/computer-panel";');
   const built = shell.slice(shell.indexOf("computerPanel={"));
   expect(built).toMatch(/^computerPanel=\{\s*active \? \(\s*<ComputerPanel\b/);
-  expect(built.slice(0, built.indexOf(") : null"))).toMatch(/\n\s*onOpen=\{/);
+  // The shell spreads the controls' panel props, which carry `onOpen`.
+  expect(built.slice(0, built.indexOf(") : null"))).toContain(
+    "{...computerControls.panelProps(active)}",
+  );
+  expect(read("computers/use-computer-controls.tsx")).toMatch(
+    /function panelProps\(bot: Bot\) \{[\s\S]*?\n\s*onOpen: /,
+  );
   const side = read("side-panel.tsx");
   const settings = side.slice(side.indexOf("<BotSettings"));
   expect(settings.slice(0, settings.indexOf("routines="))).toContain("computer={computerPanel}");
-  expect(read("bot-panel.tsx")).toContain("<DozoBotSkillsSection bot={bot} computer={computer} />");
+  expect(read("bots/bot-panel.tsx")).toContain(
+    "<DozoBotSkillsSection bot={bot} computer={computer} />",
+  );
 });

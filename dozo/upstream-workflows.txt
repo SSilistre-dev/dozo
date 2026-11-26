@@ -4,16 +4,21 @@
 # must be, and added.
 ci.yml
 computer-replay.yml
+dependency-security.yml
 desktop-macos-screenshot.yml
+exploratory-qa.yml
 issue-triage.yml
 mobile-android-screenshots.yml
+mobile-ios-simulator.yml
 model-catalog-bump.yml
 nightly-verification.yml
 playwright.yml
+pr-screenshots-manual.yml
 pr-screenshots.yml
 preview-build.yml
 preview-cleanup.yml
 preview-deploy.yml
+publish-playwright-history.yml
 publish-playwright-report.yml
 publish-server-image.yml
 release-android-apk.yml
@@ -21,7 +26,8 @@ release-desktop.yml
 release-google-play.yml
 release-mobile.yml
 review-bot.yml
+security.yml
+test-suites.yml
 topology-verification.yml
 translation-catalogs.yml
 weekly-dependencies.yml
-www-indexnow.yml

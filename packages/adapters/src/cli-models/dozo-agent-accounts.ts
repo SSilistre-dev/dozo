@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { defaultCatalogModelId } from "../model-selection.js";
+import { defaultCatalogModelId } from "../models/model-selection.js";
 import type { AgentDriver } from "./dozo-agent.js";
 import { AGENT_OWN_MODEL, agentDataFolder, enabledAgentProviders } from "./dozo-agent.js";
 import { agentModeConnections } from "./dozo-agent-modes.js";

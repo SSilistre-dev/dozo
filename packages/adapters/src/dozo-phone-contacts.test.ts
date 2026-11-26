@@ -30,7 +30,7 @@ import {
   PHONE_CONTACTS_SEARCH_TOOL,
 } from "./dozo-phone.tool-definition.js";
 import { phoneContactsQuery, phoneContactsValue } from "./dozo-phone-protocol.js";
-import { USER_DEVICE_OFFLINE_MESSAGE } from "./user-device-gateway.js";
+import { USER_DEVICE_OFFLINE_MESSAGE } from "./computers/host/user-device-gateway.js";
 
 const TOOL = PHONE_CONTACTS_SEARCH_TOOL;
 const NAME = "Ada Example";

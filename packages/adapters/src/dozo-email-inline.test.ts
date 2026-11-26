@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import { describe, expect, it, vi } from "vitest";
-import { ResendEmailProvider } from "./resend-email.js";
-import { SmtpEmailProvider } from "./smtp-email.js";
+import { ResendEmailProvider } from "./providers/email/resend/resend-email.js";
+import { SmtpEmailProvider } from "./providers/email/smtp/smtp-email.js";
 
 // The rules in dozo/brand/brand.json give both email adapters inline images; this runs on the
 // branded tree.

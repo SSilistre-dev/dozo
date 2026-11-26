@@ -1,7 +1,7 @@
 import { takeDozoDailySend } from "@rakazo/db";
-import type { buildApprovalAskBlock } from "./approval-ask.js";
+import type { buildApprovalAskBlock } from "./approvals/approval-ask.js";
 import { dozoPageSubmits } from "./dozo-page-submit-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 /** Built-ins that send something to someone other than the owner. */
 const SENDING_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["send_email", "message_agent"]);

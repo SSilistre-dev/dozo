@@ -1,11 +1,11 @@
-import type { DozoCommandRuleView } from "@rakazo/core";
+import { approvalModeFromPreference, type DozoCommandRuleView } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const upstream = vi.hoisted(() => ({ plan: "allow" as "allow" | "ask" | "deny" }));
 const rules = vi.hoisted(() => ({ read: vi.fn(async (): Promise<DozoCommandRuleView[]> => []) }));
 
-vi.mock("./run-tools-user-computer.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./run-tools-user-computer.js")>()),
+vi.mock("./runs/tools/run-tools-user-computer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./runs/tools/run-tools-user-computer.js")>()),
   userComputerGate: vi.fn(async () => upstream.plan),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
@@ -15,7 +15,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 
 import { dozoCommandBlockRefusal } from "./dozo-command-gate.js";
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 const SHELL = "user_computer_shell";
 const KEY = { userId: "user-1", botId: "bot-1" };
@@ -37,7 +37,8 @@ function context(skipApprovals = false, enabled = false) {
 
 async function gate(command: string, extra: Record<string, unknown> = {}, ctx = context()) {
   const args = { command, ...extra };
-  const plan = await userComputerGate(ctx, false, SHELL, args);
+  const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
+  const plan = await userComputerGate(ctx, false, SHELL, args, mode);
   return { plan, args };
 }
 
@@ -56,9 +57,9 @@ describe("userComputerGate", () => {
     upstream.plan = "deny";
     expect((await gate("ls")).plan).toBe("deny");
     upstream.plan = "allow";
-    expect(await userComputerGate(context(), false, "user_computer_act", { app: "Notes" })).toBe(
-      "allow",
-    );
+    expect(
+      await userComputerGate(context(), false, "user_computer_act", { app: "Notes" }, "never"),
+    ).toBe("allow");
     expect(rules.read).not.toHaveBeenCalled();
     upstream.plan = "ask";
     expect((await gate("rm -rf build")).plan).toBe("ask");

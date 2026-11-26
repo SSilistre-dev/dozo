@@ -5,7 +5,7 @@ import { dozoMessagePinRoutes, listPins, readableThread, setPin } from "./dozo-m
 import type { RouterContext } from "./routes/context.js";
 
 const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn() }));
-vi.mock("./thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
+vi.mock("./threads/thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
 
 const actor: Actor = { userId: "user-me", spaceId: "space-1", email: "me@example.test" } as Actor;
 

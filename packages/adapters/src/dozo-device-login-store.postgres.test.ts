@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deviceLoginOf, unlinkDeviceLogin } from "./dozo-device-login.js";
 import { createDeviceLogin, deleteDeviceLogin } from "./dozo-device-login-store.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "./dozo-user-device-gateway.js";
-import { EncryptedSecretStore } from "./secrets.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 
 // Runs against a migrated database only (dozo/docker/postgres-tests.sh). The fork's unit gate has no
 // database and skips it.

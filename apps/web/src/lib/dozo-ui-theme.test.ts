@@ -8,7 +8,7 @@ const upstream = vi.hoisted(() => ({
   set: vi.fn((preference: string) => (preference === "light" ? "light" : "dark")),
   apply: vi.fn(() => "dark"),
 }));
-vi.mock("./ui-appearance", () => ({
+vi.mock("./preferences/ui-appearance", () => ({
   getUiAppearancePreference: () => "dark",
   setUiAppearance: upstream.set,
   applyUiAppearance: upstream.apply,

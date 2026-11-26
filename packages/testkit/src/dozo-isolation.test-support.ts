@@ -98,6 +98,13 @@ export type PoolKey =
   | "waitingRunId"
   | "waitingMessageId"
   | "attachmentArtifactId"
+  | "invitationId"
+  | "cancelInvitationId"
+  | "meetingId"
+  | "shareMeetingId"
+  | "deleteMeetingId"
+  | "pageGrantId"
+  | "pageCommentId"
   | "filePath";
 
 export interface Target {

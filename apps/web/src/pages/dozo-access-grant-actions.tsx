@@ -20,7 +20,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 
 type Change = { update: { id: string; grant: AccessGrantInput } } | { delete: string };
 

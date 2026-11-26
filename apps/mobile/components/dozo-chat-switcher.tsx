@@ -5,9 +5,9 @@ import type { DozoBotChat } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { dozoChatRoute, useDozoBotChats, useDozoNewChat } from "../lib/dozo-bot-chats";
-import { native, useResolvedAppearance } from "../lib/native";
-import { useInboxBot } from "../lib/search-inbox";
-import { NativeSymbol } from "./native-symbol";
+import { native, useResolvedAppearance } from "../lib/native/native";
+import { useInboxBot } from "../lib/search/search-inbox";
+import { NativeSymbol } from "./native/native-symbol";
 
 const MAIN = "main";
 const NEW_CHAT = "new";

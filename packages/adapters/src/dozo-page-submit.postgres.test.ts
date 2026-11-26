@@ -4,7 +4,7 @@ import { asSystem, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { dozoNotePageSubmits } from "./dozo-page-submit.js";
 import { dozoSendLimitGate } from "./dozo-send-limit.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 
 // Runs on the branded tree only, against a migrated database (dozo/docker/postgres-tests.sh, in UTC and two
 // other database time zones). The fork's unit gate has no database and skips it.

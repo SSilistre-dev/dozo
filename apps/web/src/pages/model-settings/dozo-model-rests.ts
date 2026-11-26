@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNow } from "@rakazo/chat-ui/hooks";
 import { useQuery } from "@tanstack/react-query";
-import { useQueryUserId } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
+import { useQueryUserId } from "../../lib/query/query";
+import { rpc } from "../../lib/query/rpc";
 
 /**
  * Which of the person's models rest now, after their quota ran out or their key was refused

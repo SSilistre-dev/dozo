@@ -1,6 +1,6 @@
 import { BotAvatarValueSchema, parseBotAvatarValue } from "@rakazo/contracts";
 import { darkTokens } from "@rakazo/ui-tokens";
-import { resolvePersonaColorDef } from "./bot-avatar-colors.js";
+import { resolvePersonaColorDef } from "./avatars/bot-avatar-colors.js";
 
 export const DOZO_CHARACTERS = ["sora", "kumo", "hana", "taro", "yuki", "mochi"] as const;
 export type DozoCharacter = (typeof DOZO_CHARACTERS)[number];

@@ -1,6 +1,6 @@
 import type { NoComputerReason } from "./dozo-no-computer.js";
 import { CONNECT_OWN_COMPUTER } from "./dozo-own-computer.prompt.js";
-import type { UserComputerState } from "./run-tools-user-computer.js";
+import type { UserComputerState } from "./runs/tools/run-tools-user-computer.js";
 
 /**
  * In place of the computer guidance when the run has no computer of its own: the plan has no

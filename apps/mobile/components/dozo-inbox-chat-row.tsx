@@ -4,14 +4,14 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { useRouter } from "expo-router";
 import { memo, useContext } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { androidRipple } from "../lib/appearance/ripple";
 import { dozoChatRoute, useDozoChatMenu } from "../lib/dozo-bot-chats";
-import { openChatFromInbox } from "../lib/inbox-changes";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useThemedStyles } from "../lib/native";
-import { androidRipple } from "../lib/ripple";
-import { DragSafePressable } from "./drag-safe-pressable";
-import { COMPACT_INBOX_ROW, createHomeStyles, INBOX_ROW } from "./home-styles";
-import { CompactRowsContext, SelectedChatContext } from "./inbox-rows";
+import { openChatFromInbox } from "../lib/inbox/inbox-changes";
+import { native, useThemedStyles } from "../lib/native/native";
+import { CompactRowsContext, SelectedChatContext } from "./inbox/inbox-rows";
+import { COMPACT_INBOX_ROW, createInboxStyles, INBOX_ROW } from "./inbox/inbox-styles";
+import { DragSafePressable } from "./ui/drag-safe-pressable";
 
 /**
  * One of a bot's extra chats under the bot's row, in line with the bot's name: its name and its own
@@ -28,7 +28,7 @@ export const DozoInboxChatRow = memo(function DozoInboxChatRow({
   const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
-  const home = useThemedStyles(createHomeStyles);
+  const home = useThemedStyles(createInboxStyles);
   const compact = useContext(CompactRowsContext);
   const selected = useContext(SelectedChatContext) === chat.id;
   const menu = useDozoChatMenu(chat.botId);

@@ -1,6 +1,6 @@
 import { ClientError } from "@rakazo/core";
 import { addressFingerprint, recordAdminChange } from "@rakazo/db";
-import { requireAdmin } from "./admins.js";
+import { requireAdmin } from "./auth/admins.js";
 import type { RouterContext } from "./routes/context.js";
 
 /** A grant no account has claimed or received yet. */

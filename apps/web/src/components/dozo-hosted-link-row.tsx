@@ -1,9 +1,9 @@
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
-import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
 import { useHostedStart } from "../pages/dozo-hosted-login";
-import { SettingsRow } from "./SettingsRows";
+import { SettingsRow } from "./settings/SettingsRows";
 
 /**
  * Settings > General > Security on a computer's own server that still has password accounts: links

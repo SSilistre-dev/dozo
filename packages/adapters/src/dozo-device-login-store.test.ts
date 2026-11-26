@@ -1,9 +1,10 @@
+import { VAULT_ITEM_LIMIT } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { fakeDatabase } from "./bot-secrets.test-support.js";
+import { fakeDatabase } from "./secrets/bot-secrets.test-support.js";
 import { deviceLoginOf } from "./dozo-device-login.js";
 import { createDeviceLogin, deleteDeviceLogin, deviceCanLink } from "./dozo-device-login-store.js";
-import { EncryptedSecretStore } from "./secrets.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 const device = { id: "device-1", userId: "user-1" };
@@ -138,7 +139,7 @@ describe("linking a login that stays in a password manager", () => {
 
   it("refuses at the vault's limit, and for a computer that was disconnected meanwhile", async () => {
     const full = setup();
-    for (let index = 0; index < 100; index += 1)
+    for (let index = 0; index < VAULT_ITEM_LIMIT; index += 1)
       await full.db.prisma.vaultCredential.create({
         data: {
           id: `item-${index}`,

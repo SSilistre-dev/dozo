@@ -25,8 +25,8 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   }),
 }));
 
-vi.mock("./pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
-vi.mock("./pi-openai-compatible-provider.js", () => ({
+vi.mock("./runtime/pi/models/pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
+vi.mock("./runtime/pi/models/pi-openai-compatible-provider.js", () => ({
   OPENAI_COMPATIBLE_PROVIDER_ID: "openai-compatible",
   registerOpenAiCompatibleCatalog: (models: unknown) => models,
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
@@ -34,8 +34,8 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import type { RunModelPool } from "./dozo-model-pool.js";
 import { withRunModelPool } from "./dozo-model-pool.js";
-import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
-import { PiAgentRuntime } from "./pi-runtime.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./runtime/pi/models/pi-oauth.js";
+import { PiAgentRuntime } from "./runtime/pi/pi-runtime.js";
 
 const pooled: Model<"openai-completions"> = {
   provider: "provider-a",

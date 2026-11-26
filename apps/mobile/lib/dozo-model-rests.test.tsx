@@ -13,11 +13,11 @@ vi.mock("@lingui/react/macro", () => ({
       strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
   }),
 }));
-vi.mock("./i18n", () => ({ dateLocaleForUi: () => "en-GB", useUiLocale: () => "en" }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./i18n/i18n", () => ({ dateLocaleForUi: () => "en-GB", useUiLocale: () => "en" }));
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async () => ({
@@ -27,15 +27,15 @@ vi.mock("./api", () => ({
   }),
   rpc: api.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./roster-signals", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api/roster-signals", () => ({
   useRosterSignals: (read: () => unknown, enabled: boolean) => {
     if (enabled) api.rosterReads.push(read);
   },
 }));
 
 import { useDozoRestNote } from "./dozo-model-rests";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let root: Root;
 let container: HTMLDivElement;

@@ -2,9 +2,9 @@ import { useLingui } from "@lingui/react/macro";
 import type { PlanEnd } from "@rakazo/contracts";
 import { planEndDays, planEndWarns } from "@rakazo/contracts";
 import { StyleSheet, Text, View } from "react-native";
-import { dateLocaleForUi } from "../lib/i18n";
-import { native, useMobileTokens } from "../lib/native";
-import { SettingsRow } from "./settings-group";
+import { dateLocaleForUi } from "../lib/i18n/i18n";
+import { native, useMobileTokens } from "../lib/native/native";
+import { SettingsRow } from "./settings/settings-group";
 
 /**
  * When the plan in force renews or ends, and the days left, in the warning colour near its end. A

@@ -21,11 +21,11 @@ vi.mock("./dozo-learning-store.js", () => ({
     state.suggestion = skillId;
   },
 }));
-vi.mock("./skill-tools.js", () => ({
+vi.mock("./tools/skill-tools.js", () => ({
   listAgentSkillRecords: async () => state.catalog,
 }));
-vi.mock("./teaching-session.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./teaching-session.js")>()),
+vi.mock("./bots/teaching-session.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./bots/teaching-session.js")>()),
   emitSkillDraftMessages: async (
     _deps: unknown,
     _actor: unknown,

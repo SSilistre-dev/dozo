@@ -4,10 +4,10 @@ import { DOZO_FEATURED_MODEL_OPTIONS } from "@rakazo/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import type { OnboardingModel } from "./use-onboarding-model";
 
-vi.mock("../../lib/rpc", () => ({ rpc: {} }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: {} }));
 
 import { useOnboardingModel } from "./use-onboarding-model";
 

@@ -21,7 +21,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 }));
 /** The database each upstream service was made with: the remove of a suggestion makes one on its transaction. */
 const upstreamDbs = vi.hoisted(() => [] as unknown[]);
-vi.mock("./taught-skills.js", () => ({
+vi.mock("./bots/taught-skills.js", () => ({
   createTaughtSkillsService: (deps: { prisma: unknown }) => {
     upstreamDbs.push(deps.prisma);
     return upstream;

@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { View } from "react-native";
-import { useMobileTokens } from "../../lib/native";
-import { NativeSymbol } from "../native-symbol";
+import { useMobileTokens } from "../../lib/native/native";
+import { NativeSymbol } from "../native/native-symbol";
 
 /**
  * Above a message that came in with a personal access token (the bot API, MCP) instead of being

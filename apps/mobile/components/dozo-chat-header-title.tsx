@@ -1,7 +1,7 @@
 import { StyleSheet, View } from "react-native";
 import { dozoChatParam } from "../lib/dozo-chat-target";
-import type { ChatTitleParams } from "./chat-header-title";
-import { ChatHeaderTitle } from "./chat-header-title";
+import type { ChatTitleParams } from "./thread/header/chat-header-title";
+import { ChatHeaderTitle } from "./thread/header/chat-header-title";
 import { DozoChatSwitcher } from "./dozo-chat-switcher";
 
 /**

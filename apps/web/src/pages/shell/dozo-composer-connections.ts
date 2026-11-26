@@ -1,7 +1,8 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { QueryClient } from "@tanstack/react-query";
-import type { SpaceQueries } from "../../lib/query";
-import type { RpcClient } from "../../lib/rpc";
+import type { SpaceQueries } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
 
 type ConnectionReads = { connections: Pick<RpcClient["connections"], "list" | "catalog"> };
 
@@ -21,7 +22,7 @@ export async function loadComposerConnections(
   queryClient: QueryClient,
   queries: SpaceQueries,
 ): Promise<ComposerConnections> {
-  const connections = await rpc.connections.list().catch(() => null);
+  const connections = (await bestEffort("list connections", rpc.connections.list())) ?? null;
   if (!connections?.length) {
     const apps = queryClient.getQueryData<{ catalog?: ConnectionCatalogItem[] }>([
       ...queries.connections.catalog.queryKey({ input: {} }),
@@ -29,7 +30,7 @@ export async function loadComposerConnections(
     ]);
     return { catalog: apps?.catalog ?? null, connections };
   }
-  const catalog = await rpc.connections.catalog({}).catch(() => null);
-  const reconciled = await rpc.connections.list().catch(() => null);
+  const catalog = (await bestEffort("read the connection catalog", rpc.connections.catalog({}))) ?? null;
+  const reconciled = (await bestEffort("list connections again", rpc.connections.list())) ?? null;
   return { catalog, connections: reconciled ?? connections };
 }

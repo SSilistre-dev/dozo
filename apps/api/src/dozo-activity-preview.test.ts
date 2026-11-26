@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dozoActivityPrompt } from "./dozo-activity-preview.js";
-import { botIntroPrompt, HANG_UP_PROMPT, mcpConnectedPrompt } from "./hidden-turns.prompt.js";
-import { activityPreview } from "./runs.js";
+import { botIntroPrompt, HANG_UP_PROMPT, mcpConnectedPrompt } from "./bots/hidden-turns.prompt.js";
+import { activityPreview } from "./threads/runs.js";
 
 const intro = botIntroPrompt({ userName: "Ada", spaceName: null, disabledBuiltinTools: [] });
 

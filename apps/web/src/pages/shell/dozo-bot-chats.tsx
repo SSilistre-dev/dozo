@@ -26,8 +26,8 @@ import {
   dozoOpenChat,
   setDozoOpenChat,
 } from "../../lib/dozo-open-chat";
-import { lazyComponent } from "../../lib/preload-recovery";
-import { queryClient, useSave, useSpaceQueries } from "../../lib/query";
+import { lazyComponent } from "../../lib/platform/preload-recovery";
+import { queryClient, useSave, useSpaceQueries } from "../../lib/query/query";
 import { useEventListener } from "../../lib/use-event-listener";
 
 /**

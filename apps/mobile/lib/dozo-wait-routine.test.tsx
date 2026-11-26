@@ -14,17 +14,17 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: <T,>(styles: T) => styles },
   ScrollView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   native: { groupedPage: "grouped" },
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("../components/native-switch", () => ({
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("../components/native/native-switch", () => ({
   NativeSwitch: ({ value, accessibilityLabel }: { value: boolean; accessibilityLabel: string }) => (
     <input type="checkbox" readOnly checked={value} aria-label={accessibilityLabel} />
   ),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   useStackedSettings: () => false,
   SettingsGroup: ({ children }: { children?: ReactNode }) => <ul>{children}</ul>,
   SettingsRow: ({
@@ -46,9 +46,9 @@ vi.mock("../components/settings-group", () => ({
   ),
 }));
 
-import { RoutineList } from "../components/routine-list";
-import { routineRowDetail, routineTriggerRows } from "./routine";
-import { routineDraftChanged, routineSaveRequest } from "./routine-draft";
+import { RoutineList } from "../components/routines/routine-list";
+import { routineRowDetail, routineTriggerRows } from "./routines/routine";
+import { routineDraftChanged, routineSaveRequest } from "./routines/routine-draft";
 
 const wait = (extra: Partial<Routine> = {}): Routine => ({
   id: "routine-wait",
@@ -59,6 +59,7 @@ const wait = (extra: Partial<Routine> = {}): Routine => ({
   timezone: "UTC",
   active: true,
   notify: true,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
@@ -71,6 +72,7 @@ const wait = (extra: Partial<Routine> = {}): Routine => ({
   lastRunAt: null,
   // The deadline, which the wait's next check is moved onto.
   nextRunAt: "2026-11-21T12:00:00.000Z",
+  endsAt: null,
   createdAt: "2026-11-21T10:00:00.000Z",
   ...extra,
 });

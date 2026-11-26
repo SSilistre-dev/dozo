@@ -15,12 +15,39 @@ function releaseFocus() {
   if (active instanceof HTMLElement && active !== document.body) active.blur();
 }
 
+/** An Escape inside one of these belongs to that popup, as upstream's own listener leaves it. */
+const POPUP_SELECTOR = "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']";
+
 /** Keys aimed at page controls (Stop teaching, dialogs, protected input) are not the demo's. */
-function aimedAtControl(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    target.closest("button, input, textarea, select, a, [contenteditable]") !== null
+function aimedAtControl(event: KeyboardEvent): boolean {
+  const { target } = event;
+  if (!(target instanceof HTMLElement)) return false;
+  if (event.key === "Escape" && target.closest(POPUP_SELECTOR)) return true;
+  return target.closest("button, input, textarea, select, a, [contenteditable]") !== null;
+}
+
+/**
+ * Takes the typed keys for the batch. Upstream listens for keys on the window in the capture phase
+ * too, and listeners on one target run in the order they were added: this is rendered before the
+ * overlay so its effect, which adds the listener, runs first and can stop upstream's from sending
+ * each key again on its own.
+ */
+function TeachKeyTaker({ botId, target }: { botId: string; target: Window | null }) {
+  useEventListener(
+    target,
+    "keydown",
+    (event) => {
+      if (aimedAtControl(event)) return;
+      const key = teachCaptureKey(event.key, event);
+      if (!key) return;
+      event.preventDefault();
+      // Upstream's window listener would send the key again, one request for it alone.
+      event.stopImmediatePropagation();
+      queueTeachKey(botId, key);
+    },
+    true,
   );
+  return null;
 }
 
 /**
@@ -46,22 +73,8 @@ export function TeachCaptureOverlay(props: ComponentProps<typeof UpstreamTeachCa
         : null,
     );
   }, [capturing]);
-  const ring = useTeachClick(botId, overlay, props.screenWidth, props.screenHeight);
+  const ring = useTeachClick(botId, skill?.id, overlay, props.screenWidth, props.screenHeight);
 
-  useEventListener(
-    target,
-    "keydown",
-    (event) => {
-      if (aimedAtControl(event.target)) return;
-      const key = teachCaptureKey(event.key, event);
-      if (!key) return;
-      event.preventDefault();
-      // Upstream's window listener would send the key again, one request for it alone.
-      event.stopImmediatePropagation();
-      queueTeachKey(botId, key);
-    },
-    true,
-  );
   // Protected input is sent from the recording's own form.
   useEventListener(target, "submit", () => closeTeachKeys(botId), true);
   useEventListener(target, "pagehide", () => sendTeachKeysNow());
@@ -77,6 +90,7 @@ export function TeachCaptureOverlay(props: ComponentProps<typeof UpstreamTeachCa
       }}
       onWheelCapture={() => closeTeachKeys(botId)}
     >
+      <TeachKeyTaker botId={botId} target={target} />
       <UpstreamTeachCaptureOverlay {...props} />
       {ring ? (
         <span

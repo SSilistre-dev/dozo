@@ -12,11 +12,11 @@ const api = vi.hoisted(() => ({
   signOut: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { dozoSiteSessions: { signIn: api.signIn, signOut: api.signOut } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../../lib/query", async (importOriginal) => ({
+vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoSiteSessions: {
@@ -34,7 +34,7 @@ vi.mock("../../lib/dozo-error-text", () => ({
   errorText: (error: unknown, fallback = "Something went wrong") =>
     error instanceof Error && error.message ? error.message : fallback,
 }));
-vi.mock("../../lib/relative-time", () => ({ formatRelativeTime: () => "1h ago" }));
+vi.mock("../../lib/locale/relative-time", () => ({ formatRelativeTime: () => "1h ago" }));
 // The one timer the dialog arms, run by hand.
 const timer = vi.hoisted(() => ({ fire: null as null | (() => void), ms: null as number | null }));
 vi.mock("@rakazo/chat-ui/hooks", () => ({
@@ -100,7 +100,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Spinner: () => <span role="status" />,
 }));
 
-import type * as Query from "../../lib/query";
+import type * as Query from "../../lib/query/query";
 import { SiteSessionsControl } from "./dozo-site-sessions";
 
 const status = (over: Partial<ComputerStatus> = {}) =>

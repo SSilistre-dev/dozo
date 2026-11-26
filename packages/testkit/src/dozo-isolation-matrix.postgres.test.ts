@@ -9,11 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { findCanaries, ISOLATION_LOGINS, readAnswer } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import {
-  DESIGNED_SHARING,
-  DESIGNED_SHARING_SOMETIMES,
-  ISOLATION_EXEMPTIONS,
-} from "./dozo-isolation-exemptions.js";
+import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
 import type { Procedure } from "./dozo-isolation-inputs.test-support.js";
 import {
   contractProcedures,
@@ -23,6 +19,7 @@ import {
   namesTarget,
 } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+import { DESIGNED_SHARING, DESIGNED_SHARING_SOMETIMES } from "./dozo-isolation-sharing.js";
 import { snapshot, snapshotDiff } from "./dozo-isolation-snapshot.test-support.js";
 import type { Call, Caller, Outcome } from "./dozo-isolation-sweep.test-support.js";
 import {
@@ -43,6 +40,9 @@ import {
   waitingRunKept,
 } from "./dozo-isolation-sweep.test-support.js";
 import { asWorldRequest, buildIsolationWorld } from "./dozo-isolation-world.test-support.js";
+
+/** A failure's label with what it found, one a line: the CI log shows the message, not the list. */
+const named = (label: string, items: readonly string[]) => `${label}\n${items.join("\n")}`;
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeWithDatabase = hasDb ? describe : describe.skip;
@@ -493,7 +493,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       );
       const after = await snapshot(world.db, scope);
       expect(failures(outcomes)).toEqual([]);
-      expect(snapshotDiff(before, after), "rows of P changed").toEqual([]);
+      expect(snapshotDiff(before, after).join("\n"), "rows of P changed").toBe("");
       // A guest's new Space goes to the guest's own organization, never into A's.
       expect(
         await world.db.space.count({
@@ -608,7 +608,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           .map((outcome) => `${outcome.caller.name}: ${line(outcome)}`)
           .join("\n")}`,
       );
-      expect(failures(outcomes)).toEqual([]);
+      const shown = failures(outcomes);
+      expect(shown, named("seen by a member or guest outside the design", shown)).toEqual([]);
       expect(admin, "a member or guest changed who is in S, or A's keys").toEqual([]);
       expect(calls, "the owner's ringing calls in S, settled by a member or guest").toEqual([]);
       // A member may edit a memory document by design; the sweep's edit must land on a document of
@@ -618,7 +619,9 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         where: { id: S.ids.documentId! },
       });
       expect(
-        S.canaries.filter((value) => S.kinds?.[value] === "memory" && memory.content.includes(value)),
+        S.canaries.filter(
+          (value) => S.kinds?.[value] === "memory" && memory.content.includes(value),
+        ),
         "S's memory document, after a member's and guest's sweep",
       ).toHaveLength(1);
       expect(
@@ -738,6 +741,16 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         `${prefix} control: canaries found through ${found.length} procedures\n${found.join(" ")}`,
       );
       const seen = new Set(outcomes.flatMap((outcome) => outcome.matched));
+      // The file a message carries is an artifact of its own, and the sweep's inputs name the
+      // other one: the owner reads this one by its id, so its body is a canary a scan can find.
+      const attached = await readAnswer(
+        world.app,
+        A.cookie,
+        "artifacts/getById",
+        { artifactId: P.ids.attachmentArtifactId },
+        P.spaceId,
+      );
+      for (const value of findCanaries(attached.text, P.canaries)) seen.add(value);
       const unseen = P.canaries.filter((value) => !seen.has(value));
       console.log(`${prefix} control: canaries no owner read shows: ${unseen.join(" ") || "none"}`);
       // Destructive procedures that name P's things after that, one at a time, the removals the
@@ -776,9 +789,15 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(found).toEqual(expect.arrayContaining(CONTROL_PATHS));
       expect(unseen, "canaries no read of the owner shows, so no scan can find them").toEqual([]);
       expect
-        .soft(unreached, "inputs naming P's things that the owner's own call does not get through")
+        .soft(
+          unreached,
+          named(
+            "inputs naming P's things that the owner's own call does not get through",
+            unreached,
+          ),
+        )
         .toEqual([]);
-      expect.soft(stale, "stale unreached or reached-409 exemptions").toEqual([]);
+      expect.soft(stale, named("stale unreached or reached-409 exemptions", stale)).toEqual([]);
     }, 900_000);
   },
 );

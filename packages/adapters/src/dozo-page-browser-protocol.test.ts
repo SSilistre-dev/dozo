@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pageBrowserFillLoginRequest } from "./dozo-page-browser-protocol.js";
-import { hostComputerRequest } from "./host-computer-protocol.js";
+import { hostComputerRequest } from "./computers/host/host-computer-protocol.js";
 
 const request = {
   method: "pageBrowserFillLogin",

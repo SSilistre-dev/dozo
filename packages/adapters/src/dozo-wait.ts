@@ -6,13 +6,13 @@ import { dozoMeetingPrepRefusal } from "./dozo-meeting-prep-guard.js";
 import { DOZO_ROUTINE_CATCH_UP_MS } from "./dozo-quiet-hours.js";
 import { DOZO_WAIT_CHANGED_NOTE, dozoWaitTimedOutNote } from "./dozo-wait.prompt.js";
 import { DOZO_WAIT_MAX_MINUTES, DOZO_WAIT_MIN_MINUTES } from "./dozo-wait.tool-definition.js";
-import type { tickRoutineWatch } from "./routine-watch.js";
+import type { tickRoutineWatch } from "./routines/routine-watch.js";
 import {
   describeRoutineWatch,
   parseRoutineWatch,
   parseRoutineWatchState,
-} from "./routine-watch.js";
-import type { createScheduleFromTool } from "./schedule-tools.js";
+} from "./routines/routine-watch.js";
+import type { createScheduleFromTool } from "./tools/schedule-tools.js";
 
 /**
  * A one-time wait is a watching routine with a row here: it wakes its bot once, at the first

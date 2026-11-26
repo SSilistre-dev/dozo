@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useDesktopNotificationAsk } from "./dozo-desktop-notify";
-import { useDesktopBadge as useBridgeBadge } from "./use-desktop-badge";
+import { useDesktopBadge as useBridgeBadge } from "./platform/use-desktop-badge";
 
 /** The colour a title ends with in the desktop app, as ` #0e0e10`: see `useDesktopFrameColour`. It
  * goes last so that an older app, which reads the count from the start of the title, still does. */

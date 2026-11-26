@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, Text, View } from "react-native";
 import { announcementQuery, announcementText } from "../lib/dozo-site-settings";
-import { useMobileTokens } from "../lib/native";
-import { useScreenQuery } from "../lib/screen-query";
+import { useMobileTokens } from "../lib/native/native";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 /**
  * The admin's announcement as one line above the chats, in the app's language, only when there is

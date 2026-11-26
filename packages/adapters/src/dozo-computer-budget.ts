@@ -1,5 +1,6 @@
 import { COMPUTERS_BUSY_MESSAGE, PLAN_LIMIT_CODES } from "@rakazo/contracts";
-import { ClientError, deadlineSignal, resolveSupervisorToken } from "@rakazo/core";
+import { ClientError, deadlineSignal } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 
 export { COMPUTERS_BUSY_MESSAGE };
 export const COMPUTERS_BUSY_CODE = PLAN_LIMIT_CODES.computersBusy;

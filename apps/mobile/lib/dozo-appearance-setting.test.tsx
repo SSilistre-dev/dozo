@@ -31,22 +31,22 @@ vi.mock("react-native", () => ({
     accessibilityLabel?: string;
   }) => <section aria-label={accessibilityLabel}>{children}</section>,
 }));
-vi.mock("../lib/appearance", () => ({
+vi.mock("./appearance/appearance", () => ({
   getCachedAppearancePreference: () => device.preference,
   setAppearancePreference: async (preference: string) => {
     device.set(preference);
     device.preference = preference;
   },
 }));
-vi.mock("../lib/native", () => ({ useThemedStyles: () => ({ section: {} }) }));
-vi.mock("../lib/settings-page-styles", () => ({ createSettingsPageStyles: () => ({}) }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("./native/native", () => ({ useThemedStyles: () => ({ section: {} }) }));
+vi.mock("./settings/settings-page-styles", () => ({ createSettingsPageStyles: () => ({}) }));
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children, label }: { children: ReactNode; label?: string }) => (
     <section aria-label={label}>{children}</section>
   ),
   SettingsLabel: ({ children }: { children: string }) => <h3>{children}</h3>,
 }));
-vi.mock("../components/menu-picker", () => ({
+vi.mock("../components/ui/menu-picker", () => ({
   MenuPicker: (props: {
     label: string;
     choices: Array<{ key: string; label: string }>;
@@ -67,7 +67,7 @@ vi.mock("../components/menu-picker", () => ({
     </>
   ),
 }));
-vi.mock("../components/native-segmented-control", () => ({
+vi.mock("../components/native/native-segmented-control", () => ({
   NativeSegmentedControl: (props: {
     accessibilityLabel: string;
     options: Array<{ value: string; label: string }>;

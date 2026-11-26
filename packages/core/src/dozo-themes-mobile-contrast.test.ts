@@ -7,7 +7,7 @@ import {
   dozoThemeTokens,
 } from "@rakazo/ui-tokens/dozo-themes";
 import { describe, expect, it } from "vitest";
-import { chatUserBubbleColors } from "./bot-avatar-colors.js";
+import { chatUserBubbleColors } from "./avatars/bot-avatar-colors.js";
 import { dozoContrast } from "./dozo-chat-colors.js";
 
 // WCAG contrast of the phone's palettes: Light and Dark as the app ships them, and each named

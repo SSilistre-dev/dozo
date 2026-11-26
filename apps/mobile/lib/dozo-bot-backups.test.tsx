@@ -86,14 +86,14 @@ vi.mock("@expo/ui/community/menu", () => ({
 vi.mock("./dozo-model-rests", () => ({
   useDozoRestNote: () => () => api.rest,
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ mutedForeground: "#999999" }),
   useResolvedAppearance: () => "dark",
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
-vi.mock("./query", () => ({
+vi.mock("./query/query", () => ({
   queryClient: { invalidateQueries: api.invalidate },
   rpcQuery: (proc: string, input?: unknown) => ({ queryKey: [proc, input] }),
   useSave: (options: Save) => {
@@ -106,12 +106,12 @@ vi.mock("./query", () => ({
     };
   },
 }));
-vi.mock("./roster-signals", () => ({
+vi.mock("./api/roster-signals", () => ({
   useRosterSignals: (read: () => unknown) => {
     api.signals.push(read);
   },
 }));
-vi.mock("./screen-query", () => ({
+vi.mock("./query/screen-query", () => ({
   useScreenQuery: (
     read: { queryKey: [string, unknown] },
     options?: { enabled?: boolean },
@@ -126,8 +126,8 @@ vi.mock("./screen-query", () => ({
     return { data: api.catalog };
   },
 }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   SettingsRow: (row: Row) => (
     <div>
@@ -146,7 +146,7 @@ vi.mock("../components/settings-group", () => ({
 }));
 
 import { DozoBotBackups } from "../components/dozo-bot-backups";
-import { modelPickerRequest, selectPickerModel } from "./model-picker-selection";
+import { modelPickerRequest, selectPickerModel } from "./models/model-picker-selection";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;

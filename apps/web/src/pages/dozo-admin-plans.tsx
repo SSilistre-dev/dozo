@@ -4,9 +4,9 @@ import { Button, Disclosure, Input, Spinner } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
-import { formatBillingAmount } from "../lib/billing";
+import { formatBillingAmount } from "@rakazo/i18n/billing";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 
 /**
  * The admin page's plans section, at `/admin/plans`: each plan's prices and machine as the server

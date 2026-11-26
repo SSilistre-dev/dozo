@@ -1,7 +1,7 @@
 import type { ModelRoleChoice } from "@rakazo/contracts";
 import { ModelRoleChoiceSchema, modelChoiceListSchema } from "@rakazo/contracts";
-import type { PrismaClient } from "./client.js";
-import { readJsonColumn } from "./json-column.js";
+import type { PrismaClient } from "./database/client.js";
+import { readJsonColumn } from "./database/json-column.js";
 
 /**
  * A bot's own ordered backup models (`dozo_bot_model_backups`, migration

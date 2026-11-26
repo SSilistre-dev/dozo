@@ -3,12 +3,12 @@ import { DOZO_DAILY_SEND_CHOICES } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Alert, View } from "react-native";
-import { native } from "../lib/native";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
-import { errorText } from "../lib/user-error";
-import { MenuPickerMenu } from "./menu-picker";
-import { NativeSymbol } from "./native-symbol";
-import { SettingsRow } from "./settings-group";
+import { native } from "../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { errorText } from "../lib/api/user-error";
+import { MenuPickerMenu } from "./ui/menu-picker";
+import { NativeSymbol } from "./native/native-symbol";
+import { SettingsRow } from "./settings/settings-group";
 
 /**
  * How many sends each bot makes a day without asking, under the account's approval mode; past it,

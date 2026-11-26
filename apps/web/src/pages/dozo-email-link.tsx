@@ -1,14 +1,18 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { authErrorText } from "@rakazo/i18n/user-error";
 import { Button, buttonVariants, Input, Label } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { authClient } from "../lib/auth";
-import { fetchAuthCapabilities } from "../lib/auth-capabilities";
-import { useSave } from "../lib/query";
-import { authErrorText } from "../lib/user-error";
-import { AuthFrame, submitClass, PasswordResetPage as UpstreamPasswordResetPage } from "./Auth";
+import { authClient } from "../lib/auth/auth";
+import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
+import { useSave } from "../lib/query/query";
+import {
+  AuthFrame,
+  submitClass,
+  PasswordResetPage as UpstreamPasswordResetPage,
+} from "./auth/Auth";
 
 /**
  * Where an emailed link lands once the server has checked it. The verification link comes back
@@ -201,7 +205,8 @@ function ExpiredLink({
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder={t`Your email address`}
                 // off-scale: 16px below md stops iOS Safari zooming into a focused field.
-                className="mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg"
+                size="xl"
+                className="mt-2 text-[16px]/6"
               />
             </div>
           )}

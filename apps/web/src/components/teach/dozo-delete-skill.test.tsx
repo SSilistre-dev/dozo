@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ remove: vi.fn() }));
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const client = { skills: { remove: api.remove, list: vi.fn() }, dozoTeach: { review: vi.fn() } };
   return {
     rpc: client,

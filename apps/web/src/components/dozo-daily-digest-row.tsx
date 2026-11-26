@@ -1,11 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { DOZO_DEFAULT_DIGEST_MINUTE } from "@rakazo/contracts";
-import { Label, NativeSelect, NativeSelectOption, Switch } from "@rakazo/ui-web";
+import { Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
-import { SettingsRow } from "./SettingsRows";
+import { useSave, useSpaceQueries } from "../lib/query/query";
+import { SettingsRow } from "./settings/SettingsRows";
 
 const HOUR_MINUTES = Array.from({ length: 24 }, (_, hour) => hour * 60);
 
@@ -75,41 +75,31 @@ export function DozoDailyDigestRow() {
         {digest ? (
           <div className="mt-2 flex items-center justify-end gap-2">
             {botOptions.length > 1 ? (
-              <NativeSelect
+              <OptionSelect
                 aria-label={t`Daily digest bot`}
                 value={digest.botId}
                 disabled={save.pending}
-                onChange={(event) =>
+                options={botOptions.map((bot) => ({ value: bot.id, label: bot.name }))}
+                onValueChange={(value) =>
                   save.run({
-                    botId: event.target.value,
+                    botId: value,
                     minute: digest.minute ?? DOZO_DEFAULT_DIGEST_MINUTE,
                   })
                 }
                 className="w-40"
-              >
-                {botOptions.map((bot) => (
-                  <NativeSelectOption key={bot.id} value={bot.id}>
-                    {bot.name}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+              />
             ) : null}
-            <NativeSelect
+            <OptionSelect
               aria-label={t`Daily digest time`}
               value={digest.minute == null ? "" : String(digest.minute)}
               disabled={save.pending}
-              onChange={(event) =>
-                save.run({ botId: digest.botId, minute: Number(event.target.value) })
-              }
+              options={[
+                ...(digest.minute == null ? [{ value: "", label: "", disabled: true }] : []),
+                ...minutes.map((minute) => ({ value: String(minute), label: label(minute) })),
+              ]}
+              onValueChange={(value) => save.run({ botId: digest.botId, minute: Number(value) })}
               className="w-28"
-            >
-              {digest.minute == null ? <NativeSelectOption value="" disabled /> : null}
-              {minutes.map((minute) => (
-                <NativeSelectOption key={minute} value={String(minute)}>
-                  {label(minute)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            />
           </div>
         ) : null}
       </SettingsRow>

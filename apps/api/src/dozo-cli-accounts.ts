@@ -7,7 +7,7 @@ import {
   sendCliLoginCode,
   startCliAccountLogin,
 } from "@rakazo/adapters";
-import { persistModelCredential } from "./model-credentials.js";
+import { persistModelCredential } from "./models/model-credentials.js";
 import type { RouterContext } from "./routes/context.js";
 
 /**

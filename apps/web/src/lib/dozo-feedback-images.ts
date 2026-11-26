@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging/best-effort";
 import {
   DOZO_FEEDBACK_IMAGE_MAX_BYTES,
   DOZO_FEEDBACK_IMAGES_MAX_BYTES,
@@ -41,7 +42,7 @@ export async function addFeedbackImages(
       TYPES.has(file.type) &&
       file.size <= DOZO_FEEDBACK_IMAGE_MAX_BYTES &&
       bytes + file.size <= DOZO_FEEDBACK_IMAGES_MAX_BYTES;
-    const url = fits ? await readAsDataUrl(file).catch(() => null) : null;
+    const url = fits ? ((await bestEffort("read a feedback image", readAsDataUrl(file))) ?? null) : null;
     if (url === null) {
       refused = true;
       continue;

@@ -5,7 +5,7 @@ import { AnalyticsEvent } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BillingService } from "./billing.js";
+import type { BillingService } from "./billing/billing.js";
 import {
   DOZO_EVENT_REPEAT_MS,
   DOZO_EVENTS_PER_MINUTE,

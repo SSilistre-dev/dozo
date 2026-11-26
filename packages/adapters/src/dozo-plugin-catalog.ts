@@ -5,10 +5,10 @@ import { comparePlugins, matchesPluginQuery } from "@rakazo/core";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseHeldError, readJsonColumn, withLease } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { createFaviconResolver } from "./favicon.js";
-import type { PluginTextReader } from "./plugin-connectors.js";
-import { createPluginMarketplace } from "./plugin-marketplace.js";
-import { fetchSafeWebBytes, fetchSafeWebText } from "./web-ssrf.js";
+import { createFaviconResolver } from "./web/favicon.js";
+import type { PluginTextReader } from "./integrations/plugin-connectors.js";
+import { createPluginMarketplace } from "./integrations/plugin-marketplace.js";
+import { fetchSafeWebBytes, fetchSafeWebText } from "./web/web-ssrf.js";
 
 /**
  * The plugin catalog kept in Postgres, so no request waits on the public registries: the API loads

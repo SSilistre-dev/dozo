@@ -8,7 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Shimmer } from "../../components/ai/primitives";
 import { errorText } from "../../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { DOZO_AVATAR_GENERATE_TAB, WhenQueriesExist } from "./dozo-avatar-generate";
 
 /** The studio's Generate tab, loaded when the studio opens (dozo-avatar-generate.tsx holds its tab). */

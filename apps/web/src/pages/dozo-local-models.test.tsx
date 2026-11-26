@@ -62,7 +62,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
 }));
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const read = async () => [];
   // The query helpers are built from this client, so the reads a save invalidates must exist.
   const client = Object.assign(read, {
@@ -77,7 +77,7 @@ vi.mock("../lib/rpc", () => {
     selectedSpaceId: () => null,
   };
 });
-vi.mock("./ModelSettingsOverlay", () => ({
+vi.mock("./model-settings/ModelSettingsOverlay", () => ({
   ModelSettingsOverlay: () => <div data-testid="upstream" />,
 }));
 vi.mock("../lib/dozo-local-model-catalog", () => ({
@@ -183,7 +183,7 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import type { HardwareEntry, LocalModelEntry } from "../lib/dozo-local-model-fit";
-import { QueryUserProvider } from "../lib/query";
+import { QueryUserProvider } from "../lib/query/query";
 import { DozoLocalModels, readGpuRenderer } from "./dozo-local-models";
 import { ModelSettingsOverlay } from "./dozo-model-settings";
 

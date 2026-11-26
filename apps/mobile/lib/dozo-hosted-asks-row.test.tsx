@@ -12,14 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const ui = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
 
 vi.mock("react-native", () => ({ Alert: { alert: ui.alert } }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async (spaceId: string | null = "space") => ({
@@ -29,8 +29,8 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("../components/native-switch", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../components/native/native-switch", () => ({
   NativeSwitch: ({
     accessibilityLabel,
     value,
@@ -51,7 +51,7 @@ vi.mock("../components/native-switch", () => ({
     />
   ),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsRow: ({
     title,
     leading,
@@ -72,7 +72,7 @@ vi.mock("../components/settings-group", () => ({
 }));
 
 import { DozoHostedAsksRow } from "../components/dozo-hosted-asks-row";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let answers: Record<string, unknown>;
 let root: Root;

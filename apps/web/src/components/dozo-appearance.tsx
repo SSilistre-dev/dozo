@@ -20,7 +20,7 @@ import {
   setDozoTheme,
   setUiAppearance,
 } from "../lib/dozo-ui-theme";
-import type { AppearancePreference } from "../lib/ui-appearance";
+import type { AppearancePreference } from "../lib/preferences/ui-appearance";
 
 // Settings > General > Appearance and Message color (dozo/design/settings-v2.html). Both load
 // with the settings window, never before the app's first paint.

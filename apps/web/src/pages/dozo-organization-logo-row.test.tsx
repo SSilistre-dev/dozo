@@ -7,11 +7,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoOrganizationLogo: { set: api.set } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoOrganizationLogo: {
@@ -25,7 +25,7 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (error: unknown) => (error instanceof Error ? error.message : "failed"),
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -44,7 +44,7 @@ vi.mock("@rakazo/ui-web", () => ({
   }: ComponentProps<"button"> & Record<string, string>) => <button type="button" {...props} />,
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoOrganizationLogoRow, readLogoFile } from "./dozo-organization-logo-row";
 
 const LOGO = "data:image/webp;base64,UklGRg==";

@@ -31,7 +31,7 @@ vi.mock("@rakazo/ui-web", () => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
 }));
-vi.mock("../lib/auth-capabilities", () => ({
+vi.mock("../lib/auth/auth-capabilities", () => ({
   fetchAuthCapabilities: async () => ({
     passwordAuth: true,
     sso: null,
@@ -39,19 +39,19 @@ vi.mock("../lib/auth-capabilities", () => ({
     resetUrl: null,
   }),
 }));
-vi.mock("../lib/auth", () => ({ authClient: { signIn: { email: auth.email } } }));
-vi.mock("../lib/rpc", () => ({ clearSpaceSelection: vi.fn() }));
-vi.mock("../lib/passkeys", () => ({
+vi.mock("../lib/auth/auth", () => ({ authClient: { signIn: { email: auth.email } } }));
+vi.mock("../lib/query/rpc", () => ({ clearSpaceSelection: vi.fn() }));
+vi.mock("../lib/auth/passkeys", () => ({
   usePasskeysSupported: () => false,
   conditionalPasskeyAvailable: async () => false,
   passkeyErrorText: () => null,
 }));
-vi.mock("../components/PasskeySignIn", () => ({
+vi.mock("../components/account/PasskeySignIn", () => ({
   PasskeySignIn: () => null,
   usePasskeySignIn: () => ({ supported: false, pending: false, start: () => undefined }),
 }));
 
-import { AuthPage } from "./Auth";
+import { AuthPage } from "./auth/Auth";
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;

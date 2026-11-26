@@ -1,9 +1,9 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { encodeBotAvatarImage } from "./bot-avatar.js";
+import { encodeBotAvatarImage } from "./bots/bot-avatar.js";
 import { dozoAvatarImageBytes } from "./dozo-avatar-upload.js";
 import { DOZO_FAKE_IMAGE_BASE64 } from "./dozo-fake-image.js";
-import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
+import { FakeMediaGenerationProvider } from "./media/media-generation-provider.js";
 
 const context = {
   operationId: "test",

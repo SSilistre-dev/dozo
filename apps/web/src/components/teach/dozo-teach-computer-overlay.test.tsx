@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ billing: null as Partial<BillingStatus> | null }));
 
-vi.mock("../SubscriptionGate", () => ({ useBilling: () => ({ status: api.billing }) }));
+vi.mock("../billing/SubscriptionGate", () => ({ useBilling: () => ({ status: api.billing }) }));
 vi.mock("./TeachComputerOverlay", () => ({
   TeachComputerOverlayControl: ({ botId }: { botId: string }) => (
     <button type="button">teach {botId}</button>

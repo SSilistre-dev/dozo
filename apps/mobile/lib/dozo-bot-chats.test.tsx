@@ -30,15 +30,15 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: api.push }) }));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
-vi.mock("../components/profile-edit-dialog", () => ({
+vi.mock("../components/bots/profile-edit-dialog", () => ({
   useTextEditDialog: (label: string, max: number) => ({
     ask: (value: string, commit: (next: string) => void) => api.ask(label, max, value, commit),
     dialog: createElement("i", { "data-dialog": label }),
   }),
 }));
-vi.mock("./appearance", () => ({ resolveMobileAppearance: () => "dark" }));
+vi.mock("./appearance/appearance", () => ({ resolveMobileAppearance: () => "dark" }));
 vi.mock("./dozo-chat-export", () => ({ useChatExport: () => api.exportChat }));
-vi.mock("./inbox-swipe", () => ({
+vi.mock("./inbox/inbox-swipe", () => ({
   SNOOZE_LABELS: {
     hour: "1 hour",
     threeHours: "3 hours",
@@ -46,18 +46,18 @@ vi.mock("./inbox-swipe", () => ({
     nextWeek: "Next week",
   },
 }));
-vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
-vi.mock("./roster-signals", () => ({
+vi.mock("./messages/message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
+vi.mock("./api/roster-signals", () => ({
   useRosterSignals: (read: () => unknown, enabled: boolean) => {
     api.signal.current = read;
     api.signalEnabled.current = enabled;
   },
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./query", async () => {
+vi.mock("./query/query", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   const { useRef } = await import("react");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -108,7 +108,7 @@ import {
   useDozoNewChat,
   useDozoSpaceChats,
 } from "./dozo-bot-chats";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 const chat = (overrides: Partial<DozoBotChat> = {}): DozoBotChat => ({
   id: "chat-1",

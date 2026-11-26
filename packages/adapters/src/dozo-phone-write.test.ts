@@ -12,7 +12,7 @@ vi.mock("@rakazo/logging", async (importOriginal) => {
   return { ...real, getLogger: () => ({ ...real.getLogger(), ...logger }) };
 });
 
-import { approvalDetailLength } from "./approval-ask.js";
+import { approvalDetailLength } from "./approvals/approval-ask.js";
 import { withoutCloudComputerTools } from "./dozo-no-computer.js";
 import {
   offerPhoneTools,
@@ -37,7 +37,7 @@ import {
   phoneReminderCreateRequest,
   phoneReminderCreateValue,
 } from "./dozo-phone-protocol.js";
-import { UserDeviceOfflineError } from "./user-device-gateway.js";
+import { UserDeviceOfflineError } from "./computers/host/user-device-gateway.js";
 
 const DROPPED = "Your computer disconnected. Check the result before retrying.";
 const EVENT_TOOL = PHONE_CALENDAR_CREATE_TOOL;

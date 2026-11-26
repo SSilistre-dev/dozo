@@ -32,11 +32,11 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
 }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ unread: "#006CEB" }) }));
+vi.mock("./appearance/appearance", () => ({ mobileTokens: () => ({ unread: "#006CEB" }) }));
 vi.mock("./dozo-message-actions", () => ({
   useDozoPins: (threadId: string) => api.pins[threadId],
 }));
-vi.mock("./inbox", () => ({ formatSnoozeWake: (iso: string) => `wakes ${iso}` }));
+vi.mock("./inbox/inbox", () => ({ formatSnoozeWake: (iso: string) => `wakes ${iso}` }));
 vi.mock("./dozo-bot-chats", () => ({
   dozoChatRoute: (botId: string, chatId: string, name: string) => ({
     pathname: "/thread",
@@ -48,7 +48,7 @@ vi.mock("./dozo-bot-chats", () => ({
     dialog: createElement("i", { "data-dialog": "" }),
   }),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ label, children }: { label?: string; children?: ReactNode }) =>
     createElement("section", { "aria-label": label }, children),
   SettingsRow: (props: {

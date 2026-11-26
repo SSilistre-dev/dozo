@@ -1,12 +1,14 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import type { ApprovalMode } from "@rakazo/core";
 import {
-  approvalModeFromPreference,
   literalCommandWords,
   readOnlyCwd,
   readOnlyPipeline,
   redactSecrets,
+  sliceWellFormed,
 } from "@rakazo/core";
-import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
+import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approvals/approval-ask.js";
+import { dozoTruncate } from "./dozo-approval-cut.js";
 import {
   commandAsked,
   commandRuleMatch,
@@ -16,11 +18,11 @@ import {
 import { isPhoneTool, phoneCard, phoneGate } from "./dozo-phone.js";
 import { dozoSendLimitCard, dozoSendLimitHeld } from "./dozo-send-limit.js";
 import { isUserBrowserTool, userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
 import {
   USER_COMPUTER_SHELL_TOOL,
   userComputerGate as upstreamUserComputerGate,
-} from "./run-tools-user-computer.js";
+} from "./runs/tools/run-tools-user-computer.js";
 
 export { isPhoneTool } from "./dozo-phone.js";
 export { routesToUserBrowser } from "./dozo-user-browser-gate.js";
@@ -36,18 +38,18 @@ export async function userComputerGate(
   blocked: boolean,
   name: string,
   args: Record<string, unknown>,
+  mode: ApprovalMode,
 ): Promise<"deny" | "allow" | "ask"> {
   // The user's phone has its own approval (dozo-phone.ts).
   if (isPhoneTool(name)) return phoneGate(ctx, blocked, name, args);
   // The page tools reach this gate only when they go to the user's own browser.
   if (isUserBrowserTool(name)) return userBrowserGate(ctx, blocked, name, args);
-  const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
+  const plan = await upstreamUserComputerGate(ctx, blocked, name, args, mode);
   if (plan === "deny" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
   const ruled = await commandRuleMatch(ctx, args, "user");
   if (ruled === "block") return "deny";
   if (plan !== "allow") return plan;
-  if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
-    return "allow";
+  if (mode === "never") return "allow";
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return "allow";
   if (ruled) return "allow";
   markCommandAsk(args);
@@ -116,7 +118,8 @@ function userBrowserCard(
       : toolName === "browser_act"
         ? JSON.stringify(args.actions)
         : "";
-  const detail = redactSecrets(doing, secrets).slice(0, 2000);
+  // Cut only where dozo-whole-approval.ts counts it, so the gate refuses a call that would be.
+  const detail = dozoTruncate(redactSecrets(doing, secrets), 2000, sliceWellFormed);
   // What the page tool would do on the site, as its card says it.
   // What the call would do on the site, as its card says it; the first card names it too.
   const place = ask.site || "this page";

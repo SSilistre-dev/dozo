@@ -1,6 +1,6 @@
-import { retry } from "./retry.js";
-import { errorStatus } from "./retry-policy.js";
-import { isAbandonedRequest, isNetworkFailure, isUnreachableStatus } from "./user-error.js";
+import { retry } from "./primitives/retry.js";
+import { errorStatus } from "./primitives/retry-policy.js";
+import { isAbandonedRequest, isNetworkFailure, isUnreachableStatus } from "./primitives/user-error.js";
 
 /** Waits between tries: 1, 2, 4 s, then 8 s each, so a call keeps trying for just over a minute. */
 const WAIT_MS = [1_000, 2_000, 4_000, 8_000];

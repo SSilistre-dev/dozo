@@ -13,7 +13,7 @@ import { problems } from "./check-config.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
-const FILES = ["apps/mobile/app.json", "apps/mobile/lib/incoming-share.ts"];
+const FILES = ["apps/mobile/app.json", "apps/mobile/lib/composer/incoming-share.ts"];
 const shipped = JSON.parse(fs.readFileSync(path.join(repo, "dozo/brand/brand.json"), "utf8"));
 const upstream = JSON.parse(fs.readFileSync(path.join(repo, FILES[0]), "utf8"));
 

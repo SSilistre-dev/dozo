@@ -1,6 +1,6 @@
 import { expireTeachValues } from "@rakazo/db";
-import type { TeachingSessionDeps } from "./teaching-session.js";
-import { expireTaughtSkillTeaching as expireUpstream } from "./teaching-session.js";
+import type { TeachingSessionDeps } from "./bots/teaching-session.js";
+import { expireTaughtSkillTeaching as expireUpstream } from "./bots/teaching-session.js";
 
 /**
  * Upstream's teaching timer under the same name: it also forgets the values typed while teaching

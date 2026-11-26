@@ -18,11 +18,11 @@ import type { DozoSettledRun, DozoStreamFrame } from "./dozo-bot-api-stream.js";
 import { DOZO_SETTLED_RUN_STATUSES, dozoRunStream, sseFrame } from "./dozo-bot-api-stream.js";
 import { messageBody } from "./dozo-chat-markdown.js";
 import { dozoTokenBotIds, dozoTokenReachesBot } from "./dozo-token-bots.js";
-import { readBoundedBody } from "./http-body.js";
+import { readBoundedBody } from "./http/http-body.js";
 import type { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
-import { isStopMessage } from "./thread-stop.js";
-import { throttleKey, windowCounter } from "./window-counter.js";
+import { isStopMessage } from "./threads/thread-stop.js";
+import { throttleKey, windowCounter } from "./http/window-counter.js";
 
 export const DOZO_BOT_API_PREFIX = "/api/v1/dozo";
 

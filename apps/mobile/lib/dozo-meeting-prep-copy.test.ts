@@ -1,7 +1,7 @@
 import { findBotTemplate } from "@rakazo/core";
 import { afterEach, expect, it } from "vitest";
-import { botTemplateCopy } from "./bot-template-copy";
-import { resetI18nForTests } from "./i18n";
+import { botTemplateCopy } from "./bots/bot-template-copy";
+import { resetI18nForTests } from "./i18n/i18n";
 
 // Runs on the branded tree: anchored rules add the template's copy and its Turkish catalog entries.
 

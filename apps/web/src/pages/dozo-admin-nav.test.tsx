@@ -3,10 +3,10 @@ import { act, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-vi.mock("./AdminAccessPage", () => ({
+vi.mock("./auth/AdminAccessPage", () => ({
   AccessGrantsPanel: () => <div data-testid="grants-panel" />,
 }));
-vi.mock("./PluginSubmissionsPanel", () => ({
+vi.mock("./plugins/PluginSubmissionsPanel", () => ({
   PluginSubmissionsPanel: () => <div data-testid="plugins-panel" />,
 }));
 

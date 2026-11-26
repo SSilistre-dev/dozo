@@ -26,8 +26,8 @@ vi.mock("@rakazo/adapters", async (original) => ({
   acquireComputerExecutionLease: spies.lease,
   releaseComputerExecutionLease: spies.leaseEnd,
 }));
-vi.mock("./computer-control.js", async (original) => ({
-  ...(await original<typeof import("./computer-control.js")>()),
+vi.mock("./computers/computer-control.js", async (original) => ({
+  ...(await original<typeof import("./computers/computer-control.js")>()),
   takeComputerControl: spies.take,
   releaseComputerControl: spies.release,
 }));

@@ -3,15 +3,15 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
-import { parseModelSecret } from "./model-secret.js";
-import { findConnectedModelCredential, loadStoredModelSecret } from "./model-selection.js";
+import { resolveMemberMainModel, selectConfiguredModel } from "./models/model-roles.js";
+import { parseModelSecret } from "./models/model-secret.js";
+import { findConnectedModelCredential, loadStoredModelSecret } from "./models/model-selection.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
   normalizeOpenAiCompatibleBaseUrl,
-} from "./openai-compatible-url.js";
-import { parseOpenAiCompatibleVoiceSecret } from "./openai-compatible-voice.js";
-import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
+} from "./models/endpoints/openai-compatible-url.js";
+import { parseOpenAiCompatibleVoiceSecret } from "./providers/voice/openai-compatible/openai-compatible-voice.js";
+import { createOpenAiCompatibleFetch } from "./runtime/pi/models/pi-openai-compatible-provider.js";
 
 /**
  * The check before a call starts: do the places a call needs answer right now. It never makes a

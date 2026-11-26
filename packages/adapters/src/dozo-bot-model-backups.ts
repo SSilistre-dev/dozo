@@ -3,8 +3,8 @@ import { modelRoleChoiceKey } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { readBotModelBackups } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { DeploymentModelDefaults } from "./model-roles.js";
-import { effectiveModelRole } from "./model-roles.js";
+import type { DeploymentModelDefaults } from "./models/model-roles.js";
+import { effectiveModelRole } from "./models/model-roles.js";
 
 type Db = Pick<
   PrismaClient,

@@ -22,7 +22,7 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children?: ReactNode }) => <div role="status">{children}</div>,
 }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://computer.test",
   isServerReachable: () => store.reachable,
   subscribeServerReachable: (listener: () => void) => {
@@ -37,7 +37,7 @@ vi.mock("./dozo-relay-fetch", () => ({
     return () => store.relayListeners.delete(listener);
   },
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   useMobileTokens: () => ({ mutedForeground: "muted", border: "border" }),
 }));
 

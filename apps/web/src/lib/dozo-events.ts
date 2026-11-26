@@ -2,7 +2,7 @@ import type { DozoClientEvent } from "@rakazo/contracts";
 import { sendEvent } from "./dozo-event-sender";
 import { readPlanIntent } from "./dozo-plan-intent";
 import { takeSignupStarted } from "./dozo-signup-start";
-import { rpc } from "./rpc";
+import { rpc } from "./query/rpc";
 
 /** The fork's product events the web app reports (`DozoClientEventSchema`), through `sendEvent`. */
 export function reportEvent(event: DozoClientEvent): void {

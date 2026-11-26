@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "./builtin.tool-definition.js";
-import { PiAgentRuntime } from "./pi-runtime.js";
-import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
+import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
+import { PiAgentRuntime } from "./runtime/pi/pi-runtime.js";
+import { serializeTurnCheckpoint } from "./runs/turn/turn-checkpoint.js";
 
 const model = {
   provider: "openai-compatible",

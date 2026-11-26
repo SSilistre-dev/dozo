@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./client.js";
-import { answerRunInput } from "./thread-ask.js";
+import type { PrismaClient } from "./database/client.js";
+import { answerRunInput } from "./threads/thread-ask.js";
 
 /**
  * A client that sends an answer again (its first try may have been lost on the way) must not apply

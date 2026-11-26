@@ -6,10 +6,10 @@ import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js"
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
 import { deviceHasPasswords, deviceOffers } from "./dozo-device-capabilities.js";
 import { runCameByToken } from "./dozo-token-run.js";
-import type { RunContext } from "./run-context.js";
-import { isRunTainted } from "./run-context.js";
-import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
-import { USER_COMPUTER_SHELL_TOOL } from "./user-computer-tools.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import { isRunTainted } from "./runs/assembly/run-context.js";
+import { PAGE_BROWSER_TOOL_NAMES } from "./runs/tools/run-tool-selection.js";
+import { USER_COMPUTER_SHELL_TOOL } from "./computers/host/user-computer-tools.js";
 
 /**
  * Where the page tools go and what they ask, for the bot's own browser on the user's computer

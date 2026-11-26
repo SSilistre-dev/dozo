@@ -28,14 +28,14 @@ const { session, fetchAuthCapabilities, overlays } = vi.hoisted(() => {
     },
   };
 });
-vi.mock("./auth", () => ({ authClient: { $store: { atoms: { session } } } }));
-vi.mock("./auth-capabilities", () => ({ fetchAuthCapabilities }));
-vi.mock("../pages/SettingsOverlay", () => ({ screen: "settings" }));
+vi.mock("./auth/auth", () => ({ authClient: { $store: { atoms: { session } } } }));
+vi.mock("./auth/auth-capabilities", () => ({ fetchAuthCapabilities }));
+vi.mock("../pages/settings/SettingsOverlay", () => ({ screen: "settings" }));
 vi.mock("../components/bot-templates/bot-templates-dialog", () => ({ screen: "new bot" }));
-vi.mock("../pages/BotContextMenu", () => ({ screen: "bot menu" }));
-vi.mock("./preload-recovery", () => ({ importChunk: overlays.loaded }));
+vi.mock("../pages/shell/chat/bot-context-menu", () => ({ screen: "bot menu" }));
+vi.mock("./platform/preload-recovery", () => ({ importChunk: overlays.loaded }));
 vi.mock("./dozo-lazy-surfaces", () => ({ preloadDozoSurfaces: async () => ({ screen: "panel" }) }));
-vi.mock("./monitoring", () => ({ reportClientError: overlays.reported }));
+vi.mock("./platform/monitoring", () => ({ reportClientError: overlays.reported }));
 
 import {
   appHasPainted,

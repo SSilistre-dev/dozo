@@ -5,7 +5,7 @@ import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button } from "@rakazo/ui-web";
 import type { ComponentProps } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { rpc } from "../../lib/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { DozoLocalModels } from "../dozo-local-models";
 import { ModelStep as UpstreamModelStep } from "./model-step";
 import type { OnboardingModel } from "./use-onboarding-model";

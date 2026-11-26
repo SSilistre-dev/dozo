@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ decideSaved: vi.fn(), list: vi.fn(async () => []) }));
 
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const client = { dozoTeach: { decideSaved: api.decideSaved }, skills: { list: api.list } };
   return {
     rpc: client,

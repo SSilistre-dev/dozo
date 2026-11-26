@@ -1,6 +1,6 @@
 import { DOZO_DEFAULT_DAILY_SENDS } from "@rakazo/contracts";
 import { wallClock } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./database/client.js";
 
 type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw"> | Prisma.TransactionClient;
 

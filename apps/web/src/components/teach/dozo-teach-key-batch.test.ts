@@ -2,7 +2,7 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, expect, it, vi } from "vitest";
 
 const keys = vi.hoisted(() => vi.fn(async (_input: unknown, _options?: unknown) => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({ rpc: { dozoTeach: { keys } } }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: { dozoTeach: { keys } } }));
 
 const { closeTeachKeys, queueTeachKey, sendTeachKeysNow } = await import("./dozo-teach-key-batch");
 const { enqueueTeachComputerInput } = await import("./teach-computer-input-chain");

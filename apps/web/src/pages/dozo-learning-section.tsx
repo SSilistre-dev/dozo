@@ -1,13 +1,13 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoLearningMode } from "@rakazo/contracts";
 import { DOZO_LEARNING_CHANGED_CODE } from "@rakazo/contracts";
-import { Button, NativeSelect, NativeSelectOption, SectionHeading } from "@rakazo/ui-web";
+import { errorCode } from "@rakazo/core";
+import { Button, OptionSelect, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query";
-import { errorCode } from "../lib/user-error";
-import { SettingsCard } from "./shell/bot-settings-sections";
+import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query/query";
+import { SettingsCard } from "./shell/bots/bot-settings-sections";
 
 function changedSince(error: Error | null): boolean {
   return errorCode(error) === DOZO_LEARNING_CHANGED_CODE;
@@ -26,6 +26,7 @@ export function DozoLearningSection({
   botId: string;
   ownerId?: string | null;
 }) {
+  const { t } = useLingui();
   const ids = useId();
   const me = useQueryUserId();
   const owner = Boolean(ownerId) && ownerId === me;
@@ -65,24 +66,20 @@ export function DozoLearningSection({
             className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
           >
             <Trans>Learn from chats</Trans>
-            <NativeSelect
+            <OptionSelect<DozoLearningMode>
               id={`${ids}-learn`}
               size="sm"
               className="w-auto"
               value={current}
               disabled={mode.pending}
-              onChange={(event) => mode.run(event.target.value as DozoLearningMode)}
-            >
-              <NativeSelectOption value="off">
-                <Trans>Off</Trans>
-              </NativeSelectOption>
-              <NativeSelectOption value="ask">
-                <Trans id="Ask first">Ask first</Trans>
-              </NativeSelectOption>
-              <NativeSelectOption value="auto">
-                <Trans>Auto</Trans>
-              </NativeSelectOption>
-            </NativeSelect>
+              options={[
+                { value: "off", label: t`Off` },
+                // Upstream names this label by id (the vault policies), so the catalogs hold it under that id.
+                { value: "ask", label: t({ id: "Ask first", message: "Ask first" }) },
+                { value: "auto", label: t`Auto` },
+              ]}
+              onValueChange={(value) => mode.run(value)}
+            />
           </label>
         </SettingsCard>
       ) : null}

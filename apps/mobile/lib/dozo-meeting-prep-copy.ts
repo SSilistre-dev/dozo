@@ -1,5 +1,5 @@
 import { t } from "@lingui/core/macro";
-import type { BotTemplateCopy } from "./bot-template-copy";
+import type { BotTemplateCopy } from "./bots/bot-template-copy";
 
 /** The "Meeting prep" template's name, summary and sample in the app's language. */
 export function dozoMeetingPrepCopy(): BotTemplateCopy {

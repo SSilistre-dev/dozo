@@ -3,7 +3,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { readJsonColumn, recordAuditEvent } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
-import { toComputerRef } from "./computer-support.js";
+import { toComputerRef } from "./computers/screens/computer-support.js";
 import { groupSiteSessions, hasSiteSessions, readBrowserSites } from "./dozo-site-sessions.js";
 
 /** More sites than a person signs in to by hand in one go are page clutter, not sign-ins. */

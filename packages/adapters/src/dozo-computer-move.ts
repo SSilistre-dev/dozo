@@ -11,15 +11,15 @@ import { ClientError, retry } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { computerScopeKey, teamComputerUserId } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { toComputerRef } from "./computer-support.js";
+import { toComputerRef } from "./computers/screens/computer-support.js";
 import {
   isTeamBotFolderName,
   removeComputerWorkspaceDirectories,
   teamBrowserProfileName,
-} from "./computer-workspace.js";
-import { removeAgentHomeFolders, resolveAgentHomePath } from "./home.js";
-import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
-import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
+} from "./computers/computer-workspace.js";
+import { removeAgentHomeFolders, resolveAgentHomePath } from "./storage/home.js";
+import { sandboxKindCapabilities } from "./computers/sandbox/sandbox-kind-capabilities.js";
+import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./storage/workspace-save-policy.js";
 
 export const BOT_FILES_NOT_MOVED = "Couldn't move this bot's files. Try again.";
 export const BOT_FILES_UNMOVABLE = "This computer can't move a bot's files.";

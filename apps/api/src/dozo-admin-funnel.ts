@@ -7,7 +7,7 @@ import type {
 import { DOZO_FUNNEL_STEPS } from "@rakazo/contracts";
 import { MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import { Prisma, runAsSystem } from "@rakazo/db";
-import { requireAdmin } from "./admins.js";
+import { requireAdmin } from "./auth/admins.js";
 import type { RouterContext } from "./routes/context.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;

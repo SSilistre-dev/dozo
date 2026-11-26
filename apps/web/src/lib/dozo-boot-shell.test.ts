@@ -6,8 +6,9 @@ import script from "../../public/dozo-boot.js?raw";
 import {
   BOTS_SIDEBAR_MINI_WIDTH,
   clampBotsSidebarWidth,
+  maximumBotsSidebarWidth,
   readBotsSidebarWidth,
-} from "./bots-sidebar-pref";
+} from "./preferences/bots-sidebar-pref";
 
 function runAt(path: string, viewport = 1280, saved: Record<string, string> = {}) {
   window.history.replaceState(null, "", path);
@@ -23,7 +24,7 @@ function runAt(path: string, viewport = 1280, saved: Record<string, string> = {}
 
 /** The width the app's sidebar opens at for the one user this browser saved, or for a new one. */
 function appWidth(viewport: number, userId: string | null) {
-  return clampBotsSidebarWidth(readBotsSidebarWidth(userId), viewport);
+  return clampBotsSidebarWidth(readBotsSidebarWidth(userId), maximumBotsSidebarWidth(viewport));
 }
 
 afterEach(() => {

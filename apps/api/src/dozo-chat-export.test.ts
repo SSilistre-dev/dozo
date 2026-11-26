@@ -10,8 +10,8 @@ const spies = vi.hoisted(() => ({
   resolve: vi.fn(),
   loadPage: vi.fn(),
 }));
-vi.mock("./thread-target.js", () => ({ resolveThreadTarget: spies.resolve }));
-vi.mock("./thread-message-pages.js", () => ({ loadMessagePage: spies.loadPage }));
+vi.mock("./threads/thread-target.js", () => ({ resolveThreadTarget: spies.resolve }));
+vi.mock("./threads/thread-message-pages.js", () => ({ loadMessagePage: spies.loadPage }));
 
 const actor: Actor = {
   userId: "user-1",

@@ -13,11 +13,11 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoQuietHours: { set: api.set } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoQuietHours: {
@@ -29,7 +29,7 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../../../../packages/i18n/src/user-error", () => ({
   errorText: (_error: unknown, fallback: string) => fallback,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -54,8 +54,33 @@ vi.mock("@rakazo/ui-web", () => {
         {children}
       </label>
     ),
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect: ({
+      options,
+      value,
+      onValueChange,
+      size: _size,
+      "data-testid": testId,
+      ...props
+    }: {
+      options: { value: string; label: string; disabled?: boolean }[];
+      value: string | null;
+      onValueChange: (value: string) => void;
+      size?: string;
+      "data-testid"?: string;
+    } & Omit<ComponentProps<"select">, "value" | "onChange" | "size">) => (
+      <select
+        data-testid={testId}
+        {...props}
+        value={value ?? ""}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
     Switch: ({
       checked,
       onCheckedChange,
@@ -116,7 +141,7 @@ vi.mock("@rakazo/ui-web", () => {
 
 type Style = { variant?: string; size?: string };
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DozoQuietHoursRow } from "./dozo-quiet-hours-row";
 
 const NIGHT = { startMinute: 1320, endMinute: 420, days: 127 };

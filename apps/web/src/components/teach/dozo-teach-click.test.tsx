@@ -8,12 +8,13 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
+import { useTeachClick } from "./dozo-teach-click";
 
 type Input = { kind: string; payload: Record<string, unknown> };
 
 const computerInput = vi.hoisted(() => vi.fn(async (_input: unknown) => ({ ok: true })));
 const keys = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: { computer: { input: computerInput }, dozoTeach: { keys } },
 }));
 
@@ -74,16 +75,21 @@ function pointer(
   options: { button?: number; buttons?: number } = {},
 ) {
   const buttons = options.buttons ?? (type === "pointerup" ? 0 : 1);
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    button: options.button ?? 0,
+    buttons,
+    // A real browser names the pointer; upstream follows the one that pressed.
+    pointerId: 1,
+  };
   return act(async () => {
     overlay.dispatchEvent(
-      new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        button: options.button ?? 0,
-        buttons,
-      }),
+      typeof PointerEvent === "function"
+        ? new PointerEvent(type, init)
+        : new MouseEvent(type, init),
     );
   });
 }
@@ -99,7 +105,11 @@ it("sends a plain click as one request, at the spot it began", async () => {
   await pointer(overlay, "pointerup", 101, 51);
   await vi.waitFor(() => expect(computerInput).toHaveBeenCalledOnce());
   expect(sent()).toEqual([
-    { botId: "bot-1", kind: "pointer", payload: { x: 200, y: 100, button: "left", type: "click" } },
+    {
+      botId: "bot-1",
+      kind: "pointer",
+      payload: { x: 200, y: 100, button: "left", type: "click", skillId: "skill-1" },
+    },
   ]);
 });
 
@@ -113,9 +123,9 @@ it("sends a right click as one right click, and a double click as two clicks in 
   await pointer(overlay, "pointerup", 20, 20);
   await vi.waitFor(() => expect(computerInput).toHaveBeenCalledTimes(3));
   expect(sent().map((input) => input.payload)).toEqual([
-    { x: 20, y: 20, button: "right", type: "click" },
-    { x: 40, y: 40, button: "left", type: "click" },
-    { x: 40, y: 40, button: "left", type: "click" },
+    { x: 20, y: 20, button: "right", type: "click", skillId: "skill-1" },
+    { x: 40, y: 40, button: "left", type: "click", skillId: "skill-1" },
+    { x: 40, y: 40, button: "left", type: "click", skillId: "skill-1" },
   ]);
 });
 
@@ -261,4 +271,50 @@ it("shows no ring for a press that becomes a drag, and hides the ring from assis
   await pointer(overlay, "pointermove", 200, 150);
   expect(container.querySelector('[data-testid="teach-click-ring"]')).toBeNull();
   await pointer(overlay, "pointerup", 200, 150);
+});
+
+it("hands a right-button drag to upstream as a right press", async () => {
+  const { overlay } = await mount();
+  await pointer(overlay, "pointerdown", 100, 50, { button: 2, buttons: 2 });
+  await pointer(overlay, "pointermove", 200, 150, { button: 2, buttons: 2 });
+  await pointer(overlay, "pointerup", 200, 150, { button: 2 });
+  await vi.waitFor(() => expect(types().at(-1)).toBe("up"));
+  expect(sent()[0]?.payload).toMatchObject({ type: "down", button: "right" });
+});
+
+it("hands a drag to upstream in a browser with no pointer events, as a mouse press", async () => {
+  vi.stubGlobal("PointerEvent", undefined);
+  const { overlay } = await mount();
+  await pointer(overlay, "pointerdown", 100, 50);
+  await pointer(overlay, "pointermove", 200, 150);
+  await pointer(overlay, "pointerup", 200, 150);
+  await vi.waitFor(() => expect(types().at(-1)).toBe("up"));
+  expect(types()[0]).toBe("down");
+  expect(types()).not.toContain("click");
+});
+
+it("names no recording on a click when it was given none", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const target = document.createElement("div");
+  document.body.append(target);
+  target.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, width: 640, height: 400, right: 640, bottom: 400 }) as DOMRect;
+  target.setPointerCapture = () => undefined;
+  target.hasPointerCapture = () => false;
+  function Bare() {
+    useTeachClick("bot-1", undefined, target);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  roots.push(root);
+  await act(async () => root.render(<Bare />));
+  await pointer(target, "pointerdown", 100, 50);
+  await pointer(target, "pointerup", 100, 50);
+  await vi.waitFor(() => expect(computerInput).toHaveBeenCalledOnce());
+  // The computer's default screen (1280 wide) stands in for a size not given, so 640 shown is half.
+  expect(sent()[0]).toEqual({
+    botId: "bot-1",
+    kind: "pointer",
+    payload: { x: 200, y: 100, button: "left", type: "click" },
+  });
 });

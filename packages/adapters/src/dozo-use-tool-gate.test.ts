@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { builtinAgentTools } from "./tools/builtin.tool-definition.js";
 
 // A call wrapped in use_tool reaches the executor, and so the tool gate (gateToolCall, which
 // dozoHostedCommandHold is wired into), under the wrapped tool's own name and arguments, so a
@@ -48,14 +48,14 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
     },
   }),
 }));
-vi.mock("./pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
-vi.mock("./pi-openai-compatible-provider.js", () => ({
+vi.mock("./runtime/pi/models/pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
+vi.mock("./runtime/pi/models/pi-openai-compatible-provider.js", () => ({
   OPENAI_COMPATIBLE_PROVIDER_ID: "openai-compatible",
   registerOpenAiCompatibleCatalog: (models: unknown) => models,
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-const { PiAgentRuntime } = await import("./pi-runtime.js");
+const { PiAgentRuntime } = await import("./runtime/pi/pi-runtime.js");
 
 const tool = (name: string) => {
   const found = builtinAgentTools.find((entry) => entry.name === name);

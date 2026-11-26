@@ -1,8 +1,8 @@
 import { BYOK_TIERS, TRIAL_SANDBOX_ALLOWANCE_CENTS } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { syncBillingSnapshot } from "./billing.js";
-import type { PrismaClient } from "./client.js";
-import { createDb } from "./client.js";
+import { syncBillingSnapshot } from "./billing/billing.js";
+import type { PrismaClient } from "./database/client.js";
+import { createDb } from "./database/client.js";
 import {
   grantInForce,
   paidTierOf,
@@ -12,8 +12,8 @@ import {
   tierInForce,
 } from "./dozo-plan-grant.js";
 import { SharedSpaceFullError, withSharedSpace } from "./dozo-shared-space.js";
-import { asSystem, runAsTenant } from "./row-security.js";
-import { planComputerSize, sandboxAllowancePlan } from "./sandbox-allowance.js";
+import { asSystem, runAsTenant } from "./database/row-security.js";
+import { planComputerSize, sandboxAllowancePlan } from "./billing/sandbox-allowance.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
 // which row security applies to. The fork's unit gate has no database and skips it.
@@ -43,6 +43,19 @@ describePostgres("a plan granted by hand (PostgreSQL)", () => {
     });
     const spaceId = `${id}-space`;
     await owner.space.create({ data: { id: spaceId, organizationId: id, name: spaceId } });
+    // Asks for the largest size, so what it reads is the largest its plan allows.
+    const computerId = `${id}-computer`;
+    await owner.computer.create({
+      data: {
+        id: computerId,
+        spaceId,
+        userId,
+        scopeKey: computerId,
+        homeKey: computerId,
+        kind: "fake",
+        size: "xlarge",
+      },
+    });
     await owner.modelCreditAccount.create({ data: { organizationId: id, mode: "byok" } });
     if (subscription)
       await owner.billingAccount.create({
@@ -53,7 +66,7 @@ describePostgres("a plan granted by hand (PostgreSQL)", () => {
           ...subscription,
         },
       });
-    return { id, spaceId, customerId: `customer-${id}` };
+    return { id, spaceId, computerId, customerId: `customer-${id}` };
   }
 
   const grant = (organizationId: string, tier: "pro" | "max", days: number, note?: string) =>
@@ -72,8 +85,8 @@ describePostgres("a plan granted by hand (PostgreSQL)", () => {
       runAsTenant({ spaceId, userId }, read);
   const allowance = (org: { id: string; spaceId: string }) =>
     asMember(org.spaceId)(async () => (await sandboxAllowancePlan(prisma, org.id))?.limitCents);
-  const size = (org: { spaceId: string }) =>
-    asMember(org.spaceId)(() => planComputerSize(prisma, org.spaceId));
+  const size = (org: { spaceId: string; computerId: string }) =>
+    asMember(org.spaceId)(() => planComputerSize(prisma, org.computerId));
 
   const subscription = (tier: "pro" | "max" | null) =>
     tier

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ read: vi.fn(), me: vi.fn() }));
 
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/query/query", () => ({
   useSpaceQueries: () => ({
     me: { queryOptions: () => ({ queryKey: ["me"], queryFn: () => api.me() }) },
     dozoAdmin: {

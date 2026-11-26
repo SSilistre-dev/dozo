@@ -4,18 +4,18 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { mobileTokens } from "../lib/appearance";
+import { mobileTokens } from "../lib/appearance/appearance";
 import {
   askAgain,
   confirmRemoval,
   revisableRead,
   takeEditDraft,
 } from "../lib/dozo-message-actions";
-import { native, useThemedStyles } from "../lib/native";
-import { useSave } from "../lib/query";
-import { useScreenHeader } from "../lib/screen-header";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { native, useThemedStyles } from "../lib/native/native";
+import { useSave } from "../lib/query/query";
+import { useScreenHeader } from "../lib/navigation/screen-header";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { errorText } from "../lib/api/user-error";
 
 /**
  * Edits a message of the person's in a chat with a bot and sends it again; the bot answers it

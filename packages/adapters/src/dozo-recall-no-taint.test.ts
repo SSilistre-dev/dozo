@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { selectRunTools } from "./run-assembly-capabilities.js";
+import { selectRunTools } from "./runs/assembly/run-assembly-capabilities.js";
 
 // The branded run assembly. Automatic recall does not taint the run: a tainted run's turn is never
 // retained (run-turn.ts rule in dozo/brand/brand.json), and the recalled block reaches the model as
@@ -19,7 +19,11 @@ type Input = Parameters<typeof selectRunTools>;
 async function initiallyTainted(recalledMemory: string, ownerStartedRun = true) {
   const hold = {
     deps: {
-      prisma: { externalEffect: { findMany: async () => [] } },
+      prisma: {
+        externalEffect: { findMany: async () => [] },
+        bot: { findMany: async () => [] },
+        chatGroup: { findMany: async () => [] },
+      },
       phoneCallsEnabled: false,
     },
     run: { id: "r", userId: "u", spaceId: "s", botId: "b", trigger: "user", clientNonce: null },
@@ -33,6 +37,10 @@ async function initiallyTainted(recalledMemory: string, ownerStartedRun = true) 
       sourceBlocks: [],
       task: { prompt: "What did we decide?" },
       thread: { id: "t", groupId: null },
+      conversationThread: { id: "t", groupId: null },
+      conversationRun: { trigger: "user" },
+      messagingChannelRun: false,
+      ownerComputerRoutine: false,
       ticketBoardEnabled: false,
       unknownChannelSourceId: undefined,
     },

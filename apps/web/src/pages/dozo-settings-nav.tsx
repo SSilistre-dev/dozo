@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { Scale } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchAuthCapabilities } from "../lib/auth-capabilities";
-import type { SettingsNavItem } from "./settings-nav";
-import type { SettingsSection } from "./shell-overlay";
+import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
+import type { SettingsNavItem } from "./settings/settings-nav";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 
 /**
  * The settings sections under three quiet headings (dozo/design/settings-v2.html): the account's
@@ -12,7 +12,7 @@ import type { SettingsSection } from "./shell-overlay";
  * this list does not know yet goes under App, so nothing upstream adds is lost.
  */
 const DOZO_SETTINGS_NAV_GROUPS = {
-  account: ["general", "usage", "billing", "organization"],
+  account: ["general", "spaces", "usage", "billing", "organization"],
   bots: ["models", "confirmations", "vault", "wallet", "memory", "voice", "messaging", "computer"],
   app: ["labs", "updates"],
 } as const satisfies Record<string, readonly SettingsSection[]>;
@@ -98,8 +98,8 @@ export function DozoSettingsNavGroups({
       </div>
       {group.items.map((item) => {
         const Icon = item.icon;
-        // A space's page is reached from General, so General stays marked.
-        const active = item.id === (section === "space" ? "general" : section);
+        // A space's page is reached from Spaces, so Spaces stays marked.
+        const active = item.id === (section === "space" ? "spaces" : section);
         return (
           <button
             key={item.id}

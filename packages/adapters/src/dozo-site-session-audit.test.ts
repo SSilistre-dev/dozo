@@ -1,7 +1,7 @@
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { expireComputerControl } from "./computer-control.js";
+import { expireComputerControl } from "./computers/screens/computer-control.js";
 import { auditSiteSessionsAfterControl } from "./dozo-site-session-audit.js";
 
 const audit = vi.hoisted(() => vi.fn(async (_input: unknown) => undefined));

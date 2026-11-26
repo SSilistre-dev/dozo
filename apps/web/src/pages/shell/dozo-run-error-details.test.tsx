@@ -9,10 +9,10 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
 }));
 const billing = vi.hoisted(() => ({ value: null as unknown }));
-vi.mock("../../components/SubscriptionGate", () => ({
+vi.mock("../../components/billing/SubscriptionGate", () => ({
   useBilling: () => ({ status: billing.value }),
 }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/query/query", () => ({
   useSpaceQueries: () => ({
     me: { queryOptions: () => ({ queryKey: ["me"], queryFn: async () => me.value }) },
   }),

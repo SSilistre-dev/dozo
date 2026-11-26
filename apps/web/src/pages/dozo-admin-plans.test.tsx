@@ -9,11 +9,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), setQuota: vi.fn(), toastError: vi.fn() }));
 
-vi.mock("../lib/rpc", () => {
+vi.mock("../lib/query/rpc", () => {
   const rpc = { dozoAdmin: { plans: { setQuota: api.setQuota } } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
-vi.mock("../lib/query", async (importOriginal) => ({
+vi.mock("../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     dozoAdmin: {
@@ -59,7 +59,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Spinner: () => <span role="status" />,
 }));
 
-import type * as Query from "../lib/query";
+import type * as Query from "../lib/query/query";
 import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 import { DozoAdminPlans } from "./dozo-admin-plans";
 

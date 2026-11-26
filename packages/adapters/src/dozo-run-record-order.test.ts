@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadRunRecords } from "./run-assembly-records.js";
+import { loadRunRecords } from "./runs/assembly/run-assembly-records.js";
 
 type Input = Parameters<typeof loadRunRecords>;
 

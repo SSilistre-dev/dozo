@@ -14,7 +14,7 @@ import type { Context, MutableModels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connectionOutReason, poolResetAt } from "../dozo-model-pool.js";
-import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { claudeCodeDriver } from "../providers/cli-model/claude-code/dozo-driver.js";
 import { cliAccountRef, parseCliAccountRef } from "./dozo-cli-driver.js";
 import {
   accountHome,

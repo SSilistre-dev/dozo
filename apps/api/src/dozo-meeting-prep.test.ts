@@ -1,7 +1,7 @@
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { findBotTemplate } from "@rakazo/core";
 import { expect, it } from "vitest";
-import { templateAppCards, templatePlan } from "./bot-templates.js";
+import { templateAppCards, templatePlan } from "./bots/bot-templates.js";
 
 // Runs on the branded tree, where "meeting-prep" is in the template list.
 

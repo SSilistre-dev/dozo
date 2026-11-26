@@ -13,8 +13,8 @@ import {
 } from "@rakazo/db";
 import type { QueueRun, QueueSnapshot } from "../dozo-queue-plan.js";
 import { planQueue, queueLabel } from "../dozo-queue-plan.js";
-import { finishThreadStop, STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../thread-stop.js";
-import { resolveThreadTarget } from "../thread-target.js";
+import { finishThreadStop, STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../threads/thread-stop.js";
+import { resolveThreadTarget } from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
 
 const RUN_FIELDS = {

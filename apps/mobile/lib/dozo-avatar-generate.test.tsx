@@ -15,13 +15,13 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <p role="alert">{children}</p>,
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/user-error", () => ({
   errorText: (_error: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async (spaceId: string | null = "space") => ({
@@ -31,16 +31,16 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({ destructive: "red" }) }));
-vi.mock("../components/bot-avatar", () => ({
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("../components/bots/bot-avatar", () => ({
   BotAvatar: ({ color }: { color: string }) => <img alt="" src={color} />,
 }));
-vi.mock("../components/growing-text-input", () => ({
+vi.mock("../components/ui/growing-text-input", () => ({
   GrowingTextInput: ({
     label,
     value,
@@ -60,7 +60,7 @@ vi.mock("../components/growing-text-input", () => ({
     />
   ),
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
     onPress,
@@ -79,7 +79,7 @@ vi.mock("../components/native-action-button", () => ({
 }));
 
 import { DozoAvatarGenerate } from "../components/dozo-avatar-generate";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 const IMAGE = "data:image/webp;base64,AAAA";
 const used = vi.fn<(image: string) => void>();

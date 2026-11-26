@@ -40,36 +40,36 @@ vi.mock("react-native", () => ({
   Text: element("span"),
   View: element("div"),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-1",
 }));
-vi.mock("./saved-chats", () => ({
+vi.mock("./inbox/saved-chats", () => ({
   savedChatsScope: () => state.scope(),
   readSavedThread: (_scope: unknown, target: string) => state.saved[target] ?? null,
 }));
-vi.mock("./monitoring", () => ({ reportMobileError: state.report }));
-vi.mock("./organizations", () => ({ selectSpaceAcrossOrganizations: vi.fn() }));
+vi.mock("./platform/monitoring", () => ({ reportMobileError: state.report }));
+vi.mock("./spaces/organizations", () => ({ selectSpaceAcrossOrganizations: vi.fn() }));
 vi.mock("./integrations-cache", () => ({ integrationsCacheScope: () => null }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./session", () => ({
+vi.mock("./native/native", () => ({ useMobileTokens: () => ({}) }));
+vi.mock("./api/session", () => ({
   currentReadySessionGeneration: () => 1,
   currentSessionGeneration: () => 1,
   subscribeSessionGeneration: () => () => undefined,
-  loadVerifiedIntegrationsScope: async () => ({
+  loadVerifiedScope: async () => ({
     apiBase: "https://app.example.test",
     userId: "user-1",
   }),
 }));
-vi.mock("./user-error", () => ({ errorText: () => "error" }));
-vi.mock("./search-inbox", () => ({
+vi.mock("./api/user-error", () => ({ errorText: () => "error" }));
+vi.mock("./search/search-inbox", () => ({
   useInboxBot: (botId?: string) =>
     botId && state.inboxThread ? { id: botId, threadId: state.inboxThread } : undefined,
 }));
-vi.mock("./query", async () => {
+vi.mock("./query/query", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   return {
     queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -81,7 +81,7 @@ vi.mock("./query", async () => {
 });
 
 import { useDozoChatId } from "./dozo-chat-target";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 vi.mock("../components/thread/thread-screen", () => ({
   Thread: ({ userId }: { userId: string }) => {

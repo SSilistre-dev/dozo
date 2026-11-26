@@ -2,8 +2,8 @@ import { recordRoutineWriter } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { lastingWriteHeld } from "./dozo-lasting-write-card.js";
 import { markRunReadHistory } from "./dozo-read-outside.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall, ToolHandler } from "./run-tool-gate.js";
+import type { RunContext } from "./runs/assembly/run-context.js";
+import type { ToolCall, ToolHandler } from "./runs/tools/run-tool-gate.js";
 
 /** The tools that write a routine, each answering `{ ok: true, routineId }` once it is saved. */
 const ROUTINE_WRITE_TOOLS = new Set(["schedule_create", "schedule_update", "create_child_routine"]);

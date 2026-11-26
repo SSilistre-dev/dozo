@@ -10,7 +10,7 @@ import { ClientError, deadlineSignal, MESSAGING_EMAIL_SUFFIX, withAbort } from "
 import type { PrismaClient } from "@rakazo/db";
 import * as z from "zod";
 import type { RouterContext } from "./routes/context.js";
-import { windowCounter } from "./window-counter.js";
+import { windowCounter } from "./http/window-counter.js";
 
 /** Reports one member may send an hour. */
 export const DOZO_FEEDBACK_PER_USER_HOUR = 5;

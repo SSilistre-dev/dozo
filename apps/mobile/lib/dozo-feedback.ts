@@ -1,8 +1,8 @@
 import type { DozoClientDiagnostics } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Platform } from "react-native";
-import { queryClient, rpcQuery } from "./query";
-import { deviceTimeZone } from "./routine";
+import { queryClient, rpcQuery } from "./query/query";
+import { deviceTimeZone } from "./routines/routine";
 
 /** What the app says about itself: surface, system, language and time zone, nothing else. */
 export function mobileDiagnostics(): DozoClientDiagnostics {

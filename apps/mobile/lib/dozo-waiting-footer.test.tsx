@@ -41,18 +41,18 @@ vi.mock("react-native", () => ({
     </button>
   ),
 }));
-vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: ui.sheet }));
+vi.mock("./native/ios-action-sheet", () => ({ showIOSActionSheet: ui.sheet }));
 vi.mock("../components/thread/thread-list-controls", () => ({
   ThreadWorkingFooter: ({ label }: { label: string }) => <div role="status">{label}</div>,
 }));
-vi.mock("./query", () => ({
+vi.mock("./query/query", () => ({
   queryClient: {},
   rpcQuery: () => ({ queryKey: [] }),
   useSave: () => ({ run: ui.run, pending: ui.pending }),
 }));
-vi.mock("./roster-signals", () => ({ useSpaceChanges: () => undefined }));
-vi.mock("./screen-query", () => ({ useScreenQuery: () => ({ data: { items: ui.items } }) }));
-vi.mock("./user-error", () => ({ errorText: () => "failed" }));
+vi.mock("./api/roster-signals", () => ({ useSpaceChanges: () => undefined }));
+vi.mock("./query/screen-query", () => ({ useScreenQuery: () => ({ data: { items: ui.items } }) }));
+vi.mock("./api/user-error", () => ({ errorText: () => "failed" }));
 
 import { DozoWaitingFooter } from "../components/thread/dozo-waiting-footer";
 

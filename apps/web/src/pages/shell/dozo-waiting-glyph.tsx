@@ -6,9 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import type { ComponentProps } from "react";
 import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
-import type { ArtifactTarget } from "../../lib/artifact-open";
+import type { ArtifactTarget } from "../../lib/pages/artifact-open";
 import { errorText, toastError } from "../../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 
 type GlyphProps = ComponentProps<typeof ActiveBotGlyph>;
 

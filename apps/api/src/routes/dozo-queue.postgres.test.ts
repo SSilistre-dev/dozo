@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { handleRpcError } from "../rpc-errors.js";
-import { STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../thread-stop.js";
+import { STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../threads/thread-stop.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;

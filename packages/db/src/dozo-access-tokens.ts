@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
+import type { PrismaClient } from "./database/client.js";
+import { Prisma } from "./database/client.js";
 
 type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw"> | Prisma.TransactionClient;
 

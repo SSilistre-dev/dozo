@@ -1,6 +1,6 @@
 import { probeOpenAiCompatibleModels } from "@rakazo/adapters";
 import { DOZO_LOCAL_MODEL_SERVERS, deadlineSignal } from "@rakazo/core";
-import { mayUsePrivateEndpoint } from "./mcp-servers.js";
+import { mayUsePrivateEndpoint } from "./integrations/mcp-servers.js";
 import type { RouterContext } from "./routes/context.js";
 
 /** A running local server answers at once; one that is not running refuses the connection. */

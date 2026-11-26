@@ -1,9 +1,9 @@
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
-import { authClient } from "../lib/auth";
-import { useSave } from "../lib/query";
-import { AuthFrame, submitClass } from "./Auth";
+import { authClient } from "../lib/auth/auth";
+import { useSave } from "../lib/query/query";
+import { AuthFrame, submitClass } from "./auth/Auth";
 
 /**
  * Where a Dozo server on the user's own computer sends them to sign in with this account

@@ -1,0 +1,107 @@
+{
+  "en": {
+    "subject": "Invite a friend",
+    "body": "Invite a friend to Dozo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.",
+    "link": "Open Dozo",
+    "afterLink": "and choose Invite friends for your link.",
+    "signature": "Dozo"
+  },
+  "de": {
+    "subject": "Lade einen Freund ein",
+    "body": "Lade einen Freund zu Dozo ein: Er bekommt {weeks} Wochen gratis, und du erhältst einen Gratismonat, wenn er ein qualifizierendes Abo mit einer neuen Karte abschließt.",
+    "link": "Öffne Dozo",
+    "afterLink": "und wähle „Freunde einladen“, um deinen Link zu erhalten.",
+    "signature": "Dozo"
+  },
+  "es": {
+    "subject": "Invita a un amigo",
+    "body": "Invita a un amigo a Dozo: recibe {weeks} semanas gratis y tú ganas un mes gratis cuando empiece una suscripción válida con una tarjeta nueva.",
+    "link": "Abre Dozo",
+    "afterLink": "y elige Invitar amigos para obtener tu enlace.",
+    "signature": "Dozo"
+  },
+  "fr": {
+    "subject": "Invitez un ami",
+    "body": "Invitez un ami sur Dozo : il profite de {weeks} semaines gratuites, et vous gagnez un mois offert quand il démarre un abonnement éligible avec une nouvelle carte.",
+    "link": "Ouvrez Dozo",
+    "afterLink": "et choisissez Inviter des amis pour obtenir votre lien.",
+    "signature": "Dozo"
+  },
+  "he": {
+    "subject": "הזמנת חבר",
+    "body": "אפשר להזמין חבר ל-Dozo: הוא מקבל {weeks} שבועות בחינם, ואתם מקבלים חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
+    "link": "פתיחת Dozo",
+    "afterLink": "ובחירה ב״הזמנת חברים״ כדי לקבל את הקישור שלך.",
+    "signature": "Dozo"
+  },
+  "hi": {
+    "subject": "किसी दोस्त को आमंत्रित करें",
+    "body": "किसी दोस्त को Dozo पर बुलाएँ: उन्हें {weeks} हफ़्ते मुफ़्त मिलते हैं, और जब वे नए कार्ड से योग्य सदस्यता शुरू करते हैं तो आपको एक महीना मुफ़्त मिलता है।",
+    "link": "Dozo खोलें",
+    "afterLink": "और अपना लिंक पाने के लिए दोस्तों को आमंत्रित करें चुनें।",
+    "signature": "Dozo"
+  },
+  "ja": {
+    "subject": "友だちを招待",
+    "body": "友だちをDozoに招待しましょう。友だちは{weeks}週間無料で使え、新しいカードで対象のサブスクリプションを始めると、あなたは1か月無料になります。",
+    "link": "Dozoを開き",
+    "afterLink": "「友だちを招待」を選ぶとリンクを取得できます。",
+    "signature": "Dozo"
+  },
+  "ko": {
+    "subject": "친구 초대",
+    "body": "친구를 Dozo에 초대하세요. 친구는 {weeks}주 동안 무료로 사용하고, 친구가 새 카드로 대상 구독을 시작하면 나는 한 달 무료를 받아요.",
+    "link": "Dozo를 열고",
+    "afterLink": "친구 초대를 선택해 링크를 받으세요.",
+    "signature": "Dozo"
+  },
+  "nl": {
+    "subject": "Nodig een vriend uit",
+    "body": "Nodig een vriend uit voor Dozo: die krijgt {weeks} weken gratis, en jij verdient een gratis maand zodra die met een nieuwe kaart een geldig abonnement start.",
+    "link": "Open Dozo",
+    "afterLink": "en kies Vrienden uitnodigen voor je link.",
+    "signature": "Dozo"
+  },
+  "pl": {
+    "subject": "Zaproś znajomego",
+    "body": "Zaproś znajomego do Dozo: otrzyma {weeks} tyg. za darmo, a Ty zyskasz bezpłatny miesiąc, gdy rozpocznie subskrypcję spełniającą warunki z użyciem nowej karty.",
+    "link": "Otwórz Dozo",
+    "afterLink": "i wybierz Zaproś znajomych, aby otrzymać swój link.",
+    "signature": "Dozo"
+  },
+  "pt-BR": {
+    "subject": "Convide um amigo",
+    "body": "Convide um amigo para o Dozo: ele ganha {weeks} semanas grátis, e você ganha um mês grátis quando ele começar uma assinatura válida com um cartão novo.",
+    "link": "Abra o Dozo",
+    "afterLink": "e escolha Convidar amigos para obter seu link.",
+    "signature": "Dozo"
+  },
+  "ru": {
+    "subject": "Пригласите друга",
+    "body": "Пригласите друга в Dozo: он получит {weeks} недели бесплатно, а вы — бесплатный месяц, когда он оформит подходящую подписку с новой картой.",
+    "link": "Откройте Dozo",
+    "afterLink": "и выберите «Пригласить друзей», чтобы получить ссылку.",
+    "signature": "Dozo"
+  },
+  "tr": {
+    "subject": "Bir arkadaşınızı davet edin",
+    "body": "Bir arkadaşınızı Dozo’ya davet edin: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da siz bir ay ücretsiz kazanırsınız.",
+    "link": "Dozo’yu açın",
+    "afterLink": "ve bağlantınızı almak için Arkadaşlarını davet et’i seçin.",
+    "signature": "Dozo"
+  },
+  "zh-CN": {
+    "subject": "邀请好友",
+    "body": "邀请朋友加入 Dozo：对方可免费使用 {weeks} 周；当对方用新卡开始符合条件的订阅时，你将获得一个月免费。",
+    "link": "打开 Dozo",
+    "afterLink": "并选择“邀请好友”获取你的链接。",
+    "signature": "Dozo"
+  },
+  "zh-TW": {
+    "subject": "邀請朋友",
+    "body": "邀請朋友加入 Dozo：對方可免費使用 {weeks} 週；當對方用新卡開始符合條件的訂閱時，你將獲得一個月免費。",
+    "link": "開啟 Dozo",
+    "afterLink": "並選擇「邀請朋友」取得你的連結。",
+    "signature": "Dozo"
+  }
+}

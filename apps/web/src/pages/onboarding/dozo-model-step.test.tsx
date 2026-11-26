@@ -47,7 +47,7 @@ vi.mock("../dozo-local-models", () => ({
     );
   },
 }));
-vi.mock("../../lib/rpc", () => ({ rpc: { billing: { status: mocks.status } } }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: { billing: { status: mocks.status } } }));
 
 import { dozoCreditsOnSale, dozoProviderChoices, ModelStep } from "./dozo-model-step";
 

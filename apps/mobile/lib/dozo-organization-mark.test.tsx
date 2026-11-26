@@ -16,7 +16,7 @@ vi.mock("expo-router", () => ({
     state.focus = effect;
   },
 }));
-vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./platform/app-foreground", () => ({ useAppForeground: () => true }));
 
 vi.mock("react-native", () => ({
   StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
@@ -31,11 +31,11 @@ vi.mock("react-native", () => ({
     accessibilityLabel?: string;
   }) => <img src={source.uri} alt={accessibilityLabel} />,
 }));
-vi.mock("./native", () => ({
+vi.mock("./native/native", () => ({
   native: { separator: "separator" },
   useThemedStyles: <T,>(factory: () => T) => factory(),
 }));
-vi.mock("./query", async () => {
+vi.mock("./query/query", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   return {
     queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -45,7 +45,7 @@ vi.mock("./query", async () => {
     }),
   };
 });
-vi.mock("./roster-signals", () => ({
+vi.mock("./api/roster-signals", () => ({
   useRosterSignals: (read: () => unknown, enabled: boolean) => {
     state.signal = read;
     state.enabled.push(enabled);
@@ -53,7 +53,7 @@ vi.mock("./roster-signals", () => ({
 }));
 
 import { dozoHomeTitle, useDozoOrganizationMark } from "./dozo-organization-mark";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 const LOGO = "data:image/webp;base64,UklGRg==";
 

@@ -1,7 +1,7 @@
 import type { ByokTier } from "@rakazo/contracts";
 import { BYOK_TIERS, ByokTierSchema } from "@rakazo/contracts";
-import { hasBillingAccess } from "./billing.js";
-import type { PrismaClient } from "./client.js";
+import { hasBillingAccess } from "./billing/billing.js";
+import type { PrismaClient } from "./database/client.js";
 import type { PlanLimitsByTier } from "./dozo-plan-quotas.js";
 
 /**

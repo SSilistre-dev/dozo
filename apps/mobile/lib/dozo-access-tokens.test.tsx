@@ -62,27 +62,27 @@ vi.mock("@expo/ui/community/menu", () => ({
     return <>{children}</>;
   },
 }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
-vi.mock("./native", () => ({
+vi.mock("./appearance/appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("./native/native", () => ({
   native: { groupedPage: "grouped", secondaryLabel: "secondary" },
   useResolvedAppearance: () => "dark",
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./i18n", () => ({ dateLocaleForUi: () => "en-US", useUiLocale: () => "en" }));
-vi.mock("./screen-header", () => ({
+vi.mock("./i18n/i18n", () => ({ dateLocaleForUi: () => "en-US", useUiLocale: () => "en" }));
+vi.mock("./navigation/screen-header", () => ({
   useScreenHeader: (header: Header) => {
     ui.header = header;
   },
 }));
-vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./user-error", () => ({
+vi.mock("./layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api-server", () => ({}));
+vi.mock("./auth/api-auth", () => ({}));
+vi.mock("./api/api-live", () => ({}));
+vi.mock("./api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space",
   captureApiRequestContext: async (spaceId: string | null = "space") => ({
@@ -92,8 +92,8 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("../components/confirm-identity", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../components/vault/confirm-identity", () => ({
   useIdentityConfirmation: () => ({
     withIdentityConfirmation: <T,>(action: () => Promise<T>) => {
       ui.confirmed();
@@ -102,7 +102,7 @@ vi.mock("../components/confirm-identity", () => ({
     identityDialog: <i data-identity="" />,
   }),
 }));
-vi.mock("../components/native-action-button", () => ({
+vi.mock("../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
     onPress,
@@ -119,7 +119,7 @@ vi.mock("../components/native-action-button", () => ({
     </button>
   ),
 }));
-vi.mock("../components/menu-picker", () => ({
+vi.mock("../components/ui/menu-picker", () => ({
   MenuPickerMenu: ({
     label,
     choices,
@@ -143,7 +143,7 @@ vi.mock("../components/menu-picker", () => ({
     </fieldset>
   ),
 }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <ul>{children}</ul>,
   SettingsInputRow: ({
     accessibilityLabel,
@@ -192,7 +192,7 @@ vi.mock("../components/settings-group", () => ({
 import DozoAccessTokens from "../app/(settings)/dozo-access-tokens";
 import { revokeTitle, tokenDates } from "./dozo-access-tokens";
 import { compileMissingMessages } from "./dozo-i18n-fallback";
-import { queryClient } from "./query";
+import { queryClient } from "./query/query";
 
 let answers: Record<string, unknown>;
 let root: Root;
