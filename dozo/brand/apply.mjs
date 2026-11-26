@@ -21,6 +21,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fillCatalogs } from "./catalog-fill.mjs";
 import {
   BINARY_EXT,
   countText,
@@ -201,6 +202,10 @@ if (args.strict && errors.length === 0) {
   }
 }
 
+// The fork's strings are in the Turkish catalog only: the other languages get their English source.
+const filled = fillCatalogs(root, (rel) => planned.get(rel) ?? fs.readFileSync(path.join(root, rel), "utf8"));
+for (const [rel, text] of filled.changed) planned.set(rel, text);
+
 let assetsChanged = 0;
 const copies = [];
 for (const asset of assets) {
@@ -236,6 +241,9 @@ console.log("replacements:");
 const keys = Object.keys(counts).sort();
 for (const key of keys) console.log(`  ${key}: ${counts[key]}`);
 if (keys.length === 0) console.log("  none");
+console.log(
+  `catalogs: ${filled.added} entries added to ${filled.changed.size} languages (English source of the Turkish-only ids)`,
+);
 console.log(
   `hooks: anchored ${anchoredApplied} of ${config.anchored.length} applied, ${anchoredAlready} already applied; assets ${assetsChanged} copied`,
 );

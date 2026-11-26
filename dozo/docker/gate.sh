@@ -361,16 +361,19 @@ olc() {
     # scripts (where the rules on the server bundle's scripts apply; tracked and untracked, not
     # ignored) are branded in a scratch copy inside one container and
     # scanned, so the old name left in anything users see (a screen, an e-mail template, a locale
-    # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds.
+    # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds. The same copy
+    # then holds every language catalog to the same message ids (catalog-parity.mjs).
     ( FAILS=()
     if [ -f dozo/brand/check.mjs ]; then
       if out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra scripts \
         | drun brand-leak -i --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'set -e
             mkdir -p /tmp/w; tar --null --ignore-failed-read -T - -cf - | tar -C /tmp/w -xf -
             node dozo/brand/apply.mjs --root /tmp/w --strict > /dev/null
-            node dozo/brand/check.mjs --root /tmp/w' 2>&1); then
+            node dozo/brand/check.mjs --root /tmp/w
+            node dozo/brand/catalog-parity.mjs --root /tmp/w' 2>&1); then
+        echo "[olc] $(printf '%s\n' "$out" | tail -2 | head -1) (branded copy of the working tree)"
         echo "[olc] $(printf '%s\n' "$out" | tail -1) (branded copy of the working tree)"
-      else printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; fi
+      else printf '%s\n' "$out" | tail -60; fail "leak gate or catalog parity: the old brand is user-visible in the branded tree (dozo/brand/check.mjs), or a message id is missing from a language catalog (dozo/brand/catalog-parity.mjs)"; fi
     else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
       olc_job_end leak) > "$OLC_TMP/leak.out" 2>&1 &
   else OLC_UNSTARTED_OK=1   # node_image has already failed
