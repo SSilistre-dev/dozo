@@ -731,6 +731,77 @@
       "reason": "closed registration on mobile: no link to sign-up under the form (the link back from the reset form stays)"
     },
     {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "import { NativeActionButton } from \"../components/native/native-action-button\";\nimport { SocialSignInButtons } from \"../components/settings/social-sign-in-buttons\";",
+      "replace": "import { DozoAuthMark } from \"../components/dozo-auth-mark\";\nimport { SocialSignInButtons } from \"../components/settings/social-sign-in-buttons\";\nimport { NativeActionButton } from \"../components/native/native-action-button\";\nimport { passwordShown, signInNeedsCode, usesCode } from \"../lib/dozo-code-first\";",
+      "requires": [
+        "apps/mobile/lib/dozo-code-first.ts",
+        "apps/mobile/components/dozo-auth-mark.tsx"
+      ],
+      "reason": "code-first sign-in on mobile: the brand mark and the helpers the rules below call"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "const [codeSent, setCodeSent] = useState(false);\n  const [emailStep, setEmailStep] = useState(false);",
+      "replace": "const [passwordChosen, setPasswordChosen] = useState(false);\n  const [emailStep, setEmailStep] = useState(false);\n  const [codeSent, setCodeSent] = useState(false);",
+      "reason": "code-first sign-in on mobile: sign-in shows the password only once the person asks for it"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "const usingCode = codeFlow && (codeSent || !password);",
+      "replace": "const usingCode = usesCode(codeFlow, mode, codeSent, passwordChosen);",
+      "requires": [
+        "apps/mobile/lib/dozo-code-first.ts"
+      ],
+      "reason": "code-first sign-in on mobile: a server with codes asks for the code first, and sign-up never for a password"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "{mode !== \"forgot\" ? (\n                          <View",
+      "replace": "{passwordShown(mode, usingCode) ? (\n                          <View",
+      "requires": [
+        "apps/mobile/lib/dozo-code-first.ts"
+      ],
+      "reason": "code-first sign-in on mobile: no password field while the code form is shown"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "await signIn(email.trim(), password);",
+      "replace": "const signedInFrom = apiBase;\n        if (await signInNeedsCode(codeFlow, () => signIn(email.trim(), password))) {\n          // The account's email was never confirmed; a code confirms it from the app.\n          if (currentApiBase() !== signedInFrom) return;\n          await sendSignInCode(email.trim());\n          if (currentApiBase() !== signedInFrom) return;\n          setCode(\"\");\n          setCodeSent(true);\n          return;\n        }",
+      "requires": [
+        "apps/mobile/lib/dozo-code-first.ts"
+      ],
+      "reason": "code-first sign-in on mobile: an unverified account's password sign-in goes on with an emailed code"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "{passkeys && mode === \"in\" && !presented ? (",
+      "replace": "{usingCode && mode === \"in\" && !codeSent ? (\n                          <Pressable\n                            accessibilityRole=\"button\"\n                            hitSlop={8}\n                            onPress={() => {\n                              setPasswordChosen(true);\n                              setError(null);\n                            }}\n                            style={{ alignSelf: \"center\", marginTop: 16 }}\n                          >\n                            <Text\n                              style={{ color: tokens.foreground, fontSize: 14, fontWeight: \"600\" }}\n                            >\n                              {t`Use a password instead`}\n                            </Text>\n                          </Pressable>\n                        ) : null}\n                        {mode === \"in\" && passkeys && !presented ? (",
+      "reason": "code-first sign-in on mobile: the way to a password, with the web page's wording"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "keyboardDismissMode={Platform.OS === \"ios\" ? \"interactive\" : \"on-drag\"}\n              keyboardShouldPersistTaps=\"handled\"\n            >",
+      "replace": "keyboardShouldPersistTaps=\"handled\"\n              keyboardDismissMode={Platform.OS === \"ios\" ? \"interactive\" : \"on-drag\"}\n            >\n              <DozoAuthMark />",
+      "requires": [
+        "apps/mobile/lib/dozo-code-first.ts",
+        "apps/mobile/components/dozo-auth-mark.tsx"
+      ],
+      "reason": "the Dozo mark above the sign-in title, on every step"
+    },
+    {
+      "file": "apps/mobile/lib/auth/api-auth.ts",
+      "find": "    throw new Error(authResponseErrorText(response.status, body, invalidJson));\n  }\n  const token = tokenFromAuthResponse(response, body);",
+      "replace": "    // The status and error code let the sign-in screen tell an unverified email from a wrong password;\n    // not enumerable, so the error still compares equal to a plain one.\n    throw Object.defineProperties(new Error(authResponseErrorText(response.status, body, invalidJson)), {\n      status: { value: response.status },\n      code: { value: (body as { code?: unknown } | null)?.code },\n    });\n  }\n  const token = tokenFromAuthResponse(response, body);",
+      "reason": "code-first sign-in on mobile: authenticate's error carries the status and the server's error code"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "setPasswordVisible(false);\n  }, [mode, apiBase]);",
+      "replace": "setPasswordVisible(false);\n    setPasswordChosen(false);\n  }, [mode, apiBase]);",
+      "reason": "code-first sign-in on mobile: a change of form puts the code form back, so a password chosen once does not stay for every later visit"
+    },
+    {
       "file": "apps/mobile/app.json",
       "find": "\"slug\": \"rakazo\",\n    \"owner\": \"inbox-zero\",",
       "replace": "\"slug\": \"dozo\",",

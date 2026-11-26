@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fetchFresh } from "@rakazo/core/query";
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -8,7 +9,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
 import type * as Endpoint from "./api/endpoint";
-import { passwordResetCapabilities, signUp } from "./auth/api-auth";
+import {
+  passwordResetCapabilities,
+  sendSignInCode,
+  signIn,
+  signInWithCode,
+  signUp,
+} from "./auth/api-auth";
 import { confirmUnsentSendLoss } from "./thread/send/unsent-send-warning";
 
 // Runs on the branded tree (`make qa`). A server with a mail provider opens no session at sign-up:
@@ -95,6 +102,9 @@ vi.mock("../components/settings/social-sign-in-buttons", () => ({
   SocialSignInButtons: () => null,
 }));
 vi.mock("./native/native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
+vi.mock("../components/dozo-auth-mark", () => ({
+  DozoAuthMark: () => <div data-testid="dozo-mark" />,
+}));
 vi.mock("react-native-svg", () => ({ default: () => null, Path: () => null }));
 vi.mock("./api/api-server", () => ({}));
 vi.mock("./api/api-live", () => ({}));
@@ -202,4 +212,98 @@ it("a sign-up that opened a session goes on into the app", async () => {
   await signUpWith({ verificationRequired: false });
   expect(router.replace).toHaveBeenCalledWith("/");
   expect(text()).not.toContain("Check your email");
+});
+
+// A server that can email a code asks for the code first.
+const codeServer = { ...capabilities, emailCode: true } as typeof capabilities;
+const primary = () => host.querySelector<HTMLButtonElement>('button[data-prominence="primary"]');
+const failure = (status: number, code: string) =>
+  Object.assign(new Error("refused"), { status, code });
+
+it("a code server's sign-up has no password field and sends a code, never a password sign-up", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  await act(async () => root.render(<SignIn />));
+  expect(input("Password")).toBeNull();
+  await type(input("Name"), "Ada");
+  await type(input("Email"), "ada@example.test");
+  await act(async () => primary()?.click());
+  expect(sendSignInCode).toHaveBeenCalledExactlyOnceWith("ada@example.test");
+  expect(signUp).not.toHaveBeenCalled();
+  expect(input("Code")).not.toBeNull();
+  expect(host.querySelector('[data-testid="dozo-mark"]')).not.toBeNull();
+  await type(input("Code"), "123456");
+  expect(signInWithCode).toHaveBeenCalledExactlyOnceWith("ada@example.test", "123456", "Ada");
+});
+
+it("sign-in shows the password only after Use a password instead", async () => {
+  route.mode = "in";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  await act(async () => root.render(<SignIn />));
+  expect(input("Password")).toBeNull();
+  await act(async () => button("Use a password instead")?.click());
+  expect(input("Password")).not.toBeNull();
+  expect(button("Use a password instead")).toBeUndefined();
+});
+
+it("a password sign-in refused as unverified moves to the code step with a code sent", async () => {
+  route.mode = "in";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  vi.mocked(signIn).mockRejectedValue(failure(403, "EMAIL_NOT_VERIFIED"));
+  await act(async () => root.render(<SignIn />));
+  await act(async () => button("Use a password instead")?.click());
+  await type(input("Email"), "ada@example.test");
+  await type(input("Password"), "example-password-12");
+  await act(async () => primary()?.click());
+  expect(sendSignInCode).toHaveBeenCalledExactlyOnceWith("ada@example.test");
+  expect(input("Code")).not.toBeNull();
+});
+
+it("a wrong password shows the error and sends no code", async () => {
+  route.mode = "in";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  vi.mocked(signIn).mockRejectedValue(failure(401, "INVALID_EMAIL_OR_PASSWORD"));
+  await act(async () => root.render(<SignIn />));
+  await act(async () => button("Use a password instead")?.click());
+  await type(input("Email"), "ada@example.test");
+  await type(input("Password"), "example-password-12");
+  await act(async () => primary()?.click());
+  expect(sendSignInCode).not.toHaveBeenCalled();
+  expect(input("Code")).toBeNull();
+});
+
+it("a server without codes keeps the password sign-up", async () => {
+  await act(async () => root.render(<SignIn />));
+  expect(input("Password")).not.toBeNull();
+  expect(button("Use a password instead")).toBeUndefined();
+});
+
+it("a sign-in refused as unverified after the server changed sends no code to the new server", async () => {
+  route.mode = "in";
+  server.base = "https://one.example.invalid";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  const refused = deferred<never>();
+  vi.mocked(signIn).mockReturnValue(refused.promise);
+  await act(async () => root.render(<SignIn />));
+  await act(async () => button("Use a password instead")?.click());
+  await type(input("Email"), "ada@example.test");
+  await type(input("Password"), "example-password-12");
+  await act(async () => primary()?.click());
+  server.base = "https://two.example.invalid";
+  await act(async () => server.refocus());
+  await act(async () => refused.reject(failure(403, "EMAIL_NOT_VERIFIED")));
+  expect(sendSignInCode).not.toHaveBeenCalled();
+  expect(input("Code")).toBeNull();
+  server.base = "https://one.example.invalid";
+});
+
+it("going between sign-in and sign-up puts the code form back", async () => {
+  route.mode = "in";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  await act(async () => root.render(<SignIn />));
+  await act(async () => button("Use a password instead")?.click());
+  expect(input("Password")).not.toBeNull();
+  await act(async () => button("Sign up")?.click());
+  await act(async () => button("Sign in")?.click());
+  expect(input("Password")).toBeNull();
+  expect(button("Use a password instead")).toBeDefined();
 });

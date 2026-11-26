@@ -7,9 +7,9 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
+import type * as Endpoint from "./api/endpoint";
 import { passwordResetCapabilities } from "./auth/api-auth";
 import { authModeFor, signupsAreClosed, titleWhenKnown } from "./dozo-signups";
-import type * as Endpoint from "./api/endpoint";
 
 // Runs on the branded tree (`make qa`): the screen under test is upstream's sign-in after the
 // closed-registration rules in dozo/brand/brand.json, so the texts carry the Dozo name.
@@ -69,8 +69,11 @@ vi.mock("../components/native/native-action-button", () => ({
     </button>
   ),
 }));
-vi.mock("../components/settings/social-sign-in-buttons", () => ({ SocialSignInButtons: () => null }));
+vi.mock("../components/settings/social-sign-in-buttons", () => ({
+  SocialSignInButtons: () => null,
+}));
 vi.mock("./native/native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
+vi.mock("../components/dozo-auth-mark", () => ({ DozoAuthMark: () => null }));
 vi.mock("react-native-svg", () => ({ default: () => null, Path: () => null }));
 vi.mock("./api/api-server", () => ({}));
 vi.mock("./api/api-live", () => ({}));
