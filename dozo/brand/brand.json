@@ -11877,6 +11877,12 @@
       "reason": "bot chats on mobile: a tool question answered in an extra chat answers that chat, not its bot's main chat"
     },
     {
+      "file": "apps/mobile/components/cards/ToolQuestionCard.tsx",
+      "find": "label={t`Accept`}\n              busy=",
+      "replace": "label={t`Accept`}\n              fill={false}\n              busy=",
+      "reason": "the Accept button keeps its own width like the other approval cards; a stretched primary button overflowed the card on iOS"
+    },
+    {
       "file": "apps/mobile/components/thread/thread-run-error.ts",
       "find": "import { errorText } from \"../../lib/api/user-error\";\nimport { computerHoursOutCopy",
       "replace": "import { errorText } from \"../../lib/api/user-error\";\nimport { dozoChatTarget, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport { computerHoursOutCopy",
