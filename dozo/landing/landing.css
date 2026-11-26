@@ -80,7 +80,7 @@ main,header,footer{position:relative;z-index:1}
 h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spacing:-.035em;text-wrap:balance}
 .lede{margin:18px auto 0;max-width:32em;font-size:clamp(16px,1.9vw,19px);color:var(--muted);text-wrap:balance}
 .cta{display:flex;justify-content:center;gap:12px;margin-top:28px;flex-wrap:wrap}
-.oses{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:14px}
+.oses{display:flex;justify-content:center;flex-wrap:wrap;gap:22px 8px;margin-top:24px}
 .frame-app{margin:36px auto 0;max-width:1000px;background:var(--side);border:1px solid var(--line);border-radius:28px;padding:4px 56px 32px;text-align:left}
 .ft{height:68px;display:flex;align-items:center}
 .ft h2{font-size:16px;font-weight:500;display:flex;align-items:center;gap:12px}
@@ -182,6 +182,14 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .dlb{gap:8px}.dlb:not(.w){background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}.dlb:not(.w):hover{box-shadow:inset 0 0 0 1.5px var(--text)}
 .ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.ic.dn{opacity:.7}
 .oses .dlb{padding:0 14px;gap:6px}.oses .ic{width:14px;height:14px}
+/* the App Store pill under the hero: a bot in ink rises over its top edge once, then stays there,
+   blinking and glancing with the others; it hops when the pill is hovered */
+.oses [data-os=ios]{position:relative}
+.peek{position:absolute;right:13px;bottom:calc(100% - 1px);width:24px;height:19px;overflow:hidden;pointer-events:none}
+.peek .bot{width:24px;height:24px;animation:peek .7s cubic-bezier(.3,1.5,.5,1) 1.2s both}
+.peek .t1{fill:var(--muted)}.peek .head,.peek .feature{animation:none}
+.oses [data-os=ios]:hover .peek svg{animation:hop .25s ease-out}
+@keyframes peek{from{transform:translateY(100%)}}
 .note{flex-basis:100%;font-size:13.5px;color:var(--muted)}
 .strip{background:var(--raise);border-radius:28px;padding:28px 40px}
 .dl{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 40px}.dl p{flex:1 1 20em}.dl .ih{flex-basis:100%}
@@ -228,7 +236,7 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
 }
 @media (prefers-reduced-motion:reduce){
  html{scroll-behavior:auto}
- .bot .head,.bot .feature,.bot svg,.wave svg{animation:none!important}
+ .bot .head,.bot .feature,.bot svg,.wave svg,.peek .bot{animation:none!important}
 }
 
 /* legal pages (privacy, terms, refunds): one plain text column under the landing header */
