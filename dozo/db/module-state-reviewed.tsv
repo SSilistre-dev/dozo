@@ -162,6 +162,7 @@ packages/contracts/src/dozo-relay.ts	module	const LOOPBACK_HOSTS = new Set(["loc
 packages/contracts/src/dozo-relay.ts	module	export const RelayKey = Base64Url(32);	global-safe	schema of a public id format
 packages/contracts/src/dozo-relay.ts	module	export const RelayChannelId = Base64Url(16);	global-safe	schema of a public id format
 packages/contracts/src/dozo-without-links.ts	module	const COMMON_TLDS = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-avatar-art.ts	module	const layouts = new Map<DozoCharacter, readonly DozoAvatarGroup[]>();	global-safe	drawing layout per character (six fixed keys), derived from constant art; holds no person data
 packages/core/src/dozo-command-rule-match.ts	module	const PREFIX_PROGRAMS: ReadonlySet<string> = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
 packages/core/src/dozo-lasting-write-approval.ts	module	const LASTING_WRITE_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
 packages/core/src/dozo-lasting-write-approval.ts	module	const LASTING_TEXT_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
