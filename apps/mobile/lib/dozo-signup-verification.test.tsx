@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fetchFresh } from "@rakazo/core/query";
+import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -274,4 +275,35 @@ it("a server without codes keeps the password sign-up", async () => {
   await act(async () => root.render(<SignIn />));
   expect(input("Password")).not.toBeNull();
   expect(button("Use a password instead")).toBeUndefined();
+});
+
+it("a sign-in refused as unverified after the server changed sends no code to the new server", async () => {
+  route.mode = "in";
+  server.base = "https://one.example.invalid";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  const refused = deferred<never>();
+  vi.mocked(signIn).mockReturnValue(refused.promise);
+  await act(async () => root.render(<SignIn />));
+  await act(async () => button("Use a password instead")?.click());
+  await type(input("Email"), "ada@example.test");
+  await type(input("Password"), "example-password-12");
+  await act(async () => primary()?.click());
+  server.base = "https://two.example.invalid";
+  await act(async () => server.refocus());
+  await act(async () => refused.reject(failure(403, "EMAIL_NOT_VERIFIED")));
+  expect(sendSignInCode).not.toHaveBeenCalled();
+  expect(input("Code")).toBeNull();
+  server.base = "https://one.example.invalid";
+});
+
+it("going between sign-in and sign-up puts the code form back", async () => {
+  route.mode = "in";
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(codeServer);
+  await act(async () => root.render(<SignIn />));
+  await act(async () => button("Use a password instead")?.click());
+  expect(input("Password")).not.toBeNull();
+  await act(async () => button("Sign up")?.click());
+  await act(async () => button("Sign in")?.click());
+  expect(input("Password")).toBeNull();
+  expect(button("Use a password instead")).toBeDefined();
 });

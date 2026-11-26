@@ -767,7 +767,7 @@
     {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "await signIn(email.trim(), password);",
-      "replace": "if (await signInNeedsCode(codeFlow, () => signIn(email.trim(), password))) {\n          // The account's email was never confirmed; a code confirms it from the app.\n          await sendSignInCode(email.trim());\n          setCode(\"\");\n          setCodeSent(true);\n          return;\n        }",
+      "replace": "const signedInFrom = apiBase;\n        if (await signInNeedsCode(codeFlow, () => signIn(email.trim(), password))) {\n          // The account's email was never confirmed; a code confirms it from the app.\n          if (currentApiBase() !== signedInFrom) return;\n          await sendSignInCode(email.trim());\n          if (currentApiBase() !== signedInFrom) return;\n          setCode(\"\");\n          setCodeSent(true);\n          return;\n        }",
       "requires": [
         "apps/mobile/lib/dozo-code-first.ts"
       ],
@@ -792,8 +792,14 @@
     {
       "file": "apps/mobile/lib/auth/api-auth.ts",
       "find": "    throw new Error(authResponseErrorText(response.status, body, invalidJson));\n  }\n  const token = tokenFromAuthResponse(response, body);",
-      "replace": "    // The status and error code let the sign-in screen tell an unverified email from a wrong password.\n    throw Object.assign(new Error(authResponseErrorText(response.status, body, invalidJson)), {\n      status: response.status,\n      code: (body as { code?: unknown } | null)?.code,\n    });\n  }\n  const token = tokenFromAuthResponse(response, body);",
+      "replace": "    // The status and error code let the sign-in screen tell an unverified email from a wrong password;\n    // not enumerable, so the error still compares equal to a plain one.\n    throw Object.defineProperties(new Error(authResponseErrorText(response.status, body, invalidJson)), {\n      status: { value: response.status },\n      code: { value: (body as { code?: unknown } | null)?.code },\n    });\n  }\n  const token = tokenFromAuthResponse(response, body);",
       "reason": "code-first sign-in on mobile: authenticate's error carries the status and the server's error code"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "setPasswordVisible(false);\n  }, [mode, apiBase]);",
+      "replace": "setPasswordVisible(false);\n    setPasswordChosen(false);\n  }, [mode, apiBase]);",
+      "reason": "code-first sign-in on mobile: a change of form puts the code form back, so a password chosen once does not stay for every later visit"
     },
     {
       "file": "apps/mobile/app.json",

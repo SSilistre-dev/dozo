@@ -6,7 +6,11 @@ export function DozoAuthMark() {
   return (
     <>
       <DozoInboxSeigaiha />
-      <View style={{ alignItems: "center", marginBottom: 24 }}>
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ alignItems: "center", marginBottom: 24 }}
+      >
         <DozoWordmark />
       </View>
     </>
