@@ -51,7 +51,7 @@ Nothing is installed on the host (the exceptions: `dozo/AGENTS.md`). Node toolin
   `make qa` is the full gate (run before merging). Commands, variables, exit codes:
   `dozo/docker/README.md`.
 - Gates exit with code 2 on failure.
-- `make olc` needs a local `upstream-main` branch; the first-time commands are in `dozo/SYNC.md`.
+- `make olc` needs an `upstream-main` branch (local, or origin's, whichever is fresher); the first-time commands are in `dozo/SYNC.md`.
 
 ## Syncing with upstream
 
