@@ -62,7 +62,7 @@ makes the addresses in the manifest live.
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
 failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
-`0.11.0-8`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+`0.16.0-9`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
 The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The

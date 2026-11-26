@@ -750,6 +750,12 @@
     },
     {
       "file": "apps/mobile/app.json",
+      "find": "\"version\": \"1.0.21\",",
+      "replace": "\"version\": \"1.0.22\",",
+      "reason": "the iOS app ships as 1.0.22, ahead of upstream's 1.0.21. When upstream bumps its version the anchor stops matching and the gate fails naming this rule: drop it if upstream's version is higher, else bump both numbers"
+    },
+    {
+      "file": "apps/mobile/app.json",
       "find": "\"scheme\": \"rakazo\",",
       "replace": "\"scheme\": [\"rakazo\", \"dozo\"],",
       "reason": "pairing links use the fork's own scheme (dozo://pair), which an upstream app on the same phone cannot claim; the upstream scheme stays first, because links the app makes and the origin the server trusts use the first one"
@@ -1957,6 +1963,33 @@
         "apps/mobile/components/bots/dozo-bot-art.tsx"
       ],
       "reason": "Dozo avatars on mobile: the avatar drawing reads a derived value, which this test's Reanimated stand-in lacks"
+    },
+    {
+      "file": "apps/mobile/components/thread/header/group-seats.tsx",
+      "find": "  if (parsed.kind === \"shape\") {\n    const [x, y, units] = SHIPPED_BOT_AVATAR_VIEWBOX.split(\" \").map(Number) as [\n      number,\n      number,\n      number,\n    ];\n    return {\n      box: [x, y, units],\n      outline: (paint) => <Path d={parsed.shapePath} {...paint} />,\n      face: (\n        <>\n          <Path d={parsed.shapePath} fill={parsed.color} />\n          <G fill={botEyeInk(parsed.color, page)}>\n            {avatarEyeRects(SHIPPED_BOT_AVATAR_EYES).map((rect) => (\n              <Rect key={rect.x} {...rect} />\n            ))}\n          </G>\n        </>\n      ),\n    };\n  }\n  const color = parsed.kind === \"color\" ? parsed.color : member.color;\n  const seed = avatarIdentitySeed(member.botId ?? member.name ?? color);\n  const outline = organicAvatarPath(seed);\n  const [x, y, units] = ORGANIC_AVATAR_VIEWBOX.split(\" \").map(Number) as [number, number, number];\n  return {\n    box: [x, y, units],\n    outline: (paint) => <Path d={outline} {...paint} />,\n    face: (\n      <>\n        <Path d={outline} fill={color} />\n        <G transform={`rotate(${organicAvatarEyeTilt(seed)})`} fill={botEyeInk(color, page)}>\n          {avatarEyeRects(ORGANIC_AVATAR_EYES).map((rect) => (\n            <Rect key={rect.x} {...rect} />\n          ))}\n        </G>\n      </>\n    ),\n  };",
+      "replace": "  return dozoSeatArt(member.botId ?? member.name, member.color, page.foreground);",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-shapes.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: a group header's member that is not a photo is the same still character as its avatar, not upstream's shape or generated body"
+    },
+    {
+      "file": "apps/mobile/components/thread/header/group-seats.tsx",
+      "find": "import {\n  avatarEyeRects,\n  avatarIdentitySeed,\n  botEyeInk,\n  ORGANIC_AVATAR_EYES,\n  ORGANIC_AVATAR_VIEWBOX,\n  organicAvatarEyeTilt,\n  organicAvatarPath,\n  SHIPPED_BOT_AVATAR_EYES,\n  SHIPPED_BOT_AVATAR_VIEWBOX,\n} from \"@rakazo/core\";\nimport type { ReactNode } from \"react\";\n",
+      "replace": "import type { ReactNode } from \"react\";\n",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-shapes.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the imports of the rule above, which no longer needs upstream's drawing helpers"
+    },
+    {
+      "file": "apps/mobile/components/thread/header/group-seats.tsx",
+      "find": "import { native, useMobileTokens, useResolvedAppearance } from \"../../../lib/native/native\";\n\ntype SeatMember",
+      "replace": "import { native, useMobileTokens, useResolvedAppearance } from \"../../../lib/native/native\";\nimport { dozoSeatArt } from \"../../bots/dozo-bot-shapes\";\n\ntype SeatMember",
+      "requires": [
+        "apps/mobile/components/bots/dozo-bot-shapes.tsx"
+      ],
+      "reason": "Dozo avatars on mobile: the import of the still Dozo character that the first rule above draws, placed where Biome sorts it"
     },
     {
       "file": "packages/contracts/src/rpc/app-contract.ts",
@@ -8436,6 +8469,114 @@
       "reason": "bot API: the Turkish copy of the Access tokens row and its dialog in Security"
     },
     {
+      "file": "apps/mobile/components/cards/OutgoingDraftCard.tsx",
+      "find": "const toLabel = t`To`;",
+      "replace": "const toLabel = t({ message: \"To\", context: \"recipient\" });",
+      "reason": "e-mail draft card: the recipient label has its own catalog entry, because upstream's plain To is also the end of a date range and Turkish translates it Bitiş"
+    },
+    {
+      "file": "apps/web/src/components/messages/OutgoingDraftCard.tsx",
+      "find": "const toLabel = t`To`;",
+      "replace": "const toLabel = t({ message: \"To\", context: \"recipient\" });",
+      "reason": "e-mail draft card: the recipient label has its own catalog entry, because upstream's plain To is also the end of a date range and Turkish translates it Bitiş"
+    },
+    {
+      "file": "packages/i18n/locales/en/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"To\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"To\"",
+      "reason": "e-mail draft card: the source entry of the recipient label"
+    },
+    {
+      "file": "packages/i18n/locales/de/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Bis\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Bis\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/ko/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"종료\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"종료\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/hi/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"तक\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"तक\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/pt-BR/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Até\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Até\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/zh-CN/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/zh-TW/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"到\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/es/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Hasta\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Hasta\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/ru/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"По\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"По\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/fr/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Au\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Au\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/he/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"עד\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"עד\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/nl/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Aan\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Aan\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/ja/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"終了日\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"終了日\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/pl/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Do\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"Do\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/th/messages.po",
+      "find": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"ถึง\"",
+      "replace": "#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"To\"\n\n#: apps/web/src/pages/space/ActivityList.tsx\nmsgid \"To\"\nmsgstr \"ถึง\"",
+      "reason": "e-mail draft card: the source entry of the recipient label. A catalog without it would show the message id on web, where the production build strips the message"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"To\"\nmsgstr \"Bitiş\"\n\n#. placeholder {0}: filters.dateRange.to",
+      "replace": "msgid \"To\"\nmsgstr \"Bitiş\"\n\n#: apps/mobile/components/cards/OutgoingDraftCard.tsx\n#: apps/web/src/components/messages/OutgoingDraftCard.tsx\nmsgctxt \"recipient\"\nmsgid \"To\"\nmsgstr \"Kime\"\n\n#. placeholder {0}: filters.dateRange.to",
+      "reason": "e-mail draft card: the Turkish recipient label Kime, next to the range end To that stays Bitiş"
+    },
+    {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Bota güvenilemedi\"\n\n#.",
       "replace": "msgstr \"Bota güvenilemedi\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"After {name}\"\nmsgstr \"{name} sonrası\"\n\n#.",
@@ -11830,6 +11971,12 @@
       "reason": "bot chats on mobile: an outgoing draft sent from an extra chat answers that chat, not its bot's main chat"
     },
     {
+      "file": "apps/mobile/components/cards/OutgoingDraftCard.tsx",
+      "find": "label={t`Send`}\n              busy=",
+      "replace": "label={t`Send`}\n              fill={false}\n              busy=",
+      "reason": "the Send button keeps its own width like the other approval cards; a stretched primary button overflowed the right-aligned footer on iOS"
+    },
+    {
       "file": "apps/mobile/components/cards/ToolQuestionCard.tsx",
       "find": "  const answer = useSave({\n    save: (input: { action: \"accept\" | \"decline\"; values?: ToolQuestionDraft }, send) =>\n      send(\"threads/answerToolQuestion\", {\n        ...target,",
       "replace": "  const chatId = useDozoChatId();\n  const answer = useSave({\n    save: (input: { action: \"accept\" | \"decline\"; values?: ToolQuestionDraft }, send) =>\n      send(\"threads/answerToolQuestion\", {\n        ...dozoChatTarget({ ...target, chatId }),",
@@ -11837,6 +11984,12 @@
         "apps/mobile/lib/dozo-chat-target.ts"
       ],
       "reason": "bot chats on mobile: a tool question answered in an extra chat answers that chat, not its bot's main chat"
+    },
+    {
+      "file": "apps/mobile/components/cards/ToolQuestionCard.tsx",
+      "find": "label={t`Accept`}\n              busy=",
+      "replace": "label={t`Accept`}\n              fill={false}\n              busy=",
+      "reason": "the Accept button keeps its own width like the other approval cards; a stretched primary button overflowed the card on iOS"
     },
     {
       "file": "apps/mobile/components/thread/thread-run-error.ts",
@@ -14766,7 +14919,20 @@
         "apps/mobile/components/dozo-inbox-seigaiha.tsx"
       ],
       "reason": "seigaiha on mobile: upstream test fixture: the header hook now adds the wordmark item, drawn with react-native-svg, which this test does not load"
-    }
+    },
+    {"file": "packages/core/src/routines/schedule.ts", "find": "    return new Intl.DateTimeFormat(locale, { hour: \"numeric\", minute: \"2-digit\" }).format(\n      new Date(2000, 0, 1, hour, minute),\n    );\n", "replace": "    // Dozo: a UTC instant read by a UTC formatter, so no zone offset applies. A local date in 2000\n    // gets the zone's current offset in Hermes and its historical one in iOS Intl.\n    return new Intl.DateTimeFormat(locale, {\n      hour: \"numeric\",\n      minute: \"2-digit\",\n      timeZone: \"UTC\",\n    }).format(new Date(Date.UTC(2000, 0, 1, hour, minute)));\n", "reason": "routines: a schedule's clock read one hour early on iOS in zones whose offset changed since 2000 (Europe/Istanbul)"},
+    {"file": "packages/i18n/src/cron.ts", "find": "export function cronLabels(locale: string): CronLabels {\n  if (locale === \"en\") return ENGLISH_CRON_LABELS;\n", "replace": "export function cronLabels(locale: string, clockLocale = locale): CronLabels {\n  if (locale === \"en\") {\n    if (clockLocale === \"en\") return ENGLISH_CRON_LABELS;\n    const english = ENGLISH_CRON_LABELS;\n    const clock = (time: string) => localizedClock(time, clockLocale);\n    return {\n      ...english,\n      atTime: (time) => english.atTime(clock(time)),\n      atTimes: (clocks) => english.atTimes?.(clocks.map(clock)) ?? \"\",\n      onThe1stAt: (time) => english.onThe1stAt(clock(time)),\n      onDayAt: (day, time) => english.onDayAt(day, clock(time)),\n    };\n  }\n", "reason": "routines: mobile writes the schedule's clock on the phone's 12 or 24 hour clock, as its next-run line does"},
+    {"file": "packages/i18n/src/cron.ts", "find": "    atTime: (time) => t`at ${ph({ time: localizedClock(time, locale) })}`,\n    atTimes: (clocks) => {\n      const times = clocks.map((time) => localizedClock(time, locale));\n", "replace": "    atTime: (time) => t`at ${ph({ time: localizedClock(time, clockLocale) })}`,\n    atTimes: (clocks) => {\n      const times = clocks.map((time) => localizedClock(time, clockLocale));\n", "reason": "routines: clock times follow the clock locale"},
+    {"file": "packages/i18n/src/cron.ts", "find": "    onThe1stAt: (time) => t`on the 1st at ${ph({ time: localizedClock(time, locale) })}`,\n    onDayAt: (day, time) => t`on day ${day} at ${ph({ time: localizedClock(time, locale) })}`,\n", "replace": "    onThe1stAt: (time) => t`on the 1st at ${ph({ time: localizedClock(time, clockLocale) })}`,\n    onDayAt: (day, time) => t`on day ${day} at ${ph({ time: localizedClock(time, clockLocale) })}`,\n", "reason": "routines: clock times follow the clock locale"},
+    {"file": "apps/mobile/lib/routines/routine.ts", "find": "function routineTriggers(routine: Routine): string {\n  const labels = cronLabels(getActiveUiLocale());\n", "replace": "function routineTriggers(routine: Routine): string {\n  const labels = cronLabels(getActiveUiLocale(), dateLocaleForUi());\n", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/lib/routines/routine.ts", "find": "export function routineTriggerRows(routine: Routine, deviceTimeZone: string | undefined): string[] {\n  const labels = cronLabels(getActiveUiLocale());\n", "replace": "export function routineTriggerRows(routine: Routine, deviceTimeZone: string | undefined): string[] {\n  const labels = cronLabels(getActiveUiLocale(), dateLocaleForUi());\n", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/components/thread/thread-screen.tsx", "find": "import { useUiLocale } from \"../../lib/i18n/i18n\";", "replace": "import { useDateLocale, useUiLocale } from \"../../lib/i18n/i18n\";", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/components/thread/thread-screen.tsx", "find": "  const locale = useUiLocale();\n  const focused = useIsFocused();\n", "replace": "  const locale = useUiLocale();\n  const dateLocale = useDateLocale();\n  const focused = useIsFocused();\n", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/components/thread/thread-screen.tsx", "find": "      groupId,\n      groupMembers,\n", "replace": "      groupId,\n      dateLocale,\n      groupMembers,\n", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/components/thread/thread-screen.tsx", "find": "cronLabels: cronLabels(locale),", "replace": "cronLabels: cronLabels(locale, dateLocale),", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "import { useUiLocale } from \"../../lib/i18n/i18n\";", "replace": "import { dateLocaleForUi, useUiLocale } from \"../../lib/i18n/i18n\";", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "const labels = cronLabels(locale);", "replace": "const labels = () => cronLabels(locale, dateLocaleForUi(locale));", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "formatCron(cron, labels)", "replace": "formatCron(cron, labels())", "reason": "routines: the schedule's clock follows the phone's date locale"}
   ],
   "assets": {
     "email-copy/welcome.json": "email-copy/welcome.json",

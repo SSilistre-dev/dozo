@@ -21,8 +21,8 @@
 the merge base with `upstream-main`, leaving out `dozo/`, `Makefile`, the marked block of `README.md`
 and the three issue forms (a deleted one counts).
 Added files are ours and do not count. One computation, `gate.sh upstream-edits <base> [tree]`, serves
-`make olc` (working tree against the merge base with `upstream-main`; it fails above 0 and lists the
-files) and `sync.sh` (the merge result against the upstream commit it contains; it prints the count and
+`make olc` (working tree against the merge base with the fresher of `upstream-main` and
+`origin/upstream-main`; it fails above 0 and lists the files) and `sync.sh` (the merge result against the upstream commit it contains; it prints the count and
 warns above 0 without failing).
 
 ## Prerequisites (once per clone)

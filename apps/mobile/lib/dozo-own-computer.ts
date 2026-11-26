@@ -5,7 +5,7 @@ import { knownServerText } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { mobilePlanLimitCopy } from "./dozo-store-build";
-import { rpcQuery } from "./query/query";
+import { queryClient, rpcQuery } from "./query/query";
 
 /**
  * The line under the bot's Own computer switch (`ownComputerNote`): on a plan with no computer,
@@ -20,13 +20,16 @@ export function useOwnComputerSwitch(
   detail: string | undefined;
   disabled: boolean;
 } {
-  const billing = useQuery(rpcQuery("billing/status")).data;
-  const me = useQuery(rpcQuery("me")).data;
+  const billing = useQuery(rpcQuery("billing/status"), queryClient).data;
+  const me = useQuery(rpcQuery("me"), queryClient).data;
   const notMaker = Boolean(bot?.userId && me && bot.userId !== me.userId);
-  const members = useQuery({
-    ...rpcQuery("spaces/members/list", { spaceId: bot?.spaceId ?? "" }),
-    enabled: notMaker,
-  }).data;
+  const members = useQuery(
+    {
+      ...rpcQuery("spaces/members/list", { spaceId: bot?.spaceId ?? "" }),
+      enabled: notMaker,
+    },
+    queryClient,
+  ).data;
   if (notMaker && members?.canManage !== true) {
     return {
       detail: knownServerText("Only the space owner can do that") ?? undefined,
