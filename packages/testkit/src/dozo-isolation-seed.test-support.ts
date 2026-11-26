@@ -131,16 +131,24 @@ export async function seedTarget(
       spaceId,
     );
   });
-  // A bot's remember only edits shared documents that exist, and no public procedure makes a new
-  // one, so the removable document is a system insert like the one a Space's MEMORY.md gets.
+  // A bot's remember only edits shared documents that exist (MEMORY.md here), and no public
+  // procedure makes a new one, so the removable document is a system insert like the one a
+  // Space's MEMORY.md gets.
   await sendStep("removable memory", async () => {
+    await sendAndWait(
+      world,
+      owner.cookie,
+      main,
+      `save shared memory with: ${mark("sharedmemory")}`,
+      spaceId,
+    );
     const doc = await asSystem(db).memoryDocument.create({
       data: {
         spaceId,
         userId: owner.userId,
         scope: "user",
         path: `notes/iso-${rand()}.md`,
-        content: mark("sharedmemory"),
+        content: "iso removable document",
       },
     });
     ids.removableDocumentId = doc.id;
