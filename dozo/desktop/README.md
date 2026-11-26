@@ -989,11 +989,13 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
   without them no installed app can be updated again.
 - Platform signing in that workflow is optional. With `APPLE_CERTIFICATE`,
   `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` the Mac app is signed, and with
-  `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` also notarized; with `WINDOWS_CERTIFICATE` (a
+  an App Store Connect API key (`APPLE_API_ISSUER`, `APPLE_API_KEY` and `APPLE_API_KEY_P8`, the
+  .p8 file's contents) or `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` also notarized; with `WINDOWS_CERTIFICATE` (a
   base64 .pfx) and `WINDOWS_CERTIFICATE_PASSWORD` the Windows installer is signed. Without them
   the packages are built unsigned (the Mac app ad hoc) and the run still succeeds: an ad-hoc Mac
   disk image is blocked by Gatekeeper when downloaded, so replace it in the draft with one from
-  `build.sh` until the Apple secrets are set. Its disk image is not signed itself either way.
+  `build.sh` until the Apple secrets are set. All these secrets live in the `desktop-release`
+  environment. Its disk image is not signed itself either way.
 
 ## Where it keeps things
 

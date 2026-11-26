@@ -6,7 +6,9 @@ name: dozo-desktop-release
 # the apps read releases/latest/download/latest.json (dozo/desktop/README.md, "Updates").
 # The tag must match the version in tauri.conf.json and Cargo.toml.
 # Platform signing is optional: without the Apple or Windows certificate secrets the packages are
-# built unsigned (macOS ad hoc) and the run still succeeds; with them they are signed.
+# built unsigned (macOS ad hoc) and the run still succeeds; with them they are signed. The Mac app
+# is notarized with an App Store Connect API key (APPLE_API_ISSUER, APPLE_API_KEY, APPLE_API_KEY_P8,
+# the .p8 file's contents) or with APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID.
 # Asset names are fixed: the landing page links Dozo-macOS.dmg and Dozo-Windows-x64-setup.exe.
 # Versions as in the other desktop workflows; actions pinned to a full commit SHA.
 on:
@@ -84,6 +86,9 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -93,9 +98,19 @@ jobs:
             unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
             echo "no Apple certificate: signed ad hoc"
           fi
+          # The bundler reads the notary key from a file, which is removed when the step ends.
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            key="$RUNNER_TEMP/notary-key.p8"
+            trap 'rm -f "$key"' EXIT
+            (umask 077 && printf '%s\n' "$APPLE_API_KEY_P8" > "$key")
+            export APPLE_API_KEY_PATH="$key"
+          else
+            unset APPLE_API_ISSUER APPLE_API_KEY
+          fi
+          unset APPLE_API_KEY_P8
           if [ -z "$APPLE_ID" ]; then
             unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
-            echo "no notary credentials: not notarized"
+            [ -n "$APPLE_API_KEY_PATH" ] || echo "no notary credentials: not notarized"
           fi
           cargo tauri build --target universal-apple-darwin --bundles app --config "$UPDATER" -- --locked
           out=target/universal-apple-darwin/release/bundle/macos
