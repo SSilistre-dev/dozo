@@ -131,17 +131,28 @@ export async function seedTarget(
       spaceId,
     );
   });
+  // A bot's remember only edits shared documents that exist (MEMORY.md here), and no public
+  // procedure makes a new one, so the removable document is a system insert like the one a
+  // Space's MEMORY.md gets.
   await sendStep("removable memory", async () => {
-    const path = `notes/iso-${rand()}.md`;
     await sendAndWait(
       world,
       owner.cookie,
       main,
-      `save shared memory named ${path} with: ${mark("sharedmemory")}`,
+      `save shared memory with: ${mark("sharedmemory")}`,
       spaceId,
     );
-    const doc = await db.memoryDocument.findFirstOrThrow({ where: { spaceId, path } });
+    const doc = await asSystem(db).memoryDocument.create({
+      data: {
+        spaceId,
+        userId: owner.userId,
+        scope: "user",
+        path: `notes/iso-${rand()}.md`,
+        content: "iso removable document",
+      },
+    });
     ids.removableDocumentId = doc.id;
+    notes.push("removable memory: inserted through the system client (no API creates a document)");
   });
   const chat = await call<{ chat: { id: string } }>("dozoChats/create", {
     botId: bot.id,
