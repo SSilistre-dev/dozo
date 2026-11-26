@@ -1688,12 +1688,13 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./avatars/notification-avatar.js\";",
-      "replace": "export * from \"./dozo-avatar-art.js\";\nexport * from \"./dozo-chat-colors.js\";",
+      "replace": "export * from \"./dozo-avatar-art.js\";\nexport * from \"./dozo-chat-colors.js\";\nexport * from \"./dozo-seigaiha.js\";",
       "requires": [
         "packages/core/src/dozo-avatar-art.ts",
-        "packages/core/src/dozo-chat-colors.ts"
+        "packages/core/src/dozo-chat-colors.ts",
+        "packages/core/src/dozo-seigaiha.ts"
       ],
-      "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body"
+      "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body; the seigaiha tile the mobile inbox header draws (the sidebar's stylesheet draws the same one)"
     },
     {
       "file": "apps/web/src/styles.css",
@@ -14663,6 +14664,81 @@
       "find": "privateFolder(\"rakazo-claude-code-sessions\", false)",
       "replace": "privateFolder(\"dozo-claude-code-sessions\", false)",
       "reason": "the Claude Code CLI's private sessions folder on the server: the app's own name, like the working folder"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "react-native-safe-area-context\";\nimport { BotOrganizeModal }",
+      "replace": "react-native-safe-area-context\";\nimport { DozoInboxSeigaiha } from \"../components/dozo-inbox-seigaiha\";\nimport { BotOrganizeModal }",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "    <View style={styles.screen}>\n      {showToolbar ?",
+      "replace": "    <View style={styles.screen}>\n      {onShareSelect ? null : <DozoInboxSeigaiha />}\n      {showToolbar ?",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the wave pattern behind the header and the top of the list, first so every sibling draws over it; not in the share picker"
+    },
+    {
+      "file": "apps/mobile/lib/inbox/use-inbox-header.ts",
+      "find": "import { useLayoutEffect } from \"react\";\nimport { useUiLocale }",
+      "replace": "import { useLayoutEffect } from \"react\";\nimport { dozoWordmarkItems } from \"../../components/dozo-inbox-seigaiha\";\nimport { useUiLocale }",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/inbox/use-inbox-header.ts",
+      "find": "      headerTitle,\n      unstable_headerRightItems:",
+      "replace": "      headerTitle,\n      unstable_headerLeftItems: dozoWordmarkItems,\n      unstable_headerRightItems:",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: the wordmark at the leading side of the Liquid Glass header, beside the organization menu when there is one"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "    listRowBackground(native.page),\n    ...visibility(key),",
+      "replace": "    listRowBackground(\"transparent\"),\n    ...visibility(key),",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: rows are clear so the wave pattern behind the list shows through"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "modifiers={[rowInsets, listRowSeparator(\"hidden\"), listRowBackground(native.page)]}",
+      "replace": "modifiers={[rowInsets, listRowSeparator(\"hidden\"), listRowBackground(\"transparent\")]}",
+      "reason": "seigaiha on mobile: the spacer rows are clear too"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "      background={native.page}\n      modifiers={[\n        scrollContentBackground",
+      "replace": "      background=\"transparent\"\n      modifiers={[\n        scrollContentBackground",
+      "reason": "seigaiha on mobile: the list itself is clear (the screen behind it holds the page colour)"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-swipe-row.ios.tsx",
+      "find": "              listRowBackground(native.page),",
+      "replace": "              listRowBackground(\"transparent\"),",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: a chat row is clear so the wave pattern behind the list shows through"
+    },
+    {
+      "file": "apps/mobile/lib/inbox/inbox-route.test.tsx",
+      "find": "vi.mock(\"../appearance/appearance\", () => ({ mobileTokens: () => ({}) }));\nvi.mock(\"../native/native\"",
+      "replace": "vi.mock(\"../appearance/appearance\", () => ({ mobileTokens: () => ({}) }));\nvi.mock(\"../../components/dozo-inbox-seigaiha\", () => ({ dozoWordmarkItems: () => [] }));\nvi.mock(\"../native/native\"",
+      "requires": [
+        "apps/mobile/components/dozo-inbox-seigaiha.tsx"
+      ],
+      "reason": "seigaiha on mobile: upstream test fixture: the header hook now adds the wordmark item, drawn with react-native-svg, which this test does not load"
     }
   ],
   "assets": {
