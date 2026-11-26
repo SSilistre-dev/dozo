@@ -46,7 +46,7 @@ export function catalogEntries(text) {
   return entries;
 }
 
-const PLURAL_HEADER = /\{\s*[\w.]+\s*,\s*(plural|selectordinal)\s*,/g;
+const PLURAL_HEADER = /\{\s*[\w.]+\s*,\s*plural\s*,/g;
 
 /** The index of the `}` that closes the `{` at `open`, or -1. */
 function closingBrace(text, open) {
@@ -59,7 +59,7 @@ function closingBrace(text, open) {
 }
 
 /**
- * The ICU message with every `plural` and `selectordinal` block given the categories `language`
+ * The ICU message with every `plural` block given the categories `language`
  * has and the block lacks, each with the `other` branch's text. Existing branches stay as written.
  */
 export function withPluralCategories(message, language) {
@@ -67,13 +67,11 @@ export function withPluralCategories(message, language) {
   let from = 0;
   PLURAL_HEADER.lastIndex = 0;
   for (let match = PLURAL_HEADER.exec(message); match; match = PLURAL_HEADER.exec(message)) {
-    if (match.index < from) continue;
     const end = closingBrace(message, match.index);
     if (end === -1) break;
     const body = message.slice(match.index + match[0].length, end);
     const branches = [];
-    const head = body.match(/^\s*offset:\s*\d+/)?.[0].trimStart() ?? "";
-    let rest = body.slice(head.length ? body.indexOf(head) + head.length : 0);
+    let rest = body;
     for (let m = rest.match(/^\s*(\S+?)\s*\{/); m; m = rest.match(/^\s*(\S+?)\s*\{/)) {
       const open = m[0].length - 1;
       const close = closingBrace(rest, open);
@@ -86,14 +84,12 @@ export function withPluralCategories(message, language) {
     }
     const other = branches.find((branch) => branch.selector === "other");
     if (other && rest.trim() === "") {
-      const type = match[1] === "plural" ? "cardinal" : "ordinal";
-      const categories = new Intl.PluralRules(language, { type }).resolvedOptions()
-        .pluralCategories;
+      const categories = new Intl.PluralRules(language).resolvedOptions().pluralCategories;
       for (const category of categories)
         if (!branches.some((branch) => branch.selector === category))
           branches.push({ selector: category, text: other.text });
       const inner = branches.map((branch) => `${branch.selector} {${branch.text}}`).join(" ");
-      result += `${message.slice(from, match.index)}${match[0]} ${head ? `${head} ` : ""}${inner}}`;
+      result += `${message.slice(from, match.index)}${match[0]} ${inner}}`;
     } else result += message.slice(from, end + 1);
     from = end + 1;
     PLURAL_HEADER.lastIndex = from;

@@ -73,6 +73,16 @@ describe("fillCatalogs", () => {
     assert.equal(withPluralCategories(filled, "pl"), filled);
   });
 
+  it("leaves a plural it cannot read as written", () => {
+    for (const message of [
+      "{n, plural, one {x}",
+      "{n, plural, one {x}}",
+      "{n, plural, one {x} other {y",
+      "{n, plural, other {y} stray}",
+    ])
+      assert.equal(withPluralCategories(message, "pl"), message);
+  });
+
   it("finds nothing to do on a catalog it already filled, and on one that has the id with its own words", () => {
     const root = tree(files);
     const { changed } = fillCatalogs(root, readFrom(root));
