@@ -489,7 +489,9 @@ export async function waitingRunKept(
     if (answer.status < 400) problems.push(`a foreigner cancelled ${target.label}'s waiting run`);
   }
   const run = await world.db.run.findUniqueOrThrow({ where: { id: runId } });
-  if (run.status !== "queued") problems.push(`${target.label}'s waiting run is ${run.status}`);
+  if (run.status !== "queued") {
+    problems.push(`${target.label}'s waiting run is ${JSON.stringify(run)}`);
+  }
   const own = await readAnswer(
     world.app,
     world.A.cookie,
@@ -497,7 +499,10 @@ export async function waitingRunKept(
     { runId },
     target.spaceId,
   );
-  if (own.status !== 200) problems.push(`the owner could not cancel it: ${own.status}`);
+  if (own.status !== 200) {
+    const now = await world.db.run.findUnique({ where: { id: runId } });
+    problems.push(`the owner could not cancel it: ${own.status} ${JSON.stringify(now)}`);
+  }
   await releaseWaitingRun(world.db, target);
   return problems;
 }

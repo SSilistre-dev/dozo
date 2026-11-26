@@ -670,7 +670,13 @@ export async function seedExtras(
     });
     ids.pageGrantId = grant.id;
     const comment = await system.pageComment.create({
-      data: { pageId, authorId: owner.userId, version: 1, section: "iso", body: mark("pagecomment") },
+      data: {
+        pageId,
+        authorId: owner.userId,
+        version: 1,
+        section: "iso",
+        body: mark("pagecomment"),
+      },
     });
     ids.pageCommentId = comment.id;
   });
@@ -694,13 +700,15 @@ export async function seedExtras(
 }
 
 /**
- * A run queued on the target's second bot, made fresh, and kept waiting the way the product's own
- * waiting runs are: another run of the bot holds its computer. The recovery scan leaves a queued run
- * whose bot's computer lease belongs to another run (`findRunRecoveryBlockers`,
- * packages/adapters/src/runs/lifecycle/run-recovery.ts), and a start that does reach it finds the computer taken
- * and puts the run back to waiting (`startClaimedAttempt`, packages/adapters/src/runs/lifecycle/run-attempt.ts).
- * The lease reaches less than two lease lengths ahead, so it is not taken for an abandoned
- * takeover hold, and it names no run, so it is the holder's alone to release: `releaseWaitingRun`.
+ * A run queued on the target's second bot, made fresh, and kept waiting until the test ends:
+ * its `wakeAt` is a day ahead, as a run backing off after a failure has, so nothing starts it.
+ * The claim takes a queued run only once `wakeAt` is due, the reconciler's re-enqueue and the
+ * wake scan leave a later `wakeAt` alone, and a run releasing its bot's computer starts only a
+ * next run that is due (`startNextWaitingRun`, packages/adapters/src/runs/lifecycle/run-lifecycle.ts).
+ * A queued run alone is not held by a computer lease any more: ordinary turns claim the computer
+ * on first use, and the recovery scan blocks a run only for a lease past two lease lengths whose
+ * holder is a live run. The lease stays as it was, so the bot's computer is taken as before, and it
+ * names no run, so it is the holder's alone to release: `releaseWaitingRun`.
  */
 export async function seedWaitingRun(db: PrismaClient, owner: Person, target: Target) {
   const system = asSystem(db);
@@ -741,6 +749,7 @@ export async function seedWaitingRun(db: PrismaClient, owner: Person, target: Ta
       userId: owner.userId,
       status: "queued",
       trigger: "user",
+      wakeAt: new Date(Date.now() + 24 * 60 * 60_000),
     },
   });
   ids.waitingRunId = run.id;

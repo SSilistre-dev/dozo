@@ -493,7 +493,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       );
       const after = await snapshot(world.db, scope);
       expect(failures(outcomes)).toEqual([]);
-      expect(snapshotDiff(before, after), "rows of P changed").toEqual([]);
+      expect(snapshotDiff(before, after).join("\n"), "rows of P changed").toBe("");
       // A guest's new Space goes to the guest's own organization, never into A's.
       expect(
         await world.db.space.count({
