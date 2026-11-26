@@ -147,6 +147,10 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   send a time as `${date.toISOString()}::timestamptz`, compare a `timestamp` column with
   `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, and give new fork SQL a `dozo-*.postgres.test.ts` that
   `dozo/docker/postgres-tests.sh` runs green in UTC, Europe/Istanbul and America/Los_Angeles.
+- 2026-11-26, the Dozo bot characters were wired into the web avatar only; the mobile app has its
+  own upstream avatar (`apps/mobile/components/bots/bot-avatar.tsx`) and kept upstream's drawing
+  for weeks. Correct way: a rule that changes what a shared surface shows on web gets its mobile
+  counterpart in the same PR (or a stated reason why mobile differs), checked in the simulator.
 
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.
