@@ -186,8 +186,8 @@ Decisions
 - The export-compliance answer (`ios.config.usesNonExemptEncryption`), whether to add a report
   action for user content, the age rating and content declarations, and which sign-in providers the
   hosted server offers (Sign in with Apple when Google is offered): all in `store/review-checklist.md`.
-- The version: `version` comes from upstream's `app.json` (1.0.x as upstream bumps it). A Dozo
-  version of its own would need an anchored rule.
+- The version: it comes from the anchored `version` rule in `dozo/brand/brand.json` while that rule
+  exists, otherwise from upstream's `app.json`.
 
 Keys and secrets
 - Android, repository secrets: `DOZO_ANDROID_KEYSTORE_BASE64`, `DOZO_ANDROID_KEYSTORE_PASSWORD`,
