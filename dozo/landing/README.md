@@ -92,6 +92,8 @@ Closed pre-release state (lifted):
 - Download buttons (`.dlb`, hero row and the "Apps." block) are outlined in the muted ink, with
   a generic platform glyph and a download arrow; `landing.js` fills the visitor's own system
   (`.w`). Light theme: white pills and hairline card borders get an edge from `--draft-line`.
+- The iOS pill under the hero carries one bot (`.peek`, Sora in ink): it rises over the pill's top
+  edge once after load and then only blinks, glances and hops on hover; static with reduced motion.
 - The demo scenes avoid plan and pricing words, so nothing in them reads as Dozo's own offer.
 - The page claims only what ships. The local-model panel is gone because the catalog is empty
   (`dozo/README.md`, "Status and known limits"); bring it back when models are listed.
