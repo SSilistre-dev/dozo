@@ -1,7 +1,7 @@
 import { DOZO_SEIGAIHA } from "@rakazo/core";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, Defs, G, LinearGradient, Mask, Pattern, Rect, Stop } from "react-native-svg";
+import Svg, { Circle, Defs, G, LinearGradient, Pattern, Rect, Stop } from "react-native-svg";
 import { translucentColor } from "../lib/appearance/color";
 import { useMobileTokens } from "../lib/native/native";
 
@@ -12,7 +12,8 @@ const WORDMARK_INDENT = 19;
 /**
  * Concentric-wave scales behind the inbox header, strongest at the top and gone by the chat list,
  * as in the web sidebar. Each scale is filled with the page colour so a later one covers the
- * earlier ones: a mask inside a pattern does not render on iOS.
+ * earlier ones (a mask inside a pattern does not render on iOS), and the fade is a page-coloured
+ * gradient over the pattern, which the screen's own page colour makes the same as a mask.
  */
 export function DozoInboxSeigaiha() {
   const tokens = useMobileTokens();
@@ -45,20 +46,13 @@ export function DozoInboxSeigaiha() {
             ))}
           </Pattern>
           <LinearGradient id="dozo-seigaiha-fade" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset={0} stopColor="white" stopOpacity={1} />
-            <Stop offset={solidUntil} stopColor="white" stopOpacity={1} />
-            <Stop offset={1} stopColor="white" stopOpacity={0} />
+            <Stop offset={0} stopColor={tokens.background} stopOpacity={0} />
+            <Stop offset={solidUntil} stopColor={tokens.background} stopOpacity={0} />
+            <Stop offset={1} stopColor={tokens.background} stopOpacity={1} />
           </LinearGradient>
-          <Mask id="dozo-seigaiha-mask" x="0" y="0" width="100%" height={height}>
-            <Rect width="100%" height={height} fill="url(#dozo-seigaiha-fade)" />
-          </Mask>
         </Defs>
-        <Rect
-          width="100%"
-          height={height}
-          fill="url(#dozo-seigaiha)"
-          mask="url(#dozo-seigaiha-mask)"
-        />
+        <Rect width="100%" height={height} fill="url(#dozo-seigaiha)" />
+        <Rect width="100%" height={height} fill="url(#dozo-seigaiha-fade)" />
       </Svg>
     </View>
   );

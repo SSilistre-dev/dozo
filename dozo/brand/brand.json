@@ -14718,6 +14718,18 @@
     },
     {
       "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "            foregroundStyle(native.page),\n            frame({ height }),",
+      "replace": "            foregroundStyle(\"transparent\"),\n            frame({ height }),",
+      "reason": "seigaiha on mobile: the top spacer is a rectangle that was filled with the page colour, which painted over the whole header strip where the wave pattern is strongest"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
+      "find": "import { native } from \"../../lib/native/native\";\nimport { canScrollNativeList",
+      "replace": "import { canScrollNativeList",
+      "reason": "seigaiha on mobile: the list no longer reads the page colour, so the import of the rule above is gone"
+    },
+    {
+      "file": "apps/mobile/components/inbox/native-inbox-list.ios.tsx",
       "find": "      background={native.page}\n      modifiers={[\n        scrollContentBackground",
       "replace": "      background=\"transparent\"\n      modifiers={[\n        scrollContentBackground",
       "reason": "seigaiha on mobile: the list itself is clear (the screen behind it holds the page colour)"
