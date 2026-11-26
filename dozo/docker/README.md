@@ -148,7 +148,9 @@ a failure in any of them fails the gate:
 - The leak gate on a branded copy: the working tree's `apps`, `packages` and `infra` (tracked and
   untracked, not ignored) are branded in a scratch copy inside one container and scanned by
   `check.mjs`, so the old name left in a screen, an e-mail template, a locale catalogue or a prompt
-  fails here, not only at `make qa`. About 9 seconds.
+  fails here, not only at `make qa`. About 9 seconds. The brand step also gives every id the Turkish catalog has and another lacks
+  its English source there (`dozo/brand/catalog-fill.mjs`, run by `apply.mjs`), and the same copy must then hold
+  every id in all 16 catalogs (`dozo/brand/catalog-parity.mjs`).
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
   inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
   `dozo-*`).
