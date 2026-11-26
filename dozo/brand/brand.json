@@ -2978,20 +2978,14 @@
     {
       "file": "apps/web/src/pages/shell/sidebar/sidebar-footer.tsx",
       "find": "import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from \"@rakazo/contracts\";\nimport {\n",
-      "replace": "import {\n",
-      "reason": "no mobile app link in the account menu (below), so its store links are not imported"
+      "replace": "import { IOS_APP_STORE_URL } from \"@rakazo/contracts\";\nimport {\n",
+      "reason": "the account menu's mobile app link opens the App Store only (below): Dozo has no Play listing"
     },
     {
       "file": "apps/web/src/pages/shell/sidebar/sidebar-footer.tsx",
       "find": "            <a\n              className={`${buttonVariants({ variant: \"ghost\", size: \"lg\" })} w-full justify-start gap-2.5 font-normal`}\n              href={\n                /Android/i.test(navigator.userAgent) ? ANDROID_APP_STORE_URL : IOS_APP_STORE_URL\n              }\n              target=\"_blank\"\n              rel=\"noreferrer\"\n            >\n              <Smartphone className=\"text-muted-foreground\" strokeWidth={1.75} />\n              <Trans>Get the mobile app</Trans>\n            </a>\n            {onInvite ? (",
-      "replace": "            {onInvite ? (",
-      "reason": "\"Get the mobile app\" has nowhere to go: Dozo has no store listing"
-    },
-    {
-      "file": "apps/web/src/pages/shell/sidebar/sidebar-footer.tsx",
-      "find": "  Smartphone,\n  SquareKanban,\n",
-      "replace": "  SquareKanban,\n",
-      "reason": "its only use was the mobile app link removed above"
+      "replace": "            {/Android/i.test(navigator.userAgent) ? null : (\n              <a\n                className={`${buttonVariants({ variant: \"ghost\", size: \"lg\" })} w-full justify-start gap-2.5 font-normal`}\n                href={IOS_APP_STORE_URL}\n                target=\"_blank\"\n                rel=\"noreferrer\"\n              >\n                <Smartphone className=\"text-muted-foreground\" strokeWidth={1.75} />\n                <Trans>Get the mobile app</Trans>\n              </a>\n            )}\n            {onInvite ? (",
+      "reason": "\"Get the mobile app\" opens Dozo's App Store listing; on Android it is hidden, as Dozo has no Play listing"
     },
     {
       "file": "packages/contracts/src/integrations/plugins.ts",
@@ -14094,8 +14088,14 @@
     {
       "file": "apps/mobile/lib/platform/store-update.ts",
       "find": "export const OFFICIAL_BUNDLE_ID = \"com.rakazo.app\";",
-      "replace": "// Dozo has no store listing yet: no build counts as the official store build, so there is no\n// review prompt, no \"write a review\" link and no store fallback page. Set this to the Dozo app id\n// once a listing exists.\nexport const OFFICIAL_BUNDLE_ID = \"none.dozo.no-store-listing\";",
-      "reason": "OFFICIAL_BUNDLE_ID gates the store review prompt, the write-a-review link and the store fallback page; with Dozo's own id they would point at a listing that does not exist, so no id matches until one does"
+      "replace": "export const OFFICIAL_BUNDLE_ID = \"dev.ssilistre.dozo\";",
+      "reason": "OFFICIAL_BUNDLE_ID gates the store review prompt, the write-a-review link and the store fallback page: Dozo's own id, now that its App Store listing exists (Android stays off: store-review.ts rule)"
+    },
+    {
+      "file": "apps/mobile/lib/platform/store-review.ts",
+      "find": "    (Platform.OS === \"ios\" || Platform.OS === \"android\") &&\n    Application.applicationId === OFFICIAL_BUNDLE_ID",
+      "replace": "    Platform.OS === \"ios\" && Application.applicationId === OFFICIAL_BUNDLE_ID",
+      "reason": "Dozo has no Play listing: Android gets no review prompt and no write-a-review link, which would open the landing page"
     },
     {
       "file": "apps/web/src/components/audit/AuditLog.tsx",
