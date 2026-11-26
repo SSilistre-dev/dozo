@@ -11862,6 +11862,12 @@
       "reason": "bot chats on mobile: an outgoing draft sent from an extra chat answers that chat, not its bot's main chat"
     },
     {
+      "file": "apps/mobile/components/cards/OutgoingDraftCard.tsx",
+      "find": "label={t`Send`}\n              busy=",
+      "replace": "label={t`Send`}\n              fill={false}\n              busy=",
+      "reason": "the Send button keeps its own width like the other approval cards; a stretched primary button overflowed the right-aligned footer on iOS"
+    },
+    {
       "file": "apps/mobile/components/cards/ToolQuestionCard.tsx",
       "find": "  const answer = useSave({\n    save: (input: { action: \"accept\" | \"decline\"; values?: ToolQuestionDraft }, send) =>\n      send(\"threads/answerToolQuestion\", {\n        ...target,",
       "replace": "  const chatId = useDozoChatId();\n  const answer = useSave({\n    save: (input: { action: \"accept\" | \"decline\"; values?: ToolQuestionDraft }, send) =>\n      send(\"threads/answerToolQuestion\", {\n        ...dozoChatTarget({ ...target, chatId }),",
