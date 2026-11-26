@@ -3,9 +3,9 @@ vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { signIn, signUp } from "./auth/api-auth.js";
 import { jsonResponse } from "./api/api-test-helpers";
 import { restoreSessionToken } from "./api/session.js";
+import { signIn, signUp } from "./auth/api-auth.js";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -64,9 +64,11 @@ describe("sign-up and sign-in on a server that asks for the mailbox first", () =
         ),
       ),
     );
-    await expect(signIn("new@example.test", "correct horse")).rejects.toThrow(
-      new Error("Email verification required"),
-    );
+    await expect(signIn("new@example.test", "correct horse")).rejects.toMatchObject({
+      message: "Email verification required",
+      status: 403,
+      code: "EMAIL_NOT_VERIFIED",
+    });
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 });
