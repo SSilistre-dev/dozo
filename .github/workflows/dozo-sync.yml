@@ -109,6 +109,8 @@ jobs:
         if: steps.sync.outputs.branch != ''
         env:
           GH_TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
+          # gh would otherwise pick the "upstream" remote added above as the repository.
+          GH_REPO: ${{ github.repository }}
           TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
           BRANCH: ${{ steps.sync.outputs.branch }}
         run: |
