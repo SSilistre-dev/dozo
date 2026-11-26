@@ -236,6 +236,7 @@ export const DOZO_AVATAR_ART: Record<DozoCharacter, readonly DozoShape[]> = {
 };
 
 export function dozoHashSeed(seed: string): number {
+  "worklet";
   let hash = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
     hash ^= seed.charCodeAt(i);
@@ -341,4 +342,220 @@ export function notificationAvatarSource(bot: { id: string; color: string }): st
     dozoBotColor(bot.id, bot.color) ?? darkTokens.foreground,
   );
   return `data:image/svg+xml,${encodeURIComponent(drawing)}`;
+}
+
+/** A group of shapes that move together, and the point it scales around, in the 64-unit canvas. */
+export interface DozoAvatarGroup {
+  part: DozoShape[0];
+  shapes: readonly DozoShape[];
+  originX: number;
+  originY: number;
+}
+
+type Point = readonly [x: number, y: number];
+
+/** The corners of a box. */
+const corners = (x0: number, y0: number, x1: number, y1: number): Point[] => [
+  [x0, y0],
+  [x1, y0],
+  [x1, y1],
+  [x0, y1],
+];
+
+/** Points that bound a shape, before its own transform. */
+function shapePoints(tag: DozoShape[1], attrs: DozoShape[3]): Point[] {
+  const n = (name: string) => Number(attrs[name]);
+  if (tag === "circle")
+    return corners(n("cx") - n("r"), n("cy") - n("r"), n("cx") + n("r"), n("cy") + n("r"));
+  if (tag === "ellipse") {
+    return corners(n("cx") - n("rx"), n("cy") - n("ry"), n("cx") + n("rx"), n("cy") + n("ry"));
+  }
+  if (tag === "rect") return corners(n("x"), n("y"), n("x") + n("width"), n("y") + n("height"));
+  // Absolute M, L, C, Q, A and Z only, which is all the art uses. An arc counts by its end point.
+  const arity: Record<string, number> = { M: 2, L: 2, C: 6, Q: 4, A: 7 };
+  const points: Point[] = [];
+  for (const [, letter, args] of String(attrs.d).matchAll(/([A-Za-z])([^A-Za-z]*)/g)) {
+    const size = arity[letter as string];
+    if (!size) continue;
+    const numbers = (args as string).match(/-?\d*\.?\d+/g)?.map(Number) ?? [];
+    for (let at = 0; at + size <= numbers.length; at += size) {
+      const chunk = numbers.slice(at, at + size);
+      if (letter === "A") points.push([chunk[5] as number, chunk[6] as number]);
+      else
+        for (let i = 0; i < size; i += 2) points.push([chunk[i] as number, chunk[i + 1] as number]);
+    }
+  }
+  return points;
+}
+
+/** Applies `translate(x y)` and `rotate(a [cx cy])`, the last one first, as SVG does. */
+function transformed(points: Point[], transform: string | number | undefined): Point[] {
+  const steps = [...String(transform ?? "").matchAll(/(translate|rotate)\(([^)]*)\)/g)].reverse();
+  return steps.reduce((current, [, kind, list]) => {
+    const [a = 0, b = 0, c = 0] = (list as string)
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    return current.map(([x, y]): Point => {
+      if (kind === "translate") return [x + a, y + b];
+      const radians = (a * Math.PI) / 180;
+      const [dx, dy] = [x - b, y - c];
+      return [
+        b + dx * Math.cos(radians) - dy * Math.sin(radians),
+        c + dx * Math.sin(radians) + dy * Math.cos(radians),
+      ];
+    });
+  }, points);
+}
+
+/**
+ * The box of a group's shapes. ponytail: a rotated circle or ellipse is bounded by its rotated
+ * corners (a little roomy) rather than its exact curve; the origins are only a scaling pivot.
+ */
+function boundsOf(shapes: readonly DozoShape[]) {
+  const points = shapes.flatMap(([, tag, , attrs]) =>
+    transformed(shapePoints(tag, attrs), attrs.transform),
+  );
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+const layouts = new Map<DozoCharacter, readonly DozoAvatarGroup[]>();
+
+/**
+ * The character's shapes grouped as the web drawing groups them: each head shape alone, each run
+ * of accessory shapes and the run of eyes as one group, with the point a group scales around in the
+ * 64-unit canvas. An accessory grows from the middle of its bottom edge, an eye from its middle.
+ */
+export function dozoAvatarLayout(character: DozoCharacter): readonly DozoAvatarGroup[] {
+  const cached = layouts.get(character);
+  if (cached) return cached;
+  const runs: [part: DozoShape[0], shapes: DozoShape[]][] = [];
+  for (const shape of DOZO_AVATAR_ART[character]) {
+    const last = runs[runs.length - 1];
+    if (last && last[0] === shape[0] && shape[0] !== "head") last[1].push(shape);
+    else runs.push([shape[0], [shape]]);
+  }
+  const groups = runs.map(([part, shapes]): DozoAvatarGroup => {
+    const { minX, maxX, minY, maxY } = boundsOf(shapes);
+    return {
+      part,
+      shapes,
+      originX: (minX + maxX) / 2,
+      originY: part === "feature" ? maxY : (minY + maxY) / 2,
+    };
+  });
+  layouts.set(character, groups);
+  return groups;
+}
+
+export type DozoMotionState = "working" | "waiting" | "idle";
+
+/**
+ * The motion `dozo-avatar.css` declares, in numbers: how far each accessory pulses while its bot
+ * works (`pulse`), when it waits on you (`attn`) and how far it fades then (`dim`), and the timings
+ * every character shares. A test holds the stylesheet and these equal.
+ */
+export const DOZO_AVATAR_MOTION = {
+  characters: {
+    sora: { pulse: 1, attn: 1.08, dim: 0.5 },
+    kumo: { pulse: 1.08, attn: 1.14, dim: 1 },
+    hana: { pulse: 1.25, attn: 1.6, dim: 0.5 },
+    taro: { pulse: 1.12, attn: 1.25, dim: 0.5 },
+    yuki: { pulse: 1.08, attn: 1.14, dim: 1 },
+    mochi: { pulse: 1.12, attn: 1.3, dim: 0.5 },
+  } satisfies Record<DozoCharacter, { pulse: number; attn: number; dim: number }>,
+  bobSeconds: 3.2,
+  /** How far a working bot's head rises, in canvas units. */
+  bobRise: -2.2,
+  glowSeconds: 2.4,
+  attnSeconds: 4.5,
+  /** Where the accessory is still, at its peak and still again, as a share of the cycle. */
+  attnKeyframes: [0, 0.68, 0.8, 0.92, 1],
+  /** The blink starts here, is shut at the second value and is open again at 1. */
+  blinkKeyframes: [0.97, 0.985],
+  blinkScale: 0.1,
+  sleepScale: 0.3,
+} as const;
+
+/** Seconds of one blink cycle for a seed: each avatar has its own, so a list never blinks in unison. */
+export function dozoBlinkPeriod(seed: string): number {
+  "worklet";
+  return 4 + ((dozoHashSeed(seed) >>> 8) % 20) / 10;
+}
+
+function cycle(seconds: number, length: number): number {
+  "worklet";
+  return (((seconds % length) + length) % length) / length;
+}
+
+/** Ease in and out between two keyframes, 0 to 1. */
+function smooth(progress: number): number {
+  "worklet";
+  return (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, progress)))) / 2;
+}
+
+/** 0 at the cycle's ends and 1 in the middle, eased. */
+function swell(phase: number): number {
+  "worklet";
+  return (1 - Math.cos(2 * Math.PI * phase)) / 2;
+}
+
+/**
+ * What moves at one moment, the same as the web's keyframes: the head's rise, the scale and
+ * opacity of the accessory, and the eyes' vertical scale. It runs on the UI thread, so everything
+ * it calls is a worklet. A sleeper's eyes stay half shut and it does not move; a working bot bobs
+ * and its accessory pulses; one waiting on you gives its accessory a nudge now and then.
+ */
+export function dozoAvatarFrame(
+  character: DozoCharacter,
+  state: DozoMotionState,
+  seconds: number,
+  seed: string,
+) {
+  "worklet";
+  const motion = DOZO_AVATAR_MOTION;
+  const { pulse, attn, dim } = motion.characters[character];
+  if (state === "idle") {
+    return { headY: 0, featureScale: 1, featureOpacity: 1, eyeScaleY: motion.sleepScale };
+  }
+  const hash = dozoHashSeed(seed);
+  const period = dozoBlinkPeriod(seed);
+  const blinkAt = cycle(seconds + (((hash >>> 16) % 100) / 100) * period, period);
+  const [from, shut] = motion.blinkKeyframes;
+  const closed =
+    blinkAt < shut
+      ? smooth((blinkAt - from) / (shut - from))
+      : 1 - smooth((blinkAt - shut) / (1 - shut));
+  const eyeScaleY = 1 - (1 - motion.blinkScale) * closed;
+  if (state === "working") {
+    const bob = swell(cycle(seconds + (hash % 30) / 10, motion.bobSeconds));
+    const glow = swell(cycle(seconds, motion.glowSeconds));
+    return {
+      headY: motion.bobRise * bob,
+      featureScale: 1 + (pulse - 1) * glow,
+      featureOpacity: 1 - (1 - dim) * glow,
+      eyeScaleY,
+    };
+  }
+  const [, rise, peak, fall] = motion.attnKeyframes;
+  const at = cycle(seconds, motion.attnSeconds);
+  const nudge =
+    at < rise || at >= fall
+      ? 0
+      : at < peak
+        ? smooth((at - rise) / (peak - rise))
+        : 1 - smooth((at - peak) / (fall - peak));
+  return {
+    headY: 0,
+    featureScale: 1 + (attn - 1) * nudge,
+    featureOpacity: 1 - (1 - dim) * nudge,
+    eyeScaleY,
+  };
 }
