@@ -12388,6 +12388,150 @@
       "reason": "first open: the model screen replaces this screen; closing it as well would close the model screen"
     },
     {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  push: vi.fn(),\n  menus:",
+      "replace": "  push: vi.fn(),\n  replace: vi.fn(),\n  menus:",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  const router = { push: ui.push };",
+      "replace": "  const router = { push: ui.push, replace: ui.replace };",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "    ui.alert.mockReset();\n    ui.push.mockReset();\n    ui.rpc.mockReset().mockImplementation(async (method: string) => {\n      if (method === \"me\") return { needsModel: true };\n      if (method === \"spaceSettings/overrides\")",
+      "replace": "    ui.replace.mockReset();\n    ui.rpc.mockReset().mockImplementation(async (method: string) => {\n      if (method === \"me\") return { needsModel: true };\n      if (method === \"spaceSettings/overrides\")",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "    const buttons = ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[];\n    buttons.find((button) => button.text === \"Add model\")?.onPress?.();\n    expect(ui.push).toHaveBeenCalledWith(\n      override",
+      "replace": "    expect(ui.replace).toHaveBeenCalledWith(\n      override",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  ui.push.mockReset();\n  ui.alert.mockReset();\n  ui.rpc.mockReset().mockImplementation(async (method: string) => {\n    if (method === \"me\") return me;",
+      "replace": "  ui.replace.mockReset();\n  ui.rpc.mockReset().mockImplementation(async (method: string) => {\n    if (method === \"me\") return me;",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  const buttons = () =>\n    ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[] | undefined;\n",
+      "replace": "  // The model screen opens at once, in place of an alert.\n",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  expect(ui.alert).toHaveBeenCalledWith(\"Add an AI model to keep chatting\", undefined, [\n    expect.objectContaining({ text: \"Not Now\" }),\n    expect.objectContaining({ text: \"Add model\" }),\n  ]);\n  buttons()?.[0]?.onPress?.();\n  expect(ui.push).not.toHaveBeenCalled();\n  buttons()?.[1]?.onPress?.();\n  expect(ui.push).toHaveBeenCalledWith(\"/(settings)/models\");",
+      "replace": "  expect(ui.replace).toHaveBeenCalledWith(\"/(settings)/models\");",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  ui.alert.mockReset();\n  const answers = [",
+      "replace": "  ui.replace.mockReset();\n  const answers = [",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  expect(ui.alert).not.toHaveBeenCalled();\n  expect(ui.rpc).not.toHaveBeenCalledWith(\"bots/create\", expect.anything(), undefined);\n  expect(openChat).not.toHaveBeenCalled();\n\n  // Once a model",
+      "replace": "  expect(ui.replace).not.toHaveBeenCalled();\n  expect(ui.rpc).not.toHaveBeenCalledWith(\"bots/create\", expect.anything(), undefined);\n  expect(openChat).not.toHaveBeenCalled();\n\n  // Once a model",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  expect(ui.rpc).not.toHaveBeenCalledWith(\"me\", undefined, undefined);\n  expect(ui.alert).not.toHaveBeenCalled();",
+      "replace": "  expect(ui.rpc).not.toHaveBeenCalledWith(\"me\", undefined, undefined);\n  expect(ui.replace).not.toHaveBeenCalled();",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  expect(ui.rpc).toHaveBeenCalledWith(\"bots/create\", expect.anything(), undefined);\n  expect(ui.alert).not.toHaveBeenCalled();\n  // Nor is",
+      "replace": "  expect(ui.rpc).toHaveBeenCalledWith(\"bots/create\", expect.anything(), undefined);\n  expect(ui.replace).not.toHaveBeenCalled();\n  // Nor is",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  ui.alert.mockReset();\n  let bots: unknown[] = [];\n  ui.rpc.mockReset().mockImplementation(async (method: string) => {\n    if (method === \"me\") return { needsModel: true };\n    if (method === \"bots/create\")",
+      "replace": "  ui.replace.mockReset();\n  let bots: unknown[] = [];\n  ui.rpc.mockReset().mockImplementation(async (method: string) => {\n    if (method === \"me\") return { needsModel: true };\n    if (method === \"bots/create\")",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  expect(ui.alert).toHaveBeenCalledOnce();\n  bots = [{ id: \"bot-existing\" }];",
+      "replace": "  expect(ui.replace).toHaveBeenCalledOnce();\n  bots = [{ id: \"bot-existing\" }];",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  ui.alert.mockReset();\n  ui.rpc.mockReset().mockImplementation(async (method: string) => {\n    if (method === \"bots/list\") {\n      ui.spaceSeq++;",
+      "replace": "  ui.replace.mockReset();\n  ui.rpc.mockReset().mockImplementation(async (method: string) => {\n    if (method === \"bots/list\") {\n      ui.spaceSeq++;",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  expect(await askForModelBeforeFirstBot(\"space-work\", () => true)).toBe(false);\n  expect(ui.alert).not.toHaveBeenCalled();",
+      "replace": "  expect(await askForModelBeforeFirstBot(\"space-work\", () => true)).toBe(false);\n  expect(ui.replace).not.toHaveBeenCalled();",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
+      "file": "apps/mobile/components/inbox/inbox-render.test.tsx",
+      "find": "  ui.alert.mockReset();\n  ui.rpc\n    .mockReset()\n    .mockImplementation(async (method: string) => (method === \"me\" ? { needsModel: true } : []));\n  expect(await askForModelBeforeFirstBot(undefined, () => false)).toBe(false);\n  expect(ui.alert).not.toHaveBeenCalled();",
+      "replace": "  ui.replace.mockReset();\n  ui.rpc\n    .mockReset()\n    .mockImplementation(async (method: string) => (method === \"me\" ? { needsModel: true } : []));\n  expect(await askForModelBeforeFirstBot(undefined, () => false)).toBe(false);\n  expect(ui.replace).not.toHaveBeenCalled();",
+      "requires": [
+        "apps/mobile/lib/dozo-model-step.ts"
+      ],
+      "reason": "first open: the first bot's model step replaces the New bot screen with the model screen (dozo-model-step.ts) and shows no alert, so the test follows router.replace"
+    },
+    {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgid \"Remove\"\nmsgstr \"Kaldır\"\n\n#. placeholder {0}: attachment.file.name",
       "replace": "msgid \"Remove\"\nmsgstr \"Kaldır\"\n\n#: apps/web/src/pages/dozo-organization-logo-row.tsx\nmsgid \"Logo\"\nmsgstr \"Logo\"\n\n#: apps/web/src/pages/dozo-organization-logo-row.tsx\nmsgid \"Couldn't use that image as a logo\"\nmsgstr \"Bu görsel logo olarak kullanılamadı\"\n\n#. placeholder {0}: attachment.file.name",
