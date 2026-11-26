@@ -756,6 +756,12 @@
     },
     {
       "file": "apps/mobile/app.json",
+      "find": "\"backgroundColor\": \"#FCFCFC\",\n          \"dark\"",
+      "replace": "\"backgroundColor\": \"#F5F5F3\",\n          \"dark\"",
+      "reason": "the splash's light background is Dozo's light page colour (dozo/theme/theme.json), as on the web; the dark one already matches"
+    },
+    {
+      "file": "apps/mobile/app.json",
       "find": "\"scheme\": \"rakazo\",",
       "replace": "\"scheme\": [\"rakazo\", \"dozo\"],",
       "reason": "pairing links use the fork's own scheme (dozo://pair), which an upstream app on the same phone cannot claim; the upstream scheme stays first, because links the app makes and the origin the server trusts use the first one"

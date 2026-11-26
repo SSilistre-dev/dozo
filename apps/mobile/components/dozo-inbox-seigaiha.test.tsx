@@ -47,7 +47,9 @@ vi.mock("react-native-svg", () => {
     Stop: part("stop"),
   };
 });
+const appearance = vi.hoisted(() => ({ current: "light" as "light" | "dark" }));
 vi.mock("../lib/native/native", () => ({
+  useResolvedAppearance: () => appearance.current,
   useMobileTokens: () => ({
     foreground: "#111111",
     background: "#ffffff",
@@ -95,6 +97,17 @@ it("shows the wordmark as a header", async () => {
   const name = container.querySelector("em")!;
   expect(name.textContent).toBe("dozo");
   expect(name.getAttribute("data-role")).toBe("header");
+});
+
+it.each([
+  ["light", "#d93f3f"],
+  ["dark", "#e5484d"],
+] as const)("draws the seal in the web red in the %s theme", async (theme, red) => {
+  appearance.current = theme;
+  await render(createElement(DozoWordmark));
+  expect(container.querySelector("span span")!.getAttribute("data-style")).toContain(
+    `"backgroundColor":"${red}"`,
+  );
 });
 
 it("offers the wordmark as one header item without the shared glass", async () => {

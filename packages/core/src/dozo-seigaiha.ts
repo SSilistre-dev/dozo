@@ -21,3 +21,6 @@ export const DOZO_SEIGAIHA = {
   /** Share of that height where the pattern is fully shown; it fades to nothing below. */
   solidUntil: 0.25,
 } as const;
+
+/** The seal red of the wordmark, as `--dozo-seal` in `dozo-shell.css` holds it. */
+export const DOZO_SEAL = { light: "#d93f3f", dark: "#e5484d" } as const;
