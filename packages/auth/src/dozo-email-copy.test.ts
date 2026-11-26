@@ -17,11 +17,8 @@ describe("Dozo's email copy", () => {
     );
     expect(read.complete).toBe(true);
     expect(read.unused).toEqual([]);
-    expect(
-      read.problems.filter(
-        (problem) => !/\.(intro|star|starTitle|starLink|community|communityTitle)/.test(problem),
-      ),
-    ).toEqual([]);
+    // Every language carries every key the email reads, so none falls back to English.
+    expect(read.problems).toEqual([]);
     expect(emailCopyReader(dir.pathname, () => undefined).available(id)).toBe(true);
   });
 });
