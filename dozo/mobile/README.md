@@ -253,8 +253,10 @@ Each is upstream's own behaviour for a build without the piece, not new code.
 Still upstream's on purpose: the `rakazo://` link scheme, which the server trusts as the app's
 origin (`dozo/brand/README.md`, Identifiers). An upstream app on the same phone claims it too, so
 the app also registers `dozo://`, which pairing links use.
-There is no store listing yet (drafts: `store/`): the app's update fallback opens the landing page, and the privacy and
-terms links open the landing site's pages (`dozo/landing/README.md`).
+The App Store listing is https://apps.apple.com/app/dozo-bot/id6837702832: the update fallback, the
+review prompt and Settings' rating row use it on iOS. Android has no Play listing, so it gets no
+review prompt or rating row and its update fallback opens the landing page. The privacy and terms
+links open the landing site's pages (`dozo/landing/README.md`).
 
 ## Connection
 

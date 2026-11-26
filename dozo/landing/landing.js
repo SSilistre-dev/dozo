@@ -37,19 +37,22 @@ addEventListener("DOMContentLoaded", () => {
     if (b) setPeriod(b.dataset.period);
   });
   setPeriod("year");
-  // download: the main buttons go straight to this system's build; on a phone, an unknown system or
-  // without the script they scroll to the list of builds
+  // download: the main buttons go straight to this system's build (the App Store on iPhone and
+  // iPad, which reports itself as a Mac with touch); on Android, an unknown system or without the
+  // script they scroll to the list of builds
   const ua = navigator.userAgent;
   const os =
-    /Android|iPhone|iPad|Mobile/.test(ua) || navigator.maxTouchPoints > 1
-      ? ""
-      : /Windows/.test(ua)
-        ? "win"
-        : /Macintosh/.test(ua)
-          ? "mac"
-          : /Linux.*x86_64/.test(ua)
-            ? "linux"
-            : "";
+    /iPhone|iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+      ? "ios"
+      : /Android|Mobile/.test(ua) || navigator.maxTouchPoints > 1
+        ? ""
+        : /Windows/.test(ua)
+          ? "win"
+          : /Macintosh/.test(ua)
+            ? "mac"
+            : /Linux.*x86_64/.test(ua)
+              ? "linux"
+              : "";
   const build = os && $(`[data-os="${os}"]`);
   if (build) {
     $$("[data-dl]").forEach((a) => (a.href = build.href));
