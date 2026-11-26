@@ -47,7 +47,10 @@ export function usePlanLimitNotice(error: unknown): PlanLimitNotice | null {
   // A sentence is recognised in its usual words; the store build only words its own notice.
   const limit = planLimitOf(error, planLimitCopy());
   const copy = mobilePlanLimitCopy();
-  const billing = useQuery({ ...rpcQuery("billing/status"), enabled: needsBilling(limit) }).data;
+  const billing = useQuery(
+    { ...rpcQuery("billing/status"), enabled: needsBilling(limit) },
+    queryClient,
+  ).data;
   return limit ? storePlanLimitNotice(planLimitNotice(limit, billing, copy)) : null;
 }
 
