@@ -796,7 +796,7 @@
     {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "import { NativeActionButton } from \"../components/native/native-action-button\";\nimport { SocialSignInButtons } from \"../components/settings/social-sign-in-buttons\";",
-      "replace": "import { DozoAuthMark } from \"../components/dozo-auth-mark\";\nimport { SocialSignInButtons } from \"../components/settings/social-sign-in-buttons\";\nimport { NativeActionButton } from \"../components/native/native-action-button\";\nimport { passwordShown, signInNeedsCode, usesCode } from \"../lib/dozo-code-first\";",
+      "replace": "import { DozoAuthBackdrop, DozoAuthMark, DozoPasswordToggleSlot } from \"../components/dozo-auth-mark\";\nimport { SocialSignInButtons } from \"../components/settings/social-sign-in-buttons\";\nimport { NativeActionButton } from \"../components/native/native-action-button\";\nimport { emailCodeLinkShown, passwordShown, signInNeedsCode, usesCode } from \"../lib/dozo-code-first\";",
       "requires": [
         "apps/mobile/lib/dozo-code-first.ts",
         "apps/mobile/components/dozo-auth-mark.tsx"
@@ -851,6 +851,60 @@
         "apps/mobile/components/dozo-auth-mark.tsx"
       ],
       "reason": "the Dozo mark above the sign-in title, on every step"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                        <NativeActionButton\n                          label={t`Back`}\n                          prominence=\"quiet\"\n                          disabled={pending}\n                          onPress={() => {\n                            setCodeSent(false);\n                            setCode(\"\");\n                            setError(null);\n                          }}\n                          style={{ alignSelf: \"center\", marginTop: 16 }}\n                        />",
+      "replace": "                        <Pressable\n                          accessibilityRole=\"button\"\n                          disabled={pending}\n                          hitSlop={8}\n                          onPress={() => {\n                            setCodeSent(false);\n                            setCode(\"\");\n                            setError(null);\n                          }}\n                          style={{ alignSelf: \"center\", marginTop: 16 }}\n                        >\n                          <Text\n                            style={{ color: tokens.foreground, fontSize: 15, fontWeight: \"600\" }}\n                          >\n                            {t`Back`}\n                          </Text>\n                        </Pressable>",
+      "reason": "code step: Back is a link in the same style as Back to sign in and Forgot password"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                          disabled={pending || code.length < CODE_LENGTH}\n                          label={pending ? t`Working\u2026` : t`Continue`}",
+      "replace": "                          disabled={pending || code.length < CODE_LENGTH}\n                          prominence={code.length < CODE_LENGTH ? \"secondary\" : \"primary\"}\n                          label={pending ? t`Working\u2026` : t`Continue`}",
+      "reason": "code step: a disabled Continue is the outlined style, which stays legible, not a grey fill with grey text"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "{mode === \"in\" && reset?.passwordReset &&",
+      "replace": "{emailCodeLinkShown(codeFlow, mode, usingCode) ? (\n                          <Pressable\n                            accessibilityRole=\"button\"\n                            hitSlop={8}\n                            onPress={() => {\n                              setPasswordChosen(false);\n                              setError(null);\n                            }}\n                            style={{ alignSelf: \"center\", marginTop: 16 }}\n                          >\n                            <Text\n                              style={{ color: tokens.foreground, fontSize: 14, fontWeight: \"600\" }}\n                            >\n                              {t`Email me a code instead`}\n                            </Text>\n                          </Pressable>\n                        ) : null}\n                        {mode === \"in\" && !!reset?.passwordReset &&",
+      "requires": [
+        "apps/mobile/lib/dozo-code-first.ts"
+      ],
+      "reason": "code-first sign-in on mobile: the way back to the code form from the password form, with the web page's wording"
+    },
+    {
+      "file": "apps/mobile/components/integrations/header-rows-editor.tsx",
+      "find": "          tinted\n          leading={<NativeSymbol ios=\"plus\" android=\"add\" color={tokens.link} />}",
+      "replace": "          leading={<NativeSymbol ios=\"plus\" android=\"add\" color={tokens.foreground} />}",
+      "reason": "Add header is ink like the other rows, not the system link blue"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "<SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>",
+      "replace": "<DozoAuthBackdrop>\n      <SafeAreaView style={{ flex: 1 }}>",
+      "requires": [
+        "apps/mobile/components/dozo-auth-mark.tsx"
+      ],
+      "reason": "the waves start at the top edge, behind the status bar and the scrolled form, as on the inbox"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "</SafeAreaView>\n  );",
+      "replace": "</SafeAreaView>\n    </DozoAuthBackdrop>\n  );",
+      "requires": [
+        "apps/mobile/components/dozo-auth-mark.tsx"
+      ],
+      "reason": "the waves start at the top edge, behind the status bar and the scrolled form, as on the inbox: the closing tag of the rule above"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                            <NativeActionButton\n                              accessibilityLabel={\n                                passwordVisible ? t`Hide password` : t`Show password`\n                              }\n                              icon={{\n                                ios: passwordVisible ? \"eye.slash\" : \"eye\",\n                                android: passwordVisible ? \"eye-off-outline\" : \"eye-outline\",\n                              }}\n                              prominence=\"quiet\"\n                              onPress={() => setPasswordVisible((visible) => !visible)}\n                              style={{\n                                alignSelf: \"center\",\n                                minWidth: 44,\n                                minHeight: 44,\n                                marginRight: 4,\n                              }}\n                            />",
+      "replace": "                            <DozoPasswordToggleSlot>\n                            <NativeActionButton\n                              accessibilityLabel={\n                                passwordVisible ? t`Hide password` : t`Show password`\n                              }\n                              icon={{\n                                ios: passwordVisible ? \"eye.slash\" : \"eye\",\n                                android: passwordVisible ? \"eye-off-outline\" : \"eye-outline\",\n                              }}\n                              prominence=\"quiet\"\n                              onPress={() => setPasswordVisible((visible) => !visible)}\n                            />\n                            </DozoPasswordToggleSlot>",
+      "requires": [
+        "apps/mobile/components/dozo-auth-mark.tsx"
+      ],
+      "reason": "the password eye is centred: its 44pt target is a slot around the button, since the native host draws the glyph at its top when given a height"
     },
     {
       "file": "apps/mobile/lib/auth/api-auth.ts",

@@ -21,6 +21,11 @@ export function passwordShown(mode: AuthMode, usingCode: boolean): boolean {
   return mode !== "forgot" && !usingCode;
 }
 
+/** The way back to the code form, on a server with codes, while the sign-in password form is shown. */
+export function emailCodeLinkShown(codeFlow: boolean, mode: AuthMode, usingCode: boolean): boolean {
+  return codeFlow && mode === "in" && !usingCode;
+}
+
 /** The server refused a password sign-in because the account's email was never confirmed. */
 export function isUnverifiedSignIn(error: unknown): boolean {
   return (

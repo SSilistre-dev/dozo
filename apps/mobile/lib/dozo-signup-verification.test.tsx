@@ -104,6 +104,8 @@ vi.mock("../components/settings/social-sign-in-buttons", () => ({
 vi.mock("./native/native", () => ({ useMobileTokens: () => tokensForAppearance("dark") }));
 vi.mock("../components/dozo-auth-mark", () => ({
   DozoAuthMark: () => <div data-testid="dozo-mark" />,
+  DozoAuthBackdrop: ({ children }: { children: ReactNode }) => children,
+  DozoPasswordToggleSlot: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("react-native-svg", () => ({ default: () => null, Path: () => null }));
 vi.mock("./api/api-server", () => ({}));

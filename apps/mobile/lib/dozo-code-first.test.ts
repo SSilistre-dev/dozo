@@ -1,5 +1,10 @@
 import { expect, it, vi } from "vitest";
-import { isUnverifiedSignIn, passwordShown, signInNeedsCode, usesCode } from "./dozo-code-first";
+import {
+  emailCodeLinkShown,
+  isUnverifiedSignIn,
+  passwordShown,   signInNeedsCode,
+  usesCode,
+} from "./dozo-code-first";
 
 const failure = (status: number, code: string) =>
   Object.assign(new Error("refused"), { status, code });
@@ -16,6 +21,14 @@ it("a server without codes keeps the password form, and the reset form has none"
   expect(passwordShown("up", false)).toBe(true);
   expect(passwordShown("in", true)).toBe(false);
   expect(passwordShown("forgot", false)).toBe(false);
+});
+
+it("offers the way back to a code only on the sign-in password form of a server with codes", () => {
+  expect(emailCodeLinkShown(true, "in", false)).toBe(true);
+  expect(emailCodeLinkShown(true, "in", true)).toBe(false);
+  expect(emailCodeLinkShown(true, "up", false)).toBe(false);
+  expect(emailCodeLinkShown(true, "forgot", false)).toBe(false);
+  expect(emailCodeLinkShown(false, "in", false)).toBe(false);
 });
 
 it("only a 403 with EMAIL_NOT_VERIFIED is an unverified sign-in", () => {
