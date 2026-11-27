@@ -283,14 +283,16 @@ export function PasswordResetPage() {
   );
 }
 
-function LinkResult({
+export function LinkResult({
   title,
   address = null,
+  detail = null,
   onSubmit = (event) => event.preventDefault(),
   children,
 }: {
   title: ReactNode;
   address?: string | null;
+  detail?: string | null;
   onSubmit?: (event: React.FormEvent) => void;
   children: ReactNode;
 }) {
@@ -303,6 +305,9 @@ function LinkResult({
             {address}
           </p>
         ) : null}
+        {detail ? (
+          <p className="mb-6 w-full text-center text-body text-muted-foreground">{detail}</p>
+        ) : null}
         {children}
       </AuthFrame>
       <AuthLocaleSelect locale={locale} onChange={setLocale} />
@@ -310,7 +315,7 @@ function LinkResult({
   );
 }
 
-function OnwardLink({
+export function OnwardLink({
   to,
   state,
   primary = false,
