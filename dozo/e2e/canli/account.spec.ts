@@ -57,23 +57,34 @@ test(SIGN_UP_ASKS, async ({ browser }) => {
   const account = trialAccount() as TrialAccount;
   // A signed-out browser of its own, never the trial account's session. A server that mails codes
   // signs up with a name, an address and a code: the page must ask for no password and never call
-  // the password sign-up. The run sends no mail and opens no account either: the call that would
-  // mail the code is answered here, never sent to the server, and the code is never entered.
+  // the password sign-up. The run sends no mail and opens no account on either kind of server:
+  // every call that could mail a code or open an account is answered inside the browser and never
+  // reaches the live server. The pattern is wide (any auth URL naming a code or a sign-up), and a
+  // request of that kind the handler did not answer fails the run, so a wrong pattern cannot
+  // mail anyone silently.
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   try {
     const page = await context.newPage();
     const { emailCode } = await (await context.request.get("/api/auth/capabilities")).json();
-    const passwordSignUps: string[] = [];
-    const codeRequests: unknown[] = [];
+    const risky = /\/api\/auth\/[^?]*(otp|sign-up)/i;
+    const seen: string[] = [];
+    const answered: string[] = [];
+    const bodies: { url: string; body: unknown }[] = [];
     page.on("request", (request) => {
-      if (request.url().includes("/api/auth/sign-up/email")) passwordSignUps.push(request.url());
+      if (risky.test(request.url())) seen.push(request.url());
     });
-    if (emailCode) {
-      await page.route("**/api/auth/email-otp/send-verification-otp", async (route) => {
-        codeRequests.push(route.request().postDataJSON());
-        await route.fulfill({ json: { success: true } });
-      });
-    }
+    await page.route(risky, async (route) => {
+      const request = route.request();
+      answered.push(request.url());
+      bodies.push({ url: request.url(), body: request.postDataJSON() });
+      // Answered as the server would, without reaching it: a sent code, or "address taken".
+      if (/sign-up\/email/.test(request.url()))
+        await route.fulfill({
+          status: 422,
+          json: { code: "USER_ALREADY_EXISTS", message: "User already exists" },
+        });
+      else await route.fulfill({ json: { success: true } });
+    });
     await page.goto("/sign-up?lang=tr");
     if (emailCode) {
       await expect(page.getByPlaceholder("Parola")).toHaveCount(0);
@@ -81,28 +92,32 @@ test(SIGN_UP_ASKS, async ({ browser }) => {
       await page.getByPlaceholder("E-posta adresiniz").fill(account.email);
       await page.getByRole("button", { name: "Devam", exact: true }).click();
       await expect(page.getByRole("heading", { name: "E-postanızı kontrol edin" })).toBeVisible();
-      expect(codeRequests, "one code request, as sign-in").toEqual([
-        { email: account.email, type: "sign-in" },
-      ]);
-      expect(passwordSignUps, "the password sign-up was never called").toEqual([]);
+      expect(
+        bodies.map((b) => b.body),
+        "one code request, as sign-in",
+      ).toEqual([{ email: account.email, type: "sign-in" }]);
+      expect(
+        seen.filter((url) => /sign-up\/email/.test(url)),
+        "the password sign-up was never called",
+      ).toEqual([]);
       const session = await (await context.request.get("/api/auth/get-session")).text();
       expect(session.trim(), "the sign-up opened no session").toMatch(/^(null)?$/);
       note("sunucu kodla kayıt istiyor (şifre yok, kod adımı, oturum yok; posta yollanmadı)");
     } else {
-      // A server without codes keeps upstream's form: the trial account's own address with a
-      // password nobody chose is refused (422, the address is taken), opening no account.
+      // A server without codes keeps upstream's form. Its sign-up call is answered in the browser
+      // (never sent): the live server may not have the trial account, and a real call would open
+      // one.
       const choice = page.getByRole("button", { name: "E-posta ile devam et" });
       if (await choice.isVisible()) await choice.click();
-      const secret = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2)).join("");
       await page.getByPlaceholder("Adınız").fill("Dozo Probe");
       await page.getByPlaceholder("E-posta adresiniz").fill(account.email);
-      await page.getByPlaceholder("Parola").fill(`Pp-${secret}`);
-      const signUp = page.waitForResponse((r) => r.url().includes("/api/auth/sign-up/email"));
+      await page.getByPlaceholder("Parola").fill("Pp-probe-never-sent-1");
       await page.getByRole("button", { name: "Hesap oluştur" }).click();
-      expect((await signUp).status(), "sign-up answer").toBe(422);
       await expect(page.getByText("Bu e-postayla bir hesap zaten var")).toBeVisible();
-      note("sunucu kodsuz: yükseltilmemiş davranış (422: bu e-postayla bir hesap zaten var)");
+      note("sunucu kodsuz: upstream formu (kayıt isteği tarayıcıda yanıtlandı, sunucuya gitmedi)");
     }
+    expect(answered.length, "the catcher answered a request").toBeGreaterThan(0);
+    expect(seen, "every code or sign-up request was answered in the browser").toEqual(answered);
     await page.screenshot({ path: `${outDir()}/shots/canli--kayit-kod-ister.png` });
   } finally {
     await context.close();

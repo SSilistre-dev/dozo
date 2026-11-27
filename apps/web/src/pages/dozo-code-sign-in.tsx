@@ -336,6 +336,7 @@ export function DozoCodeSignIn({
       <Button type="submit" size="lg" disabled={pending} className={submitClass}>
         {pending ? <Trans>Working…</Trans> : <Trans>Continue</Trans>}
       </Button>
+      {signingUp ? <DozoSignupTerms /> : null}
       {providers.length > 0 ? (
         <div data-dozo-auth-providers className="w-full">
           <SocialSignInButtons

@@ -124,6 +124,7 @@ async function open(path: string) {
           <Route path="/sign-in" element={<AuthPage mode="in" />} />
           <Route path="/sign-in/email" element={<AuthPage mode="in" />} />
           <Route path="/sign-up" element={<AuthPage mode="up" />} />
+          <Route path="/sign-up/email" element={<AuthPage mode="up" />} />
           <Route path="/forgot-password" element={<AuthPage mode="forgot" />} />
         </Routes>
       </MemoryRouter>,
@@ -270,6 +271,29 @@ describe("email-first sign-in", () => {
     );
     expect(shown()).toBeUndefined();
     expect(where()).toBe("/sign-up?next=%2Fapp");
+  });
+
+  it("sends the password sign-up address to the code sign-up, keeping the query", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: true,
+      passwordAuth: true,
+      emailCode: true,
+    });
+    await open("/sign-up/email?next=%2Finvite%2Ftoken-1&plan=premium&period=year");
+    expect(where()).toBe("/sign-up?next=%2Finvite%2Ftoken-1");
+    expect(codeFirst()).toBe("");
+    expect(readPlanIntent()).not.toBeNull();
+  });
+
+  it("keeps upstream's password sign-up address on a server without codes", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: true,
+      passwordAuth: true,
+      emailCode: false,
+    });
+    await open("/sign-up/email");
+    expect(where()).toBe("/sign-up/email");
+    expect(shown()).toBe("up");
   });
 
   it.each([

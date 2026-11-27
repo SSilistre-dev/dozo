@@ -43,7 +43,7 @@ import { HostedSignIn } from "./dozo-hosted-login";
  *
  * Where the server signs in with an emailed code, sign-in starts with the address alone and then
  * the code (dozo-code-sign-in.tsx, at `/sign-in`); upstream's password form stays one step away at
- * `/sign-in/email`. Sign-up is the same two steps with a name and no password
+ * `/sign-in/email`. Sign-up (and `/sign-up/email`, which redirects to it) is the same two steps with a name and no password
  * (dozo-code-sign-in.tsx, at `/sign-up`), since a verification link opened in another browser
  * cannot finish a password account. A server without codes keeps upstream's page at every address.
  */
@@ -154,6 +154,10 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   if (props.mode === "up" && signups !== "open") {
     return signups === "closed" ? <Navigate to={`/sign-in${search}`} replace /> : null;
   }
+  // The password sign-up leaves a verification link that only finishes in the browser that opened
+  // it: where the server mails codes its address leads to the code sign-up, keeping the query.
+  if (props.mode === "up" && pathname === "/sign-up/email" && dozoCodeSignInAvailable(capabilities))
+    return <Navigate to={`/sign-up${search}`} replace />;
   // A language asked for in the address is shown from the first paint, never after a flash.
   if (wanted && wanted !== locale) return null;
   const codeFirst =

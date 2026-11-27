@@ -114,7 +114,7 @@ vi.mock("./auth/Auth", () => ({
     </form>
   ),
 }));
-vi.mock("./dozo-signup-terms", () => ({ DozoSignupTerms: () => <p>terms</p> }));
+vi.mock("../lib/locale/i18n", () => ({ getActiveUiLocale: () => "en" }));
 
 import type { SignInProvider } from "@rakazo/contracts";
 import { authErrorText } from "@rakazo/i18n/user-error";
@@ -233,7 +233,7 @@ it("mails a sign-in code with upstream's own call, then shows the code step for 
   expect(code.getAttribute("aria-label")).toBe("Code");
   expect(code.autocomplete).toBe("one-time-code");
   expect(code.inputMode).toBe("numeric");
-  expect(text()).toContain("terms");
+  expect(text()).toContain("Terms");
 });
 
 it("stays on the address when sending fails, saying why in one line", async () => {
@@ -567,6 +567,12 @@ describe("sign-up", () => {
     expect(button("Use a password instead")).toBeUndefined();
     const back = [...host.querySelectorAll("a")].find((a) => a.textContent === "Sign in");
     expect(back?.getAttribute("href")).toBe("/sign-in?next=%2Fadmin%2Faccess");
+  });
+
+  it("shows the terms before anything is sent, as upstream's form does", async () => {
+    await open("/sign-up");
+    expect(text()).toContain("Terms");
+    expect(text()).toContain("Privacy");
   });
 
   it("mails a code and never calls the password sign-up", async () => {

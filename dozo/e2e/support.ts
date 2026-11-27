@@ -67,8 +67,17 @@ export async function codeAfter(request: APIRequestContext, address: string, bef
   await expect
     .poll(
       async () => {
+        // The newest mail that holds a code: a refused password sign-in also sends a link mail,
+        // and the two arrive in no fixed order, so the link mail is never the one read.
         const mails = await mailsTo(request, address);
-        code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
+        code =
+          mails.length > before
+            ? mails
+                .filter((mail) => !linkIn(mail))
+                .map(codeIn)
+                .filter(Boolean)
+                .at(-1)
+            : undefined;
         return code;
       },
       { message: `a code mail to ${address}`, timeout: 60_000 },
