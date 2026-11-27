@@ -44,15 +44,23 @@ const ids = (skills: Array<{ id: string; name: string }>) =>
   skills.filter((entry) => entry.name === "Expenses").map((entry) => entry.id);
 
 describe("a name shared by a person's skill and their organization's", () => {
-  it("is one row for a member, in the list and with content", async () => {
+  it("is one row for a member, flagged or not, and with content", async () => {
     const service = serviceAs("member");
     expect(ids(await service.list(actor))).toEqual(["own"]);
+    expect(ids(await service.list(actor, { manage: true }))).toEqual(["own"]);
     expect(ids(await service.listWithContent(actor))).toEqual(["own"]);
   });
 
-  it("keeps the organization's skill in the list for an admin, who manages it, and nowhere else", async () => {
+  it("is one row for an admin who does not ask to manage, so a pick is what a bot uses", async () => {
     const service = serviceAs("admin");
-    expect(ids(await service.list(actor))).toEqual(["own", "organization"]);
+    expect(ids(await service.list(actor))).toEqual(["own"]);
+    expect(ids(await service.list(actor, { manage: false }))).toEqual(["own"]);
+    expect(ids(await service.listWithContent(actor))).toEqual(["own"]);
+  });
+
+  it("keeps the organization's skill for an admin who asks to manage, and nowhere else", async () => {
+    const service = serviceAs("admin");
+    expect(ids(await service.list(actor, { manage: true }))).toEqual(["own", "organization"]);
     expect(ids(await service.listWithContent(actor))).toEqual(["own"]);
   });
 });

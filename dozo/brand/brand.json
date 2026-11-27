@@ -12721,12 +12721,12 @@
     {
       "file": "apps/api/src/bots/agent-skills.ts",
       "find": "        rows.map((row) => mapAgentSkill(row, managedId)),\n      ).map(({ content: _content, ...entry }) => entry);\n",
-      "replace": "        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES, {\n          keepOrganization: Boolean(managedId),\n        }).map((row) => dozoSkillView(actor)(row, mapAgentSkill(row, managedId))),\n      ).map(({ content: _content, ...entry }) => entry);\n",
+      "replace": "        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES, {\n          keepOrganization: Boolean(managedId) && options.manage === true,\n        }).map((row) => dozoSkillView(actor)(row, mapAgentSkill(row, managedId))),\n      ).map(({ content: _content, ...entry }) => entry);\n",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: a library skill that is someone else's is read only, says nothing of where its owner keeps it, and gives way to one of the person's own or a built-in skill with its name; whoever manages the organization still lists each skill of it, to change or delete one a skill of theirs shares a name with"
+      "reason": "organization skill library: a library skill that is someone else's is read only, says nothing of where its owner keeps it, and gives way to one of the person's own or a built-in skill with its name; whoever manages the organization and asks for the management view (manage) still lists each skill of it, to change or delete one a skill of theirs shares a name with; every other list has one skill per name"
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
@@ -12767,6 +12767,61 @@
         "packages/db/src/dozo-organization-skills.ts"
       ],
       "reason": "organization skill library: a library skill found by its name, the person's own and the built-in ones first"
+    },
+    {
+      "file": "packages/contracts/src/skills/skills-rpc.ts",
+      "find": "    list: oc.output(z.array(AgentSkillCatalogEntrySchema)),\n",
+      "replace": "    /** `manage`: for whoever manages the organization, its skills that one of theirs shares a name with stay listed. */\n    list: oc\n      .input(z.object({ manage: z.boolean().optional() }).optional())\n      .output(z.array(AgentSkillCatalogEntrySchema)),\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: the skills list takes an optional management flag; a call without it, as every older client makes, gets one skill per name"
+    },
+    {
+      "file": "apps/api/src/routes/memory.ts",
+      "find": "      list: authed.agentSkills.list.handler(async ({ context }) => agentSkills.list(context.actor)),\n",
+      "replace": "      list: authed.agentSkills.list.handler(async ({ context, input }) =>\n        agentSkills.list(context.actor, { manage: input?.manage }),\n      ),\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: the management flag reaches the service, which honors it only for whoever manages the organization"
+    },
+    {
+      "file": "apps/api/src/bots/agent-skills.ts",
+      "find": "    async list(actor: Actor): Promise<Omit<AgentSkill, \"content\">[]> {\n",
+      "replace": "    async list(\n      actor: Actor,\n      options: { manage?: boolean } = {},\n    ): Promise<Omit<AgentSkill, \"content\">[]> {\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts",
+        "apps/api/src/dozo-organization-library.ts"
+      ],
+      "reason": "organization skill library: the list reads the management flag"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "  // The same list the composer offers as skill mentions, so a change here shows there at once.\n  const list = queries.agentSkills.list.queryOptions();\n",
+      "replace": "  // The management list: it also holds the organization's skills that one of yours shares a name with. The composer's own list is refreshed on a change.\n  const list = queries.agentSkills.list.queryOptions({ input: { manage: true } });\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the skills page asks for the management view, the composer's picker does not"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "  async function refresh() {\n    return fetchFresh(queryClient, list);\n  }\n",
+      "replace": "  async function refresh() {\n    void queryClient.invalidateQueries({\n      queryKey: queries.agentSkills.list.queryKey(),\n      exact: true,\n    });\n    return fetchFresh(queryClient, list);\n  }\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the composer's list, a different read from the management one, is marked out of date on a change here"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/skills.tsx",
+      "find": "  const skills = useQuery(rpcQuery(\"agentSkills/list\"), queryClient);\n",
+      "replace": "  const skills = useQuery(rpcQuery(\"agentSkills/list\", { manage: true }), queryClient);\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: the skills screen asks for the management view, the composer's picker does not"
     },
     {
       "file": "apps/api/src/routes/memory.ts",
