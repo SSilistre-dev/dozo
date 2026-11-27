@@ -110,11 +110,11 @@ export async function firstContent(page: Page): Promise<number | null> {
 
 /**
  * Opens the password form of the Turkish sign-in page, on the email-first screen ("Bunun yerine
- * şifre kullan") and on the earlier one alike (the password form, or "E-posta ile devam et" after
+ * parola kullan") and on the earlier one alike (the password form, or "E-posta ile devam et" after
  * a choice of providers), so the live scenarios pass before and after a deploy of either.
  */
 export async function openPasswordForm(page: Page) {
-  const password = page.getByRole("button", { name: "Bunun yerine şifre kullan" });
+  const password = page.getByRole("button", { name: /Bunun yerine (şifre|parola) kullan/ });
   const choice = page.getByRole("button", { name: "E-posta ile devam et" });
   const field = page.getByPlaceholder("Parola");
   await expectFlow(password.or(choice).or(field).first()).toBeVisible();

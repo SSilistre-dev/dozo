@@ -86,17 +86,20 @@ export const SERVER_SENTENCE_PREFIXES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Sign-in button labels the server sends for subscription providers, by their fixed English text.
- * The provider names are product data; each label is its own catalog id with a Turkish line.
+ * Sign-in button labels and setup-step lines the server sends for subscription providers, by their
+ * fixed English text. The provider names are product data; each is its own catalog id with a
+ * Turkish line.
  */
 export const SIGN_IN_LABELS: ReadonlySet<string> = new Set([
   "Sign in with ChatGPT",
   "Sign in with GitHub Copilot",
   "Sign in with SuperGrok or X Premium",
   "Sign in with Claude",
+  "Turn on device code sign-in in ChatGPT security settings",
+  "Workspace accounts need an admin to turn this on.",
 ]);
 
-/** A server-sent sign-in label in the UI's language; any other label stays as sent. */
+/** A server-sent sign-in label or setup line in the UI's language; any other text stays as sent. */
 export function signInLabelText(label: string | undefined): string | undefined {
   if (!label || !SIGN_IN_LABELS.has(label) || !i18n.locale) return label;
   return i18n._({ id: label, message: label });
