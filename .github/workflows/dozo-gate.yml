@@ -25,6 +25,10 @@ jobs:
   gate:
     name: olc, brand leak gate and fork unit tests
     runs-on: ubuntu-latest
+    # issues: write only keeps the Turkish queue issue below; it is used for same-repository sync pull requests.
+    permissions:
+      contents: read
+      issues: write
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -71,7 +75,43 @@ jobs:
       # Upstream's `pnpm checks` on the branded tree, in a throwaway git repository inside the
       # container (git is installed there), so the fork's dozo-* files meet upstream's conventions.
       - name: Repository checks on the branded tree
-        run: dozo/docker/gate.sh checks
+        shell: bash
+        run: dozo/docker/gate.sh checks 2>&1 | tee "$RUNNER_TEMP/checks.log"
+
+      # Upstream adds interface text almost every day and the Turkish check lets it through as
+      # pending. On the sync pull request the pending ids go into one issue, so they wait in a
+      # visible queue; the fork's own untranslated text still fails the step above.
+      - name: Update the queue of upstream strings waiting for Turkish
+        if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'upstream-sync') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          [ -f "$RUNNER_TEMP/checks.log" ] || exit 0
+          grep -q '^TURKISH: ' "$RUNNER_TEMP/checks.log" || exit 0
+          pending=$(grep -c '^pending: ' "$RUNNER_TEMP/checks.log" || true)
+          {
+            echo "Strings upstream added that the Turkish catalog still shows in English, as of pull request #$PR."
+            echo "Translate them in a brand rule on the Turkish catalog (dozo/brand/brand.json), or list a term Turkish keeps in English in dozo/brand/catalog-turkish-same.json. This issue is rewritten by every sync pull request."
+            echo
+            echo '~~~~'
+            grep '^pending: ' "$RUNNER_TEMP/checks.log" | sed 's/^pending: //' || true
+            echo '~~~~'
+          } > "$RUNNER_TEMP/queue.md"
+          n=$(gh issue list --label turkish-queue --state all --json number --jq '.[0].number // empty')
+          if [ "$pending" -gt 0 ]; then
+            if [ -n "$n" ]; then
+              gh issue edit "$n" --body-file "$RUNNER_TEMP/queue.md"
+              gh issue reopen "$n" || true
+            else
+              gh label create turkish-queue --color fbca04 --description "Upstream strings waiting for a Turkish translation" --force >/dev/null
+              gh issue create --title "Translate the interface text upstream added into Turkish" --label turkish-queue --body-file "$RUNNER_TEMP/queue.md"
+            fi
+          elif [ -n "$n" ]; then
+            gh issue edit "$n" --body "Nothing is waiting: every upstream string has a Turkish translation, as of pull request #$PR."
+            gh issue close "$n" || true
+          fi
 
       # The fork's own tests and the per-file coverage floor. A runner starts with no dependency
       # volume, so this is the cold run (about 80 s: pnpm install and the coverage provider, inside

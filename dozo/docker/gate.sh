@@ -693,8 +693,13 @@ repo_checks() {
   [ -f "$STAGE/stage.complete" ] || { fail "checks: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
   node_image || return 1
   checks_image || return 1
+  # The files of the pristine upstream tree tell the Turkish check whose entry is whose; without the
+  # ref the list is empty and every entry counts as the fork's.
+  local up_ref up_files="$STAGE/upstream-files.txt"
+  up_ref=$(cd "$ROOT" && pick_upstream_ref) || up_ref=""
+  if [ -n "$up_ref" ]; then git -C "$ROOT" ls-tree -r --name-only "$up_ref" > "$up_files"; else : > "$up_files"; fi
   # shellcheck disable=SC2016
-  if drun checks -v "$src:/src:ro" -v "$ROOT/dozo/brand:/brand:ro" "$CHECKS_IMAGE" sh -c 'set -e
+  if drun checks -v "$src:/src:ro" -v "$ROOT/dozo/brand:/brand:ro" -v "$up_files:/up-files:ro" "$CHECKS_IMAGE" sh -c 'set -e
       mkdir /w; tar -C /src --exclude=./node_modules --exclude="*/node_modules" -cf - . | tar -C /w -xf -
       git config --global --add safe.directory /w  # the copy is owned by the host user, git runs as root
       cd /w; git init -q; git add -A
@@ -702,9 +707,11 @@ repo_checks() {
       node --test scripts/checks/*.test.mjs > /tmp/checks.log 2>&1 && rc=0 || rc=$?
       [ "$rc" -eq 0 ] || cat /tmp/checks.log
       echo "[checks] $(grep -E "^ℹ (tests|pass|fail) " /tmp/checks.log | paste -sd " ")"
-      # Extraction writes every string the code holds into the Turkish catalog; none may still be English.
+      # Extraction writes every string the code holds into the Turkish catalog; none the fork added may
+      # still be English, and upstream'"'"'s are listed as pending.
       if /deps/node_modules/.bin/lingui extract > /tmp/extract.log 2>&1; then
-        node /brand/catalog-turkish.mjs --root /w || rc=2
+        list=""; [ -s /up-files ] && list="--upstream-files /up-files"
+        node /brand/catalog-turkish.mjs --root /w $list || rc=2
       else cat /tmp/extract.log; echo "TURKISH: FAIL (lingui extract failed)"; rc=2; fi
       exit "$rc"'; then echo "[checks] repository checks ok on the branded tree"
   else fail "checks: repository checks (scripts/checks) on the branded tree"; return 1; fi

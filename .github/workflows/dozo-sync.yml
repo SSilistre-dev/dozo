@@ -128,6 +128,8 @@ jobs:
             sed 's/^\[sync\] //' "$RUNNER_TEMP/sync.log" | grep -E 'range merged|upstream commits|files changed|fork health|make ' || true
             echo '```'
             echo
+            echo "Interface text upstream added that Turkish does not have yet does not block the merge: the gate lists it in the open issue labeled turkish-queue."
+            echo
             echo "Auto-merge is on: this merges with a merge commit once dozo-gate passes. If the gate fails it stays open for a person; never squash or rebase it."
           } > "$RUNNER_TEMP/body.md"
           title="Sync upstream ($BRANCH)"
