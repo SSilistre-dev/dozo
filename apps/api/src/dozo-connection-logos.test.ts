@@ -1,11 +1,12 @@
 import { createRouterClient } from "@orpc/server";
 import type { PrismaClient } from "@rakazo/db";
-import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router-test-support.js";
 
 const origin = "https://app.dozo.test";
+const PIXEL =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 const settle: Array<() => Promise<void>> = [];
 
 vi.mock("@rakazo/adapters", async (original) => {
@@ -15,14 +16,7 @@ vi.mock("@rakazo/adapters", async (original) => {
     createConnectionLogos: (options: Parameters<typeof adapters.createConnectionLogos>[0]) => {
       const logos = adapters.createConnectionLogos({
         ...options,
-        fetchImage: async () =>
-          new Uint8Array(
-            await sharp({
-              create: { width: 64, height: 64, channels: 4, background: "#888" },
-            })
-              .png()
-              .toBuffer(),
-          ),
+        fetchImage: async () => new Uint8Array(Buffer.from(PIXEL, "base64")),
       });
       settle.push(logos.settled);
       return logos;
