@@ -72,10 +72,6 @@ async function openMore(page: Page, text: string) {
 test("revision: an earlier message is edited after a confirm, and not past a tool call", async ({
   page,
 }) => {
-  test.fixme(
-    true,
-    "FINDING: after a turn that called the remember tool the earlier message is still offered for Edit: that run's events are all quiet types and its reply is text only, so planRevision sees nothing it cannot take back; give the memory write a mark the plan reads, then remove this line",
-  );
   test.setTimeout(240_000);
   const name = `Rewind ${Math.random().toString(36).slice(2, 7)}`;
   const bot = await rpcAs<{ id: string }>(page, "bots/create", {
@@ -117,7 +113,10 @@ test("revision: an earlier message is edited after a confirm, and not past a too
   await expect(replies.last()).toContainText(REPLY);
 
   // A later turn wrote to the bot's memory: the earlier message can no longer go back.
-  await composer.fill('Remember it [e2e-tool:remember {"content":"Lunch is vegan"}]');
+  const args = Buffer.from(
+    JSON.stringify({ operations: [{ action: "add", content: "Lunch is vegan" }] }),
+  ).toString("base64");
+  await composer.fill(`Remember it [e2e-tool:remember b64:${args}]`);
   await composer.press("Enter");
   await expect(page.getByText(TOOL_DONE).last()).toBeVisible({ timeout: 60_000 });
   await idle(page, bot.id);
