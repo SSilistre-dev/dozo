@@ -3920,7 +3920,7 @@
     {
       "file": "apps/mobile/components/thread/thread-run-error.ts",
       "find": "import { computerHoursOutCopy, runErrorActionLabel } from \"../../lib/cards/run-error-presentation\";\nimport { openModelSettings }",
-      "replace": "import { computerHoursOutCopy, runErrorActionLabel } from \"../../lib/cards/run-error-presentation\";\nimport { openPlanUpgrade } from \"../../lib/dozo-plan-limit\";\nimport { mobilePlanLimitCopy, storeBuild, storePlanLimitNotice } from \"../../lib/dozo-store-build\";\nimport { openModelSettings }",
+      "replace": "import { computerHoursOutCopy, runErrorActionLabel } from \"../../lib/cards/run-error-presentation\";\nimport { openPlanUpgrade } from \"../../lib/dozo-plan-limit\";\nimport { mobilePlanLimitCopy, storeBuild, storeComputerHoursOut, storePlanLimitNotice } from \"../../lib/dozo-store-build\";\nimport { openModelSettings }",
       "requires": [
         "apps/mobile/lib/dozo-plan-limit.ts",
         "apps/mobile/lib/dozo-store-build.ts"
@@ -10072,6 +10072,33 @@
       "reason": "store build: a run that ran out of computer hours names the limit with no button to a plan (App Review 3.1.1)"
     },
     {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "      ? computerHoursOutCopy(computerHoursOut(billing))\n",
+      "replace": "      ? storeComputerHoursOut(computerHoursOutCopy(computerHoursOut(billing)))\n",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: without a plan-limit notice the hours sentence is still the shared one, but its Start plan now, Renew plan and Upgrade actions are dropped (App Review 3.1.1)"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/computers.tsx",
+      "find": "      Alert.alert(t`Your plan does not include this size.`, undefined, [\n        { text: t`Cancel`, style: \"cancel\" },\n        { text: t`Upgrade`, onPress: () => router.push(\"/billing\") },\n      ]);\n",
+      "replace": "      showSizeNotInPlan(() => router.push(\"/billing\"));\n",
+      "requires": [
+        "apps/mobile/lib/dozo-size-limit.ts"
+      ],
+      "reason": "store build: a size the plan does not include is named with no Upgrade button to Billing (App Review 3.1.1)"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/computers.tsx",
+      "find": "side-insets\";\nimport { native, useThemedStyles }",
+      "replace": "side-insets\";\nimport { showSizeNotInPlan } from \"../../lib/dozo-size-limit\";\nimport { native, useThemedStyles }",
+      "requires": [
+        "apps/mobile/lib/dozo-size-limit.ts"
+      ],
+      "reason": "store build: the import of the rule above"
+    },
+    {
       "file": "apps/mobile/app/(settings)/account.tsx",
       "find": "import { useApprovalSettings } from \"../../lib/settings/approval-settings\";\nimport { openFromSettings,",
       "replace": "import { useApprovalSettings } from \"../../lib/settings/approval-settings\";\nimport { storeBuild } from \"../../lib/dozo-store-build\";\nimport { openFromSettings,",
@@ -15565,6 +15592,60 @@
       "find": "        keyboardShouldPersistTaps=\"handled\"\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
       "replace": "        keyboardShouldPersistTaps=\"handled\"\n        automaticallyAdjustKeyboardInsets\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
       "reason": "new bot: with the keyboard open the form scrolls above it, so the colour choices stay reachable"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "import { BotLookPicker } from \"../components/bots/bot-look-picker\";\nimport { NativeActionButton }",
+      "replace": "import { BotLookPicker } from \"../components/bots/bot-look-picker\";\nimport { DozoKeyboardScroll, useDozoKeyboardOpen } from \"../components/dozo-keyboard-scroll\";\nimport { NativeActionButton }",
+      "requires": [
+        "apps/mobile/components/dozo-keyboard-scroll.tsx"
+      ],
+      "reason": "new bot: with the keyboard up the form shrinks above it and the avatar draws smaller, so the title no longer covers the avatar and the second colour row stays above the keyboard: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "  const sideInsets = useSideInsets();\n  const { t } = useLingui();",
+      "replace": "  const sideInsets = useSideInsets();\n  const keyboardOpen = useDozoKeyboardOpen();\n  const { t } = useLingui();",
+      "requires": [
+        "apps/mobile/components/dozo-keyboard-scroll.tsx"
+      ],
+      "reason": "new bot: with the keyboard up the form shrinks above it and the avatar draws smaller, so the title no longer covers the avatar and the second colour row stays above the keyboard: whether it is up"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "      <ScrollView\n        contentInsetAdjustmentBehavior=\"automatic\"\n        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}",
+      "replace": "      <DozoKeyboardScroll\n        contentInsetAdjustmentBehavior=\"automatic\"\n        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}",
+      "requires": [
+        "apps/mobile/components/dozo-keyboard-scroll.tsx"
+      ],
+      "reason": "new bot: with the keyboard up the form shrinks above it and the avatar draws smaller, so the title no longer covers the avatar and the second colour row stays above the keyboard: the scroll view avoids the keyboard"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "        automaticallyAdjustKeyboardInsets\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>\n          <BotAvatar color={look.color} identity={identity} avatarSet={avatarSet} size={96} />",
+      "replace": "      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: keyboardOpen ? 12 : 24 }}>\n          <BotAvatar\n            color={look.color}\n            identity={identity}\n            avatarSet={avatarSet}\n            size={keyboardOpen ? 64 : 96}\n          />",
+      "requires": [
+        "apps/mobile/components/dozo-keyboard-scroll.tsx"
+      ],
+      "reason": "new bot: with the keyboard up the form shrinks above it and the avatar draws smaller, so the title no longer covers the avatar and the second colour row stays above the keyboard: the shrunk view replaces the inset adjustment, which scrolled the avatar under the title; the avatar is smaller meanwhile"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "      </ScrollView>\n    </>",
+      "replace": "      </DozoKeyboardScroll>\n    </>",
+      "requires": [
+        "apps/mobile/components/dozo-keyboard-scroll.tsx"
+      ],
+      "reason": "new bot: with the keyboard up the form shrinks above it and the avatar draws smaller, so the title no longer covers the avatar and the second colour row stays above the keyboard: the closing tag"
+    },
+    {
+      "file": "apps/mobile/lib/bots/new-bot.test.tsx",
+      "find": "vi.mock(\"../platform/app-foreground\", () => ({ useAppForeground: () => true }));\nvi.mock(\"../inbox/inbox-changes\"",
+      "replace": "vi.mock(\"../platform/app-foreground\", () => ({ useAppForeground: () => true }));\nvi.mock(\"../../components/dozo-keyboard-scroll\", () => ({\n  DozoKeyboardScroll: ({ children }: { children?: ReactNode }) => <div>{children}</div>,\n  useDozoKeyboardOpen: () => false,\n}));\nvi.mock(\"../inbox/inbox-changes\"",
+      "requires": [
+        "apps/mobile/components/dozo-keyboard-scroll.tsx"
+      ],
+      "reason": "new bot: the keyboard-avoiding scroll view needs the native keyboard module, which this test does not load; it has its own test"
     },
     {
       "file": "apps/mobile/components/native/native-switch.ios.tsx",

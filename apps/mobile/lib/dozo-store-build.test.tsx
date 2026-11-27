@@ -17,6 +17,7 @@ import {
   mobilePlanLimitCopy,
   storeBuild,
   storePlanLimitCopy,
+  storeComputerHoursOut,
   storePlanLimitNotice,
   storeRunErrorDetails,
   storeSignInProviders,
@@ -74,6 +75,18 @@ describe("plan-limit notices", () => {
     expect(storePlanLimitNotice(upgrade, true)).toEqual({ ...upgrade, action: null });
     expect(storePlanLimitNotice(retry, true)).toBe(retry);
     expect(storePlanLimitNotice(null, true)).toBeNull();
+  });
+});
+
+describe("computer hours used up", () => {
+  const copy = { summary: "This month's computer hours are used up.", action: "Upgrade" };
+
+  it("off: the sentence and its action", () => {
+    expect(storeComputerHoursOut(copy, false)).toBe(copy);
+  });
+
+  it("on: the same sentence with no action to a plan", () => {
+    expect(storeComputerHoursOut(copy, true)).toEqual({ summary: copy.summary, action: null });
   });
 });
 
