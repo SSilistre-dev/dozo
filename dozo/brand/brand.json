@@ -8303,6 +8303,12 @@
       "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies; the fork writes the screenshot's row in a transaction, which this fake runs on itself"
     },
     {
+      "file": "packages/adapters/src/runs/turn/tool-step-outcomes.test.ts",
+      "find": "          bot: { findUnique: async () => null },\n        },\n        artifacts: { put: async () => ({ id: \"storage-1\" }), remove },",
+      "replace": "          bot: { findUnique: async () => null },\n          deploymentSettings: { findUnique: async () => null },\n          $transaction(work: (tx: unknown) => Promise<unknown>) {\n            return work(this);\n          },\n        },\n        artifacts: { put: async () => ({ id: \"storage-1\" }), remove },",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies; the fork writes the screenshot's row in a transaction, which this fake runs on itself"
+    },
+    {
       "file": "apps/web/src/pages/shell/bots/bot-panel.test.tsx",
       "find": "import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nvi.mock(\"../../../lib/query/rpc\", () => {",
       "replace": "import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nvi.mock(\"../dozo-own-computer-row\", () => ({ OwnComputerRow: () => null }));\nvi.mock(\"../dozo-bot-skills-section\", () => ({ DozoBotSkillsSection: () => null }));\n\nvi.mock(\"../../../lib/query/rpc\", () => {",
