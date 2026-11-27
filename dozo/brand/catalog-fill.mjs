@@ -4,6 +4,12 @@
  * each id (with its context) that Turkish has and another catalog lacks an entry whose
  * translation is the English source, with the comments and flags of the Turkish one.
  *
+ * Then the fork's own translations (`translations/<language>.json`, an object from the English
+ * source, or `context` + U+0004 + source, to the translation) replace every entry still English:
+ * the ones just added and upstream's untranslated ones. A translation someone already wrote in the
+ * catalog is never replaced, so upstream translating a string wins over the fork's. The files
+ * hold what a model translated; `catalog-translations.mjs` checks them.
+ *
  * Why: the web build compiles the missing ones from its own extraction only when they are
  * template ids, and an explicit id's message with a placeholder stays uncompiled (shown as
  * `Upgrade to {plan}`). With the entry in the catalog every language compiles it. Deterministic
@@ -12,20 +18,23 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const LOCALES = "packages/i18n/locales";
+export const TRANSLATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), "translations");
 export const SOURCE_LANGUAGE = "tr";
 
 const unquote = (text) => JSON.parse(`"${text}"`);
 const KEY_SEPARATOR = "\u0004";
 
-/** A `.po` file's entries by `msgctxt`, then id: the entry's comments, context lines and id lines as written. The header and `#~` obsolete entries are left out. */
+/** A `.po` file's entries by `msgctxt`, then id: the entry's comments, context lines and id lines as written, and its translation as text. The header and `#~` obsolete entries are left out. */
 export function catalogEntries(text) {
   const entries = new Map();
   for (const block of text.split(/\n\n+/)) {
     const comments = [];
     const context = [];
     const id = [];
+    const translation = [];
     let part = null;
     for (const line of block.split("\n")) {
       if (line.startsWith("msgid_plural "))
@@ -37,11 +46,12 @@ export function catalogEntries(text) {
       else if (!line.startsWith('"')) part = null;
       if (part === "msgctxt") context.push(line);
       else if (part === "msgid") id.push(line);
+      else if (part === "msgstr") translation.push(line);
     }
     const joined = (lines) =>
       lines.map((line) => unquote(line.slice(line.indexOf('"') + 1, -1))).join("");
     const key = `${joined(context)}${KEY_SEPARATOR}${joined(id)}`;
-    if (joined(id) !== "") entries.set(key, { comments, context, id });
+    if (joined(id) !== "") entries.set(key, { comments, context, id, translation: joined(translation) });
   }
   return entries;
 }
@@ -109,18 +119,54 @@ function asString(lines, language) {
   return [`msgstr ${JSON.stringify(message)}`];
 }
 
+/** `Map<language, Map<key, translation>>` from the `<language>.json` files of `dir`, the keys as `catalogEntries` makes them (a key with no context gets the empty one). */
+export function loadTranslations(dir = TRANSLATIONS) {
+  const byLanguage = new Map();
+  if (!fs.existsSync(dir)) return byLanguage;
+  for (const file of fs.readdirSync(dir).sort()) {
+    if (!file.endsWith(".json")) continue;
+    const entries = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+    const keyed = Object.entries(entries).map(([key, text]) => [
+      key.includes(KEY_SEPARATOR) ? key : `${KEY_SEPARATOR}${key}`,
+      text,
+    ]);
+    byLanguage.set(file.slice(0, -".json".length), new Map(keyed));
+  }
+  return byLanguage;
+}
+
+/** `text` with the `msgstr` of every entry still English (or empty) that `translations` has replaced, and how many. */
+function applyTranslations(text, translations) {
+  let count = 0;
+  const parts = text.split(/(\n\n+)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const lines = parts[i].split("\n");
+    const at = lines.findIndex((line) => line.startsWith("msgstr "));
+    const [key] = at === -1 ? [] : [...catalogEntries(parts[i]).keys()];
+    const translation = translations.get(key);
+    if (translation === undefined) continue;
+    const current = joinedId(lines.slice(at));
+    if (current !== "" && current !== key.slice(key.indexOf(KEY_SEPARATOR) + 1)) continue;
+    parts[i] = [...lines.slice(0, at), `msgstr ${JSON.stringify(translation)}`].join("\n");
+    count++;
+  }
+  return { text: parts.join(""), count };
+}
+
 /**
  * The catalogs to rewrite: `read(rel)` returns a file's text (the branded one if the brand step
- * changed it). Returns `Map<rel, text>` of the catalogs that gained entries, and how many.
+ * changed it). Returns `Map<rel, text>` of the catalogs that changed, how many entries were added
+ * and how many were translated.
  */
-export function fillCatalogs(root, read) {
+export function fillCatalogs(root, read, translations = loadTranslations()) {
   const dir = path.join(root, LOCALES);
   const source = path.join(dir, SOURCE_LANGUAGE, "messages.po");
-  if (!fs.existsSync(source)) return { changed: new Map(), added: 0 };
+  if (!fs.existsSync(source)) return { changed: new Map(), added: 0, translated: 0 };
   const rel = (language) => `${LOCALES}/${language}/messages.po`;
   const fromSource = catalogEntries(read(rel(SOURCE_LANGUAGE)));
   const changed = new Map();
   let added = 0;
+  let translated = 0;
   for (const language of fs.readdirSync(dir).sort()) {
     if (language === SOURCE_LANGUAGE || !fs.existsSync(path.join(dir, language, "messages.po")))
       continue;
@@ -135,9 +181,13 @@ export function fillCatalogs(root, read) {
         ),
       );
     }
-    if (blocks.length === 0) continue;
-    changed.set(rel(language), `${text.replace(/\n*$/, "\n")}\n${blocks.join("\n\n")}\n`);
+    const filled =
+      blocks.length === 0 ? text : `${text.replace(/\n*$/, "\n")}\n${blocks.join("\n\n")}\n`;
+    const result = applyTranslations(filled, translations.get(language) ?? new Map());
+    if (result.text === text) continue;
+    changed.set(rel(language), result.text);
     added += blocks.length;
+    translated += result.count;
   }
-  return { changed, added };
+  return { changed, added, translated };
 }

@@ -149,8 +149,10 @@ a failure in any of them fails the gate:
   untracked, not ignored) are branded in a scratch copy inside one container and scanned by
   `check.mjs`, so the old name left in a screen, an e-mail template, a locale catalogue or a prompt
   fails here, not only at `make qa`. About 9 seconds. The brand step also gives every id the Turkish catalog has and another lacks
-  its English source there (`dozo/brand/catalog-fill.mjs`, run by `apply.mjs`), and the same copy must then hold
-  every id in all 16 catalogs (`dozo/brand/catalog-parity.mjs`).
+  its English source there, replaced by the fork's translation when `dozo/brand/translations` has one
+  (`dozo/brand/catalog-fill.mjs`, run by `apply.mjs`). The same copy must then keep every translation's placeholders,
+  tags and ICU branches (`dozo/brand/catalog-translations.mjs`) and hold every id in all 16 catalogs
+  (`dozo/brand/catalog-parity.mjs`).
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
   inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
   `dozo-*`).

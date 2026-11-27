@@ -256,6 +256,28 @@ within the limits of the neighbourhood rules above; any other Discord invite cod
 output, `.map` files and files outside `include`. A stem that occurs only inside a reviewed `keep` or
 `allow.text` phrase still counts as alive for the dead-stem check.
 
+## Catalog translations
+
+Strings the fork adds reach the Turkish catalog through brand rules. Every other catalog gets them
+from `catalog-fill.mjs` (run by `apply.mjs`): first as English copies, then replaced by the fork's
+own translations in `dozo/brand/translations/<language>.json`, one file per catalog folder (`de`,
+`pt-BR`, ...). Each file is an object from the English source (the branded one) to the translation;
+an entry with a context is keyed `context` + U+0004 + source. An entry replaces only a catalog line
+that is still English, so a translation upstream writes wins, and a source upstream changes simply
+stops matching until its entry is updated. A translation identical to its source records that the
+word was reviewed and stays English (product and protocol names, terms like "Code" in German).
+
+These were written by a language model and no native speaker has reviewed them. To fix one, edit its
+JSON entry (never a `messages.po`, which `lingui extract` rewrites). `catalog-translations.mjs`
+(run by `make olc` on the branded copy) fails a translation that loses or adds a placeholder or tag,
+does not parse as ICU, has plural categories the language does not use or lacks ones it does, changes
+a select's keys, or runs past 2.5 times its source (at least 24 characters). It also prints, per
+language, how many entries are still English in the branded catalog.
+
+To translate new strings: list the ids a catalog still has in English, translate them into that
+language's file, and run `node dozo/brand/catalog-translations.mjs`. Terms Turkish writes as English
+(`catalog-turkish-same.json`) are the usual ones to leave out.
+
 ## Known gaps
 
 - Tests, `apps/web/e2e` and `packages/testkit` are not rewritten; run them on the pristine tree.

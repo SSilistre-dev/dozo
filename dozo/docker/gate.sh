@@ -362,7 +362,7 @@ olc() {
     # ignored) are branded in a scratch copy inside one container and
     # scanned, so the old name left in anything users see (a screen, an e-mail template, a locale
     # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds. The same copy
-    # then holds every language catalog to the same message ids (catalog-parity.mjs).
+    # then holds the fork's translations to their sources (catalog-translations.mjs) and every language catalog to the same message ids (catalog-parity.mjs).
     ( FAILS=()
     if [ -f dozo/brand/check.mjs ]; then
       if out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra scripts \
@@ -370,10 +370,12 @@ olc() {
             mkdir -p /tmp/w; tar --null --ignore-failed-read -T - -cf - | tar -C /tmp/w -xf -
             node dozo/brand/apply.mjs --root /tmp/w --strict > /dev/null
             node dozo/brand/check.mjs --root /tmp/w
+            node dozo/brand/catalog-translations.mjs --root /tmp/w
             node dozo/brand/catalog-parity.mjs --root /tmp/w' 2>&1); then
-        echo "[olc] $(printf '%s\n' "$out" | tail -2 | head -1) (branded copy of the working tree)"
-        echo "[olc] $(printf '%s\n' "$out" | tail -1) (branded copy of the working tree)"
-      else printf '%s\n' "$out" | tail -60; fail "leak gate or catalog parity: the old brand is user-visible in the branded tree (dozo/brand/check.mjs), or a message id is missing from a language catalog (dozo/brand/catalog-parity.mjs)"; fi
+        for verdict in "leak gate" "TRANSLATIONS:" "CATALOGS:"; do
+          echo "[olc] $(printf '%s\n' "$out" | grep -F "$verdict" | tail -1) (branded copy of the working tree)"
+        done
+      else printf '%s\n' "$out" | tail -60; fail "leak gate, translations or catalog parity: the old brand is user-visible in the branded tree (dozo/brand/check.mjs), a fork translation breaks a placeholder or an ICU branch (dozo/brand/catalog-translations.mjs), or a message id is missing from a language catalog (dozo/brand/catalog-parity.mjs)"; fi
     else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
       olc_job_end leak) > "$OLC_TMP/leak.out" 2>&1 &
   else OLC_UNSTARTED_OK=1   # node_image has already failed
@@ -713,6 +715,10 @@ repo_checks() {
         list=""; [ -s /up-files ] && list="--upstream-files /up-files"
         node /brand/catalog-turkish.mjs --root /w $list || rc=2
       else cat /tmp/extract.log; echo "TURKISH: FAIL (lingui extract failed)"; rc=2; fi
+      # The web build compiles every catalog; a translation that does not compile (bad ICU) would
+      # break its screen, so compile all 16 here the way the build does. --strict fails on any error.
+      if /deps/node_modules/.bin/lingui compile --strict > /tmp/compile.log 2>&1; then echo "COMPILE: PASS (all language catalogs compile)"
+      else cat /tmp/compile.log; echo "COMPILE: FAIL (lingui compile --strict)"; rc=2; fi
       exit "$rc"'; then echo "[checks] repository checks ok on the branded tree"
   else fail "checks: repository checks (scripts/checks) on the branded tree"; return 1; fi
 }

@@ -20,8 +20,8 @@ it("reads the draft card's recipient as Kime while a date range's end stays Biti
   expect(i18n._({ id: generateMessageId("To") })).toBe("Bitiş");
 });
 
-it("shows To, not the message id, in a language without its own recipient copy", () => {
+it("shows the language's own recipient word, not the message id, in another language", () => {
   i18n.load("de", de as Messages);
   i18n.activate("de");
-  expect(i18n._({ id: generateMessageId("To", "recipient") })).toBe("To");
+  expect(i18n._({ id: generateMessageId("To", "recipient") })).toBe("An");
 });

@@ -242,7 +242,7 @@ const keys = Object.keys(counts).sort();
 for (const key of keys) console.log(`  ${key}: ${counts[key]}`);
 if (keys.length === 0) console.log("  none");
 console.log(
-  `catalogs: ${filled.added} entries added to ${filled.changed.size} languages (English source of the Turkish-only ids)`,
+  `catalogs: ${filled.added} entries added to ${filled.changed.size} languages (English source of the Turkish-only ids), ${filled.translated} translated`,
 );
 console.log(
   `hooks: anchored ${anchoredApplied} of ${config.anchored.length} applied, ${anchoredAlready} already applied; assets ${assetsChanged} copied`,
