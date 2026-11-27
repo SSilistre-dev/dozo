@@ -1,68 +1,87 @@
 import { createRouterClient } from "@orpc/server";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it } from "vitest";
-import { withOwnLogosOnly } from "./dozo-connection-logos.js";
+import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router-test-support.js";
 
 const origin = "https://app.dozo.test";
+const PIXEL =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const settle: Array<() => Promise<void>> = [];
 
-describe("withOwnLogosOnly", () => {
-  it("keeps our own address and drops every other one", () => {
-    const items = [
-      { slug: "a", logo: `${origin}/api/dozo/catalog-images/${"c".repeat(64)}.webp` },
-      { slug: "b", logo: "https://logos.example.test/api/gmail" },
-      { slug: "c", logo: `${origin}.evil.test/x.png` },
-      { slug: "d", logo: null },
-    ];
-    expect(withOwnLogosOnly(items, `${origin}/`).map((item) => item.logo)).toEqual([
-      items[0]?.logo,
-      null,
-      null,
-      null,
-    ]);
-  });
+vi.mock("@rakazo/adapters", async (original) => {
+  const adapters = await original<typeof import("@rakazo/adapters")>();
+  return {
+    ...adapters,
+    createConnectionLogos: (options: Parameters<typeof adapters.createConnectionLogos>[0]) => {
+      const logos = adapters.createConnectionLogos({
+        ...options,
+        fetchImage: async () => new Uint8Array(Buffer.from(PIXEL, "base64")),
+      });
+      settle.push(logos.settled);
+      return logos;
+    },
+  };
 });
 
-describe("connections.catalog", () => {
-  it("never hands a client a logo on another host", async () => {
-    const provider = {
-      describe: () => ({ id: "apps" }),
-      catalog: async () =>
-        ["gmail", "slack"].map((slug) => ({
-          connectorId: "apps",
-          slug,
-          name: slug,
-          logo: `https://logos.example.test/api/${slug}`,
-          connected: false,
-          noAuth: false,
-        })),
-    };
-    const client = createRouterClient(
-      createRouter({
-        prisma: {} as PrismaClient,
-        connectors: { managed: () => provider },
-        env: {
-          defaultProvider: "fake",
-          defaultModel: "fake-model",
-          webOrigin: origin,
-          screenProxySecret: "fake-test-secret",
-          sandboxProvider: "fake",
-        },
-      } as unknown as RouterDeps),
-      {
-        context: {
-          actor: {
-            spaceId: "workspace-1",
-            userId: "user-1",
-            email: "user@rakazo.test",
-            isDeploymentOwner: true,
-          },
-        } as never,
+function client() {
+  const rows = new Map<string, { source: string; hash: string | null; checkedAt: Date }>();
+  const provider = {
+    describe: () => ({ id: "apps" }),
+    catalog: async () =>
+      ["gmail", "slack"].map((slug) => ({
+        connectorId: "apps",
+        slug,
+        name: slug,
+        logo: `https://logos.example.test/api/${slug}`,
+        connected: false,
+        noAuth: false,
+      })),
+  };
+  const prisma = {
+    dozoCatalogImage: {
+      findMany: async () => [...rows.values()],
+      upsert: async ({ create }: { create: { source: string; hash: string | null } }) => {
+        rows.set(create.source, { ...create, checkedAt: new Date() });
       },
-    );
-    const catalog = await client.connections.catalog({ connectorId: "apps" });
-    expect(catalog).toHaveLength(2);
-    expect(catalog.filter((item) => item.logo !== null)).toEqual([]);
+    },
+  } as unknown as PrismaClient;
+  return createRouterClient(
+    createRouter({
+      prisma,
+      connectors: { managed: () => provider },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: origin,
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+    } as unknown as RouterDeps),
+    {
+      context: {
+        actor: {
+          spaceId: "workspace-1",
+          userId: "user-1",
+          email: "user@rakazo.test",
+          isDeploymentOwner: true,
+        },
+      } as never,
+    },
+  );
+}
+
+describe("connections.catalog", () => {
+  it("never hands a client a logo on another host, and serves it from ours once stored", async () => {
+    const api = client();
+    const first = await api.connections.catalog({ connectorId: "apps" });
+    expect(first.filter((item) => item.logo !== null)).toEqual([]);
+    await Promise.all(settle.map((done) => done()));
+    const second = await api.connections.catalog({ connectorId: "apps" });
+    expect(second).toHaveLength(2);
+    for (const item of second)
+      expect(item.logo).toMatch(
+        new RegExp(`^${origin}/api/dozo/catalog-images/[a-f0-9]{64}\\.webp$`),
+      );
   });
 });

@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import type { PluginMarketplaceCatalog, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { PluginMarketplaceCatalogSchema } from "@rakazo/contracts";
-import { comparePlugins, matchesPluginQuery } from "@rakazo/core";
+import { comparePlugins, matchesPluginQuery, ResponseTooLargeError } from "@rakazo/core";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseHeldError, readJsonColumn, withLease } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { createFaviconResolver } from "./web/favicon.js";
 import type { PluginTextReader } from "./integrations/plugin-connectors.js";
 import { createPluginMarketplace } from "./integrations/plugin-marketplace.js";
+import { createFaviconResolver } from "./web/favicon.js";
 import { fetchSafeWebBytes, fetchSafeWebText } from "./web/web-ssrf.js";
 
 /**
@@ -44,6 +44,16 @@ const IMAGE_MAX_OUTPUT_BYTES = 32 * 1024;
 /** Images are kept for this many sources at most, so the table stays under about 19 MB. */
 export const CATALOG_MAX_IMAGES = 600;
 export const CATALOG_IMAGE_TYPE = "image/webp";
+/** Stored sources of managed app logos, kept apart from the plugin catalog's own. */
+const APP_LOGO_PREFIX = "app:";
+const APP_LOGO_MAX = 3000;
+const APP_LOGO_CONCURRENCY = 4;
+/** A fetch that failed for a reason that may pass (a server error, a reset, a timeout). */
+const APP_LOGO_RETRY_MS = 10 * 60_000;
+/** A logo is fetched again this often, so a changed picture follows and the row counts as seen. */
+const APP_LOGO_RECHECK_MS = 7 * 24 * 60 * 60_000;
+/** Stored logos nobody asked for in this long are dropped with the next plugin catalog refresh. */
+const APP_LOGO_KEEP_MS = 30 * 24 * 60 * 60_000;
 const IMAGE_FILE = /^([a-f0-9]{64})\.webp$/;
 /** Answers that mean a source has no image, as opposed to a failure worth trying again. */
 const NO_IMAGE = /^(Request failed: HTTP (404|410)|Not a registry logo)$/;
@@ -313,7 +323,17 @@ export function createPersistentPluginMarketplace(options: PersistentPluginMarke
       }),
     );
     await guarded(lease, (tx) =>
-      tx.dozoCatalogImage.deleteMany({ where: { source: { notIn: sources } } }),
+      tx.dozoCatalogImage.deleteMany({
+        where: { source: { notIn: sources }, NOT: { source: { startsWith: APP_LOGO_PREFIX } } },
+      }),
+    );
+    await guarded(lease, (tx) =>
+      tx.dozoCatalogImage.deleteMany({
+        where: {
+          source: { startsWith: APP_LOGO_PREFIX },
+          checkedAt: { lt: new Date(now() - APP_LOGO_KEEP_MS) },
+        },
+      }),
     );
     await loadImages();
   }
@@ -486,4 +506,149 @@ export async function storedCatalogImage(
     select: { body: true },
   });
   return row?.body ?? null;
+}
+
+export type ConnectionLogosOptions = {
+  prisma: Pick<PrismaClient, "dozoCatalogImage">;
+  /** The public address of a stored image file (`<hash>.webp`). */
+  imageUrl: (file: string) => string;
+  /** Fetches a logo's bytes; defaults to the SSRF-checked public fetch (https only). */
+  fetchImage?: (url: string, signal: AbortSignal) => Promise<Uint8Array>;
+  now?: () => number;
+};
+
+async function fetchAppLogo(url: string, signal: AbortSignal): Promise<Uint8Array> {
+  if (new URL(url).protocol !== "https:") throw new Error("Not a registry logo");
+  const response = await fetchSafeWebBytes(url, {
+    maxBytes: IMAGE_MAX_BYTES,
+    timeoutMs: IMAGE_FETCH_TIMEOUT_MS,
+    allowedPorts: [443],
+    signal,
+    headers: { accept: "image/*" },
+  });
+  return response.body;
+}
+
+/** An answer that will not change soon, as opposed to a failure that may pass. */
+function noLogo(error: unknown): boolean {
+  return (
+    error instanceof ResponseTooLargeError ||
+    (error instanceof Error && NO_IMAGE.test(error.message))
+  );
+}
+
+/**
+ * Managed app logos, served from our own domain. A provider's logo address never reaches a client:
+ * it is fetched here, in the background, made small like the plugin catalog's images, stored in the
+ * same table and answered under its content hash. A logo not stored yet reads as none until then.
+ * Each is fetched again every week, which also marks it as still asked for.
+ */
+export function createConnectionLogos(options: ConnectionLogosOptions) {
+  const { prisma, imageUrl } = options;
+  const now = options.now ?? Date.now;
+  const fetchImage = options.fetchImage ?? fetchAppLogo;
+  /** Provider address to its stored file (null: none) and when to look again. */
+  const known = new Map<string, { file: string | null; until: number }>();
+  const queue: string[] = [];
+  /** Addresses queued or being fetched. */
+  const pending = new Set<string>();
+  let running = 0;
+  let idle: Promise<void>[] = [];
+  let capReported = false;
+
+  const fileOf = (hash: string | null) => (hash ? `${hash}.webp` : null);
+  const ownImage = (url: string) => {
+    const file = IMAGE_FILE.exec(url.slice(url.lastIndexOf("/") + 1))?.[0];
+    return Boolean(file) && imageUrl(file!) === url;
+  };
+
+  async function learn(urls: string[]): Promise<void> {
+    const rows = await prisma.dozoCatalogImage.findMany({
+      where: { source: { in: urls.map((url) => APP_LOGO_PREFIX + url) } },
+      select: { source: true, hash: true, checkedAt: true },
+    });
+    for (const row of rows) {
+      known.set(row.source.slice(APP_LOGO_PREFIX.length), {
+        file: fileOf(row.hash),
+        until: row.checkedAt.getTime() + APP_LOGO_RECHECK_MS,
+      });
+    }
+  }
+
+  async function store(url: string): Promise<void> {
+    const source = APP_LOGO_PREFIX + url;
+    let body: Uint8Array<ArrayBuffer> | null = null;
+    try {
+      const bytes = await fetchImage(url, AbortSignal.timeout(2 * IMAGE_FETCH_TIMEOUT_MS));
+      body = await catalogImage(bytes);
+    } catch (error) {
+      if (!noLogo(error)) {
+        // Not an answer: the stored logo, if any, keeps showing and the fetch is tried again soon.
+        getLogger().warn("connection logos: image fetch failed", { url, error });
+        known.set(url, { file: known.get(url)?.file ?? null, until: now() + APP_LOGO_RETRY_MS });
+        return;
+      }
+    }
+    const hash = body && createHash("sha256").update(body).digest("hex");
+    const data = { hash, body, checkedAt: new Date(now()) };
+    try {
+      await prisma.dozoCatalogImage.upsert({
+        where: { source },
+        create: { source, ...data },
+        update: data,
+      });
+    } catch (error) {
+      // Another instance wrote the same row at once; what it stored is as good as ours.
+      await learn([url]);
+      if (!known.has(url)) throw error;
+      return;
+    }
+    known.set(url, { file: fileOf(hash), until: now() + APP_LOGO_RECHECK_MS });
+  }
+
+  function pump(): void {
+    while (running < APP_LOGO_CONCURRENCY && queue.length) {
+      const url = queue.shift()!;
+      running++;
+      const work = bestEffort("store a connection logo", store(url)).then(() => {
+        running--;
+        pending.delete(url);
+        idle = idle.filter((one) => one !== work);
+        pump();
+      });
+      idle.push(work);
+    }
+  }
+
+  return {
+    /** The items with every logo on our own address, or none when it is not stored yet. */
+    async own<T extends { logo?: string | null }>(items: T[]): Promise<T[]> {
+      const wanted = (item: T) => (item.logo && !ownImage(item.logo) ? item.logo : null);
+      const urls = [...new Set(items.map(wanted).filter((url) => url !== null))];
+      const unlearned = urls.filter((url) => !known.has(url));
+      if (unlearned.length) await learn(unlearned);
+      for (const url of urls) {
+        if ((known.get(url)?.until ?? 0) > now() || pending.has(url)) continue;
+        if (!known.has(url) && known.size + pending.size >= APP_LOGO_MAX) {
+          if (!capReported)
+            getLogger().warn("connection logos: limit reached", { max: APP_LOGO_MAX });
+          capReported = true;
+          continue;
+        }
+        pending.add(url);
+        queue.push(url);
+      }
+      pump();
+      return items.map((item) => {
+        const url = wanted(item);
+        if (!url) return item;
+        const file = known.get(url)?.file;
+        return { ...item, logo: file ? imageUrl(file) : null };
+      });
+    },
+    /** Test seam: resolves once the fetches started so far have finished. */
+    settled: async () => {
+      while (idle.length) await Promise.all(idle);
+    },
+  };
 }

@@ -13,6 +13,7 @@ import {
   CATALOG_RETRY_MS,
   CATALOG_SHRINK_ACCEPTED_AFTER,
   catalogImage,
+  createConnectionLogos,
   createPersistentPluginMarketplace,
   imageSource,
   storedCatalogImage,
@@ -96,10 +97,26 @@ function fakeStore(snapshot?: SnapshotRow) {
       upsert: vi.fn(async ({ create }: { create: ImageRow }) => {
         images.set(create.source, create);
       }),
-      deleteMany: vi.fn(async ({ where }: { where: { source: { notIn: string[] } } }) => {
-        for (const source of images.keys())
-          if (!where.source.notIn.includes(source)) images.delete(source);
-      }),
+      deleteMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            source: { notIn?: string[]; startsWith?: string };
+            NOT?: { source: { startsWith: string } };
+            checkedAt?: { lt: Date };
+          };
+        }) => {
+          for (const [source, row] of images)
+            if (
+              !where.source.notIn?.includes(source) &&
+              (!where.source.startsWith || source.startsWith(where.source.startsWith)) &&
+              !(where.NOT && source.startsWith(where.NOT.source.startsWith)) &&
+              (!where.checkedAt || row.checkedAt < where.checkedAt.lt)
+            )
+              images.delete(source);
+        },
+      ),
     },
   };
   return { prisma, snapshots, images };
@@ -709,5 +726,242 @@ describe("catalog images", () => {
     expect(await storedCatalogImage(store.prisma as never, `${"b".repeat(64)}.webp`)).toBeNull();
     expect(await storedCatalogImage(store.prisma as never, "../secret.webp")).toBeNull();
     expect(store.prisma.dozoCatalogImage.findFirst).toHaveBeenCalledTimes(2);
+  });
+});
+
+const DAY = 24 * 60 * 60_000;
+const SOURCE = "https://logos.example.test/api/gmail";
+const LOGO = "https://app.example.test";
+
+function logosSetup(
+  store: ReturnType<typeof fakeStore>,
+  fetchImage?: (url: string, signal: AbortSignal) => Promise<Uint8Array>,
+) {
+  let now = T0;
+  const logos = createConnectionLogos({
+    prisma: store.prisma as never,
+    imageUrl: (file) => `${LOGO}/images/${file}`,
+    now: () => now,
+    ...(fetchImage ? { fetchImage } : {}),
+  });
+  return {
+    logos,
+    advance: (ms: number) => {
+      now += ms;
+    },
+    logo: async (url: string = SOURCE) => (await logos.own([{ logo: url }]))[0]?.logo,
+  };
+}
+
+describe("managed app logos", () => {
+  it("reads a logo as none until it is stored, then answers from our own address", async () => {
+    const store = fakeStore();
+    const fetchImage = vi.fn(async () => png());
+    const { logos, logo } = logosSetup(store, fetchImage);
+    expect(await logo()).toBeNull();
+    await logos.settled();
+    const stored = await logo();
+    expect(stored).toMatch(new RegExp(`^${LOGO}/images/[a-f0-9]{64}\\.webp$`));
+    const body = await storedCatalogImage(store.prisma as never, stored!.split("/").pop()!);
+    expect((await sharp(body!).metadata()).width).toBe(CATALOG_IMAGE_SIZE);
+    expect(fetchImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes only our own catalog image address, not another path on our origin", async () => {
+    const store = fakeStore();
+    const own = `${LOGO}/images/${"a".repeat(64)}.webp`;
+    const { logos, logo } = logosSetup(store, async () => png());
+    expect(await logo(own)).toBe(own);
+    expect(await logo(`${LOGO}/anything/else.png`)).toBeNull();
+    expect(await logo(`${LOGO}/images/${"a".repeat(64)}.webp?x=1`)).toBeNull();
+    await logos.settled();
+  });
+
+  it("answers from the stored row after a restart without fetching again", async () => {
+    const store = fakeStore();
+    const first = logosSetup(store, async () => png());
+    await first.logo();
+    await first.logos.settled();
+    const fetchImage = vi.fn(async () => png());
+    expect(await logosSetup(store, fetchImage).logo()).toContain("/images/");
+    expect(fetchImage).not.toHaveBeenCalled();
+  });
+
+  it("takes the row another instance wrote at the same moment and does not fetch again", async () => {
+    const store = fakeStore();
+    const fetchImage = vi.fn(async () => png());
+    store.prisma.dozoCatalogImage.upsert.mockImplementationOnce(async ({ create }) => {
+      store.images.set(create.source, { ...create, hash: "b".repeat(64) });
+      throw new Error("Unique constraint failed on the fields: (`source`)");
+    });
+    const { logos, logo } = logosSetup(store, fetchImage);
+    await logo();
+    await logos.settled();
+    const reads = store.prisma.dozoCatalogImage.findMany.mock.calls.length;
+    expect(await logo()).toBe(`${LOGO}/images/${"b".repeat(64)}.webp`);
+    await logo();
+    await logos.settled();
+    expect(fetchImage).toHaveBeenCalledTimes(1);
+    // Known now: no further read of the table per request.
+    expect(store.prisma.dozoCatalogImage.findMany).toHaveBeenCalledTimes(reads);
+  });
+
+  it("tries a failed fetch again after ten minutes, not before", async () => {
+    const store = fakeStore();
+    const fetchImage = vi
+      .fn<(url: string, signal: AbortSignal) => Promise<Uint8Array>>()
+      .mockRejectedValueOnce(new Error("Request failed: HTTP 503"))
+      .mockImplementation(async () => png());
+    const { logos, logo, advance } = logosSetup(store, fetchImage);
+    await logo();
+    await logos.settled();
+    advance(9 * 60_000);
+    expect(await logo()).toBeNull();
+    await logos.settled();
+    expect(fetchImage).toHaveBeenCalledTimes(1);
+    advance(2 * 60_000);
+    await logo();
+    await logos.settled();
+    expect(await logo()).toContain("/images/");
+    expect(fetchImage).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a permanent refusal for a week", async () => {
+    const store = fakeStore();
+    const fetchImage = vi.fn(async () => {
+      throw new Error("Request failed: HTTP 404");
+    });
+    const { logos, logo, advance } = logosSetup(store, fetchImage);
+    await logo();
+    await logos.settled();
+    advance(DAY);
+    await logo();
+    await logos.settled();
+    expect(fetchImage).toHaveBeenCalledTimes(1);
+    advance(7 * DAY);
+    await logo();
+    await logos.settled();
+    expect(fetchImage).toHaveBeenCalledTimes(2);
+  });
+
+  it("fetches a stored logo again after a week, serving the old one meanwhile and when that fails", async () => {
+    const store = fakeStore();
+    const fetchImage = vi
+      .fn<(url: string, signal: AbortSignal) => Promise<Uint8Array>>()
+      .mockImplementationOnce(async () => png(100))
+      .mockRejectedValueOnce(new Error("connection reset"))
+      .mockImplementation(async () => png(50));
+    const { logos, logo, advance } = logosSetup(store, fetchImage);
+    await logo();
+    await logos.settled();
+    const first = await logo();
+    advance(8 * DAY);
+    expect(await logo()).toBe(first);
+    await logos.settled();
+    expect(await logo()).toBe(first);
+    advance(11 * 60_000);
+    await logo();
+    await logos.settled();
+    const changed = await logo();
+    expect(changed).not.toBe(first);
+    expect(store.images.get(`app:${SOURCE}`)?.checkedAt.getTime()).toBe(T0 + 8 * DAY + 11 * 60_000);
+  });
+
+  it("never lets a non-image or an SVG that reaches outside itself through", async () => {
+    const store = fakeStore();
+    const text = (value: string) => new TextEncoder().encode(value);
+    const bodies = new Map([
+      ["https://x.example.test/page", text("<html>not an image</html>")],
+      [
+        "https://x.example.test/href",
+        text(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><image href="https://evil.example.test/a.png"/></svg>',
+        ),
+      ],
+      [
+        "https://x.example.test/entity",
+        text(
+          '<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
+        ),
+      ],
+    ]);
+    const { logos, logo } = logosSetup(store, async (url) => bodies.get(url)!);
+    for (const url of bodies.keys()) await logo(url);
+    await logos.settled();
+    for (const url of bodies.keys()) expect(await logo(url)).toBeNull();
+    expect([...store.images.values()].map((row) => row.hash)).toEqual([null, null, null]);
+  });
+
+  it("fetches at most four logos at a time", async () => {
+    const store = fakeStore();
+    const gate = deferred();
+    let flying = 0;
+    let most = 0;
+    const fetchImage = vi.fn(async () => {
+      most = Math.max(most, ++flying);
+      await gate.promise;
+      flying--;
+      return png();
+    });
+    const { logos } = logosSetup(store, fetchImage);
+    await logos.own(
+      Array.from({ length: 10 }, (_, i) => ({ logo: `https://x.example.test/${i}` })),
+    );
+    await vi.waitFor(() => expect(flying).toBe(4));
+    gate.resolve();
+    await logos.settled();
+    expect(most).toBe(4);
+    expect(fetchImage).toHaveBeenCalledTimes(10);
+  });
+
+  it("fetches through the SSRF-checked fetch, https and port 443 only, with the size limit", async () => {
+    const store = fakeStore();
+    vi.mocked(fetchSafeWebBytes).mockClear();
+    vi.mocked(fetchSafeWebBytes).mockResolvedValue({ body: await png() } as never);
+    const { logos, logo } = logosSetup(store);
+    await logo("http://logos.example.test/plain.png");
+    await logo(SOURCE);
+    await logos.settled();
+    expect(fetchSafeWebBytes).toHaveBeenCalledTimes(1);
+    expect(fetchSafeWebBytes).toHaveBeenCalledWith(
+      SOURCE,
+      expect.objectContaining({ allowedPorts: [443], maxBytes: 512 * 1024 }),
+    );
+    expect(await logo("http://logos.example.test/plain.png")).toBeNull();
+    expect(await logo()).toContain("/images/");
+  });
+
+  it("logs once when it reaches the limit of addresses it keeps", async () => {
+    const store = fakeStore();
+    const { logos } = logosSetup(store, async () => {
+      throw new Error("Request failed: HTTP 404");
+    });
+    const items = Array.from({ length: 3002 }, (_, i) => ({ logo: `https://x.example.test/${i}` }));
+    await logos.own(items);
+    await logos.own(items);
+    await logos.settled();
+    const limit = sink.events.filter(
+      (event) => event.message === "connection logos: limit reached",
+    );
+    expect(limit).toHaveLength(1);
+    expect(store.images.size).toBe(3000);
+  });
+
+  it("drops logos nobody asked for in 30 days with the plugin catalog refresh, and no others", async () => {
+    const store = fakeStore();
+    const row = (days: number, hash: string | null = null) => ({
+      source: "",
+      hash,
+      body: null,
+      checkedAt: new Date(T0 - days * DAY),
+    });
+    store.images.set("app:old", { ...row(31), source: "app:old" });
+    store.images.set("app:recent", { ...row(29), source: "app:recent" });
+    const { marketplace } = setup(store);
+    await marketplace.catalog("");
+    await marketplace.settled();
+    expect([...store.images.keys()].filter((source) => source.startsWith("app:"))).toEqual([
+      "app:recent",
+    ]);
   });
 });
