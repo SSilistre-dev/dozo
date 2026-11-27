@@ -715,6 +715,10 @@ repo_checks() {
         list=""; [ -s /up-files ] && list="--upstream-files /up-files"
         node /brand/catalog-turkish.mjs --root /w $list || rc=2
       else cat /tmp/extract.log; echo "TURKISH: FAIL (lingui extract failed)"; rc=2; fi
+      # The web build compiles every catalog; a translation that does not compile (bad ICU) would
+      # break its screen, so compile all 16 here the way the build does. --strict fails on any error.
+      if /deps/node_modules/.bin/lingui compile --strict > /tmp/compile.log 2>&1; then echo "COMPILE: PASS (all language catalogs compile)"
+      else cat /tmp/compile.log; echo "COMPILE: FAIL (lingui compile --strict)"; rc=2; fi
       exit "$rc"'; then echo "[checks] repository checks ok on the branded tree"
   else fail "checks: repository checks (scripts/checks) on the branded tree"; return 1; fi
 }
