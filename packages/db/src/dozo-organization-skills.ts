@@ -82,24 +82,28 @@ export async function skillsReadableInSpace(db: Raw, scope: Scope) {
  * it; an organization's skill, as upstream's resolver has it, still replaces the built-in. Names
  * compare by `skillNameKey`, the key the resolver finds a skill by. A tie goes to the row that comes
  * first, as the shared read orders them. Lists and a bot's catalog both read through this, so what
- * is listed is what the bot uses.
+ * is listed is what the bot uses. Whoever manages the organization lists with `keepOrganization`:
+ * every skill of the organization stays, so they can open, change and delete one a skill of theirs
+ * shares its name with.
  */
 export function preferOwnSkills<T extends { userId: string | null; name: string }>(
   rows: readonly T[],
   userId: string,
   builtinNames: readonly string[],
+  options: { keepOrganization?: boolean } = {},
 ): T[] {
   const rank = (row: T) => (row.userId === userId ? 0 : row.userId ? 1 : 2);
   const builtins = new Set(builtinNames.map(skillNameKey));
   const winners = new Map<string, T>();
   for (const row of rows) {
+    if (options.keepOrganization && rank(row) === 2) continue;
     const key = skillNameKey(row.name);
     if (rank(row) === 1 && builtins.has(key)) continue;
     const held = winners.get(key);
     if (!held || rank(row) < rank(held)) winners.set(key, row);
   }
   const kept = new Set<T>(winners.values());
-  return rows.filter((row) => kept.has(row));
+  return rows.filter((row) => kept.has(row) || (options.keepOrganization && rank(row) === 2));
 }
 
 /** The organization of the Space when this person owns it; one rule for the owner role. */

@@ -129,8 +129,7 @@ describe("the organization library read", () => {
 });
 
 describe("one skill per name", () => {
-  // The order both reads use: the person's and the library's skills, then the organization's,
-  // then by name and id (`organizationId` nulls first in the shared query).
+  // The shared query's order: the person's and the library's skills, then the organization's.
   const rows = [
     { id: "own", userId: "user-1", name: "Travel" },
     { id: "lib-a", userId: "owner-a", name: "Expenses" },
@@ -154,14 +153,36 @@ describe("one skill per name", () => {
     );
   });
 
-  it("lists what the bot resolves: the first row of each name in the shared order", () => {
-    const resolved = new Map<string, string>();
-    for (const entry of rows) {
-      const key = skillNameKey(entry.name);
-      if (!resolved.has(key)) resolved.set(key, entry.id);
-    }
-    const listed = preferOwnSkills(rows, "user-1", []).map((entry) => entry.id);
-    expect(listed.sort()).toEqual([...resolved.values()].sort());
+  it("lists the same skill whatever order the rows come in", () => {
+    // Without the rows that tie on rank and name, whose order is the query's to give.
+    const unique = rows.filter((entry) => !["lib-b", "org-2"].includes(entry.id));
+    const permutations = (items: typeof unique): (typeof unique)[] =>
+      items.length < 2
+        ? [items]
+        : items.flatMap((item, index) =>
+            permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [
+              item,
+              ...rest,
+            ]),
+          );
+    for (const order of permutations(unique))
+      expect(
+        preferOwnSkills(order, "user-1", [])
+          .map((entry) => entry.id)
+          .sort(),
+      ).toEqual(["lib-a", "org-3", "own"]);
+  });
+
+  it("keeps every skill of the organization for the person who manages it", () => {
+    expect(
+      preferOwnSkills(rows, "user-1", [], { keepOrganization: true }).map((entry) => entry.id),
+    ).toEqual(["own", "lib-a", "org-1", "org-2", "org-3"]);
+    // Their own and library skills still give way as before.
+    expect(
+      preferOwnSkills(rows, "user-1", [], { keepOrganization: true }).filter(
+        (entry) => entry.userId !== null,
+      ),
+    ).toHaveLength(2);
   });
 });
 
