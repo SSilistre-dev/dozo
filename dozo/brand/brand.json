@@ -12766,12 +12766,12 @@
     {
       "file": "apps/api/src/bots/agent-skills.ts",
       "find": "        rows.map((row) => mapAgentSkill(row, managedId)),\n      ).map(({ content: _content, ...entry }) => entry);\n",
-      "replace": "        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES).map((row) =>\n          dozoSkillView(actor)(row, mapAgentSkill(row, managedId)),\n        ),\n      ).map(({ content: _content, ...entry }) => entry);\n",
+      "replace": "        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES, {\n          keepOrganization: Boolean(managedId) && options.manage === true,\n        }).map((row) => dozoSkillView(actor)(row, mapAgentSkill(row, managedId))),\n      ).map(({ content: _content, ...entry }) => entry);\n",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: a library skill that is someone else's is read only, says nothing of where its owner keeps it, and gives way to one of the person's own or a built-in skill with its name"
+      "reason": "organization skill library: a library skill that is someone else's is read only, says nothing of where its owner keeps it, and gives way to one of the person's own or a built-in skill with its name; whoever manages the organization and asks for the management view (manage) still lists each skill of it, to change or delete one a skill of theirs shares a name with; every other list has one skill per name"
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
@@ -12812,6 +12812,61 @@
         "packages/db/src/dozo-organization-skills.ts"
       ],
       "reason": "organization skill library: a library skill found by its name, the person's own and the built-in ones first"
+    },
+    {
+      "file": "packages/contracts/src/skills/skills-rpc.ts",
+      "find": "    list: oc.output(z.array(AgentSkillCatalogEntrySchema)),\n",
+      "replace": "    /** `manage`: for whoever manages the organization, its skills that one of theirs shares a name with stay listed. */\n    list: oc\n      .input(z.object({ manage: z.boolean().optional() }).optional())\n      .output(z.array(AgentSkillCatalogEntrySchema)),\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: the skills list takes an optional management flag; a call without it, as every older client makes, gets one skill per name"
+    },
+    {
+      "file": "apps/api/src/routes/memory.ts",
+      "find": "      list: authed.agentSkills.list.handler(async ({ context }) => agentSkills.list(context.actor)),\n",
+      "replace": "      list: authed.agentSkills.list.handler(async ({ context, input }) =>\n        agentSkills.list(context.actor, { manage: input?.manage }),\n      ),\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: the management flag reaches the service, which honors it only for whoever manages the organization"
+    },
+    {
+      "file": "apps/api/src/bots/agent-skills.ts",
+      "find": "    async list(actor: Actor): Promise<Omit<AgentSkill, \"content\">[]> {\n",
+      "replace": "    async list(\n      actor: Actor,\n      options: { manage?: boolean } = {},\n    ): Promise<Omit<AgentSkill, \"content\">[]> {\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts",
+        "apps/api/src/dozo-organization-library.ts"
+      ],
+      "reason": "organization skill library: the list reads the management flag"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "  // The same list the composer offers as skill mentions, so a change here shows there at once.\n  const list = queries.agentSkills.list.queryOptions();\n",
+      "replace": "  // The management list: it also holds the organization's skills that one of yours shares a name with. The composer's own list is refreshed on a change.\n  const list = queries.agentSkills.list.queryOptions({ input: { manage: true } });\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the skills page asks for the management view, the composer's picker does not"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "  async function refresh() {\n    return fetchFresh(queryClient, list);\n  }\n",
+      "replace": "  async function refresh() {\n    void queryClient.invalidateQueries({\n      queryKey: queries.agentSkills.list.queryKey(),\n      exact: true,\n    });\n    return fetchFresh(queryClient, list);\n  }\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the composer's list, a different read from the management one, is marked out of date on a change here"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/skills.tsx",
+      "find": "  const skills = useQuery(rpcQuery(\"agentSkills/list\"), queryClient);\n",
+      "replace": "  const skills = useQuery(rpcQuery(\"agentSkills/list\", { manage: true }), queryClient);\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: the skills screen asks for the management view, the composer's picker does not"
     },
     {
       "file": "apps/api/src/routes/memory.ts",
@@ -12879,11 +12934,11 @@
     {
       "file": "packages/adapters/src/tools/skill-tools.ts",
       "find": "    builtinAgentSkillRecords(),\n    keys,\n  );",
-      "replace": "    builtinAgentSkillRecords(),\n    preferOwnSkills(\n      keys,\n      owner.userId,\n      BUILTIN_AGENT_SKILLS.map((skill) => skill.name),\n    ),\n  );",
+      "replace": "    builtinAgentSkillRecords(),\n    // A name resolves to the skill the lists show; an id reads any skill the person can read.\n    input.skillId\n      ? keys\n      : preferOwnSkills(\n          keys,\n          owner.userId,\n          BUILTIN_AGENT_SKILLS.map((skill) => skill.name),\n        ),\n  );",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: a library skill gives way to the person's own or a built-in skill of the same name when skill_read resolves a name, as in the catalog"
+      "reason": "organization skill library: a name gives way to the person's own skill or a built-in one, one skill per name as in the lists; an id still reads any skill the person can read, a name-shadowed organization skill included"
     },
     {
       "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
@@ -12996,11 +13051,11 @@
     {
       "file": "packages/adapters/src/tools/skill-tools.test.ts",
       "find": "    expect(renamed).toMatchObject({ ok: true, name: \"Renamed\" });\n  });\n\n  it(\"points routines that mention a renamed skill at its new name\"",
-      "replace": "    expect(renamed).toMatchObject({ ok: true, name: \"Renamed\" });\n  });\n\n  // Organization skill library (a fork rule): a skill its owner put in the library reaches this\n  // person's bots read only, gives way to a built-in skill of its name, and a bot's own new skill\n  // of the same name takes its place.\n  it(\"reads an organization library skill, read only, and never lets a bot change it\", async () => {\n    const builtin = BUILTIN_AGENT_SKILLS[0]!.name;\n    prisma = makePrisma([\n      {\n        id: \"library-1\",\n        spaceId: \"ws-of-the-owner\",\n        userId: \"organization-owner\",\n        name: \"Team expenses\",\n        description: \"File expenses the team way\",\n        content: buildSkillMd({ name: \"Team expenses\", description: \"File expenses the team way\", body: \"Attach receipts.\" }),\n        source: \"user\",\n        files: { \"receipts.md\": \"Keep every receipt.\" },\n      },\n      {\n        id: \"library-2\",\n        spaceId: \"ws-of-the-owner\",\n        userId: \"organization-owner\",\n        name: builtin,\n        description: \"Stands in for a built-in\",\n        content: buildSkillMd({ name: builtin, description: \"Stands in for a built-in\", body: \"Not this.\" }),\n        source: \"user\",\n      },\n    ]);\n    prisma._library.push(\"library-1\", \"library-2\");\n    const listed = await listAgentSkillRecords(prisma as never, owner);\n    expect(listed.find((skill) => skill.name === \"Team expenses\")).toMatchObject({\n      source: \"user\",\n      readOnly: true,\n    });\n    expect(listed.filter((skill) => skill.name === builtin)).toEqual([\n      expect.objectContaining({ source: \"builtin\" }),\n    ]);\n    expect(\n      await skillReadFromTool(prisma as never, owner, { name: \"Team expenses\", file: \"receipts.md\" }),\n    ).toEqual({ name: \"Team expenses\", file: \"receipts.md\", content: \"Keep every receipt.\" });\n    expect(\n      await skillUpdateFromTool(prisma as never, owner, { name: \"Team expenses\", body: \"Mine\" }),\n    ).toHaveProperty(\"error\");\n    expect(await skillDeleteFromTool(prisma as never, owner, { name: \"Team expenses\" })).toHaveProperty(\n      \"error\",\n    );\n    expect(\n      await skillCreateFromTool(prisma as never, owner, {\n        name: \"Team expenses\",\n        description: \"My own way\",\n      }),\n    ).toMatchObject({ ok: true });\n    const own = (await listAgentSkillRecords(prisma as never, owner)).filter(\n      (skill) => skill.name === \"Team expenses\",\n    );\n    expect(own).toEqual([expect.objectContaining({ description: \"My own way\", readOnly: false })]);\n  });\n\n  it(\"points routines that mention a renamed skill at its new name\"",
+      "replace": "    expect(renamed).toMatchObject({ ok: true, name: \"Renamed\" });\n  });\n\n  // Organization skill library (a fork rule): a skill its owner put in the library reaches this\n  // person's bots read only, gives way to a built-in skill of its name, and a bot's own new skill\n  // of the same name takes its place.\n  it(\"reads an organization library skill, read only, and never lets a bot change it\", async () => {\n    const builtin = BUILTIN_AGENT_SKILLS[0]!.name;\n    prisma = makePrisma([\n      {\n        id: \"library-1\",\n        spaceId: \"ws-of-the-owner\",\n        userId: \"organization-owner\",\n        name: \"Team expenses\",\n        description: \"File expenses the team way\",\n        content: buildSkillMd({ name: \"Team expenses\", description: \"File expenses the team way\", body: \"Attach receipts.\" }),\n        source: \"user\",\n        files: { \"receipts.md\": \"Keep every receipt.\" },\n      },\n      {\n        id: \"library-2\",\n        spaceId: \"ws-of-the-owner\",\n        userId: \"organization-owner\",\n        name: builtin,\n        description: \"Stands in for a built-in\",\n        content: buildSkillMd({ name: builtin, description: \"Stands in for a built-in\", body: \"Not this.\" }),\n        source: \"user\",\n      },\n    ]);\n    prisma._library.push(\"library-1\", \"library-2\");\n    const listed = await listAgentSkillRecords(prisma as never, owner);\n    expect(listed.find((skill) => skill.name === \"Team expenses\")).toMatchObject({\n      source: \"user\",\n      readOnly: true,\n    });\n    expect(listed.filter((skill) => skill.name === builtin)).toEqual([\n      expect.objectContaining({ source: \"builtin\" }),\n    ]);\n    expect(\n      await skillReadFromTool(prisma as never, owner, { name: \"Team expenses\", file: \"receipts.md\" }),\n    ).toEqual({ name: \"Team expenses\", file: \"receipts.md\", content: \"Keep every receipt.\" });\n    expect(\n      await skillUpdateFromTool(prisma as never, owner, { name: \"Team expenses\", body: \"Mine\" }),\n    ).toHaveProperty(\"error\");\n    expect(await skillDeleteFromTool(prisma as never, owner, { name: \"Team expenses\" })).toHaveProperty(\n      \"error\",\n    );\n    expect(\n      await skillCreateFromTool(prisma as never, owner, {\n        name: \"Team expenses\",\n        description: \"My own way\",\n      }),\n    ).toMatchObject({ ok: true });\n    const own = (await listAgentSkillRecords(prisma as never, owner)).filter(\n      (skill) => skill.name === \"Team expenses\",\n    );\n    expect(own).toEqual([expect.objectContaining({ description: \"My own way\", readOnly: false })]);\n  });\n\n  // A library skill and an organization skill with one name: the bot gets the library skill, the\n  // one the lists show, whatever order the rows come in. By id a person still reads any skill they\n  // can read, a library skill their own skill of the name shadows included.\n  it(\"reads one skill for a name a library skill and an organization skill share\", async () => {\n    const text = (description: string) =>\n      buildSkillMd({ name: \"Team expenses\", description, body: \"Steps.\" });\n    prisma = makePrisma([\n      {\n        id: \"organization-3\",\n        organizationId: \"org-1\",\n        userId: null,\n        name: \"team expenses\",\n        description: \"The organization's way\",\n        content: text(\"The organization's way\"),\n        source: \"user\",\n      },\n      {\n        id: \"library-3\",\n        spaceId: \"ws-of-the-owner\",\n        userId: \"organization-owner\",\n        name: \"Team expenses\",\n        description: \"The library's way\",\n        content: text(\"The library's way\"),\n        source: \"user\",\n      },\n      {\n        ...owner,\n        id: \"personal-3\",\n        name: \"TEAM EXPENSES\",\n        description: \"My way\",\n        content: text(\"My way\"),\n        source: \"user\",\n      },\n    ]);\n    prisma._library.push(\"library-3\");\n    const named = (records: Array<{ name: string; id?: string }>) =>\n      records.filter((skill) => skill.name.toLowerCase() === \"team expenses\");\n    expect(named(await listAgentSkillRecords(prisma as never, owner))).toEqual([\n      expect.objectContaining({ id: \"personal-3\" }),\n    ]);\n    expect(\n      await skillReadFromTool(prisma as never, owner, { name: \"team expenses\" }),\n    ).toMatchObject({ description: \"My way\" });\n    expect(\n      await skillReadFromTool(prisma as never, owner, { skillId: \"library-3\" }),\n    ).toMatchObject({ description: \"The library's way\" });\n  });\n\n  it(\"points routines that mention a renamed skill at its new name\"",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: upstream's skill tool test reaches the library path: read only in the catalog, files through skill_read, no change by a bot, a built-in name kept, a bot's own same-named skill first"
+      "reason": "organization skill library: upstream's skill tool test reaches the library path: read only in the catalog, files through skill_read, no change by a bot, a built-in name kept, a bot's own same-named skill first, one skill for a name a library and an organization skill share"
     },
     {
       "file": "packages/adapters/src/runs/executor/executor.test.ts",
@@ -13019,6 +13074,42 @@
         "packages/db/src/dozo-organization-skills.ts"
       ],
       "reason": "organization skill library: upstream's skills service test, whose stand-in database has no raw read outside a transaction, which the skills list now makes for the organization library; answered as no library"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "it(\"opens skills from the composer's cached list and saves back into it\", async () => {",
+      "replace": "it(\"opens skills from the management list's cached entry and saves back into it\", async () => {",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the skills page reads its own management list, not the composer's, so the test names what it now pins"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "  const sharedKey = spaceQueries(null, null).agentSkills.list.queryKey();\n  queryClient.setQueryData(sharedKey, [entry(\"cached\", \"cached-skill\")]);\n",
+      "replace": "  const queries = spaceQueries(null, null);\n  const manageKey = queries.agentSkills.list.queryKey({ input: { manage: true } });\n  const pickerKey = queries.agentSkills.list.queryKey();\n  queryClient.setQueryData(manageKey, [entry(\"cached\", \"cached-skill\")]);\n  queryClient.setQueryData(pickerKey, [entry(\"cached\", \"cached-skill\")]);\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the page opens from its own management list, and the composer's list is seeded to show a save marks it out of date"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "    expect(queryClient.getQueryData(sharedKey)?.map((skill) => skill.id)).toEqual([\n      \"cached\",\n      \"new\",\n    ]);\n",
+      "replace": "    expect(queryClient.getQueryData(manageKey)?.map((skill) => skill.id)).toEqual([\n      \"cached\",\n      \"new\",\n    ]);\n    expect(queryClient.getQueryState(pickerKey)?.isInvalidated).toBe(true);\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: a save writes back into the management list and marks the composer's list out of date"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "    vi.unstubAllGlobals();\n  }\n});\n\nit(\"says how much memory no longer reaches the bot\", async () => {",
+      "replace": "    vi.unstubAllGlobals();\n  }\n});\n\nit(\"asks for the management view from the skills page, and not from the composer's list\", async () => {\n  vi.stubGlobal(\"IS_REACT_ACT_ENVIRONMENT\", true);\n  api.list.mockReset().mockResolvedValue([]);\n  const { useShellStatus } = await import(\"../shell/use-shell-status\");\n  // The shell's other reads are not under test: they answer nothing.\n  const idle = (name: string) => ({\n    queryOptions: () => ({ queryKey: [name], queryFn: async () => null }),\n  });\n  const shellQueries = {\n    agentSkills: spaceQueries(null, null).agentSkills,\n    messaging: { status: idle(\"messaging\") },\n    memory: { providerConfig: idle(\"memory\") },\n    voice: { status: idle(\"voice\") },\n  };\n  const Picker = () => {\n    useShellStatus(shellQueries as never, false);\n    return null;\n  };\n  const host = document.createElement(\"div\");\n  const root = createRoot(host);\n  try {\n    await show(root, <Picker />);\n    expect(api.list).toHaveBeenCalledTimes(1);\n    expect(api.list.mock.calls[0]?.[0]).toBeUndefined();\n    await show(root, <AgentSkills />);\n    expect(api.list).toHaveBeenCalledTimes(2);\n    expect(api.list.mock.calls[1]?.[0]).toEqual({ manage: true });\n  } finally {\n    vi.unstubAllGlobals();\n    await act(async () => root.unmount());\n  }\n});\n\nit(\"says how much memory no longer reaches the bot\", async () => {",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the skills page sends the management flag and the composer's list does not, which is what keeps a pick what a bot uses"
     },
     {
       "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",

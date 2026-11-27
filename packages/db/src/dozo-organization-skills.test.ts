@@ -1,3 +1,4 @@
+import { skillNameKey } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   hideLibrarySkill,
@@ -99,14 +100,17 @@ describe("the organization library read", () => {
       { id: "c", userId: "owner", name: "Travel" },
       { id: "d", userId: "owner", name: "Remember" },
       { id: "e", userId: "user-1", name: "remember" },
-      // An organization's own skill has no owner and is not a library skill.
+      // An organization's own skill has no owner and is not a library skill; it gives way to
+      // the person's own skill of its name, so the name is listed once.
       { id: "f", userId: null, name: "Expenses" },
+      // Nothing of the person's own or the library's is named so: the organization's skill stays.
+      { id: "g", userId: null, name: "Onboarding" },
     ];
     expect(preferOwnSkills(rows, "user-1", ["Remember"]).map((entry) => entry.id)).toEqual([
       "b",
       "c",
       "e",
-      "f",
+      "g",
     ]);
     // Compared as the resolver compares them: padding of any kind is no way around the rule.
     const padded = ["Remember ", " remember", "remember\u00a0", "\tRemember", "remember\n"].map(
@@ -121,6 +125,64 @@ describe("the organization library read", () => {
         [],
       ),
     ).toEqual([{ id: "m", userId: "user-1", name: "expenses" }]);
+  });
+});
+
+describe("one skill per name", () => {
+  // The shared query's order: the person's and the library's skills, then the organization's.
+  const rows = [
+    { id: "own", userId: "user-1", name: "Travel" },
+    { id: "lib-a", userId: "owner-a", name: "Expenses" },
+    { id: "lib-b", userId: "owner-b", name: "expenses" },
+    { id: "org-1", userId: null, name: "Expenses" },
+    { id: "org-2", userId: null, name: "Travel" },
+    { id: "org-3", userId: null, name: "Remember" },
+  ];
+
+  it("lists a name once: own, then library, then the organization's", () => {
+    expect(preferOwnSkills(rows, "user-1", []).map((entry) => entry.id)).toEqual([
+      "own",
+      "lib-a",
+      "org-3",
+    ]);
+  });
+
+  it("keeps the organization's skill over a built-in one, as the resolver does", () => {
+    expect(preferOwnSkills(rows, "user-1", ["Remember"]).map((entry) => entry.id)).toContain(
+      "org-3",
+    );
+  });
+
+  it("lists the same skill whatever order the rows come in", () => {
+    // Without the rows that tie on rank and name, whose order is the query's to give.
+    const unique = rows.filter((entry) => !["lib-b", "org-2"].includes(entry.id));
+    const permutations = (items: typeof unique): (typeof unique)[] =>
+      items.length < 2
+        ? [items]
+        : items.flatMap((item, index) =>
+            permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [
+              item,
+              ...rest,
+            ]),
+          );
+    for (const order of permutations(unique))
+      expect(
+        preferOwnSkills(order, "user-1", [])
+          .map((entry) => entry.id)
+          .sort(),
+      ).toEqual(["lib-a", "org-3", "own"]);
+  });
+
+  it("keeps every skill of the organization for the person who manages it", () => {
+    expect(
+      preferOwnSkills(rows, "user-1", [], { keepOrganization: true }).map((entry) => entry.id),
+    ).toEqual(["own", "lib-a", "org-1", "org-2", "org-3"]);
+    // Their own and library skills still give way as before.
+    expect(
+      preferOwnSkills(rows, "user-1", [], { keepOrganization: true }).filter(
+        (entry) => entry.userId !== null,
+      ),
+    ).toHaveLength(2);
   });
 });
 
