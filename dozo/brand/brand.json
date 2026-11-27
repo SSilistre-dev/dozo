@@ -13032,6 +13032,42 @@
     },
     {
       "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "it(\"opens skills from the composer's cached list and saves back into it\", async () => {",
+      "replace": "it(\"opens skills from the management list's cached entry and saves back into it\", async () => {",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the skills page reads its own management list, not the composer's, so the test names what it now pins"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "  const sharedKey = spaceQueries(null, null).agentSkills.list.queryKey();\n  queryClient.setQueryData(sharedKey, [entry(\"cached\", \"cached-skill\")]);\n",
+      "replace": "  const queries = spaceQueries(null, null);\n  const manageKey = queries.agentSkills.list.queryKey({ input: { manage: true } });\n  const pickerKey = queries.agentSkills.list.queryKey();\n  queryClient.setQueryData(manageKey, [entry(\"cached\", \"cached-skill\")]);\n  queryClient.setQueryData(pickerKey, [entry(\"cached\", \"cached-skill\")]);\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the page opens from its own management list, and the composer's list is seeded to show a save marks it out of date"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "    expect(queryClient.getQueryData(sharedKey)?.map((skill) => skill.id)).toEqual([\n      \"cached\",\n      \"new\",\n    ]);\n",
+      "replace": "    expect(queryClient.getQueryData(manageKey)?.map((skill) => skill.id)).toEqual([\n      \"cached\",\n      \"new\",\n    ]);\n    expect(queryClient.getQueryState(pickerKey)?.isInvalidated).toBe(true);\n",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: a save writes back into the management list and marks the composer's list out of date"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
+      "find": "    vi.unstubAllGlobals();\n  }\n});\n\nit(\"says how much memory no longer reaches the bot\", async () => {",
+      "replace": "    vi.unstubAllGlobals();\n  }\n});\n\nit(\"asks for the management view from the skills page, and not from the composer's list\", async () => {\n  vi.stubGlobal(\"IS_REACT_ACT_ENVIRONMENT\", true);\n  api.list.mockReset().mockResolvedValue([]);\n  const { useShellStatus } = await import(\"../shell/use-shell-status\");\n  // The shell's other reads are not under test: they answer nothing.\n  const idle = (name: string) => ({\n    queryOptions: () => ({ queryKey: [name], queryFn: async () => null }),\n  });\n  const shellQueries = {\n    agentSkills: spaceQueries(null, null).agentSkills,\n    messaging: { status: idle(\"messaging\") },\n    memory: { providerConfig: idle(\"memory\") },\n    voice: { status: idle(\"voice\") },\n  };\n  const Picker = () => {\n    useShellStatus(shellQueries as never, false);\n    return null;\n  };\n  const host = document.createElement(\"div\");\n  const root = createRoot(host);\n  try {\n    await show(root, <Picker />);\n    expect(api.list).toHaveBeenCalledTimes(1);\n    expect(api.list.mock.calls[0]?.[0]).toBeUndefined();\n    await show(root, <AgentSkills />);\n    expect(api.list).toHaveBeenCalledTimes(2);\n    expect(api.list.mock.calls[1]?.[0]).toEqual({ manage: true });\n  } finally {\n    vi.unstubAllGlobals();\n    await act(async () => root.unmount());\n  }\n});\n\nit(\"says how much memory no longer reaches the bot\", async () => {",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+      ],
+      "reason": "organization skill library: the skills page sends the management flag and the composer's list does not, which is what keeps a pick what a bot uses"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.test.tsx",
       "find": "  const client = { agentSkills: api, memory: memoryApi };",
       "replace": "  const client = {\n    agentSkills: api,\n    memory: memoryApi,\n    // The fork's organization library: none here.\n    dozoOrganizationLibrary: { get: async () => ({ skillIds: [], canShare: false, hidden: [] }) },\n  };",
       "requires": [
