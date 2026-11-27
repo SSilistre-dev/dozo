@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readWorld } from "./fixtures";
-import { expectNotRateLimited, openEmailForm } from "./support";
+import { codeAfter, expectNotRateLimited, mailsTo, openEmailForm } from "./support";
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -9,14 +9,27 @@ test("sign in, sign out", async ({ page }) => {
   const { user } = readWorld();
   await page.goto("/sign-in");
   await expect(page.getByRole("heading", { name: "Sign in to Dozo" })).toBeVisible();
-  await openEmailForm(page);
-  await page.getByPlaceholder("Your email address").fill(user.email);
-  await page.getByPlaceholder("Password").fill(user.password);
-  const signIn = page.waitForResponse((r) => r.url().includes("/api/auth/sign-in/email"));
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  const response = await signIn;
-  expectNotRateLimited(response.status(), response.headers(), "sign-in");
-  expect(response.ok(), `sign-in answered ${response.status()}`).toBe(true);
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  if (capabilities.emailCode) {
+    // A stack with mail signs the setup's account up by code, so it holds no password: sign in the
+    // same way.
+    const before = (await mailsTo(page.request, user.email)).length;
+    await page.getByPlaceholder("Your email address").fill(user.email);
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    await page
+      .getByLabel("Code", { exact: true })
+      .fill(await codeAfter(page.request, user.email, before));
+  } else {
+    await openEmailForm(page);
+    await page.getByPlaceholder("Your email address").fill(user.email);
+    await page.getByPlaceholder("Password").fill(user.password);
+    const signIn = page.waitForResponse((r) => r.url().includes("/api/auth/sign-in/email"));
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    const response = await signIn;
+    expectNotRateLimited(response.status(), response.headers(), "sign-in");
+    expect(response.ok(), `sign-in answered ${response.status()}`).toBe(true);
+  }
   await page.waitForURL(/\/app/);
   await expect(page.getByTestId("user-menu-trigger")).toBeVisible();
 

@@ -94,8 +94,20 @@ for (const variant of VARIANTS) {
     await shoot("forgot-password");
     await page.getByRole("textbox").first().fill("someone-e2e@example.test");
     await page.locator('form button[type="submit"]').click();
-    // The answer replaces the form, whether the server mailed the link or said it cannot.
-    await expect(page.locator('form button[type="submit"]')).toHaveCount(0);
+    // The server mailed the link and the answer replaced the form, or it has no mail and the form
+    // stays with the refusal (a stack without a mail provider).
+    const refusal = page.getByText(
+      variant.lang === "tr"
+        ? "Bu sunucu için parola kurtarma yapılandırılmamış"
+        : "Password recovery is not configured for this server",
+    );
+    await expect
+      .poll(
+        async () =>
+          (await page.locator('form button[type="submit"]').count()) === 0 ||
+          (await refusal.count()) > 0,
+      )
+      .toBe(true);
     await shoot("forgot-password-answer");
 
     await open(page, "/reset-password?token=e2e-not-a-token", variant.lang);

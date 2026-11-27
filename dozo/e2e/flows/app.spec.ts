@@ -71,7 +71,11 @@ test("chat: a message gets the model's reply; a tool call waits for approval and
   }
 });
 
-test("bots: create, rename, delete", async ({ page }) => {
+test("bots: create, rename, delete", async ({ page, guard }) => {
+  guard.allow(
+    /^console: (WebSocket connection to '[^']*\/novnc\/|Failed when connecting: Connection closed)/,
+    "deleting a bot closes its computer, which ends the live desktop view the panel had open",
+  );
   const world = readWorld();
   await openBot(page, world.chiefId, "Chief");
   const name = `Temp ${Math.random().toString(36).slice(2, 7)}`;

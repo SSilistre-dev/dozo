@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { codeAfter, mailsTo, PASSWORD, verificationLinkAfter } from "../support";
+import { codeAfter, codeIn, mailsTo, PASSWORD, verificationLinkAfter } from "../support";
 import {
   BASE,
   dollars,
@@ -91,6 +91,9 @@ test("parolalı hesap: giriş reddedilir ve yeni posta gelir; bağlantı + parol
   const link = await verificationLinkAfter(page.request, email, sent);
 
   // The mail's button in this browser, signed out: it verifies nothing yet and asks to sign in.
+  // The API sign-up chose no language, so the browser is set to Turkish first (the choice is saved).
+  await page.goto("/sign-in?lang=tr");
+  await expect(page.getByPlaceholder("E-posta adresiniz")).toBeVisible();
   await page.goto(link);
   await expect(page.getByRole("heading", { name: "Devam etmek için oturum açın" })).toBeVisible();
   await expect(page).toHaveURL(/\/verify-email/);

@@ -1,0 +1,132 @@
+name: dozo-e2e-nightly
+
+# The fork's whole browser suite (dozo/e2e: `make up`, then `make e2e`) against the branded stack
+# built on the runner, every night and on demand. It is not a pull request check: a full run takes
+# about an hour. A red night opens or updates the one issue labelled e2e-nightly; the next green
+# night closes it. Needs only Docker, which stock runners have: no secret, no outside service.
+on:
+  schedule:
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+# Read-only on code. issues: write only keeps the one tracking issue below.
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Full e2e suite on the branded stack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # The stack's images and the browser image need more room than a runner has free.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+
+      - name: Build and start the branded stack
+        run: make up
+
+      # run.sh exits 2 on any failure; KEEP leaves results.json and the screenshots for the report.
+      - name: Run the e2e suite
+        shell: bash
+        env:
+          DOZO_E2E_KEEP: "1"
+        run: |
+          rc=0
+          dozo/e2e/run.sh 2>&1 | tee "$RUNNER_TEMP/e2e.log" || rc=$?
+          cp dozo/e2e/.out/results.json "$RUNNER_TEMP/results-plain.json" || true
+          cp -R dozo/e2e/.out dozo/e2e/.out-plain || true
+          exit "$rc"
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        run: make down
+
+      # The scenarios that need the mail emulator skip on the plain stack above, so they run on a
+      # second one (the words are split on spaces, so the pattern has none; README: "Two kinds of local stack"). Same images, so only the start is repeated.
+      - name: Start the stack with the mail emulator
+        if: ${{ !cancelled() }}
+        env:
+          DOZO_EMAIL_EMULATOR: "1"
+        run: make up
+
+      - name: Run the scenarios that need mail
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          DOZO_E2E_KEEP: "1"
+          DOZO_E2E_ARGS: "--project=flows --project=crawl-light --project=crawl-dark --grep=emailed.code|screenshot.goes|kayıt|parolalı|doğrulanmamış|kodla|numaralandırma"
+        run: |
+          rc=0
+          dozo/e2e/run.sh 2>&1 | tee -a "$RUNNER_TEMP/e2e.log" || rc=$?
+          cp dozo/e2e/.out/results.json "$RUNNER_TEMP/results-mail.json" || true
+          exit "$rc"
+
+      - name: Stop the mail stack
+        if: ${{ always() }}
+        run: make down
+
+      - name: Keep the failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-nightly-${{ github.run_id }}
+          path: |
+            dozo/e2e/.out
+            dozo/e2e/.out-plain
+            dozo/.stage/e2e/shots
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # One issue tracks the nightly. Red: its body is rewritten with the run and the failed tests.
+      # Green: it is closed. The job's own failure is what turns the run red, so a run that never
+      # reached the suite (the stack did not build) is reported too.
+      - name: Update the tracking issue
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ job.status }}
+        shell: bash
+        run: |
+          n=$(gh issue list --label e2e-nightly --state all --json number --jq '.[0].number // empty')
+          if [ "$RESULT" = success ]; then
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --body "Green again: $RUN_URL"
+              gh issue close "$n" || true
+            fi
+            exit 0
+          fi
+          {
+            echo "The nightly e2e run failed: $RUN_URL"
+            echo
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo '~~~~'
+            for f in "$RUNNER_TEMP"/results-plain.json "$RUNNER_TEMP"/results-mail.json; do
+              [ -f "$f" ] || continue
+              jq -r '[.. | objects | select(has("specs")) | .specs[] | select(.ok == false) | .title] | unique | .[]' "$f" | head -60
+            done
+            grep -E '^(e2e|COVERAGE):' "$RUNNER_TEMP/e2e.log" 2>/dev/null | tail -5 || true
+            echo '~~~~'
+            echo
+            echo "Traces and screenshots are in the run's artifacts for 7 days. This issue is rewritten by each red night and closed by the next green one."
+          } > "$RUNNER_TEMP/e2e-issue.md"
+          if [ -n "$n" ]; then
+            gh issue edit "$n" --body-file "$RUNNER_TEMP/e2e-issue.md"
+            gh issue reopen "$n" || true
+          else
+            gh label create e2e-nightly --color d93f0b --description "The nightly e2e suite is failing" --force >/dev/null
+            gh issue create --title "The nightly e2e suite is failing" --label e2e-nightly --body-file "$RUNNER_TEMP/e2e-issue.md"
+          fi

@@ -1080,7 +1080,7 @@ Accepted by the owner for now, stated here once:
 - Nothing is pushed to GitHub yet and upstream's workflows are not disabled (`dozo/SYNC.md`). Neither
   `dozo-gate.yml` nor `dozo-sync.yml` has ever run on GitHub Actions.
 - `dozo-gate` runs only `make olc`, `stage`, `brand`, `checks`, `unit` and the web startup budget
-  (on the Dockerfile's build stage alone), never the full `build`, `up`, `smoke` or the e2e suite. Its required status check is named after its job, `olc, brand leak gate and fork unit
+  (on the Dockerfile's build stage alone), never the full `build`, `up`, `smoke` or the browser e2e suite (only its `inventory` project; the whole suite runs in `dozo-e2e-nightly`). Its required status check is named after its job, `olc, brand leak gate and fork unit
   tests` (it was `olc and brand leak gate`): branch protection must name the new one.
 - Interrupt handling (SIGINT, SIGTERM and cleanup in the scripts) is implemented but not rehearsed
   against a real long run.
