@@ -70,10 +70,10 @@ test("the sidebar shows Dozo characters in two-line rows under the wordmark and 
   expect(await styleOf(page, `${INNER} [data-slot="button"]`, "border-radius")).toBe("999px");
   expect(await styleOf(page, '[data-testid="create-menu-trigger"]', "width")).toBe("40px");
 
-  // The wordmark with its seal dot starts the header (a browser has no window controls, so their
-  // spacer is dropped), and the wave pattern lies behind the top of the sidebar.
+  // The wordmark with its seal dot starts the header (a browser draws no window controls), and
+  // the wave pattern lies behind the top of the sidebar.
   expect((await page.getByTestId("bots-sidebar").boundingBox())?.width).toBe(288);
-  expect(await styleOf(page, `${HEADER} > [aria-hidden="true"]`, "display")).toBe("none");
+  await expect(page.locator(`${HEADER} div[aria-hidden="true"]`)).toHaveCount(0);
   expect(await styleOf(page, HEADER, "content", "::before")).toBe('"dozo"');
   expect(await styleOf(page, HEADER, "background-image", "::before")).toContain("radial-gradient");
   expect(await styleOf(page, INNER, "mask-image", "::before")).toContain("data:image/svg+xml");
@@ -129,7 +129,7 @@ test("a bot's extra chats sit under its row, lined up with its name, in the rows
   }
 });
 
-test("the collapsed sidebar stacks four equal buttons above the bots, without overlap", async ({
+test("the collapsed sidebar stacks its two equal buttons above the bots, without overlap", async ({
   page,
 }) => {
   await openBot(page, readWorld().chiefId, "Chief");
@@ -144,23 +144,22 @@ test("the collapsed sidebar stacks four equal buttons above the bots, without ov
     const sidebar = page.getByTestId("bots-sidebar");
     await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(72);
     const strip = await sidebar.boundingBox();
-    const buttons = [
-      page.getByTestId("sidebar-search-trigger"),
-      header.locator("[data-activity-mode]"),
-      restore,
-      page.getByTestId("create-menu-trigger"),
-    ];
+    // Search and Activity live in the open sidebar only.
+    const buttons = [restore, page.getByTestId("create-menu-trigger")];
     const boxes = await Promise.all(buttons.map((button) => button.boundingBox()));
-    expect(new Set(boxes.map((box) => box?.x))).toEqual(new Set([(strip?.x ?? 0) + 16]));
+    const centres = new Set(boxes.map((box) => (box?.x ?? 0) + (box?.width ?? 0) / 2));
+    expect([...centres], `both centred in the strip: ${JSON.stringify(boxes)}`).toEqual([
+      (strip?.x ?? 0) + 36,
+    ]);
     const sizes = new Set(boxes.map((box) => `${box?.width}x${box?.height}`));
-    expect([...sizes]).toEqual(["40x40"]);
+    expect([...sizes]).toHaveLength(1);
     const gaps = new Set(
       boxes.slice(1).map((box, i) => Math.round((box?.y ?? 0) - ((boxes[i]?.y ?? 0) + 40))),
     );
     expect(gaps.size).toBe(1);
 
     // The bots start below the last button, with room between, and centred in the strip.
-    const create = boxes[3];
+    const create = boxes[1];
     const first = await page.locator(ROW).first().boundingBox();
     expect(first?.y ?? 0).toBeGreaterThan((create?.y ?? 0) + (create?.height ?? 0));
     expect((first?.x ?? 0) + (first?.width ?? 0) / 2).toBe((strip?.x ?? 0) + 36);

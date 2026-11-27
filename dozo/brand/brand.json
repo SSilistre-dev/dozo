@@ -15634,6 +15634,144 @@
       "reason": "upstream strings added by the sync that no catalog translated yet (organization models, shared logins, API keys, bot import, app icon accessories, paywall): the Turkish copy, in the words the catalog already uses; the other languages show the English source, as catalog-fill.mjs gives them"
     },
     {
+      "file": "apps/web/src/App.tsx",
+      "find": "\"./lib/auth/sso-flow\";\nimport { getLabs",
+      "replace": "\"./lib/auth/sso-flow\";\nimport { DozoCallbackResult } from \"./pages/dozo-result-lazy\";\nimport { getLabs",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "  }, []);\n  return null;\n}\n\n// Link icons",
+      "replace": "  }, []);\n  return <DozoCallbackResult />;\n}\n\n// Link icons",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "sign-in popup return: a page with the sign-in column's frame and one way back instead of a blank screen when the window does not close itself"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/IntegrationCallback.tsx",
+      "find": "import { Trans } from \"@lingui/react/macro\";\nimport { useEffect } from \"react\";",
+      "replace": "import { useEffect } from \"react\";\nimport { DozoCallbackResult } from \"../dozo-result-lazy\";",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/IntegrationCallback.tsx",
+      "find": "  return (\n    <div className=\"grid min-h-screen place-items-center bg-background p-6 text-center text-muted-foreground\">\n      <p>\n        <Trans>You can close this window.</Trans>\n      </p>\n    </div>\n  );\n",
+      "replace": "  return <DozoCallbackResult />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "integration return: the sign-in column's frame and one way back, not a bare line"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/McpOAuthCallback.tsx",
+      "find": "import { Trans, useLingui } from \"@lingui/react/macro\";",
+      "replace": "import { useLingui } from \"@lingui/react/macro\";\nimport { DozoMcpOAuthResult } from \"../dozo-result-lazy\";",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/McpOAuthCallback.tsx",
+      "find": "import { Button } from \"@rakazo/ui-web\";\nimport { useEffect",
+      "replace": "import { useEffect",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the button is the shared page's now"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/McpOAuthCallback.tsx",
+      "find": "  const showReturn = Boolean(error) && !window.name.startsWith(`${POPUP_NAME}:`);\n  return (\n    <div className=\"grid min-h-screen place-items-center bg-background p-6 text-center\">\n      <div>\n        <div className=\"text-heading3 text-foreground\">\n          {error ? (\n            <Trans>OAuth connection failed</Trans>\n          ) : done ? (\n            <Trans>Connected</Trans>\n          ) : (\n            <Trans>Finishing MCP connection…</Trans>\n          )}\n        </div>\n        {error ? <p className=\"mt-2 max-w-md text-body text-muted-foreground\">{error}</p> : null}\n        {showReturn ? (\n          <Button type=\"button\" className=\"mt-5\" onClick={() => navigate(\"/app\")}>\n            <Trans>Return to Rakazo</Trans>\n          </Button>\n        ) : (\n          <p className=\"mt-2 text-body text-muted-foreground\">\n            {error || done ? (\n              <Trans>You can close this window.</Trans>\n            ) : (\n              <Trans>You can close this tab if it does not redirect automatically.</Trans>\n            )}\n          </p>\n        )}\n      </div>\n    </div>\n  );\n",
+      "replace": "  return <DozoMcpOAuthResult error={error} done={done} />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "OAuth return: the state, the provider's reason and one way back in the sign-in column's frame"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.tsx",
+      "find": "import { Trans } from \"@lingui/react/macro\";\nimport { Button } from \"@rakazo/ui-web\";\nimport { useEffect",
+      "replace": "import { useEffect",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: unused imports of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.tsx",
+      "find": "import { PageLoading } from \"../../components/PageLoading\";\nimport { rpc }",
+      "replace": "import { PageLoading } from \"../../components/PageLoading\";\nimport { DozoSlackInstallFailed } from \"../dozo-result-lazy\";\nimport { rpc }",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.tsx",
+      "find": "  return (\n    <div className=\"grid min-h-screen place-items-center bg-background p-6 text-center\">\n      <div>\n        <div className=\"text-heading3 text-foreground\">\n          <Trans>Could not connect</Trans>\n        </div>\n        <Button type=\"button\" className=\"mt-5\" onClick={() => navigate(\"/app?settings=messaging\")}>\n          <Trans>Return to Rakazo</Trans>\n        </Button>\n      </div>\n    </div>\n  );\n",
+      "replace": "  return <DozoSlackInstallFailed />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "Slack install failure: the sign-in column's frame and one way back"
+    },
+    {
+      "file": "apps/web/src/pages/SharedPage.tsx",
+      "find": "import { Button, buttonVariants, Spinner } from \"@rakazo/ui-web\";",
+      "replace": "import { Button, Spinner } from \"@rakazo/ui-web\";\nimport { DozoPageUnavailable } from \"./dozo-result-lazy\";",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "shared page that is gone: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/SharedPage.tsx",
+      "find": "    return (\n      <main className=\"grid min-h-dvh place-items-center bg-background px-6 text-center\">\n        <div className=\"flex max-w-[360px] flex-col items-center gap-3\">\n          <img src=\"/favicon-32x32.png\" alt=\"\" className=\"size-8 rounded-full\" />\n          <h1 className=\"text-heading3 font-medium text-foreground\">\n            <Trans>This page isn't available</Trans>\n          </h1>\n          <p className=\"text-body text-muted-foreground\">\n            <Trans>The owner may have turned off its link or deleted it.</Trans>\n          </p>\n          <a href=\"/\" className={`${buttonVariants({ variant: \"outline\", size: \"sm\" })} mt-1`}>\n            <Trans>Open Rakazo</Trans>\n          </a>\n        </div>\n      </main>\n    );\n",
+      "replace": "    return <DozoPageUnavailable />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "a shared page that is off or deleted: the sign-in column's frame in both themes, with one way into the app"
+    },
+    {
+      "file": "apps/web/src/App.test.tsx",
+      "find": "vi.mock(\"./pages/integrations/IntegrationSetup\", () => ({ IntegrationSetupPage: () => null }));\nvi.mock(\"./pages/integrations/McpOAuthCallback\"",
+      "replace": "vi.mock(\"./pages/integrations/IntegrationSetup\", () => ({ IntegrationSetupPage: () => null }));\nvi.mock(\"./pages/dozo-result-lazy\", () => ({\n  DozoCallbackResult: () => <>You can close this window.</>,\n}));\nvi.mock(\"./pages/integrations/McpOAuthCallback\"",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx"
+      ],
+      "reason": "integration return: the page is the shared result page, loaded on demand; the case keeps its other claims (the window closes once, the app does not load, no session is needed) and the mock says the same words"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.test.tsx",
+      "find": "vi.mock(\"../../components/PageLoading\", () => ({ PageLoading: () => <div>Loading</div> }));\nvi.mock(\"@lingui",
+      "replace": "vi.mock(\"../../components/PageLoading\", () => ({ PageLoading: () => <div>Loading</div> }));\nvi.mock(\"../dozo-result-lazy\", () => ({\n  DozoSlackInstallFailed: () => <p>Could not connect</p>,\n}));\nvi.mock(\"@lingui",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx"
+      ],
+      "reason": "Slack install failure: the page is the shared result page, loaded on demand; the cases keep their other claims (the API is called or not, the app opens) and the mock says the same words"
+    },
+    {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgid \"Sign in again\"\nmsgstr \"Yeniden giriş yap\"",
       "replace": "msgid \"Sign in again\"\nmsgstr \"Yeniden oturum aç\"",

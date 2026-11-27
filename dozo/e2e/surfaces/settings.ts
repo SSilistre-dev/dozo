@@ -1,7 +1,14 @@
 import type { Ctx, Surface } from "../fixtures";
 import { expect } from "../fixtures";
 import type { SettingsId } from "../ui";
-import { dismiss, expandAll, openBot, openEachPopup, openUserSettings } from "../ui";
+import {
+  dismiss,
+  expandAll,
+  openAccountMenu,
+  openBot,
+  openEachPopup,
+  openUserSettings,
+} from "../ui";
 
 /** What to open inside each section, beyond the page itself. */
 const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
@@ -82,7 +89,17 @@ const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
     }
   },
   async organization({ page, scan }) {
-    await page.getByRole("button", { name: "Create organization" }).click();
+    await page.getByRole("button", { name: "Organization options" }).click();
+    await expect(page.getByRole("menuitem", { name: "Activity log" })).toBeVisible();
+    await scan("organization options menu");
+    await dismiss(page);
+    // A new organization is made from the account menu, not from the settings page.
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("user-settings")).toHaveCount(0);
+    await openAccountMenu(page);
+    await page.getByTestId("organization-menu-trigger").click();
+    await page.getByRole("button", { name: "New organization" }).click();
+    await expect(page.getByRole("dialog", { name: "Create organization" })).toBeVisible();
     await scan("create organization dialog");
     await dismiss(page);
   },
@@ -97,6 +114,7 @@ const SETTINGS: SettingsId[] = [
   "voice",
   "labs",
   "usage",
+  "spaces",
   "organization",
 ];
 

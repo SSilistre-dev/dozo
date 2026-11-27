@@ -173,6 +173,11 @@
   background: var(--dozo-surface-3);
   color: var(--sidebar-foreground);
 }
+/* The collapsed strip's restore button is as big as the others, not upstream's larger tile. */
+[data-testid="restore-bots-sidebar"] {
+  width: 40px;
+  height: 40px;
+}
 :is([data-testid="sidebar-search-trigger"], [data-testid="create-menu-trigger"]):hover {
   background: var(--dozo-surface-4);
 }
@@ -498,7 +503,7 @@
   border: 0;
 }
 /* A file card's download stands in the card, with no line before it. */
-[data-testid="transcript"] .rounded-2xl.bg-card .border-l {
+[data-testid="transcript"] .rounded-2xl.bg-card .border-s {
   border: 0;
 }
 .rk-chat-markdown .rk-table-card .rk-table td {

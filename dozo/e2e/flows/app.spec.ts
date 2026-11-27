@@ -146,9 +146,9 @@ test("Apps: the integrations window opens, switches category, every logo loads",
   await openBot(page, world.chiefId, "Chief");
   await page.getByRole("button", { name: "Connect apps" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("button", { name: "Add", exact: true }).first()).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /^Add (?!custom)/ }).first()).toBeVisible();
   await dialog.getByRole("button", { name: "Communication", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Add", exact: true }).first()).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /^Add (?!custom)/ }).first()).toBeVisible();
   const logos = dialog.locator("img");
   await expect
     .poll(() =>

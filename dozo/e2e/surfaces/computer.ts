@@ -23,13 +23,15 @@ export const computer: Surface[] = [
       await openBot(page, world.chiefId, "Chief");
       await openBotPanel(page);
       await scan("asleep");
-      // Waking opens the computer's own window; once its screen is up the panel says Awake.
+      // Waking opens the computer's own window; once its screen is up the panel preview reports a running computer.
       await page.getByTestId("computer-preview-open").click();
       await expect(page.getByRole("button", { name: "Take control" })).toBeVisible({
         timeout: 180_000,
       });
       await page.keyboard.press("Escape");
-      await expect(page.getByText("Awake", { exact: true })).toBeVisible();
+      await expect(
+        page.locator('[data-testid="computer-preview"][data-state="running"]'),
+      ).toBeVisible();
       await scan("awake");
     },
   },
@@ -43,12 +45,16 @@ export const computer: Surface[] = [
       await openBotPanel(page);
       await ensureComputerAwake(page);
       await scan("awake in the panel");
+      await page.getByTestId("dozo-teach-start").click();
+      await scan("teach a task from the panel");
+      await dismiss(page);
       await page.getByTestId("computer-preview-open").click();
       await expect(page.getByRole("button", { name: "Take control" })).toBeVisible({
         timeout: 60_000,
       });
       await scan("full window");
-      await page.getByRole("button", { name: "Teach a task" }).click();
+      // The fork's own button sits in the panel, upstream's in the window's top bar.
+      await page.getByTestId("teach-start-button").click();
       await scan("teach a task");
       await dismiss(page);
     },

@@ -40,7 +40,7 @@ export function readInventory(root = webSourceDir()): Inventory {
   // Routes: <Route path="…"> literals, path={CONST} and the ["/a", "/b"].map(path => <Route …>) lists.
   const app = read(root, "App.tsx");
   const constants: Record<string, string> = {};
-  for (const file of ["lib/sign-in-next.ts", "lib/sso-flow.ts"]) {
+  for (const file of ["lib/auth/sign-in-next.ts", "lib/auth/sso-flow.ts"]) {
     for (const match of read(root, file).matchAll(/export const ([A-Z_]+) = "([^"]+)"/g)) {
       constants[match[1] as string] = match[2] as string;
     }
@@ -69,14 +69,14 @@ export function readInventory(root = webSourceDir()): Inventory {
   }
 
   // Settings sections and the flag each optional one waits on.
-  const overlay = read(root, "pages/shell-overlay.ts");
+  const overlay = read(root, "pages/shell/shell-overlay-url.ts");
   const sections = /const SETTINGS_SECTIONS = \[([^\]]+)\]/.exec(overlay);
   if (!sections)
     throw new Error(
-      "inventory: SETTINGS_SECTIONS not found in shell-overlay.ts; update e2e/inventory.ts",
+      "inventory: SETTINGS_SECTIONS not found in shell-overlay-url.ts; update e2e/inventory.ts",
     );
   for (const id of (sections[1] as string).matchAll(/"(\w+)"/g)) keys.add(`settings:${id[1]}`);
-  const nav = read(root, "pages/settings-nav.ts");
+  const nav = read(root, "pages/settings/settings-nav.ts");
   for (const match of nav.matchAll(/available\.(\w+)\s*\?\s*\[\s*\{\s*id:\s*"(\w+)"/g)) {
     unavailable[`settings:${match[2]}`] = `shown only when the deployment reports "${match[1]}"`;
   }
@@ -85,7 +85,7 @@ export function readInventory(root = webSourceDir()): Inventory {
   const params = /const OVERLAY_KEYS = \[([^\]]+)\]/.exec(overlay);
   if (!params)
     throw new Error(
-      "inventory: OVERLAY_KEYS not found in shell-overlay.ts; update e2e/inventory.ts",
+      "inventory: OVERLAY_KEYS not found in shell-overlay-url.ts; update e2e/inventory.ts",
     );
   for (const id of (params[1] as string).matchAll(/"(\w+)"/g)) {
     if (id[1] !== "settings" && id[1] !== "space" && id[1] !== "messaging")
@@ -93,7 +93,7 @@ export function readInventory(root = webSourceDir()): Inventory {
   }
 
   // Onboarding steps.
-  const onboarding = read(root, "pages/Onboarding.tsx");
+  const onboarding = read(root, "pages/onboarding/Onboarding.tsx");
   for (const match of onboarding.matchAll(/step === "(\w+)"/g)) {
     if (match[1] !== "loading") keys.add(`onboarding:${match[1]}`);
   }

@@ -4,13 +4,19 @@ import { join } from "node:path";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../components/WindowChrome", () => ({ WindowChrome: () => null }));
+vi.mock("./dozo-result", () => ({
+  ResultPage: ({ title, to, children }: { title: ReactNode; to: string; children: ReactNode }) => (
+    <main data-rakazo-surface="auth" data-to={to}>
+      {title}
+      {children}
+    </main>
+  ),
+}));
 
 import { NotFoundPage } from "./dozo-not-found";
 
@@ -29,27 +35,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("lays the dragon faint behind upstream's page and adds no words", () => {
-  act(() =>
-    root.render(
-      <MemoryRouter>
-        <NotFoundPage />
-      </MemoryRouter>,
-    ),
-  );
-  const page = container.querySelector('[data-rakazo-surface="not-found"]');
-  expect(page?.textContent).toBe("404Page not foundGo home");
+it("lays the dragon faint behind the sign-in frame's result page", () => {
+  act(() => root.render(<NotFoundPage />));
+  const page = container.querySelector('[data-rakazo-surface="auth"]');
+  expect(page?.textContent).toBe("Page not foundGo home");
   expect(container.textContent).toBe(page?.textContent);
   const dragon = container.querySelector("svg[data-dozo-dragon]");
   const layer = dragon?.parentElement;
   expect(layer?.getAttribute("aria-hidden")).toBe("true");
   expect(layer?.className).toContain("pointer-events-none");
+  expect(page?.getAttribute("data-to")).toBe("/");
   expect(layer?.compareDocumentPosition(page as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(dragon?.getAttribute("class")).toContain("opacity-10");
   expect(dragon?.getAttribute("class")).toContain("text-foreground");
   // Upstream's own background would cover the figure; the wrapper paints it instead.
   expect(container.firstElementChild?.className).toContain(
-    "[&>[data-rakazo-surface=not-found]]:bg-transparent",
+    "[&>[data-rakazo-surface]]:bg-transparent",
   );
 });
 

@@ -80,7 +80,7 @@ vi.mock("./dozo-admin-nav", async (importOriginal) => {
   };
   return { DOZO_ADMIN_NAV: [...real.DOZO_ADMIN_NAV, extra] };
 });
-vi.mock("./NotFound", () => ({ NotFoundPage: () => <div data-testid="not-found" /> }));
+vi.mock("./dozo-not-found", () => ({ NotFoundPage: () => <div data-testid="not-found" /> }));
 vi.mock("../components/PageLoading", () => ({
   PageLoading: () => <div data-testid="page-loading" />,
 }));

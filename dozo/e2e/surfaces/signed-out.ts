@@ -4,6 +4,16 @@ import { openEmailForm, PASSWORD } from "../support";
 
 export const signedOut: Surface[] = [
   {
+    name: "hosted sign-in page without a request",
+    group: "signed out",
+    signedOut: true,
+    covers: ["route:/dozo/hosted-login"],
+    async reach({ goto, scan }) {
+      await goto("/dozo/hosted-login");
+      await scan("no audience");
+    },
+  },
+  {
     name: "sign-in",
     group: "signed out",
     signedOut: true,
