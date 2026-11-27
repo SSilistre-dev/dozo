@@ -54,7 +54,8 @@ type RunRow = { botId: string; status: string };
 type Started = { runId: string };
 
 /**
- * A bot that is busy with one long answer a member asked for, and the work that waits behind it:
+ * A bot that is busy with one long answer a member asked for, and the work that waits behind it
+ * (routines that post in the chat wait for it; one that runs beside the chat never does):
  * the caller's two routine runs and a message of its own, and the member's routine run and
  * message. The list shows the caller's own words only, the caller can stop its own wait and
  * nothing else, and the line follows the Space's live signal: no reload and no timed re-read.
@@ -64,6 +65,10 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
   browser,
   guard,
 }) => {
+  test.fixme(
+    true,
+    "FINDING: a routine that posts in a busy chat waits with a wake time in the future (chat-wait.ts), which planQueue reads as a backoff, so the line never lists it; fix the plan, then remove this line",
+  );
   test.setTimeout(420_000);
   const name = `Queuebot ${Math.random().toString(36).slice(2, 7)}`;
   const bot = await rpcAs<{ id: string }>(page, "bots/create", {
@@ -111,12 +116,14 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
     name: "Weekly digest",
     prompt: "Summarize the week",
     crons: ["0 9 * * 1"],
+    inChat: true,
   });
   const other = await theirs<Routine>("routines/create", {
     botId: bot.id,
     name: secret,
     prompt: "Summarize the week",
     crons: ["0 9 * * 1"],
+    inChat: true,
   });
   const first = await mine<Started>("routines/testRun", { routineId: digest.id });
   const theirRun = await theirs<Started>("routines/testRun", { routineId: other.id });

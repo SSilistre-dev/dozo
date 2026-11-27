@@ -18,9 +18,10 @@ async function shot(page: Page, name: string) {
 type Skill = { id: string; name: string; readOnly: boolean };
 
 /** An RPC in a named Space, as the app sends it once that Space is open. */
-async function rpcIn<T>(page: Page, spaceId: string, procedure: string, body: unknown = null) {
+async function rpcIn<T>(page: Page, spaceId: string, procedure: string, body?: unknown) {
+  // No input is sent as an empty body, as the app's client does; a literal null is not "no input".
   const response = await page.request.post(`/rpc/${procedure}`, {
-    data: { json: body },
+    data: body === undefined ? {} : { json: body },
     headers: { "x-rakazo-space-id": spaceId },
   });
   expect(response.ok(), `${procedure} answered ${response.status()}`).toBe(true);
