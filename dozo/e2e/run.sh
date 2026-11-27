@@ -55,6 +55,7 @@ lock_acquire "$LOCK" "e2e run" "e2e:" || exit 2
 cleanup() {
   local ids f
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
+  [ -z "${LIMIT_CLEARER:-}" ] || kill "$LIMIT_CLEARER" 2>/dev/null || true
   ids=(); while IFS= read -r f; do ids+=("$f"); done < <(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)
   [ "${#ids[@]}" -eq 0 ] || docker rm -f "${ids[@]}" >/dev/null 2>&1 || true
   # The lock goes last: it is what keeps another run out of $OUT and node_modules until they are cleared.
@@ -121,6 +122,10 @@ psql_run() { docker exec "$PG" sh -c 'psql -v ON_ERROR_STOP=1 -qtA -U "$POSTGRES
 ADMIN_EMAIL="$(docker exec "$API" printenv RAKAZO_ADMIN_EMAILS 2>/dev/null | cut -d, -f1 | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
 ADMIN_PASSWORD="dozo-e2e-admin-pass-12"   # a local test account on a loopback stack, not a secret
 psql_run 'DELETE FROM "rateLimit"' >/dev/null || { say "cannot clear the auth rate limit in the database"; exit 2; }
+# A full run signs up more accounts than the limit allows within 15 minutes, so the rows are cleared
+# again every 30 seconds while it runs (the limit itself is covered by the auth package's tests).
+( while :; do sleep 30; psql_run 'DELETE FROM "rateLimit"' >/dev/null 2>&1 || true; done ) &
+LIMIT_CLEARER=$!
 if [ -n "$ADMIN_EMAIL" ]; then
   case "$ADMIN_EMAIL" in *[!a-z0-9@.+_-]*) say "unexpected characters in RAKAZO_ADMIN_EMAILS"; exit 2 ;; esac
   code="$(curl -s -o /dev/null -m 20 -w '%{http_code}' -X POST "$BASE/api/auth/sign-up/email" \

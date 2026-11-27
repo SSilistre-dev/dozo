@@ -142,10 +142,14 @@ export const shell: Surface[] = [
     group: "shell",
     async reach({ page, world, scan }) {
       await chiefChat(page, world.chiefId);
-      await page.getByRole("button", { name: "Actions for Personal" }).click();
-      await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible();
-      await scan("space actions");
-      await dismiss(page);
+      await page.getByRole("button", { name: /^Collapse Personal/ }).hover();
+      await page.getByRole("button", { name: "Settings for Personal" }).hover();
+      await expect(page.getByRole("button", { name: "Settings for Personal" })).toHaveCSS(
+        "opacity",
+        "1",
+      );
+      await scan("space settings gear");
+      await page.mouse.move(1, 1);
       await page
         .getByTestId("bots-sidebar")
         .getByRole("button", { name: /^Chief/ })
