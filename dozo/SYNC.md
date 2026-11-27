@@ -58,7 +58,8 @@ without the `upstream` remote and the branch. For CI, origin also needs `upstrea
    that PR (`gh pr merge --auto --merge`, a merge commit, never squash or rebase): the PR merges by
    itself once the required check on `main`, "olc, brand leak gate and fork unit tests" from
    `dozo-gate`, passes. A failing gate leaves the PR open for a person (see When it fails). Deploy
-   stays a separate manual step: nothing is deployed by the merge. If `sync.sh` fails, nothing is
+   stays a separate manual step: nothing is deployed by the merge. Interface text upstream adds without a
+   Turkish translation does not hold the merge: `dozo-gate` lists it in the issue labeled `turkish-queue`. If `sync.sh` fails, nothing is
    published and the job fails. It needs:
    - the secret `DOZO_SYNC_TOKEN` (workflows scope; upstream changes `.github/workflows`);
    - auto-merge allowed in the repository settings, and the check above required on `main`;
