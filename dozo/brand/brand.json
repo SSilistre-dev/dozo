@@ -15488,12 +15488,6 @@
       "find": "        keyboardShouldPersistTaps=\"handled\"\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
       "replace": "        keyboardShouldPersistTaps=\"handled\"\n        automaticallyAdjustKeyboardInsets\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
       "reason": "new bot: with the keyboard open the form scrolls above it, so the colour choices stay reachable"
-    },
-    {
-      "file": "apps/mobile/app/(settings)/account.tsx",
-      "find": "  const updateLabel = formatUpdateLabel(versionInfo.update);",
-      "replace": "  const updateLabel =\n    versionInfo.update.kind === \"embedded\" ? \"\" : formatUpdateLabel(versionInfo.update);",
-      "reason": "version line: the internal \"Embedded\" label of a build with no over-the-air update is not shown, the version alone is"
     }
   ],
   "assets": {
