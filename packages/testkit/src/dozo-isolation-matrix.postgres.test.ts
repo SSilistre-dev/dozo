@@ -597,8 +597,9 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       // Removals the rest hang off (a bot, a chat, a group) go last, one at a time, so a member's
       // removal of S's bot does not answer the other destructive calls "not found".
       const procedures = swept().filter((procedure) => procedure.path !== "spaces/members/leave");
+      const choice = (procedure: Procedure) => MODEL_CHOICES.includes(procedure.path);
       const last = (procedure: Procedure) =>
-        MODEL_CHOICES.includes(procedure.path) || OWNER_REMOVES_LAST.includes(procedure.path);
+        choice(procedure) || OWNER_REMOVES_LAST.includes(procedure.path);
       const outcomes = [
         ...(await sweep(
           world.app,
@@ -610,7 +611,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           world.app,
           callers,
           procedures
-            .filter(last)
+            .filter((procedure) => last(procedure) && !choice(procedure))
             .sort(
               (a, b) => OWNER_REMOVES_LAST.indexOf(a.path) - OWNER_REMOVES_LAST.indexOf(b.path),
             ),
@@ -618,7 +619,26 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         )),
       ];
       const after = await snapshot(world.db, scope);
-      await clearModelChoices(world, [C.userId, D.userId]);
+      // Each person's model choice is made alone, so a changed membership row can be traced to the
+      // one who called: it must be that person's own row, and only their model choice may differ.
+      const admin: string[] = [];
+      const memberships = async () => (await snapshot(world.db, scope)).get("spaceMember");
+      for (const [index, person] of [C, D].entries()) {
+        const held = (await memberships()) ?? new Map<string, string>();
+        outcomes.push(
+          ...(await sweep(world.app, [callers[index]!], procedures.filter(choice), {
+            concurrency: 1,
+          })),
+        );
+        for (const [key, text] of (await memberships()) ?? []) {
+          const old = held.get(key);
+          const own = (JSON.parse(text) as { userId?: string }).userId === person.userId;
+          const allowed = own && old !== undefined && differsOnlyIn(old, text, MODEL_CHOICE_FIELDS);
+          if (old !== undefined && old !== text && !allowed)
+            admin.push(`spaceMember: ${person.label}'s choice changed ${text.slice(0, 300)}`);
+        }
+        await clearModelChoices(world, [person.userId]);
+      }
       const seen = new Map<string, Set<string>>();
       for (const outcome of outcomes)
         for (const value of outcome.matched) {
@@ -638,13 +658,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           .join("\n")}`,
       );
       // What C or D added as their own (a Space C makes in the organization it is a member of, a
-      // token of C's own) is theirs by design, and so is the organization's model C picks for
-      // itself in S; any other change to these tables is not.
-      const admin: string[] = [];
-      const ownMembership = (table: string, oldText: string, text: string) =>
-        table === "spaceMember" &&
-        [C.userId, D.userId].some((id) => text.includes(`"userId":"${id}"`)) &&
-        differsOnlyIn(oldText, text, MODEL_CHOICE_FIELDS);
+      // token of C's own) is theirs by design; any other change to these tables is not. The model
+      // a person picks for themselves is checked above, one caller at a time.
       for (const [table, rows] of after) {
         if (!ADMIN_TABLES.test(table)) continue;
         const old = before.get(table) ?? new Map<string, string>();
@@ -653,7 +668,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           if (oldText === undefined) {
             if (![C.userId, D.userId].some((id) => text.includes(id)))
               admin.push(`${table}: added ${text.slice(0, 300)}`);
-          } else if (oldText !== text && !ownMembership(table, oldText, text))
+          } else if (oldText !== text)
             admin.push(`${table}: changed ${text.slice(0, 300)}`);
         }
         for (const key of old.keys())

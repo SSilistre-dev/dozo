@@ -749,7 +749,10 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         const answer = await check.send(apiKeys.b);
         refusals.set(check.name, answer.message ?? "");
         const leaked = foreignLeaks(answer, check.target.canaries, targetIds(check.target));
-        const refused = check.name.includes("MCP") ? answer.refused : answer.status === 404;
+        // As missing, in the API's words for a bot or task the caller does not hold.
+        const refused = check.name.includes("MCP")
+          ? answer.refused === true && /^No (bot|task) with that id/.test(answer.message ?? "")
+          : answer.status === 404;
         if (!refused || leaked.length)
           problems.push(
             `${check.name}: ${answer.status} ${leaked.join(",")} ${answer.text.slice(0, 160)}`,
