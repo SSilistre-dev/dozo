@@ -137,9 +137,47 @@ it("offers Premium first to an organization on Free, at the server's price", asy
 });
 
 it("announces no end date for Free", async () => {
-  await render(free);
+  await render({ ...free, creditPurchasesEnabled: true });
   expect(container.textContent).toContain("Using your API key");
   expect(container.textContent).not.toContain("Free plan ends");
+});
+
+function heading(text: string) {
+  return [...container.querySelectorAll("h3")].find((node) => node.textContent === text);
+}
+
+it("keeps the plan and the model credits in separate cards, the plan first", async () => {
+  await render({
+    ...free,
+    creditPurchasesEnabled: true,
+    sharedSpace: { plan: "Free", usedBytes: 0, limitBytes: 500 * 1024 * 1024 },
+  });
+  const plan = container.querySelector('[data-testid="plan-card"]');
+  expect(plan?.querySelector("h3")?.textContent).toBe("Plan");
+  expect(plan?.textContent).toContain("Subscribe for ");
+  expect(plan?.textContent).toContain("shared space");
+  expect(plan?.textContent).not.toContain("Add credits");
+  const credits = heading("Available credits")?.parentElement?.parentElement;
+  expect(credits?.textContent).toContain("Add credits");
+  expect(credits?.textContent).not.toContain("Subscribe for ");
+  expect(plan?.compareDocumentPosition(credits as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+});
+
+it("shows no credits that this server cannot sell, and no switch that is always off", async () => {
+  await render({ ...free, hasCustomer: true });
+  expect(heading("Available credits")).toBeUndefined();
+  expect(heading("Monthly credits")).toBeUndefined();
+  expect(button(/^Add credits$/)).toBeUndefined();
+  expect(button(/^Subscribe$/)).toBeUndefined();
+  expect(button(/^Subscribe for /)).toBeDefined();
+  expect(button(/^Manage billing$/)).toBeDefined();
+});
+
+it("keeps the credit controls where credits are sold", async () => {
+  await render({ ...free, creditPurchasesEnabled: true });
+  expect(heading("Monthly credits")).toBeDefined();
+  expect(button(/^Subscribe$/)).toBeDefined();
+  expect(button(/^Add credits$/)).toBeDefined();
 });
 
 it("keeps announcing the end of a free period", async () => {
