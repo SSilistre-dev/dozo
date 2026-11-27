@@ -4,6 +4,7 @@ import { isOwnerRole } from "./billing/billing.js";
 import type { PrismaClient } from "./database/client.js";
 import { Prisma } from "./database/client.js";
 import { IsolationError } from "./database/scope.js";
+import { personalOrOrganizationItemIn } from "./spaces/organization-items.js";
 
 type Scope = { spaceId: string; userId: string };
 type Raw = Pick<PrismaClient, "$queryRaw">;
@@ -63,14 +64,14 @@ export async function organizationLibrarySkillIds(db: Raw, scope: Scope): Promis
 }
 
 /**
- * The skills a person reads in a Space: their own, where `availableInSpace` puts them, and the
- * organization library's. For reading only: changing a skill keeps `availableInSpace`, which names
- * its owner, so only the owner ever changes a library skill.
+ * The skills a person reads in a Space: their own and their organization's, as
+ * `personalOrOrganizationItemIn` reads them, and the organization library's. For reading only:
+ * changing a skill keeps the owner's lookup, so only the owner ever changes a library skill.
  */
 export async function skillsReadableInSpace(db: Raw, scope: Scope) {
   const library = await organizationLibrarySkillIds(db, scope);
   return {
-    OR: [availableInSpace(scope), { source: "user", id: { in: library } }],
+    OR: [...personalOrOrganizationItemIn(scope).OR, { source: "user", id: { in: library } }],
   } satisfies Prisma.AgentSkillWhereInput;
 }
 
@@ -78,9 +79,9 @@ export async function skillsReadableInSpace(db: Raw, scope: Scope) {
  * The skills as one person sees them: a library skill named like one of their own gives way to
  * theirs, the one closer to them, and one named like a built-in skill gives way to the built-in,
  * so someone else's skill never stands in for either. Names compare by `skillNameKey`, the key the
- * resolver finds a skill by.
+ * resolver finds a skill by. An organization's own skill, which has no owner, is left as it is.
  */
-export function preferOwnSkills<T extends { userId: string; name: string }>(
+export function preferOwnSkills<T extends { userId: string | null; name: string }>(
   rows: readonly T[],
   userId: string,
   builtinNames: readonly string[],
@@ -89,7 +90,9 @@ export function preferOwnSkills<T extends { userId: string; name: string }>(
     ...builtinNames.map(skillNameKey),
     ...rows.filter((row) => row.userId === userId).map((row) => skillNameKey(row.name)),
   ]);
-  return rows.filter((row) => row.userId === userId || !taken.has(skillNameKey(row.name)));
+  return rows.filter(
+    (row) => !row.userId || row.userId === userId || !taken.has(skillNameKey(row.name)),
+  );
 }
 
 /** The organization of the Space when this person owns it; one rule for the owner role. */

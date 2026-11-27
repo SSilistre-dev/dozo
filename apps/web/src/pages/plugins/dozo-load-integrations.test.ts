@@ -1,3 +1,4 @@
+import type { Connection } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -5,9 +6,12 @@ const api = vi.hoisted(() => ({
   connections: { catalog: vi.fn(), list: vi.fn() },
   capabilities: { list: vi.fn(), catalogSearch: vi.fn() },
 }));
-vi.mock("../../lib/query/rpc", () => ({ rpc: api }));
 
-import { loadIntegrations } from "./dozo-load-integrations";
+import type { RpcClient } from "../../lib/query/rpc";
+import { loadIntegrations as load } from "./dozo-load-integrations";
+
+const loadIntegrations = (onReconciled: (connections: Connection[]) => void) =>
+  load(api as unknown as RpcClient, onReconciled);
 
 const app = { connectorId: "managed", slug: "mail", name: "Mail", connected: true };
 const row = (status: string) => ({ id: "c1", connectorId: "managed", provider: "mail", status });

@@ -20,11 +20,14 @@ export const BUILTIN_SKILL_NAMES: readonly string[] = BUILTIN_AGENT_SKILLS.map(
 
 /**
  * A skill as the person reading it sees it. A skill of the organization library that is someone
- * else's is read only for them, and where its owner keeps it is not theirs to know.
+ * else's is read only for them, and where its owner keeps it is not theirs to know. An
+ * organization's own skill, which has no owner, is left as it is.
  */
 export function dozoSkillView(actor: Pick<Actor, "userId">) {
-  return <T extends { userId: string }>(row: T, skill: AgentSkill): AgentSkill =>
-    row.userId === actor.userId ? skill : { ...skill, readOnly: true, availability: undefined };
+  return <T extends { userId: string | null }>(row: T, skill: AgentSkill): AgentSkill =>
+    !row.userId || row.userId === actor.userId
+      ? skill
+      : { ...skill, readOnly: true, availability: undefined };
 }
 
 /**

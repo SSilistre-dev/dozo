@@ -18,6 +18,7 @@ pr-screenshots.yml
 preview-build.yml
 preview-cleanup.yml
 preview-deploy.yml
+protected-browser.yml
 publish-playwright-history.yml
 publish-playwright-report.yml
 publish-server-image.yml

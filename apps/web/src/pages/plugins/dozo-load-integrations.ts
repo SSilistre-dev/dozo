@@ -1,13 +1,17 @@
 import type { Connection } from "@rakazo/contracts";
+import { catalogWithOrganizationConnections } from "@rakazo/core";
 import { optionalCatalogFeedProbe } from "../../lib/integrations/optional-catalog-feed";
-import { rpc } from "../../lib/query/rpc";
+import type { RpcClient } from "../../lib/query/rpc";
 
 /**
  * What the integrations page lists, with every read sent at once. The catalog call reconciles
  * connection rows with its provider, so when it lists any app the rows read beside it may predate
  * that: they are read again after it and handed to `onReconciled`, rather than the page waiting.
  */
-export async function loadIntegrations(onReconciled: (connections: Connection[]) => void) {
+export async function loadIntegrations(
+  rpc: RpcClient,
+  onReconciled: (connections: Connection[]) => void,
+) {
   const [catalog, installs, connections, catalogFeed] = await Promise.all([
     rpc.connections.catalog({}),
     rpc.capabilities.list(),
@@ -19,7 +23,7 @@ export async function loadIntegrations(onReconciled: (connections: Connection[])
     void rpc.connections.list().then(onReconciled, () => undefined);
   }
   return {
-    catalog,
+    catalog: catalogWithOrganizationConnections(catalog, connections),
     connections,
     sources: installs.filter(
       (install) => install.kind === "mcp" || install.kind === "api" || install.kind === "graphql",

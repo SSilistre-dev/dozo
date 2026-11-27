@@ -241,6 +241,18 @@
       { "file": "apps/mobile/modules/rakazo-list-scroll/expo-module.config.json", "text": "\"RakazoListScrollModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScroll.podspec", "text": "'RakazoListScroll'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift", "text": "\"RakazoListScroll\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/appearance/app-icon.ts", "text": "\"RakazoAppIcon\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-app-icon/expo-module.config.json", "text": "\"RakazoAppIconModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-app-icon/ios/RakazoAppIcon.podspec", "text": "'RakazoAppIcon'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-app-icon/ios/RakazoAppIconModule.swift", "text": "\"RakazoAppIcon\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-sheet-layout/expo-module.config.json", "text": "\"RakazoSheetLayoutSubscriber\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-sheet-layout/ios/RakazoSheetLayout.podspec", "text": "'RakazoSheetLayout'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "packages/adapters/src/providers/browser/docker/docker-protected-browser.ts", "text": "\"rakazo-protected-browser-1\", \"rakazo-protected-browser-2\"", "reason": "container names of the protected browser slots, reserved through the Docker daemon by this name; never shown" },
+      { "file": "packages/adapters/src/providers/browser/docker/docker-protected-browser.ts", "text": "\"com.rakazo.protected-browser\"", "reason": "label the code sets and filters protected browser containers by; never shown" },
+      { "file": "packages/adapters/src/providers/browser/docker/docker-protected-browser.ts", "text": "\"rakazo-browser-\"", "reason": "prefix of a temporary directory name; never shown" },
+      { "file": "packages/adapters/src/providers/browser/docker/protected-browser-smoke.mjs", "text": "\"rakazo/protected-browser:smoke\"", "reason": "local image tag of the smoke run, built and run on the same machine; never shown" },
+      { "file": "packages/core/src/integrations/integration-catalog.ts", "text": "\"https://app.rakazo.com\"", "reason": "the origin the Postiz service accepts sign-in from; Dozo's own origin is not accepted there, so the preset stays hidden on a Dozo deployment (signInOrigins), as intended" },
+      { "file": "apps/mobile/plugins/with-alternate-app-icons.js", "text": "\"rakazo-app-icons\"", "reason": "name of an image cache folder in the build; never shown" },
       { "file": "apps/mobile/modules/rakazo-network-cache/expo-module.config.json", "text": "\"RakazoNetworkCacheModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCache.podspec", "text": "'RakazoNetworkCache'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
       { "file": "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCacheModule.swift", "text": "\"RakazoNetworkCache\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
@@ -370,6 +382,30 @@
       },
       {
         "glob": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-app-icon",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-app-icon/ios/RakazoAppIcon.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-app-icon/ios/RakazoAppIconModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-sheet-layout",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-sheet-layout/ios/RakazoSheetLayout.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-sheet-layout/ios/RakazoSheetLayoutSubscriber.swift",
         "reason": "Swift source file named after its type; file names are never renamed"
       },
       {
@@ -687,8 +723,8 @@
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-records.ts",
-      "find": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      select: {",
-      "replace": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: {",
+      "find": "    deps.prisma.connection.findMany({\n      where: connectionIn(run),\n      select: {",
+      "replace": "    deps.prisma.connection.findMany({\n      where: connectionIn(run),\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: {",
       "reason": "the connected plugins line is in the system prompt: a stable order keeps the cached prefix when a status sync rewrites a row"
     },
     {
@@ -1510,8 +1546,8 @@
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
-      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void dozoPinsChanged();\n          void dozoModelPoolChanged();\n          void dozoCliAccountsChanged();\n        }",
+      "find": "      (frame) => {\n        if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void spaceChanged(\"capabilities\");",
+      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void spaceChanged(\"capabilities\");\n          void dozoPinsChanged();\n          void dozoModelPoolChanged();\n          void dozoCliAccountsChanged();",
       "requires": [
         "apps/web/src/lib/dozo-stream-changed.ts",
         "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
@@ -2114,8 +2150,8 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "  const router = createRouter({\n    // Only computers people paired",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n      ...(dozoBilling ? { planChanged: dozoBilling.afterPlanChange } : {}),\n    }),\n    // Only computers people paired",
+      "find": "  const router = createRouter({\n    organizationLoginBrowser:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n      ...(dozoBilling ? { planChanged: dozoBilling.afterPlanChange } : {}),\n    }),\n    organizationLoginBrowser:",
       "requires": [
         "apps/api/src/dozo-admin.ts",
         "packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts",
@@ -2261,8 +2297,8 @@
     },
     {
       "file": "apps/api/src/billing/billing.ts",
-      "find": "          byokPriceCents:\n            BYOK_TIERS.standard.monthlyPriceCents &&\n            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),\n",
-      "replace": "          byokPriceCents: subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents,\n",
+      "find": "          byokPriceCents:\n            BYOK_TIERS.standard.monthlyPriceCents &&\n            (free\n              ? byokTierPriceCents(free.tier, \"month\")\n              : (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents)),\n",
+      "replace": "          byokPriceCents: free\n            ? byokTierPriceCents(free.tier, \"month\")\n            : (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),\n",
       "reason": "plans: a subscriber's price is reported while the first tier is free, so clients show the paid plan"
     },
     {
@@ -2483,8 +2519,8 @@
     },
     {
       "file": "packages/db/prisma/schema.prisma",
-      "find": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n",
-      "replace": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n  dozoPlanGrant DozoPlanGrant?\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n\n/// A plan an admin gave an organization by hand, beside its subscription. The subscription sync\n/// never writes it. It counts until `endsAt`, as the higher of it and the paid tier.\nmodel DozoPlanGrant {\n  organizationId String       @id\n  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)\n  /// \"pro\" or \"max\".\n  tier           String\n  endsAt         DateTime\n  grantedById    String?\n  grantedBy      User?        @relation(fields: [grantedById], references: [id], onDelete: SetNull)\n  note           String?\n  createdAt      DateTime     @default(now())\n  updatedAt      DateTime     @updatedAt\n\n  @@map(\"dozo_plan_grants\")\n}\n\n/// What an admin set for a plan (`standard`, `pro`, `max`) on the admin page. A null quota follows\n/// the plan's terms in code. Never a price.\nmodel DozoPlanQuota {\n  tier            String   @id\n  sharedSpaceMb   Int?\n  computerHours   Int?\n  computers       Int?\n  updatedByUserId String?\n  updatedAt       DateTime @updatedAt\n\n  @@map(\"dozo_plan_quotas\")\n}\n",
+      "find": "  @@map(\"organization\")\n  agentSkills AgentSkill[]\n  capabilityInstalls CapabilityInstall[]\n\n}\n",
+      "replace": "  @@map(\"organization\")\n  agentSkills AgentSkill[]\n  capabilityInstalls CapabilityInstall[]\n  dozoPlanGrant DozoPlanGrant?\n\n}\n\n/// A plan an admin gave an organization by hand, beside its subscription. The subscription sync\n/// never writes it. It counts until `endsAt`, as the higher of it and the paid tier.\nmodel DozoPlanGrant {\n  organizationId String       @id\n  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)\n  /// \"pro\" or \"max\".\n  tier           String\n  endsAt         DateTime\n  grantedById    String?\n  grantedBy      User?        @relation(fields: [grantedById], references: [id], onDelete: SetNull)\n  note           String?\n  createdAt      DateTime     @default(now())\n  updatedAt      DateTime     @updatedAt\n\n  @@map(\"dozo_plan_grants\")\n}\n\n/// What an admin set for a plan (`standard`, `pro`, `max`) on the admin page. A null quota follows\n/// the plan's terms in code. Never a price.\nmodel DozoPlanQuota {\n  tier            String   @id\n  sharedSpaceMb   Int?\n  computerHours   Int?\n  computers       Int?\n  updatedByUserId String?\n  updatedAt       DateTime @updatedAt\n\n  @@map(\"dozo_plan_quotas\")\n}\n",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2512,8 +2548,8 @@
     },
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
-      "find": "import { runAsSystem, runAsSystemInTransaction } from \"../database/row-security.js\";\nimport { hasBillingAccess } from \"./billing.js\";",
-      "replace": "import { runAsSystem, runAsSystemInTransaction } from \"../database/row-security.js\";\nimport type { PlanGrant } from \"../dozo-plan-grant.js\";\nimport {\n  DOZO_PLAN_GRANT_SELECT,\n  grantedAllowanceCents as dozoGrantedAllowanceCents,\n  tierInForce,\n} from \"../dozo-plan-grant.js\";\nimport { readPlanLimits } from \"../dozo-plan-quotas.js\";\nimport { hasBillingAccess } from \"./billing.js\";",
+      "find": "import { runAsSystem, runAsSystemInTransaction } from \"../database/row-security.js\";\nimport type { FreeByokTiers } from \"./billing.js\";\nimport { activeFreeByokTier, FREE_BYOK_ACCOUNT_SELECT, hasBillingAccess } from \"./billing.js\";",
+      "replace": "import { runAsSystem, runAsSystemInTransaction } from \"../database/row-security.js\";\nimport type { PlanGrant } from \"../dozo-plan-grant.js\";\nimport {\n  DOZO_PLAN_GRANT_SELECT,\n  grantedAllowanceCents as dozoGrantedAllowanceCents,\n  tierInForce,\n} from \"../dozo-plan-grant.js\";\nimport { readPlanLimits } from \"../dozo-plan-quotas.js\";\nimport type { FreeByokTiers } from \"./billing.js\";\nimport { activeFreeByokTier, FREE_BYOK_ACCOUNT_SELECT, hasBillingAccess } from \"./billing.js\";",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts",
         "packages/db/src/dozo-plan-quotas.ts"
@@ -2540,8 +2576,8 @@
     },
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
-      "find": "        modelCredits: { select: { mode: true } },\n        billing: {",
-      "replace": "        modelCredits: { select: { mode: true } },\n        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n        billing: {",
+      "find": "): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {\n  const [settings, organization] = await Promise.all([\n    prisma.deploymentSettings.findUnique({\n      where: { id: \"default\" },\n      select: { modelCreditsEnabled: true },\n    }),\n    prisma.organization.findUnique({\n      where: { id: organizationId },\n      select: {\n        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },\n        billing: {",
+      "replace": "): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {\n  const [settings, organization] = await Promise.all([\n    prisma.deploymentSettings.findUnique({\n      where: { id: \"default\" },\n      select: { modelCreditsEnabled: true },\n    }),\n    prisma.organization.findUnique({\n      where: { id: organizationId },\n      select: {\n        modelCredits: { select: { mode: true } },\n        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n        billing: {",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2576,8 +2612,8 @@
     },
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
-      "find": "  modelCredits: { select: { mode: true } },\n  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },",
-      "replace": "  modelCredits: { select: { mode: true } },\n  dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },",
+      "find": "  modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },\n  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },",
+      "replace": "  modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },\n  dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2585,8 +2621,8 @@
     },
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
-      "find": "      modelCredits: { mode: string | null } | null;\n      billing: {",
-      "replace": "      modelCredits: { mode: string | null } | null;\n      dozoPlanGrant?: PlanGrant | null | undefined;\n      billing: {",
+      "find": "      modelCredits: FreeByokTiers | null;\n      billing: {",
+      "replace": "      modelCredits: FreeByokTiers | null;\n      dozoPlanGrant?: PlanGrant | null | undefined;\n      billing: {",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2594,8 +2630,8 @@
     },
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
-      "find": "  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);\n  return computerSizesUpTo(",
-      "replace": "  const tier = tierInForce(\n    byokTierOf(organization?.modelCredits?.mode, organization?.billing),\n    organization?.dozoPlanGrant,\n  );\n  return computerSizesUpTo(",
+      "find": "  const tier =\n    activeFreeByokTier(organization?.modelCredits, organization?.billing?.status ?? null, now)\n      ?.tier ?? byokTierOf(organization?.modelCredits?.mode, organization?.billing);\n  return computerSizesUpTo(",
+      "replace": "  const tier = tierInForce(\n    activeFreeByokTier(organization?.modelCredits, organization?.billing?.status ?? null, now)\n      ?.tier ?? byokTierOf(organization?.modelCredits?.mode, organization?.billing),\n    organization?.dozoPlanGrant,\n    now,\n  );\n  return computerSizesUpTo(",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2631,8 +2667,8 @@
     },
     {
       "file": "apps/api/src/billing/billing.ts",
-      "find": "        const tier = subscribed?.tier ?? \"standard\";\n        const hourMicros",
-      "replace": "        const tier = subscribed?.tier ?? \"standard\";\n        // What clients are told the plan is. Prices stay the subscription's: a granted plan has none.\n        const planGrant = await planGrantOf(prisma, organizationId);\n        const planTier = tierInForce(subscribed?.tier ?? null, planGrant) ?? \"standard\";\n        const hourMicros",
+      "find": "        const tier = free?.tier ?? subscribed?.tier ?? \"standard\";\n        const hourMicros",
+      "replace": "        const tier = free?.tier ?? subscribed?.tier ?? \"standard\";\n        // What clients are told the plan is. Prices stay the subscription's: a granted plan has none.\n        const planGrant = await planGrantOf(prisma, organizationId);\n        const planTier = tierInForce(free?.tier ?? subscribed?.tier ?? null, planGrant) ?? \"standard\";\n        const hourMicros",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -3590,8 +3626,8 @@
     },
     {
       "file": "apps/mobile/app/(settings)/general.tsx",
-      "find": "import { APP_LOCALE_LABELS } from \"@rakazo/core\";\nimport * as Notifications",
-      "replace": "import { APP_LOCALE_LABELS } from \"@rakazo/core\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport * as Notifications",
+      "find": "import { appIconLabel } from \"@rakazo/i18n/app-icon\";\nimport * as Notifications",
+      "replace": "import { appIconLabel } from \"@rakazo/i18n/app-icon\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport * as Notifications",
       "requires": [
         "packages/i18n/src/dozo-avatar-set-names.ts"
       ],
@@ -3608,8 +3644,8 @@
     },
     {
       "file": "apps/mobile/app/bot-settings.tsx",
-      "find": "} from \"@rakazo/core\";\nimport { thinkingLevelLabel }",
-      "replace": "} from \"@rakazo/core\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport { thinkingLevelLabel }",
+      "find": "import { localizeModelEntry } from \"@rakazo/i18n/model-provider\";\nimport { thinkingLevelLabel }",
+      "replace": "import { localizeModelEntry } from \"@rakazo/i18n/model-provider\";\nimport { botAvatarSetName } from \"@rakazo/i18n/run-error\";\nimport { thinkingLevelLabel }",
       "requires": [
         "packages/i18n/src/dozo-avatar-set-names.ts"
       ],
@@ -4217,14 +4253,14 @@
     },
     {
       "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
-      "find": "import { optionalCatalogFeedProbe } from \"../../lib/integrations/optional-catalog-feed\";\nimport { useSpaceQueries }",
-      "replace": "import { useSpaceQueries }",
+      "find": "import { optionalCatalogFeedProbe } from \"../../lib/integrations/optional-catalog-feed\";\nimport { useSave, useSpaceQueries }",
+      "replace": "import { useSave, useSpaceQueries }",
       "reason": "fork performance (Apps opens at once): the catalog feed probe moved into the fork's loader"
     },
     {
       "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
-      "find": "  async function loadIntegrations() {\n    // The catalog call reconciles connection rows, so list them after it settles.\n    const catalog = rpc.connections.catalog({});\n    const [items, installs, rows, catalogFeed] = await Promise.all([\n      catalog,\n      rpc.capabilities.list(),\n      catalog.catch(() => undefined).then(() => rpc.connections.list()),\n      optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: \"\" })),\n    ]);\n    return {\n      catalog: items,\n      connections: rows,\n      sources: installs.filter(\n        (install) => install.kind === \"mcp\" || install.kind === \"api\" || install.kind === \"graphql\",\n      ),\n      plugins: installs.filter((install) => install.kind === \"plugin\"),\n      catalogFeedEnabled: catalogFeed.enabled,\n    };\n  }\n",
-      "replace": "  function loadIntegrations(): ReturnType<typeof loadDozoIntegrations> {\n    return loadDozoIntegrations((connections) => {\n      queryClient.setQueryData(integrationsOptions.queryKey, (current) =>\n        current ? { ...current, connections } : current,\n      );\n    });\n  }\n",
+      "find": "  async function loadIntegrations() {\n    // The catalog call reconciles connection rows, so list them after it settles.\n    const catalog = spaceRpc.connections.catalog({});\n    const [items, installs, rows, catalogFeed] = await Promise.all([\n      catalog,\n      spaceRpc.capabilities.list(),\n      catalog.then(() => spaceRpc.connections.list()),\n      optionalCatalogFeedProbe(spaceRpc.capabilities.catalogSearch({ query: \"\" })),\n    ]);\n    return {\n      catalog: catalogWithOrganizationConnections(items, rows),\n      connections: rows,\n      sources: installs.filter(\n        (install) => install.kind === \"mcp\" || install.kind === \"api\" || install.kind === \"graphql\",\n      ),\n      plugins: installs.filter((install) => install.kind === \"plugin\"),\n      catalogFeedEnabled: catalogFeed.enabled,\n    };\n  }\n",
+      "replace": "  function loadIntegrations(): ReturnType<typeof loadDozoIntegrations> {\n    return loadDozoIntegrations(spaceRpc, (connections) => {\n      queryClient.setQueryData(integrationsOptions.queryKey, (current) =>\n        current\n          ? {\n              ...current,\n              catalog: catalogWithOrganizationConnections(current.catalog, connections),\n              connections,\n            }\n          : current,\n      );\n    });\n  }\n",
       "requires": [
         "apps/web/src/pages/plugins/dozo-load-integrations.ts"
       ],
@@ -4580,8 +4616,8 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "import { mountBillingRoutes } from \"./billing/billing-webhook.js\";\nimport { createSpeechSummarizer }",
-      "replace": "import { mountBillingRoutes } from \"./billing/billing-webhook.js\";\nimport { dozoRefundReports } from \"./dozo-events.js\";\nimport { createSpeechSummarizer }",
+      "find": "from \"./bot-access/public-api-routes.js\";\nimport { createSpeechSummarizer }",
+      "replace": "from \"./bot-access/public-api-routes.js\";\nimport { dozoRefundReports } from \"./dozo-events.js\";\nimport { createSpeechSummarizer }",
       "requires": [
         "apps/api/src/dozo-events.ts"
       ],
@@ -4858,8 +4894,8 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "\"stalled organization deletion failed\", error),\n  );\n\n",
-      "replace": "\"stalled organization deletion failed\", error),\n  );\n  const stopDozoTeachSweep = startHourlySweep(\n    dozoTeachSweep({ prisma, events, jobs, sandbox }),\n    (error) => getLogger().error(\"teaching sweep failed\", error),\n  );\n\n",
+      "find": "\"stalled organization deletion failed\", error),\n  );\n  const meetingRuntime",
+      "replace": "\"stalled organization deletion failed\", error),\n  );\n  const stopDozoTeachSweep = startHourlySweep(\n    dozoTeachSweep({ prisma, events, jobs, sandbox }),\n    (error) => getLogger().error(\"teaching sweep failed\", error),\n  );\n  const meetingRuntime",
       "requires": [
         "apps/api/src/dozo-teach-sweep.ts"
       ],
@@ -5186,8 +5222,8 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "\"teaching sweep failed\", error),\n  );\n\n  // Meeting requests use a runtime",
-      "replace": "\"teaching sweep failed\", error),\n  );\n  const stopComputerSwitchSweep = startComputerSwitchSweep({\n    prisma,\n    sandbox,\n    home,\n    dataDir: env.dataDir,\n  });\n\n  // Meeting requests use a runtime",
+      "find": "\"teaching sweep failed\", error),\n  );\n  const meetingRuntime",
+      "replace": "\"teaching sweep failed\", error),\n  );\n  const stopComputerSwitchSweep = startComputerSwitchSweep({\n    prisma,\n    sandbox,\n    home,\n    dataDir: env.dataDir,\n  });\n  const meetingRuntime",
       "requires": [
         "apps/api/src/routes/dozo-computer-switch.ts"
       ],
@@ -6739,8 +6775,8 @@
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-model-fallbacks.ts",
-      "find": "import { availableInSpace } from \"@rakazo/db\";\nimport type { ExecutorDeps }",
-      "replace": "import { availableInSpace } from \"@rakazo/db\";\nimport { withPoolMembers } from \"../../dozo-model-pool.js\";\nimport type { ExecutorDeps }",
+      "find": "import { personalOrOrganizationItemIn } from \"@rakazo/db\";\nimport type { ExecutorDeps }",
+      "replace": "import { personalOrOrganizationItemIn } from \"@rakazo/db\";\nimport { withPoolMembers } from \"../../dozo-model-pool.js\";\nimport type { ExecutorDeps }",
       "requires": [
         "packages/adapters/src/dozo-model-pool.ts"
       ],
@@ -8397,8 +8433,8 @@
     },
     {
       "file": "packages/chat-ui/src/markdown.web.tsx",
-      "find": "const remarkPlugins = [remarkGfm];",
-      "replace": "const remarkPlugins = withChatMath([remarkGfm]);",
+      "find": "const remarkPlugins = [remarkGfm, remarkBreaks];",
+      "replace": "const remarkPlugins = withChatMath([remarkGfm, remarkBreaks]);",
       "reason": "chat math: reads $…$ and $$…$$ as math through the renderer's own plugin list; the math plugins join the list once their chunk has loaded, so the first page does not carry them"
     },
     {
@@ -9674,8 +9710,8 @@
     },
     {
       "file": "packages/adapters/src/runs/lifecycle/run-lifecycle.ts",
-      "find": "  nextFence,\n  redactSecrets,",
-      "replace": "  nextFence,\n  queueStartOrder,\n  redactSecrets,",
+      "find": "  nextFence,\n  PERSON_RUN_TRIGGERS,\n  redactSecrets,",
+      "replace": "  nextFence,\n  PERSON_RUN_TRIGGERS,\n  queueStartOrder,\n  redactSecrets,",
       "requires": [
         "packages/core/src/dozo-queue-order.ts"
       ],
@@ -9683,8 +9719,8 @@
     },
     {
       "file": "packages/adapters/src/runs/lifecycle/run-lifecycle.ts",
-      "find": "    orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n    select: { id: true },\n  });\n  if (next) await wakeRun",
-      "replace": "    orderBy: queueStartOrder(),\n    select: { id: true },\n  });\n  if (next) await wakeRun",
+      "find": "      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: { id: true },\n    });\n  const next =",
+      "replace": "      orderBy: queueStartOrder(),\n      select: { id: true },\n    });\n  const next =",
       "requires": [
         "packages/core/src/dozo-queue-order.ts"
       ],
@@ -9710,8 +9746,8 @@
     },
     {
       "file": "apps/web/src/pages/settings/AccountSettingsOverlay.tsx",
-      "find": "import { AccountDataSettings } from \"../../components/settings/AccountDataSettings\";\nimport { SettingsGroup",
-      "replace": "import { AccountDataSettings } from \"../../components/settings/AccountDataSettings\";\nimport { DozoSealedBackupRow } from \"../../components/dozo-sealed-backup-row\";\nimport { SettingsGroup",
+      "find": "import { ApiKeysSettings } from \"../../components/settings/ApiKeysSettings\";\nimport { SettingsGroup",
+      "replace": "import { ApiKeysSettings } from \"../../components/settings/ApiKeysSettings\";\nimport { DozoSealedBackupRow } from \"../../components/dozo-sealed-backup-row\";\nimport { SettingsGroup",
       "requires": [
         "apps/web/src/components/dozo-sealed-backup-row.tsx"
       ],
@@ -12364,8 +12400,8 @@
     },
     {
       "file": "apps/web/src/pages/settings/OrganizationSettingsPanel.tsx",
-      "find": "        </SettingsRow>\n        <button\n          type=\"button\"\n          className=\"flex min-h-15",
-      "replace": "        </SettingsRow>\n        <DozoOrganizationLogoRow organizationId={organization.id} />\n        <button\n          type=\"button\"\n          className=\"flex min-h-15",
+      "find": "        </SettingsRow>\n        <button\n          type=\"button\"\n          className={settingsLinkClassName}",
+      "replace": "        </SettingsRow>\n        <DozoOrganizationLogoRow organizationId={organization.id} />\n        <button\n          type=\"button\"\n          className={settingsLinkClassName}",
       "requires": [
         "apps/web/src/pages/dozo-organization-logo-row.tsx"
       ],
@@ -12693,8 +12729,8 @@
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
-      "find": "      return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill)).map(\n",
-      "replace": "      const view = dozoSkillView(actor);\n      return mergeBuiltinSkills(\n        builtinCatalog(),\n        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES).map((row) =>\n          view(row, mapAgentSkill(row)),\n        ),\n      ).map(\n",
+      "find": "        rows.map((row) => mapAgentSkill(row, managedId)),\n      ).map(({ content: _content, ...entry }) => entry);\n",
+      "replace": "        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES).map((row) =>\n          dozoSkillView(actor)(row, mapAgentSkill(row, managedId)),\n        ),\n      ).map(({ content: _content, ...entry }) => entry);\n",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
         "packages/db/src/dozo-organization-skills.ts"
@@ -12703,7 +12739,7 @@
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
-      "find": "      where: availableInSpace(actor),\n      omit: { files: true },",
+      "find": "      where: personalOrOrganizationItemIn(actor),\n      omit: { files: true },",
       "replace": "      where: await skillsReadableInSpace(prisma, actor),\n      omit: { files: true },",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
@@ -12713,8 +12749,8 @@
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
-      "find": "      return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill));\n",
-      "replace": "      const view = dozoSkillView(actor);\n      return mergeBuiltinSkills(\n        builtinCatalog(),\n        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES).map((row) =>\n          view(row, mapAgentSkill(row)),\n        ),\n      );\n",
+      "find": "        rows.map((row) => mapAgentSkill(row, managedId)),\n      );\n",
+      "replace": "        preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES).map((row) =>\n          dozoSkillView(actor)(row, mapAgentSkill(row, managedId)),\n        ),\n      );\n",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
         "packages/db/src/dozo-organization-skills.ts"
@@ -12723,8 +12759,8 @@
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
-      "find": "        return mapAgentSkill(await owned(actor, input.skillId));\n",
-      "replace": "        const readable = await prisma.agentSkill.findFirst({\n          where: { id: input.skillId, ...(await skillsReadableInSpace(prisma, actor)) },\n          omit: { files: true },\n          include: { availableIn: AVAILABILITY_SELECT },\n        });\n        if (!readable) throw new IsolationError();\n        return dozoSkillView(actor)(readable, mapAgentSkill(readable));\n",
+      "find": "        return view(actor, await visible(actor, input.skillId));\n",
+      "replace": "        const readable = await prisma.agentSkill.findFirst({\n          where: { id: input.skillId, ...(await skillsReadableInSpace(prisma, actor)) },\n          omit: { files: true },\n          include: { availableIn: AVAILABILITY_SELECT },\n        });\n        if (!readable) throw new IsolationError();\n        return dozoSkillView(actor)(readable, await view(actor, readable));\n",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
         "packages/db/src/dozo-organization-skills.ts"
@@ -12733,8 +12769,8 @@
     },
     {
       "file": "apps/api/src/bots/agent-skills.ts",
-      "find": "      const row = findSkillByName(rows, name);\n      if (row) return mapAgentSkill(row);",
-      "replace": "      const row = findSkillByName(preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES), name);\n      if (row) return dozoSkillView(actor)(row, mapAgentSkill(row));",
+      "find": "      const row = findSkillByName(rows, name);\n      if (row) return view(actor, row);",
+      "replace": "      const row = findSkillByName(preferOwnSkills(rows, actor.userId, BUILTIN_SKILL_NAMES), name);\n      if (row) return dozoSkillView(actor)(row, await view(actor, row));",
       "requires": [
         "apps/api/src/dozo-organization-library.ts",
         "packages/db/src/dozo-organization-skills.ts"
@@ -12761,8 +12797,8 @@
     },
     {
       "file": "packages/adapters/src/tools/skill-tools.ts",
-      "find": "  NameTakenError,\n  runAsSystemInTransaction,\n  spaceAvailability,",
-      "replace": "  NameTakenError,\n  preferOwnSkills,\n  runAsSystemInTransaction,\n  skillsReadableInSpace,\n  spaceAvailability,",
+      "find": "  lockOwner,\n  personalOrOrganizationItemIn,\n  runAsSystemInTransaction,\n  spaceAvailability,",
+      "replace": "  lockOwner,\n  personalOrOrganizationItemIn,\n  preferOwnSkills,\n  runAsSystemInTransaction,\n  skillsReadableInSpace,\n  spaceAvailability,",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
@@ -12770,8 +12806,8 @@
     },
     {
       "file": "packages/adapters/src/tools/skill-tools.ts",
-      "find": "  const rows = await prisma.agentSkill.findMany({\n    where: availableInSpace(owner),\n    // Reference files",
-      "replace": "  const rows = await prisma.agentSkill.findMany({\n    where: await skillsReadableInSpace(prisma, owner),\n    // Reference files",
+      "find": "  const rows = await prisma.agentSkill.findMany({\n    ...visibleSkillQuery(owner),\n    // Reference files",
+      "replace": "  const rows = await prisma.agentSkill.findMany({\n    ...visibleSkillQuery(owner),\n    where: await skillsReadableInSpace(prisma, owner),\n    // Reference files",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
@@ -12788,7 +12824,7 @@
     },
     {
       "file": "packages/adapters/src/tools/skill-tools.ts",
-      "find": "          id: key.id,\n          ...availableInSpace(owner),",
+      "find": "          id: key.id,\n          ...personalOrOrganizationItemIn(owner),",
       "replace": "          id: key.id,\n          ...(await skillsReadableInSpace(prisma, owner)),",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
@@ -12797,8 +12833,8 @@
     },
     {
       "file": "packages/adapters/src/tools/skill-tools.ts",
-      "find": "  const keys = await prisma.agentSkill.findMany({\n    where: availableInSpace(owner),\n    select: { id: true, name: true },",
-      "replace": "  const keys = await prisma.agentSkill.findMany({\n    where: await skillsReadableInSpace(prisma, owner),\n    select: { id: true, name: true, userId: true },",
+      "find": "  const keys = await prisma.agentSkill.findMany({\n    ...visibleSkillQuery(owner),\n    select: { id: true, name: true },",
+      "replace": "  const keys = await prisma.agentSkill.findMany({\n    ...visibleSkillQuery(owner),\n    where: await skillsReadableInSpace(prisma, owner),\n    select: { id: true, name: true, userId: true },",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
@@ -12814,15 +12850,6 @@
       "reason": "organization skill library: a library skill gives way to the person's own or a built-in skill of the same name when skill_read resolves a name, as in the catalog"
     },
     {
-      "file": "packages/adapters/src/tools/skill-tools.ts",
-      "find": "  const existing = await findOwnedSkill(prisma, owner, { name });\n  if (existing) return { error: `A skill named \"${existing.name}\" already exists.` };",
-      "replace": "  const existing = await findOwnedSkill(prisma, owner, { name });\n  // A library skill of that name is someone else's; this person's own will take its place.\n  if (existing && !(existing.readOnly && existing.source === \"user\"))\n    return { error: `A skill named \"${existing.name}\" already exists.` };",
-      "requires": [
-        "packages/db/src/dozo-organization-skills.ts"
-      ],
-      "reason": "organization skill library: a bot may save a skill named like a library skill, which its own then takes the place of, as on the skills page"
-    },
-    {
       "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
       "find": "import { useSave, useSpaceQueries } from \"../../lib/query/query\";\nimport { useSpaceRpc } from \"../../lib/query/space-rpc\";",
       "replace": "import { useSave, useSpaceQueries } from \"../../lib/query/query\";\nimport {\n  DozoHiddenLibrarySkills,\n  DozoLibraryBadge,\n  DozoOrganizationLibrarySwitch,\n} from \"../../lib/dozo-lazy-surfaces\";\nimport { useSpaceRpc } from \"../../lib/query/space-rpc\";",
@@ -12833,8 +12860,8 @@
     },
     {
       "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
-      "find": "                  <AvailabilityLabel availability={entry.availability} />\n                  <SkillSourceBadge source={entry.source} />",
-      "replace": "                  <AvailabilityLabel availability={entry.availability} />\n                  {entry.readOnly && entry.source === \"user\" ? <DozoLibraryBadge /> : null}\n                  <SkillSourceBadge source={entry.source} />",
+      "find": "                  <AvailabilityLabel availability={entry.availability} />\n                  {entry.organization ? (",
+      "replace": "                  <AvailabilityLabel availability={entry.availability} />\n                  {entry.readOnly && entry.source === \"user\" && !entry.organization ? (\n                    <DozoLibraryBadge />\n                  ) : null}\n                  {entry.organization ? (",
       "requires": [
         "apps/web/src/pages/dozo-organization-library-switch.tsx"
       ],
@@ -12842,8 +12869,8 @@
     },
     {
       "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
-      "find": "              <SkillSourceBadge source={open.source} />\n              {open.source === \"user\" ? (\n                <div className=\"ms-auto\">\n                  <AvailabilityControl\n",
-      "replace": "              <SkillSourceBadge source={open.source} />\n              {open.source === \"user\" && open.readOnly ? (\n                <div className=\"ms-auto\">\n                  <DozoOrganizationLibrarySwitch skillId={open.id} readOnly />\n                </div>\n              ) : null}\n              {open.source === \"user\" && !open.readOnly ? (\n                <div className=\"ms-auto flex items-center gap-3\">\n                  <DozoOrganizationLibrarySwitch skillId={open.id} />\n                  <AvailabilityControl\n",
+      "find": "              {open.source === \"user\" && !open.organization ? (\n                <div className=\"ms-auto\">\n                  <AvailabilityControl\n",
+      "replace": "              {open.source === \"user\" && !open.organization && open.readOnly ? (\n                <div className=\"ms-auto\">\n                  <DozoOrganizationLibrarySwitch skillId={open.id} readOnly />\n                </div>\n              ) : null}\n              {open.source === \"user\" && !open.organization && !open.readOnly ? (\n                <div className=\"ms-auto flex items-center gap-3\">\n                  <DozoOrganizationLibrarySwitch skillId={open.id} />\n                  <AvailabilityControl\n",
       "requires": [
         "apps/web/src/pages/dozo-organization-library-switch.tsx"
       ],
@@ -12851,8 +12878,8 @@
     },
     {
       "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
-      "find": "          ))\n        : null}\n      {editorOpen ? (",
-      "replace": "          ))\n        : null}\n      {editorOpen ? null : <DozoHiddenLibrarySkills />}\n      {editorOpen ? (",
+      "find": "          ))\n        : null}\n      {creating && (canShare || forOrganization) ? (\n",
+      "replace": "          ))\n        : null}\n      {editorOpen ? null : <DozoHiddenLibrarySkills />}\n      {creating && (canShare || forOrganization) ? (\n",
       "requires": [
         "apps/web/src/pages/dozo-organization-library-switch.tsx"
       ],
@@ -12878,35 +12905,35 @@
     },
     {
       "file": "packages/adapters/src/runs/executor/executor.test.ts",
-      "find": "    // Routines run as their owner: only the owner's skills, and the claim names the owner.\n    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(\n      expect.objectContaining({ where: expect.objectContaining({ userId: \"user-1\" }) }),\n    );",
-      "replace": "    // Routines run as their owner: only the owner's skills (and their organization library's,\n    // a fork rule), and the claim names the owner.\n    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: {\n          OR: [\n            expect.objectContaining({ userId: \"user-1\" }),\n            { source: \"user\", id: { in: [] } },\n          ],\n        },\n      }),\n    );",
+      "find": "    // A routine resolves skills and claims the run as its owner.\n    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: personalOrOrganizationItemIn({ userId: \"user-1\", spaceId: \"ws-1\" }),\n      }),\n    );",
+      "replace": "    // A routine resolves skills (its owner's organization library's too, a fork rule) and\n    // claims the run as its owner.\n    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: {\n          OR: [\n            ...personalOrOrganizationItemIn({ userId: \"user-1\", spaceId: \"ws-1\" }).OR,\n            { source: \"user\", id: { in: [] } },\n          ],\n        },\n      }),\n    );",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: upstream's assertion that a run reads only its own person's skills, for the readable condition: that person's own scope as its first branch, and beside it only the library skills one read returns"
+      "reason": "organization skill library: upstream's assertion that a run reads its own person's and their organization's skills, for the readable condition: upstream's branches first, and beside them only the library skills one read returns"
     },
     {
       "file": "packages/adapters/src/runs/executor/executor-shared-space-authors.test.ts",
-      "find": "    expect(agentSkillQuery).toHaveBeenCalledWith(\n      expect.objectContaining({ where: expect.objectContaining({ userId: \"user-b\" }) }),\n    );",
-      "replace": "    expect(agentSkillQuery).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: {\n          OR: [\n            expect.objectContaining({ userId: \"user-b\" }),\n            { source: \"user\", id: { in: [] } },\n          ],\n        },\n      }),\n    );",
+      "find": "    expect(agentSkillQuery).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: personalOrOrganizationItemIn({ userId: \"user-b\", spaceId: \"space-1\" }),\n      }),\n    );",
+      "replace": "    expect(agentSkillQuery).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: {\n          OR: [\n            ...personalOrOrganizationItemIn({ userId: \"user-b\", spaceId: \"space-1\" }).OR,\n            { source: \"user\", id: { in: [] } },\n          ],\n        },\n      }),\n    );",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: the same assertion for a run in a shared Space: the run's own person's scope, and beside it only the library skills one read returns"
+      "reason": "organization skill library: the same assertion for a run in a shared Space: the run's own person's and organization's scope, and beside it only the library skills one read returns"
     },
     {
       "file": "packages/adapters/src/tools/skill-tools.test.ts",
-      "find": "  NOT?: { id: string };\n  OR?: Array<{ spaceId?: string; allSpaces?: boolean }>;\n};",
-      "replace": "  NOT?: { id: string };\n  allSpaces?: boolean;\n  source?: string;\n  id?: { in: string[] };\n  OR?: Scope[];\n};",
+      "find": "  NOT?: { id: string };\n  OR?: Scope[];\n};",
+      "replace": "  NOT?: { id: string };\n  source?: string;\n  id?: { in: string[] };\n  OR?: Scope[];\n};",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
-      "reason": "organization skill library: upstream's skill tool test, whose stand-in database matched only the owner's own scope; it now reads the readable condition, library branch included"
+      "reason": "organization skill library: upstream's skill tool test, whose stand-in database matched only the owner's own and organization's scope; it now reads the readable condition, library branch included"
     },
     {
       "file": "packages/adapters/src/tools/skill-tools.test.ts",
-      "find": "  if (\n    where.OR &&\n    !where.OR.some(\n      (branch) => branch.spaceId === row.spaceId || (branch.allSpaces && row.allSpaces === true),\n    )\n  )\n    return false;",
-      "replace": "  if (where.source && row.source !== where.source) return false;\n  if (typeof where.id === \"object\" && !where.id.in.includes(row.id as string)) return false;\n  // The fork's organization library adds a branch of ids its own read returned (`library` below).\n  const matches = (branch: Scope): boolean =>\n    branch.userId || branch.OR || branch.id\n      ? inScope(row, branch)\n      : branch.spaceId === row.spaceId || (branch.allSpaces === true && row.allSpaces === true);\n  if (where.OR && !where.OR.some(matches)) return false;",
+      "find": "  if (where.NOT && row.id === where.NOT.id) return false;\n  if (where.OR && !where.OR.some((branch) => inScope(row, branch))) return false;",
+      "replace": "  if (where.NOT && row.id === where.NOT.id) return false;\n  // The fork's organization library adds a branch of ids its own read returned (`library` below).\n  if (where.source && row.source !== where.source) return false;\n  if (typeof where.id === \"object\" && !where.id.in.includes(row.id as string)) return false;\n  if (where.OR && !where.OR.some((branch) => inScope(row, branch))) return false;",
       "requires": [
         "packages/db/src/dozo-organization-skills.ts"
       ],
@@ -13553,8 +13580,8 @@
     },
     {
       "file": "packages/adapters/src/runs/turn/run-model-start.ts",
-      "find": "import { effectiveModelRole } from \"../../models/model-roles.js\";\n",
-      "replace": "import { runBackupModels } from \"../../dozo-bot-model-backups.js\";\n",
+      "find": "import {\n  effectiveModelRole,\n  ORGANIZATION_MODEL_CONNECTION_PREFIX,\n} from \"../../models/model-roles.js\";\n",
+      "replace": "import { ORGANIZATION_MODEL_CONNECTION_PREFIX } from \"../../models/model-roles.js\";\nimport { runBackupModels } from \"../../dozo-bot-model-backups.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-bot-model-backups.ts"
       ],
@@ -13574,8 +13601,8 @@
     },
     {
       "file": "apps/web/src/pages/shell/bots/bot-panel.tsx",
-      "find": "                onThinkingLevelChange={setThinkingLevel}\n              />\n              <SwitchRow\n                id={`${ids}-notify-finish`}",
-      "replace": "                onThinkingLevelChange={setThinkingLevel}\n              />\n              <DozoBotBackups botId={bot.id} spaceId={bot.spaceId} />\n              <SwitchRow\n                id={`${ids}-notify-finish`}",
+      "find": "                }\n              />\n              <SwitchRow\n                id={`${ids}-notify-finish`}",
+      "replace": "                }\n              />\n              <DozoBotBackups botId={bot.id} spaceId={bot.spaceId} />\n              <SwitchRow\n                id={`${ids}-notify-finish`}",
       "reason": "bot backups: the bot's own ordered backup models sit under its model, one Add fallback line until there is one"
     },
     {
@@ -13815,7 +13842,7 @@
     {
       "file": "apps/mobile/app/bot-settings.tsx",
       "find": "import { thinkingLevelLabel } from \"@rakazo/i18n/thinking-level\";\nimport { typeScale }",
-      "replace": "import { thinkingLevelLabel } from \"@rakazo/i18n/thinking-level\";\nimport { useDozoRestNote } from \"../lib/dozo-model-rests\";\nimport { typeScale }",
+      "replace": "import { thinkingLevelLabel } from \"@rakazo/i18n/thinking-level\";\nimport { credentialForModel } from \"@rakazo/core\";\nimport { useDozoRestNote } from \"../lib/dozo-model-rests\";\nimport { typeScale }",
       "requires": [
         "apps/mobile/lib/dozo-model-rests.ts"
       ],
@@ -13823,8 +13850,8 @@
     },
     {
       "file": "apps/mobile/app/bot-settings.tsx",
-      "find": "  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);\n  const thinkingOptions",
-      "replace": "  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);\n  const dozoRestNote = useDozoRestNote();\n  const thinkingOptions",
+      "find": "  } = modelState;\n\n  const thinkingChoices",
+      "replace": "  } = modelState;\n  const dozoRestNote = useDozoRestNote();\n  const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;\n  const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;\n  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);\n\n  const thinkingChoices",
       "reason": "model rests on mobile: the bot's settings read which of the person's models rest now"
     },
     {
@@ -15210,7 +15237,31 @@
     {"file": "apps/mobile/components/thread/thread-screen.tsx", "find": "cronLabels: cronLabels(locale),", "replace": "cronLabels: cronLabels(locale, dateLocale),", "reason": "routines: the schedule's clock follows the phone's date locale"},
     {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "import { useUiLocale } from \"../../lib/i18n/i18n\";", "replace": "import { dateLocaleForUi, useUiLocale } from \"../../lib/i18n/i18n\";", "reason": "routines: the schedule's clock follows the phone's date locale"},
     {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "const labels = cronLabels(locale);", "replace": "const labels = () => cronLabels(locale, dateLocaleForUi(locale));", "reason": "routines: the schedule's clock follows the phone's date locale"},
-    {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "formatCron(cron, labels)", "replace": "formatCron(cron, labels())", "reason": "routines: the schedule's clock follows the phone's date locale"}
+    {"file": "apps/mobile/app/(settings)/bot-template.tsx", "find": "formatCron(cron, labels)", "replace": "formatCron(cron, labels())", "reason": "routines: the schedule's clock follows the phone's date locale"},
+    {
+      "file": "apps/api/src/bot-access/mcp-route.ts",
+      "find": "new McpServer({ name: \"rakazo\", version: \"1.0.0\" })",
+      "replace": "new McpServer({ name: \"dozo\", version: \"1.0.0\" })",
+      "reason": "bot access API: the MCP server tells its client it is Dozo, the name clients show in their server list"
+    },
+    {
+      "file": "apps/api/src/bot-access/mcp-route.ts",
+      "find": "...(failure.status === 401 ? { \"www-authenticate\": 'Bearer realm=\"rakazo\"' } : {})",
+      "replace": "...(failure.status === 401 ? { \"www-authenticate\": 'Bearer realm=\"dozo\"' } : {})",
+      "reason": "bot access API: the sign-in challenge of the MCP endpoint names Dozo"
+    },
+    {
+      "file": "apps/api/src/bot-access/public-api-routes.ts",
+      "find": "...(answer.status === 401 ? { \"www-authenticate\": 'Bearer realm=\"rakazo\"' } : {})",
+      "replace": "...(answer.status === 401 ? { \"www-authenticate\": 'Bearer realm=\"dozo\"' } : {})",
+      "reason": "bot access API: the sign-in challenge of the public API names Dozo"
+    },
+    {
+      "file": "packages/contracts/src/billing/billing.ts",
+      "find": "export const SELF_HOST_URL = \"https://rakazo.com/docs/self-host\";",
+      "replace": "export const SELF_HOST_URL = \"https://github.com/SSilistre-dev/dozo\";",
+      "reason": "self-host link: the screens that offer self-hosting point at this repository, not at upstream's documentation site"
+    }
   ],
   "assets": {
     "email-copy/welcome.json": "email-copy/welcome.json",
@@ -15237,6 +15288,60 @@
     "apps/mobile/assets/favicon.png": "web/favicon.png",
     "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png": "mobile/app-mark.png",
     "apps/mobile/assets/app-mark.png": "mobile/app-mark.png",
+    "apps/web/public/app-icons/beanie.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/bow-tie.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/cap.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/default.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/feet.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/flower.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/headphones.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/scarf.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/sprout.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/sunglasses.webp": "app-icons/web.webp",
+    "apps/web/public/app-icons/tie.webp": "app-icons/web.webp",
+    "packages/ui-tokens/assets/app-icons/beanie.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/bow-tie.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/cap.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/feet.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/flower.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/headphones.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/scarf.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/sprout.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/sunglasses.png": "app-icons/tokens.png",
+    "packages/ui-tokens/assets/app-icons/tie.png": "app-icons/tokens.png",
+    "apps/mobile/assets/app-icons/beanie.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/beanie.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/beanie-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/bow-tie.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/bow-tie.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/bow-tie-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/cap.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/cap.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/cap-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/default.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/default.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/default-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/feet.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/feet.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/feet-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/flower.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/flower.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/flower-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/headphones.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/headphones.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/headphones-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/scarf.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/scarf.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/scarf-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/sprout.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/sprout.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/sprout-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/sunglasses.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/sunglasses.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/sunglasses-macos.png": "app-icons/desktop-macos.png",
+    "apps/mobile/assets/app-icons/tie.png": "app-icons/mobile.png",
+    "apps/desktop/assets/app-icons/tie.png": "app-icons/desktop.png",
+    "apps/desktop/assets/app-icons/tie-macos.png": "app-icons/desktop-macos.png",
     "apps/web/public/og-image.png": "og-image.png",
     "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png": "shared/icon-layer.png"
   },

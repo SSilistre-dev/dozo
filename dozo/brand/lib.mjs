@@ -678,6 +678,8 @@ addStems(
     "file-drop",
     "fold-regions",
     "list-scroll",
+    "app-icon",
+    "sheet-layout",
     "network-cache",
     "notifications",
     "pdf-view",

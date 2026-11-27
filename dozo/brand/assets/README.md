@@ -49,6 +49,7 @@ tags point at the landing site's card).
 | `apps/mobile/assets/notification-icon.png` | `mobile/notification-icon.png` | 72, RGBA | `notification-icon.svg`: white one-ink silhouette |
 | `apps/mobile/assets/favicon.png` | `web/favicon.png` | 128, RGBA | the web 128 px tile (same file) |
 | `apps/mobile/ios-widgets/.../app-mark.png`, `apps/mobile/assets/app-mark.png` (Settings footer) | `mobile/app-mark.png` | 180, RGB | `app-icon-fullbleed.svg` (the widget rounds it) |
+| `apps/mobile/assets/app-icons/*.png`, `apps/desktop/assets/app-icons/*.png` (also `*-macos.png`) | `app-icons/mobile.png` (180, RGB), `desktop.png` (256, RGB), `desktop-macos.png` (512, RGBA) | as upstream's | the app icon resized with PIL from `mobile/app-mark.png`, `desktop/icon.png`, `desktop/icon-macos.png`. Upstream's pictures are its mascot with accessories, which the fork never ships, so every alternate icon is the Dozo icon until accessory art exists |
 | `packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png` | `shared/icon-layer.png` | 1024, RGBA | `icon-layer.svg`: the mark alone, centred, on transparent. iOS and macOS Tahoe icons use it over the system-dark plate (`icon.json`); an anchored rule moves the layer from 90 points low to centred |
 
 The notification and monochrome files carry only an alpha shape; their colour is not read.
