@@ -8,7 +8,9 @@ export function withOwnLogosOnly<T extends { logo?: string | null }>(
   webOrigin: string,
 ): T[] {
   const own = `${webOrigin.replace(/\/+$/, "")}/`;
-  return items.map((item) => (item.logo && !item.logo.startsWith(own) ? { ...item, logo: null } : item));
+  return items.map((item) =>
+    item.logo && !item.logo.startsWith(own) ? { ...item, logo: null } : item,
+  );
 }
 
 export { recordToolConnected } from "./integrations/tool-connect-analytics.js";
