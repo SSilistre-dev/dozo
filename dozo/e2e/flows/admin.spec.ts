@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { adminBrowser, newAccount, reportBilling, rpcAs } from "./accounts";
+import { choose } from "../ui";
 import { expect, test } from "./flow";
 
 /**
@@ -14,6 +15,11 @@ async function adminAt(browser: import("@playwright/test").Browser, path: string
   await expect(page.getByRole("navigation", { name: "Admin" })).toBeVisible();
   return page;
 }
+
+const planFilter = (page: Page) =>
+  page.getByTestId("admin-users").locator("xpath=..").getByRole("combobox", { name: "Plan" });
+const statusFilter = (page: Page) =>
+  page.getByTestId("admin-users").locator("xpath=..").getByRole("combobox", { name: "Status" });
 
 function row(page: Page, email: string) {
   return page.getByTestId("admin-users").getByRole("listitem").filter({ hasText: email });
@@ -67,28 +73,28 @@ test("members: search, filter, give a plan, take it back, suspend, delete", asyn
   // Give Premium until a week from now.
   await row(page, email).getByRole("button", { name: "Set plan" }).click();
   const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog")).last();
-  await dialog.getByLabel("Plan").selectOption("pro");
+  await choose(page, dialog.getByRole("combobox", { name: "Plan" }), "Premium");
   const end = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
   await dialog.getByLabel("End date").fill(end);
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(row(page, email)).toContainText("Premium");
   // The plan filter finds it on Premium, and not on Free.
-  await page.getByLabel("Plan", { exact: true }).selectOption("pro");
+  await choose(page, planFilter(page), "Premium");
   await expect(row(page, email)).toBeVisible();
-  await page.getByLabel("Plan", { exact: true }).selectOption("standard");
+  await choose(page, planFilter(page), "Premium Plus");
   await expect(row(page, email)).toHaveCount(0);
-  await page.getByLabel("Plan", { exact: true }).selectOption("");
+  await choose(page, planFilter(page), "All plans");
   // Take the granted plan back.
   await row(page, email).getByRole("button", { name: "Set plan" }).click();
-  await dialog.getByLabel("Plan").selectOption("none");
+  await choose(page, dialog.getByRole("combobox", { name: "Plan" }), "Remove granted plan");
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(row(page, email)).not.toContainText("Premium");
   // Suspend; the status filter shows it as suspended.
   await row(page, email).getByRole("button", { name: "Suspend", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Suspend" }).click();
-  await page.getByLabel("Status").selectOption("suspended");
+  await choose(page, statusFilter(page), "Suspended");
   await expect(row(page, email)).toBeVisible();
-  await page.getByLabel("Status").selectOption("");
+  await choose(page, statusFilter(page), "Any status");
   // Delete the account for good.
   await row(page, email).getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();

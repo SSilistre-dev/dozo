@@ -47,6 +47,19 @@ export const routes: Surface[] = [
     },
   },
   {
+    name: "join, redeem and review links that name nothing",
+    group: "routes",
+    covers: ["route:/join/:invitationId", "route:/redeem/:code?", "route:/review/:pageId?"],
+    async reach({ goto, scan }) {
+      await goto("/join/e2e-no-such-invitation");
+      await scan("unknown invitation");
+      await goto("/redeem/e2e-no-such-code");
+      await scan("unknown code");
+      await goto("/review/e2e-no-such-page");
+      await scan("unknown page");
+    },
+  },
+  {
     name: "shared-link redirect and unknown bot",
     group: "routes",
     covers: ["route:/app/x/:linkId"],

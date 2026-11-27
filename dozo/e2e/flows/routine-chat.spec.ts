@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { APPEARANCE_KEY, readWorld } from "../fixtures";
 import { outDir } from "../scan";
-import { openBot, openBotPanel } from "../ui";
+import { choose, openBot, openBotPanel } from "../ui";
 import { rpcAs } from "./accounts";
 import { expect, test } from "./flow";
 
@@ -47,8 +47,8 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
     try {
       await editor("light");
       await expect(chatPicker).toBeVisible();
-      await expect(chatPicker).toHaveValue("");
-      await chatPicker.selectOption({ label: "Garden" });
+      await expect(chatPicker).toContainText("Chief");
+      await choose(page, chatPicker, "Garden");
       await expect
         .poll(
           async () =>
@@ -61,7 +61,7 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
         .toBe(chat.id);
       await shot(page, "routine-chat-light");
       await editor("dark");
-      await expect(chatPicker).toHaveValue(chat.id);
+      await expect(chatPicker).toContainText("Garden");
       await shot(page, "routine-chat-dark");
     } finally {
       await rpcAs(page, "routines/remove", { routineId: routine.id });
