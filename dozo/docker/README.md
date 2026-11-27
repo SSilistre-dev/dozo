@@ -235,9 +235,15 @@ on a machine that has the image no longer fails on a DNS hiccup; a fresh CI runn
 run. It runs in `qa` and in the CI job `dozo-gate` after `brand`, not in `olc`, which stays offline.
 
 The same step then runs `lingui extract` in the copy and holds the Turkish catalog to `dozo/brand/catalog-turkish.mjs`:
-an entry whose translation is empty or the English source fails (`TURKISH: FAIL`), unless its id is in
-`dozo/brand/catalog-turkish-same.json`, the words and technical terms Turkish keeps in English. Translate a new
-string in a brand rule on the Turkish catalog; list only a term that reads the same in Turkish.
+an entry whose translation is empty or the English source, unless its id is in
+`dozo/brand/catalog-turkish-same.json` (the words and technical terms Turkish keeps in English), is
+either the fork's or upstream's. It is upstream's when every source file it names is in the pristine
+upstream tree (`upstream-main`) and no anchored brand rule wrote its text; anything else, and every
+entry when the ref is missing, is the fork's. The fork's fails (`TURKISH: FAIL`): translate it in a
+brand rule on the Turkish catalog, or list a term that reads the same in Turkish. Upstream's never
+fails: each is printed as `pending: "<id>"` and counted in `TURKISH: PASS (... N upstream ids pending translation)`,
+so a daily sync merges by itself. On a sync pull request, `dozo-gate` writes the pending ids into the one open issue
+labeled `turkish-queue` (closed when none are left). Translate them in the same brand rule when someone gets to it.
 
 ### budget
 
