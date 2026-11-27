@@ -3,7 +3,7 @@ import { i18n } from "@lingui/core";
 import type { BillingStatus } from "@rakazo/contracts";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { confirmComputerMove, useOwnComputerSwitch } from "./dozo-own-computer";
+import { confirmComputerMove, useNoComputerPlan, useOwnComputerSwitch } from "./dozo-own-computer";
 
 // Runs on the branded tree: Free has no computer once the plans are laid over the tiers, and the
 // Turkish catalog carries the fork's lines.
@@ -132,5 +132,18 @@ describe("switching computers on mobile", () => {
       "Bu botun dosyaları ve tarayıcı girişleri Takım Bilgisayarına taşınır; bu alandaki diğer botlar onları açabilir.",
     );
     expect(asked()[2].map((button) => button.text)).toEqual(["İptal", "Taşı"]);
+  });
+});
+
+describe("the Computer screen on a plan with no computer", () => {
+  it("is off on Free, and on for every other plan or unknown billing", () => {
+    native.billing = free;
+    expect(useNoComputerPlan()).toBe(true);
+    native.billing = { ...free, byokTier: "pro", state: "active" };
+    expect(useNoComputerPlan()).toBe(false);
+    native.billing = { ...free, state: "trialing" };
+    expect(useNoComputerPlan()).toBe(false);
+    native.billing = undefined;
+    expect(useNoComputerPlan()).toBe(false);
   });
 });

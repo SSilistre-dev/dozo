@@ -15407,6 +15407,93 @@
       "find": "export const SELF_HOST_URL = \"https://rakazo.com/docs/self-host\";",
       "replace": "export const SELF_HOST_URL = \"https://github.com/SSilistre-dev/dozo\";",
       "reason": "self-host link: the screens that offer self-hosting point at this repository, not at upstream's documentation site"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "import { useResolvedAppearance } from \"../../lib/native/native\";",
+      "replace": "import { useMobileTokens, useResolvedAppearance } from \"../../lib/native/native\";",
+      "reason": "monochrome switch: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "  const scheme = useResolvedAppearance();\n  return (",
+      "replace": "  const scheme = useResolvedAppearance();\n  const tokens = useMobileTokens();\n  return (",
+      "reason": "monochrome switch: the ink the rule below paints with"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "          // SwiftUI defaults to systemGreen (adapts to dark mode and Increase Contrast), so no default tint is set.\n          ...(tintColor ? [tint(tintColor)] : []),",
+      "replace": "          tint(tintColor ?? tokens.primary),",
+      "reason": "monochrome switch: an on switch is the primary ink, not SwiftUI's default system green; a caller's own tint still wins"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "computer-mode-picker\";\nimport { GlassIconButton }",
+      "replace": "computer-mode-picker\";\nimport { useNoComputerPlan } from \"../lib/dozo-own-computer\";\nimport { GlassIconButton }",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "  const [cleaningUp, setCleaningUp] = useState(false);\n  const [screenError,",
+      "replace": "  const [cleaningUp, setCleaningUp] = useState(false);\n  const noComputerPlan = useNoComputerPlan();\n  const [screenError,",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: a plan with no hosted computer (Free) is read once at the screen's top level"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "            label={t`Take control`}\n            prominence=\"secondary\"\n            disabled={bootPending}\n",
+      "replace": "            label={t`Take control`}\n            prominence=\"secondary\"\n            disabled={bootPending || noComputerPlan}\n",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: Take control would only be refused, so it shows off"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "                    fill={false}\n                    style={{ alignSelf: \"center\" }}",
+      "replace": "                    fill={false}\n                    disabled={noComputerPlan}\n                    style={{ alignSelf: \"center\" }}",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: the same button in the full window"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "        disabled={switching || bootPending}\n",
+      "replace": "        disabled={switching || bootPending || noComputerPlan}\n",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: both modes are hosted computers, which the plan does not include, so the picker shows off"
+    },
+    {
+      "file": "apps/mobile/components/thread/failed-send-bubble.tsx",
+      "find": "          gap: 8,\n          opacity: 0.8,\n",
+      "replace": "          gap: 8,\n",
+      "reason": "contrast: a message that was not sent keeps the bubble's own text colour at full strength; the dimmed bubble put its text under the contrast the colours were chosen for, and the caption below already says it was not sent"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "        <TextInput\n          autoFocus\n          accessibilityLabel={t`Name`}",
+      "replace": "        <TextInput\n          accessibilityLabel={t`Name`}",
+      "reason": "new bot: the keyboard no longer opens over the colour choices; they show first and the name is one tap away"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "        keyboardShouldPersistTaps=\"handled\"\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
+      "replace": "        keyboardShouldPersistTaps=\"handled\"\n        automaticallyAdjustKeyboardInsets\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
+      "reason": "new bot: with the keyboard open the form scrolls above it, so the colour choices stay reachable"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "  const updateLabel = formatUpdateLabel(versionInfo.update);",
+      "replace": "  const updateLabel =\n    versionInfo.update.kind === \"embedded\" ? \"\" : formatUpdateLabel(versionInfo.update);",
+      "reason": "version line: the internal \"Embedded\" label of a build with no over-the-air update is not shown, the version alone is"
     }
   ],
   "assets": {

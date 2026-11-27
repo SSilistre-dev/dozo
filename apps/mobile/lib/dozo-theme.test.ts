@@ -1,7 +1,11 @@
+import type { ColorTokens } from "@rakazo/ui-tokens";
 import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
 import { DOZO_THEMES, dozoTheme } from "@rakazo/ui-tokens/dozo-themes";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Links read in the ink, not upstream's blue.
+const ink = (tokens: ColorTokens) => ({ ...tokens, link: tokens.foreground });
 
 const store = new Map<string, string>();
 let unavailable = false;
@@ -37,8 +41,8 @@ describe("the phone's named theme", () => {
     const { tokensForAppearance, getDozoTheme, getDozoBubble } = await load();
     expect(getDozoTheme()).toBeUndefined();
     expect(getDozoBubble()).toBe("bot");
-    expect(tokensForAppearance("dark")).toEqual(darkTokens);
-    expect(tokensForAppearance("light")).toEqual(lightTokens);
+    expect(tokensForAppearance("dark")).toEqual(ink(darkTokens));
+    expect(tokensForAppearance("light")).toEqual(ink(lightTokens));
   });
 
   it("paints a theme over its own tone only, and stores it under the web's key", async () => {
@@ -46,8 +50,16 @@ describe("the phone's named theme", () => {
     const sumi = dozoTheme("sumi");
     setDozoTheme("sumi");
     expect(tokensForAppearance("dark").background).toBe(sumi?.palette.background);
-    expect(tokensForAppearance("light")).toEqual(lightTokens);
+    expect(tokensForAppearance("light")).toEqual(ink(lightTokens));
     await vi.waitUntil(() => store.get("dozo.uiTheme") === "sumi");
+  });
+
+  it("reads links in the ink of the plain tones and of a named theme", async () => {
+    const { setDozoTheme, tokensForAppearance } = await load();
+    expect(tokensForAppearance("light").link).toBe(lightTokens.foreground);
+    setDozoTheme("sumi");
+    const dark = tokensForAppearance("dark");
+    expect(dark.link).toBe(dark.foreground);
   });
 
   it("makes the theme's tokens once", async () => {
@@ -60,7 +72,7 @@ describe("the phone's named theme", () => {
     const { setDozoTheme, tokensForAppearance } = await load();
     setDozoTheme("hoji");
     setDozoTheme(null);
-    expect(tokensForAppearance("dark")).toEqual(darkTokens);
+    expect(tokensForAppearance("dark")).toEqual(ink(darkTokens));
     // The writes go in the order they were made: the removal is last, so nothing is left.
     await vi.waitFor(() =>
       expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dozo.uiTheme"),

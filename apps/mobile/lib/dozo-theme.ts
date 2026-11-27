@@ -44,16 +44,28 @@ export function dozoThemeKey(): string {
   return `${active?.id ?? ""}:${bubble}`;
 }
 
+const inked = new WeakMap<ColorTokens, ColorTokens>();
+
+/** The product is monochrome: a link, a text action and a mention read in the ink, not system blue. */
+function inkLinks(tokens: ColorTokens): ColorTokens {
+  let result = inked.get(tokens);
+  if (!result) {
+    result = { ...tokens, link: tokens.foreground };
+    inked.set(tokens, result);
+  }
+  return result;
+}
+
 /** Upstream's phone palette for a tone, or the named theme painted over it when it is that tone's. */
 export function tokensForAppearance(appearance: ResolvedAppearance): ColorTokens {
   const base = lightOrDarkTokens(appearance);
-  if (!active || active.tone !== appearance) return base;
+  if (!active || active.tone !== appearance) return inkLinks(base);
   let tokens = derived.get(active);
   if (!tokens) {
     tokens = dozoThemeTokens(base, active);
     derived.set(active, tokens);
   }
-  return tokens;
+  return inkLinks(tokens);
 }
 
 /** Your own bubble: the bot's colour when there is one, unless Message color is Neutral. */
