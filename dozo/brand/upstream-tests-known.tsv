@@ -263,6 +263,7 @@ packages/adapters/src/notifications/notification-identity.test.ts	sends the shap
 packages/adapters/src/models/endpoints/openrouter-usage.test.ts	OpenRouter attribution and usage recovery sends the normal user id and Rakazo attribution while preserving request controls	a	the referer is the fork's site
 packages/adapters/src/providers/web/parallel/parallel-web.test.ts	optional Parallel web provider maps MCP results through the selected web tool (text-only=false)	a	the user agent names Dozo
 packages/adapters/src/providers/web/parallel/parallel-web.test.ts	optional Parallel web provider maps MCP results through the selected web tool (text-only=true)	a	the user agent names Dozo
+packages/adapters/src/providers/web/parallel/parallel-web.test.ts	optional Parallel web provider sends PARALLEL_API_KEY only to the Parallel endpoint	a	the user agent names Dozo
 packages/adapters/src/payments/payment-wallets.test.ts	payment wallet connection starts a sign-in and keeps its state encrypted	a	the client name is Dozo
 packages/adapters/src/runtime/pi/models/pi-models.test.ts	Pi model catalog preserves provider names and sign-in options from before pi 1.3	a	the billing copy names Dozo
 packages/adapters/src/providers/computer/railway/railway-sandbox.test.ts	Railway computers exports regular binary files without following links or reading FIFOs	a	the computer's home is /home/dozo
