@@ -1,3 +1,4 @@
+import { skillNameKey } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   hideLibrarySkill,
@@ -99,14 +100,17 @@ describe("the organization library read", () => {
       { id: "c", userId: "owner", name: "Travel" },
       { id: "d", userId: "owner", name: "Remember" },
       { id: "e", userId: "user-1", name: "remember" },
-      // An organization's own skill has no owner and is not a library skill.
+      // An organization's own skill has no owner and is not a library skill; it gives way to
+      // the person's own skill of its name, so the name is listed once.
       { id: "f", userId: null, name: "Expenses" },
+      // Nothing of the person's own or the library's is named so: the organization's skill stays.
+      { id: "g", userId: null, name: "Onboarding" },
     ];
     expect(preferOwnSkills(rows, "user-1", ["Remember"]).map((entry) => entry.id)).toEqual([
       "b",
       "c",
       "e",
-      "f",
+      "g",
     ]);
     // Compared as the resolver compares them: padding of any kind is no way around the rule.
     const padded = ["Remember ", " remember", "remember\u00a0", "\tRemember", "remember\n"].map(
@@ -121,6 +125,43 @@ describe("the organization library read", () => {
         [],
       ),
     ).toEqual([{ id: "m", userId: "user-1", name: "expenses" }]);
+  });
+});
+
+describe("one skill per name", () => {
+  // The order both reads use: the person's and the library's skills, then the organization's,
+  // then by name and id (`organizationId` nulls first in the shared query).
+  const rows = [
+    { id: "own", userId: "user-1", name: "Travel" },
+    { id: "lib-a", userId: "owner-a", name: "Expenses" },
+    { id: "lib-b", userId: "owner-b", name: "expenses" },
+    { id: "org-1", userId: null, name: "Expenses" },
+    { id: "org-2", userId: null, name: "Travel" },
+    { id: "org-3", userId: null, name: "Remember" },
+  ];
+
+  it("lists a name once: own, then library, then the organization's", () => {
+    expect(preferOwnSkills(rows, "user-1", []).map((entry) => entry.id)).toEqual([
+      "own",
+      "lib-a",
+      "org-3",
+    ]);
+  });
+
+  it("keeps the organization's skill over a built-in one, as the resolver does", () => {
+    expect(preferOwnSkills(rows, "user-1", ["Remember"]).map((entry) => entry.id)).toContain(
+      "org-3",
+    );
+  });
+
+  it("lists what the bot resolves: the first row of each name in the shared order", () => {
+    const resolved = new Map<string, string>();
+    for (const entry of rows) {
+      const key = skillNameKey(entry.name);
+      if (!resolved.has(key)) resolved.set(key, entry.id);
+    }
+    const listed = preferOwnSkills(rows, "user-1", []).map((entry) => entry.id);
+    expect(listed.sort()).toEqual([...resolved.values()].sort());
   });
 });
 
