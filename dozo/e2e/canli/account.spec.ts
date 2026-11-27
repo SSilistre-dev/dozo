@@ -314,4 +314,6 @@ test("Free: bilgisayar uyandırma reddedilir, Türkçe ileti ve Yükselt", async
   const screen = page.getByTestId("computer-viewport");
   await expect(screen.getByText("Planınızda bilgisayar yok.")).toBeVisible({ timeout: 30_000 });
   await expect(screen.getByRole("button", { name: "Yükselt" })).toBeVisible();
+  // The other way: a computer of their own, found under the member's devices.
+  await expect(screen.getByRole("link", { name: "Cihazların" })).toBeVisible();
 });

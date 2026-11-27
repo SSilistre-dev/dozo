@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { i18n } from "@lingui/core";
-import { I18nProvider } from "@lingui/react";
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children?: ReactNode }) => children,
+}));
 
 import { ComputerAllowanceActions } from "./dozo-computer-allowance-actions";
 
@@ -19,19 +22,15 @@ function Where() {
 function show(props: { upgrade: string | null; ownDevice: boolean }) {
   act(() =>
     root.render(
-      <I18nProvider i18n={i18n}>
-        <MemoryRouter initialEntries={["/app?bot=b1"]}>
-          <ComputerAllowanceActions {...props} onUpgrade={onUpgrade} />
-          <Where />
-        </MemoryRouter>
-      </I18nProvider>,
+      <MemoryRouter initialEntries={["/app?bot=b1"]}>
+        <ComputerAllowanceActions {...props} onUpgrade={onUpgrade} />
+        <Where />
+      </MemoryRouter>,
     ),
   );
 }
 
 beforeEach(() => {
-  i18n.load("en", {});
-  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   onUpgrade.mockClear();
   host = document.createElement("div");
