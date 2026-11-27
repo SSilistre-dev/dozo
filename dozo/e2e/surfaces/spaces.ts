@@ -41,14 +41,15 @@ export const spaces: Surface[] = [
       await scan("new space dialog");
       await dialog.getByRole("textbox").first().fill(name);
       await dialog.getByRole("button", { name: "Create space" }).click();
-      await expect(page.getByRole("button", { name: `Actions for ${name}` })).toBeVisible();
+      const gear = page.getByRole("button", { name: `Settings for ${name}` });
+      await expect(gear).toBeAttached();
       await scan("space created (empty state)");
-      await page.getByRole("button", { name: `Actions for ${name}` }).click();
-      await page.getByRole("menuitem", { name: "Settings" }).click();
+      await gear.press("Enter");
       const settings = page.getByTestId("user-settings");
       await expect(settings).toHaveAttribute("data-settings-section", "space");
       await scan("space settings");
       await settings.getByRole("button", { name: "Invite" }).click();
+      await page.getByRole("menuitem", { name: "Copy invite link" }).click();
       await expect(page.getByText("Invite link copied")).toBeVisible();
       await scan("after Invite (toast, clipboard)");
       const link = await page.evaluate(() =>

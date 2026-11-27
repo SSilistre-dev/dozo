@@ -87,7 +87,7 @@ navigations retry (`gotoStable` in `ui.ts`).
 A user cannot leave onboarding without a connected model, and no real model or key is used.
 Upstream's emulator (`packages/testkit/src/model-emulator.ts`) is not usable standalone: it is a
 TypeScript module of a pnpm workspace, it answers only `POST /v1/chat/completions`, it has no
-`/v1/models` (the connect form's "Find models" needs it) and it fails any request that is not the
+`/v1/models` (the connect form lists the models from it) and it fails any request that is not the
 next scripted step, while a bot also makes background calls. So `model-stub.mjs` (Node built-ins
 only; tested by `model-stub.test.mjs`, which `make olc` runs) lists one model and answers every
 completion with one canned reply, streamed. The setup project connects it through the real
@@ -332,8 +332,9 @@ The auth endpoints allow 10 credential calls per 15 minutes per address and path
 the stack's rate-limit rows before each run. The suite reports a 429 with its retry-after if the
 limit is hit.
 
-- Without mail (plain `make up`, production mode): the limit is on: a
-  run spends about eight sign-ups and five sign-ins (the admin signs in once, its session is
+- Without mail (plain `make up`, production mode): the limit is on. A full run signs up more
+  accounts than 10 in 15 minutes, so run.sh also clears the rows every 30 seconds while it runs. A
+  run spends about fourteen sign-ups and five sign-ins (the admin signs in once, its session is
   reused). The mail-only specs skip and spend nothing.
 - With the email emulator (`compose.email-emulator.yml` sets `NODE_ENV=development`): the limit is
   off. A full run there makes fifteen sign-up calls (admin, verification account, setup, four
