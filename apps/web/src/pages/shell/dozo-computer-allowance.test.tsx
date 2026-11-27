@@ -80,6 +80,7 @@ it("Free: a refused start says the plan has no computer and offers Upgrade, in T
     allowanceUsed: true,
     text: "Planınızda bilgisayar yok.",
     upgrade: "Yükselt",
+    ownDevice: true,
   });
 });
 
@@ -89,6 +90,7 @@ it("Free, a member who cannot manage billing: ask the owner, no button", () => {
     allowanceUsed: true,
     text: "Planınızda bilgisayar yok. Yükseltmesi için sahibine sorun.",
     upgrade: null,
+    ownDevice: true,
   });
 });
 
@@ -100,6 +102,7 @@ it("never shows the server's words: no billing status, a trial", () => {
     allowanceUsed: true,
     text: "Bilgisayar saatiniz kalmadı.",
     upgrade: "Yükselt",
+    ownDevice: false,
   });
 });
 
@@ -108,6 +111,7 @@ it("leaves any other failure, and a running computer, as they are", () => {
     allowanceUsed: false,
     text: "Could not connect",
     upgrade: null,
+    ownDevice: false,
   });
   expect(read("No computer hours left.", true)?.allowanceUsed).toBe(false);
   expect(read(null)?.text).toBeNull();
