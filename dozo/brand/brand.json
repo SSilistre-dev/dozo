@@ -506,6 +506,33 @@
   ],
   "anchored": [
     {
+      "file": "apps/web/src/pages/settings/AccountSettingsOverlay.tsx",
+      "find": "import { AppIconPicker } from \"./AppIconPicker\";",
+      "replace": "import { AppIconPicker } from \"./dozo-app-icon-picker\";",
+      "requires": [
+        "apps/web/src/pages/settings/dozo-app-icon-picker.tsx"
+      ],
+      "reason": "app icon picker: every alternate icon is the Dozo icon until accessory drawings exist, so the desktop settings row (the web has none) renders nothing"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "import { appIconRead } from \"../../lib/appearance/app-icon\";",
+      "replace": "import { appIconRead } from \"../../lib/dozo-app-icon-hidden\";",
+      "requires": [
+        "apps/mobile/lib/dozo-app-icon-hidden.tsx"
+      ],
+      "reason": "app icon picker: the row shows only where the device can switch icons; this read says it cannot, so the row is not drawn"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/app-icon.tsx",
+      "find": "export default function AppIconSettings() {",
+      "replace": "export { AppIconRoute as default } from \"../../lib/dozo-app-icon-hidden\";\n\nexport function AppIconSettings() {",
+      "requires": [
+        "apps/mobile/lib/dozo-app-icon-hidden.tsx"
+      ],
+      "reason": "app icon picker: a direct link to the screen goes back to General, the screen's own code stays in the tree"
+    },
+    {
       "file": "packages/db/src/billing/billing.ts",
       "find": "const ACCESS_STATUSES = new Set([\"trialing\", \"active\"]);\n",
       "replace": "// Dozo: a paying customer whose card fails keeps the plan while the payment provider retries;\n// the payment failed mail asks them to update the card.\nconst ACCESS_STATUSES = new Set([\"trialing\", \"active\", \"past_due\"]);\n",
