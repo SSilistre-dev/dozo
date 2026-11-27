@@ -122,6 +122,11 @@ packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplac
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let refreshing: Promise<void> | null = null;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	let nextAttemptAt = 0;	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
 packages/adapters/src/dozo-plugin-catalog.ts	fn createPersistentPluginMarketplace	const unreadable = new Map<string, number>();	global-safe	public plugin marketplace catalog, images and retry times, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createConnectionLogos	const known = new Map<string, string | null>();	global-safe	public managed app logo addresses and stored file names, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createConnectionLogos	const queue: string[] = [];	global-safe	public managed app logo addresses and stored file names, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createConnectionLogos	const pending = new Set<string>();	global-safe	public managed app logo addresses and stored file names, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createConnectionLogos	let running = 0;	global-safe	public managed app logo addresses and stored file names, the same for everyone
+packages/adapters/src/dozo-plugin-catalog.ts	fn createConnectionLogos	let idle: Promise<void>[] = [];	global-safe	public managed app logo addresses and stored file names, the same for everyone
 packages/adapters/src/dozo-quiet-hours.ts	module	const offsetFormats = new Map<string, Intl.DateTimeFormat | null>();	global-safe	Intl formatter cache keyed by time zone name; holds no person data
 packages/adapters/src/dozo-quiet-hours.ts	fn localClock	let step = Number.NaN;	local	per-call local, dies with the call
 packages/adapters/src/dozo-quiet-hours.ts	fn localClock	let offset = 0;	local	per-call local, dies with the call
