@@ -59,6 +59,8 @@ vi.mock("./auth/Auth", () => ({
   ),
 }));
 
+vi.mock("./dozo-auth-locale", () => ({ AuthLocaleSelect: () => <i data-testid="language" /> }));
+
 import { errorOutcome, PasswordResetPage, VerifyEmailPage } from "./dozo-email-link";
 
 let container: HTMLDivElement;
@@ -144,6 +146,8 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  agentSpy?.mockRestore();
+  agentSpy = undefined;
 });
 
 describe("errorOutcome", () => {
@@ -163,13 +167,61 @@ const signedIn = (emailVerified: boolean) => ({
   data: { user: { email: "ada@example.com", emailVerified } },
 });
 
+let agentSpy: { mockRestore(): void } | undefined;
+function phone(agent: string) {
+  agentSpy = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(agent);
+}
+const address = () => container.querySelector("[data-dozo-auth-address]")?.textContent;
+
 describe("the verification result page", () => {
+  it("names the verified address under the title, and for a signed-in reader too", async () => {
+    await open("/verify-email?v=mark-1");
+    await vi.waitFor(() => expect(address()).toBe("ada@example.com"));
+    act(() => root.unmount());
+    root = createRoot(container);
+    api.session = signedIn(true);
+    await open("/verify-email?error=");
+    expect(address()).toBe("ada@example.com");
+  });
+
+  it("names no address when the link says nothing was verified", async () => {
+    api.mark.mockResolvedValue({ verified: false, email: "ada@example.com" });
+    await open("/verify-email?v=mark-1");
+    await vi.waitFor(() => expect(title()).toBe("Sign in to continue"));
+    expect(address()).toBeUndefined();
+  });
+
+  it("offers the language choice, since a visitor from an email has no settings yet", async () => {
+    await open("/verify-email?v=mark-1");
+    await vi.waitFor(() => expect(title()).toBe("Email verified"));
+    expect(container.querySelector('[data-testid="language"]')).not.toBeNull();
+  });
+
+  it.each([
+    ["Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/605.1", true],
+    ["Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/130 Mobile Safari/537.36", true],
+    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15", false],
+  ])("offers the way back to the app only on a phone: %s", async (agent, offered) => {
+    phone(agent);
+    await open("/verify-email?v=mark-1");
+    await vi.waitFor(() => expect(title()).toBe("Email verified"));
+    expect(links().includes("Open Dozo dozo://")).toBe(offered);
+    expect(links()).toContain("Sign in /sign-in/email");
+  });
+
+  it("does not offer the app on a link that failed", async () => {
+    phone("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/605.1");
+    await open("/verify-email?v=mark-1&error=INVALID_TOKEN");
+    await vi.waitFor(() => expect(title()).toBe("This link is no longer valid"));
+    expect(links().some((link) => link.includes("dozo://"))).toBe(false);
+  });
+
   it("says verified when the server confirms the marked account, and hands the address to sign-in", async () => {
     await open("/verify-email?v=mark-1");
     await vi.waitFor(() => expect(title()).toBe("Email verified"));
     expect(api.mark).toHaveBeenCalledWith("mark-1");
     expect(where()).toBe("/verify-email");
-    expect(links()).toEqual(["Continue /sign-in/email"]);
+    expect(links()).toEqual(["Sign in /sign-in/email"]);
     await act(async () => container.querySelector("a")?.click());
     expect(where()).toBe("/sign-in/email");
     expect(handed).toEqual({ email: "ada@example.com" });
