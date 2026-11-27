@@ -14,7 +14,7 @@ export function dozoConnectionLogos(deps: Pick<RouterDeps, "prisma" | "env">) {
     // Absolute, because the mobile app draws it without a page to resolve it against.
     imageUrl: (file) => `${origin}${CATALOG_IMAGE_PATH}/${file}`,
   });
-  return <T extends { logo?: string | null }>(items: T[]) => logos.own(items, origin);
+  return <T extends { logo?: string | null }>(items: T[]) => logos.own(items);
 }
 
 export { recordToolConnected } from "./integrations/tool-connect-analytics.js";
