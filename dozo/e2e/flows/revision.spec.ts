@@ -117,7 +117,10 @@ test("revision: an earlier message is edited after a confirm, and not past a too
   await expect(replies.last()).toContainText(REPLY);
 
   // A later turn wrote to the bot's memory: the earlier message can no longer go back.
-  await composer.fill('Remember it [e2e-tool:remember {"content":"Lunch is vegan"}]');
+  const args = Buffer.from(
+    JSON.stringify({ operations: [{ action: "add", content: "Lunch is vegan" }] }),
+  ).toString("base64");
+  await composer.fill(`Remember it [e2e-tool:remember b64:${args}]`);
   await composer.press("Enter");
   await expect(page.getByText(TOOL_DONE).last()).toBeVisible({ timeout: 60_000 });
   await idle(page, bot.id);
