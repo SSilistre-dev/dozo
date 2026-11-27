@@ -490,17 +490,23 @@
 
 /* ---- Forms outside dialogs, one segmented control, compact dialogs ------------------------ */
 
-/* The bot's name while it is edited and the routine's fields: the quiet field a dialog uses, so
-   a name looks the same wherever it is typed. Upstream's focus ring stays. */
+/* The bot's name while it is edited and the routine's fields: the quiet field a dialog uses, with the
+   dialog's focus ring, so a name looks the same wherever it is typed. */
 :is([data-testid="bot-profile-header"], [data-testid="routine-fields"])
   :is([data-slot="input"], [data-slot="textarea"]) {
   border-color: transparent;
   border-radius: 10px;
   background: var(--dozo-wash);
+  box-shadow: none;
 }
 :is([data-testid="bot-profile-header"], [data-testid="routine-fields"])
   :is([data-slot="input"], [data-slot="textarea"]):is(:hover, :focus-visible) {
   background: var(--dozo-wash-strong);
+}
+:is([data-testid="bot-profile-header"], [data-testid="routine-fields"])
+  :is([data-slot="input"], [data-slot="textarea"]):focus-visible {
+  outline: 2px solid var(--dozo-focus);
+  outline-offset: 2px;
 }
 
 /* Tabs in a dialog (the MCP transport): the washed track with the chosen segment lifted, as the
