@@ -206,8 +206,14 @@
 
 /* A label that sits straight on its field gets room above the field's edge. */
 :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
-  [data-slot="label"]:has(+ [data-slot="input"]) {
+  [data-slot="label"]:has(+ :is([data-slot="input"], [data-slot="input-reveal"])) {
   margin-bottom: 6px;
+}
+
+/* A dialog opened over another (the settings window) dims the one beneath, which the shared
+   backdrop alone leaves at full strength. */
+[data-slot="dialog-content"][data-nested-dialog-open] {
+  filter: brightness(0.7);
 }
 
 /* Controls inside dialogs and the settings window: quiet pills, borderless fields, a washed
