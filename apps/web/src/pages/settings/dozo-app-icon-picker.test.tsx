@@ -19,6 +19,6 @@ it("renders no picker even where the desktop app can change its icon", async () 
 afterEach(() => vi.unstubAllGlobals());
 
 it("is the picker account settings imports (branded tree)", () => {
-  const overlay = readFileSync(join(import.meta.dirname, "settings/AccountSettingsOverlay.tsx"), "utf8");
+  const overlay = readFileSync(join(import.meta.dirname, "AccountSettingsOverlay.tsx"), "utf8");
   expect(overlay).toContain('import { AppIconPicker } from "./dozo-app-icon-picker"');
 });
