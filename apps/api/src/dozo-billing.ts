@@ -1,9 +1,10 @@
-import type { ByokTier } from "@rakazo/contracts";
+import type { ByokTier, ComputerSize } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, sandboxAllowanceHours } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readPlanLimits, sharedSpaceUsage } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { withComputerSpecs } from "./dozo-computer-size.js";
 
 /** A checkout was asked for a plan that has no price: the free one, which nobody pays for. */
 export class PlanNotOfferedError extends ClientError {
@@ -39,4 +40,16 @@ export async function withPlanHours<Offer extends { tier: ByokTier; computerHour
     ...offer,
     computerHours: sandboxAllowanceHours(limits[offer.tier].computerAllowanceCents, hourMicros),
   }));
+}
+
+/** `withPlanHours` over offers that also carry the machine this server's computer provider starts. */
+export async function withPlanOffers<
+  Offer extends { tier: ByokTier; computerHours: number; computerSize: ComputerSize },
+>(
+  prisma: Pick<PrismaClient, "dozoPlanQuota">,
+  sandbox: Parameters<typeof withComputerSpecs>[1],
+  offers: Offer[],
+  hourMicros?: number,
+) {
+  return withPlanHours(prisma, withComputerSpecs(offers, sandbox), hourMicros);
 }

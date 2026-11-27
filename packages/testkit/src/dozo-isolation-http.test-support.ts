@@ -245,7 +245,12 @@ export const AUTH_ENDPOINTS: {
 ];
 
 export type HttpCaller = { name: string; headers: Record<string, string>; from: number };
-export type TargetIds = Target["ids"] & { deviceId?: string; accountId?: string; session?: string };
+export type TargetIds = Target["ids"] & {
+  deviceId?: string;
+  accountId?: string;
+  session?: string;
+  taskId?: string;
+};
 export type HttpRequest = { route: string; method: string; url: string; body?: string };
 
 /** One request per method a route answers, every id in it the target's. */
@@ -255,6 +260,7 @@ export function requestsFor(route: string, ids: TargetIds): HttpRequest[] {
     botId: ids.botId,
     runId: ids.runId,
     deviceId: ids.deviceId,
+    id: ids.taskId,
     token: ids.pageId,
     file: ids.artifactId,
     surface: "web",

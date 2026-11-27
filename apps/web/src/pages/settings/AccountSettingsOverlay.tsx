@@ -37,6 +37,7 @@ import {
 } from "../../components/computers/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../../components/DesktopUpdates";
 import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
+import { ApiKeysSettings } from "../../components/settings/ApiKeysSettings";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkSitesSettings";
 import { authClient } from "../../lib/auth/auth";
@@ -63,6 +64,7 @@ import { getUiAppearancePreference, setUiAppearance } from "../../lib/preference
 import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { authErrorText } from "../../lib/query/user-error";
+import { AppIconPicker } from "./AppIconPicker";
 
 export type SettingsGeneralProps = {
   email?: string | null;
@@ -366,6 +368,7 @@ export function GeneralSettingsPanels({
             }
           />
         ) : null}
+        <AppIconPicker />
         <SettingsRow
           label={
             <span id={sidebarDensityLabelId}>
@@ -579,6 +582,8 @@ export function GeneralSettingsPanels({
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
+
+      <ApiKeysSettings />
 
       <SettingsGroup title={<Trans>Data</Trans>} data-testid="account-data">
         <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />

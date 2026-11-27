@@ -437,6 +437,43 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
       "An app's id in the integrations catalog (the product's catalog data), not a stored record of anyone's.",
   },
   {
+    path: "connections/beginForOrganization",
+    kind: "no-target",
+    fields: ["connectorId"],
+    reason:
+      "An app's id in the integrations catalog (the product's catalog data), not a stored record of anyone's.",
+  },
+  {
+    path: "mcp/servers/createForOrganization",
+    kind: "no-target",
+    fields: ["clientId"],
+    reason:
+      "The OAuth client id the person types in for a tool server: an outside provider's value, not a stored record.",
+  },
+  {
+    path: "models/organizationConnections/create",
+    kind: "no-target",
+    fields: ["accountId", "gatewayId", "projectId", "modelId", "enabledModelIds", "credentialId"],
+    reason:
+      "A provider account's, gateway's and project's ids and model names, as the admin types them in from the provider: outside values, not stored records of anyone's. `credentialId` is `z.never()`: the input refuses any value, as a new organization connection never reuses a person's own.",
+  },
+  {
+    path: "connections/reconnectOrganization",
+    kind: "unreached",
+    verifiedByCode:
+      'apps/api/src/integrations/connection-complete.ts:375 "const row = await findManagedConnection(deps.prisma, context.actor, connectionId);" — the connection is one of the caller\'s own or of the organization the caller manages',
+    reason:
+      "The handler found the organization's connection for its admin; no integration provider is configured in tests, so the owner is refused after that (400).",
+  },
+  {
+    path: "organizations/vault/signIn",
+    kind: "unreached",
+    verifiedByCode:
+      'apps/api/src/routes/organization-vault.ts:135 "const login = await tx.organizationLogin.findFirst({ where: { id: input.loginId, organizationId }," — the login is looked up in the organization the caller manages',
+    reason:
+      "The handler found the organization's login for its admin; no protected browser is configured in tests, so the owner is refused after that (400).",
+  },
+  {
     path: "notifications/registerCallPush",
     kind: "no-target",
     fields: ["deviceId"],
@@ -690,7 +727,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/integrations/plugin-installs.ts:398 "...availableInSpace(actor), id: input.id" \u2014 the install is looked up among those of the caller\'s Space',
+      'apps/api/src/integrations/plugin-installs.ts:447 "const existing = await deps.prisma.capabilityInstall.findFirst({ where: { ...personalOrOrganizationItemIn(actor), id: input.id, kind: "plugin", }, });" — the install is looked up among those of the caller\'s Space and of the caller\'s organization',
     reason:
       "The world's capability is a stored row, not a plugin whose parts were read from a repository (404).",
   },
@@ -699,7 +736,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "option 0",
     verifiedByCode:
-      'apps/api/src/routes/mcp.ts:186 "const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...availableInSpace(actor), }, });" \u2014 the server is looked up among those of the caller\'s Space',
+      'apps/api/src/routes/mcp.ts:207 "const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...managed }, });" — the server is looked up among those of the caller\'s Space and, for an admin, of the organization the caller manages',
     reason: "The generated remote endpoint has no address in a test with no network (400).",
   },
   {
@@ -749,7 +786,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/integrations/connection-flows.ts:576 "const snapshot = await deps.prisma.connection.findFirst({ where: { id: input.connectionId, spaceId: context.actor.spaceId, userId: context.actor.userId, }," \u2014 the connection is looked up for the caller in the caller\'s Space',
+      "apps/api/src/integrations/connection-flows.ts:540 \"const snapshot = await findManagedConnection(deps.prisma, context.actor, input.connectionId);\" — the connection is the caller's own in the caller's Space, or one of the organization the caller manages",
     reason: "Revoking reaches the connection's provider, which tests do not configure (400).",
   },
   {
@@ -787,7 +824,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "connections/complete",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/integrations/connection-flows.ts:336 "input: { connectionId: string; code?: string }, ) { const existing = await deps.prisma.connection.findFirst({ where: { id: input.connectionId, spaceId: context.actor.spaceId, userId: context.actor.userId, }, });" — the connection is found by the caller\'s Space and user id',
+      "apps/api/src/integrations/connection-complete.ts:45 \"const existing = await findManagedConnection(deps.prisma, context.actor, input.connectionId);\" — the connection is the caller's own in the caller's Space, or one of the organization the caller manages",
     reason:
       "The handler found the owner's connection; the world's connection names a connector no provider serves in tests, so completing it is refused after that (400).",
   },
@@ -811,7 +848,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "mcp/servers/save",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/mcp.ts:59 "input: { id: string; config: McpServerConfigInput } | { id: string; secret: string }, access?: { allBots: boolean; botIds: string[] }, ) { for (let attempt = 0; attempt < 5; attempt++) { const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => { const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...availableInSpace(actor), }, });" — the server is found among those available in the caller\'s Space',
+      "apps/api/src/routes/mcp.ts:198 \"async function updateMcpServer( actor: Actor, input: { id: string; config: McpServerConfigInput } | { id: string; secret: string }, access?: { allBots: boolean; botIds: string[] }, ) { const viewer = await mcpViewer(deps.prisma, actor); const managed = personalOrManagedOrganizationItemIn(actor, viewer.managedOrganizationId);\" — the server is found among those available in the caller's Space and, for an admin, the organization's",
     reason:
       "The handler found the owner's server; the generated address names a host that does not exist, so the save is refused when the address is checked (400).",
   },

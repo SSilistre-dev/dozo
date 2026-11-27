@@ -145,7 +145,7 @@ General) before the first push, disable the workflows below in Settings > Action
 files causes modify/delete conflicts on every sync. Disabled workflows keep merging cleanly. Keep
 `dozo-gate.yml` and `dozo-sync.yml` enabled.
 
-Upstream ships 29 workflows, listed in `dozo/upstream-workflows.txt`. A new upstream workflow
+Upstream ships 30 workflows, listed in `dozo/upstream-workflows.txt`. A new upstream workflow
 arrives enabled and would run on the first push, so `make olc` fails (exit 2) on any file under
 `.github/workflows` not named `dozo-*` and not in that list, naming it. Sort the new one into the
 groups below, disable it the same way before the sync branch is pushed, then add its name to the
@@ -153,6 +153,7 @@ list. A removed one: delete its name.
 
 Safe to leave on (no secrets, no publishing):
 - `computer-replay.yml`: path-filtered runtime tests on a stock runner.
+- `protected-browser.yml`: path-filtered browser-image tests on a stock runner; builds images locally only, no secrets, publishes nothing.
 - `topology-verification.yml`: manual only, no secrets.
 - `test-suites.yml`: reusable only (`workflow_call`), no secrets; nothing starts it while `ci.yml` is off.
 

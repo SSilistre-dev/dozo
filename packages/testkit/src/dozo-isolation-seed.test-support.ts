@@ -10,7 +10,14 @@ import type {
   Person,
   Target,
 } from "./dozo-isolation.test-support.js";
-import { canary, rand, rpc, sendAndWait, waitUntilBotIdle } from "./dozo-isolation.test-support.js";
+import {
+  canary,
+  confirmIdentity,
+  rand,
+  rpc,
+  sendAndWait,
+  waitUntilBotIdle,
+} from "./dozo-isolation.test-support.js";
 import { asSystem } from "./system-db.js";
 
 const pageSource = (heading: string) =>
@@ -708,6 +715,80 @@ export async function seedExtras(
       VALUES (${id}, ${botId}, ${spaceId}, 'add', ${mark("learnednote")}, CURRENT_TIMESTAMP)`;
     ids.learningChangeId = id;
   });
+}
+
+/**
+ * What the owner keeps for the whole account or organization rather than one Space: an API key,
+ * and the organization's model connection, app connection and shared login. `targets` are the
+ * owner's Spaces in that one organization; each gets the same ids, as each of them can name these.
+ * Only the key's name is a canary (of the first target): the rest is shown to every member of
+ * the organization by design. An organization's connections and logins need an outside provider
+ * or a protected browser: system inserts.
+ */
+export async function seedOrganizationItems(
+  world: { app: IsolationApp; handles: IsolationHandles; db: PrismaClient },
+  owner: Person,
+  targets: Target[],
+  prefix: string,
+) {
+  const [first] = targets;
+  const organizationId = first!.organizationId;
+  const ids: Target["ids"] = {};
+  const step = async (name: string, work: () => Promise<void>) => {
+    try {
+      await work();
+    } catch (error) {
+      first!.notes.push(`${name}: could not be seeded (${String(error).slice(0, 200)})`);
+    }
+  };
+  await step("API key", async () => {
+    const name = canary(prefix, "apikey");
+    first!.canaries.push(name);
+    first!.kinds ??= {};
+    first!.kinds[name] = "apikey";
+    await confirmIdentity(world.app, owner.cookie);
+    const key = await rpc<{ id: string }>(world, owner.cookie, "apiKeys/create", { name });
+    ids.apiKeyId = key.id;
+  });
+  const system = asSystem(world.db);
+  await step("organization model connection", async () => {
+    const connection = await system.organizationModelConnection.create({
+      data: {
+        organizationId,
+        provider: "openai-compatible",
+        modelId: "iso-model",
+        label: `iso organization model ${rand()}`,
+        secretId: `iso-${rand()}`,
+        ciphertext: "placeholder-not-a-secret",
+      },
+    });
+    ids.organizationModelConnectionId = connection.id;
+  });
+  await step("organization app connection", async () => {
+    const connection = await system.connection.create({
+      data: {
+        organizationId,
+        connectorId: "iso",
+        provider: `iso-${rand()}`,
+        displayName: `iso organization app ${rand()}`,
+        status: "connected",
+      },
+    });
+    ids.organizationConnectionId = connection.id;
+  });
+  await step("organization login", async () => {
+    const login = await system.organizationLogin.create({
+      data: { organizationId, name: `iso login ${rand()}`, origin: "https://example.test" },
+    });
+    ids.organizationLoginId = login.id;
+  });
+  for (const target of targets) {
+    Object.assign(target.ids, ids);
+    notes(
+      target,
+      "organization items: an API key through the API; the organization's model connection, app connection and login are system inserts",
+    );
+  }
 }
 
 /**

@@ -82,12 +82,14 @@ describe("the organization library read", () => {
     expect(text(organizationLibrarySql(scope, "include"))).not.toContain("WHERE NOT");
   });
 
-  it("widens a person's own skills with the library's, and nothing else", async () => {
+  it("widens a person's own and their organization's skills with the library's, and nothing else", async () => {
     const { db } = fakeDb({ library: [row("a"), row("b")] });
     expect(await organizationLibrarySkillIds(db as never, scope)).toEqual(["a", "b"]);
     const readable = await skillsReadableInSpace(db as never, scope);
+    expect(readable.OR).toHaveLength(3);
     expect(readable.OR[0]).toMatchObject({ userId: "user-1" });
-    expect(readable.OR[1]).toEqual({ source: "user", id: { in: ["a", "b"] } });
+    expect(readable.OR[1]).toHaveProperty("organization");
+    expect(readable.OR[2]).toEqual({ source: "user", id: { in: ["a", "b"] } });
   });
 
   it("lets a person's own skill and a built-in skill win over a library skill of the same name", () => {
@@ -97,11 +99,14 @@ describe("the organization library read", () => {
       { id: "c", userId: "owner", name: "Travel" },
       { id: "d", userId: "owner", name: "Remember" },
       { id: "e", userId: "user-1", name: "remember" },
+      // An organization's own skill has no owner and is not a library skill.
+      { id: "f", userId: null, name: "Expenses" },
     ];
     expect(preferOwnSkills(rows, "user-1", ["Remember"]).map((entry) => entry.id)).toEqual([
       "b",
       "c",
       "e",
+      "f",
     ]);
     // Compared as the resolver compares them: padding of any kind is no way around the rule.
     const padded = ["Remember ", " remember", "remember\u00a0", "\tRemember", "remember\n"].map(

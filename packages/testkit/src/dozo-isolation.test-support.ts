@@ -105,7 +105,12 @@ export type PoolKey =
   | "deleteMeetingId"
   | "pageGrantId"
   | "pageCommentId"
-  | "filePath";
+  | "filePath"
+  // The owner's account and organization, not one Space: the same thing in P's and S's pools.
+  | "apiKeyId"
+  | "organizationModelConnectionId"
+  | "organizationConnectionId"
+  | "organizationLoginId";
 
 export interface Target {
   label: "P" | "S" | "B";

@@ -77,6 +77,8 @@ describe("a skill as its reader sees it", () => {
       readOnly: true,
       availability: undefined,
     });
+    // An organization's own skill has no owner; its view stays the service's.
+    expect(dozoSkillView({ userId: "guest" })({ userId: null }, skill)).toBe(skill);
   });
 
   it("knows the built-in skill names a library skill may not stand in for", () => {

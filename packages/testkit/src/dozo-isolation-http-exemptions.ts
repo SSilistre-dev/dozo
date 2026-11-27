@@ -78,7 +78,7 @@ export type RouteData = {
   route: string;
   kind: RouteDataKind;
   /** The owner's credential for the control call, for `owner-data` and `own-account`. */
-  owner?: "session" | "token";
+  owner?: "session" | "token" | "apiKey";
   reason: string;
 };
 
@@ -86,6 +86,14 @@ const ownerToken = (route: string, reason: string): RouteData => ({
   route,
   kind: "owner-data",
   owner: "token",
+  reason,
+});
+
+/** The public API, answered for the person whose API key the request carries. */
+const ownerApiKey = (route: string, reason: string): RouteData => ({
+  route,
+  kind: "owner-data",
+  owner: "apiKey",
   reason,
 });
 
@@ -107,6 +115,33 @@ export const ROUTE_DATA: readonly RouteData[] = [
   ownerToken("GET /api/v1/dozo/bots/:botId/export", "a chat as Markdown"),
   ownerToken("GET /api/v1/dozo/bots/:botId/messages", "a chat's messages"),
   ownerToken("GET /api/v1/dozo/bots/:botId/runs/:runId/events", "a run's events in a chat"),
+  ownerApiKey("GET /api/v1/models", "the bots of the key's person, in every Space"),
+  ownerApiKey("GET /api/v1/tasks/:id", "a task of the key's person, with the bot's replies"),
+  ownerApiKey("GET /api/v1/tasks/:id/events", "the same task as a stream, until it settles"),
+  {
+    route: "ALL /api/mcp",
+    kind: "real-arguments",
+    reason:
+      "JSON-RPC tool calls with an API key: the public API test calls each tool as the owner and as B",
+  },
+  {
+    route: "POST /api/v1/tasks",
+    kind: "real-arguments",
+    reason:
+      "starts a task with a bot the body names by id or name: the public API test sends as the owner and as B",
+  },
+  {
+    route: "POST /api/v1/tasks/:id/messages",
+    kind: "real-arguments",
+    reason:
+      "a follow-up in a task, the text in a body field of its own: the public API test sends as the owner and as B",
+  },
+  {
+    route: "POST /api/v1/chat/completions",
+    kind: "real-arguments",
+    reason:
+      "an OpenAI-style chat with a bot as the model: the public API test sends as the owner and as B",
+  },
   {
     route: "ALL /api/v1/dozo/mcp",
     kind: "real-arguments",
@@ -163,7 +198,8 @@ export const ROUTE_DATA: readonly RouteData[] = [
   {
     route: "POST /api/devices/self/dozo-logins",
     kind: "write",
-    reason: "a computer links a login of its own password manager into its owner's account vault; no value",
+    reason:
+      "a computer links a login of its own password manager into its owner's account vault; no value",
   },
   {
     route: "DELETE /api/devices/self/dozo-logins/:handle",

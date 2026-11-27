@@ -76,6 +76,7 @@ const FIELD_KEYS: Record<string, PoolKey> = {
   invitationId: "invitationId",
   grantId: "pageGrantId",
   commentId: "pageCommentId",
+  organizationConnectionId: "organizationConnectionId",
 };
 /** Fields that name another kind of thing in one procedure than everywhere else. */
 const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
@@ -110,6 +111,14 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   // A mention chip names a bot (the first kind of chip).
   "threads/send": { id: "botId" },
   "threads/sendWithRoutines": { id: "botId" },
+  // The organization's own app connection, model connection and shared logins.
+  "connections/reconnectOrganization": { connectionId: "organizationConnectionId" },
+  "models/organizationConnections/select": { id: "organizationModelConnectionId" },
+  "models/organizationConnections/remove": { id: "organizationModelConnectionId" },
+  "organizations/vault/signIn": { loginId: "organizationLoginId" },
+  "organizations/vault/revokeSession": { loginId: "organizationLoginId" },
+  "organizations/vault/setAgents": { loginId: "organizationLoginId" },
+  "organizations/vault/remove": { loginId: "organizationLoginId" },
 };
 /** Values a procedure's own field needs, where the plain string of the generic ones is refused. */
 const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
@@ -119,6 +128,7 @@ const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
 /** A field whose name says it names something; each one must be filled from the target's things. */
 const ID_FIELD = /Id$|Ids$|^id$/;
 const ID_BY_NAMESPACE: Record<string, PoolKey> = {
+  apiKeys: "apiKeyId",
   dozoAccessTokens: "tokenId",
   agentSecrets: "agentSecretId",
   tickets: "ticketId",
