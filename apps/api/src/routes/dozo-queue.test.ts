@@ -44,6 +44,9 @@ const runRow = (id: string, patch: Record<string, unknown> = {}) => ({
   threadId: "thread-1",
   sourceMessageId: null,
   routine: null,
+  startedAt: null,
+  retryOfRunId: null,
+  _count: { attempts: 0 },
   ...patch,
 });
 
@@ -119,6 +122,19 @@ describe("reading what waits", () => {
     expect(prisma.message.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ["m-1"] }, threadId: "thread-1" } }),
     );
+  });
+
+  it("lists a routine waiting for the busy chat, but not a run backing off after a failed attempt", async () => {
+    const later = new Date(NOW.getTime() + 60_000);
+    const prisma = fakePrisma({
+      runs: [
+        runRow("working", { status: "running", userId: "someone" }),
+        runRow("chat-wait", { trigger: "routine", wakeAt: later }),
+        runRow("failed", { trigger: "routine", wakeAt: later, _count: { attempts: 1 } }),
+        runRow("retry", { trigger: "routine", wakeAt: later, retryOfRunId: "earlier" }),
+      ],
+    });
+    expect((await load(prisma)).map((item) => item.id)).toEqual(["chat-wait"]);
   });
 
   it("reads no message at all when nothing of the caller's waits", async () => {
