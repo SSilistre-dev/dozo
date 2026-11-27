@@ -855,8 +855,14 @@
     {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "                          disabled={pending || code.length < CODE_LENGTH}\n                          label={pending ? t`Working\u2026` : t`Continue`}",
-      "replace": "                          disabled={pending || code.length < CODE_LENGTH}\n                          prominence={code.length < CODE_LENGTH ? \"secondary\" : \"primary\"}\n                          label={pending ? t`Working\u2026` : t`Continue`}",
-      "reason": "code step: a disabled Continue is the outlined style, which stays legible, not a grey fill with grey text"
+      "replace": "                          disabled={pending}\n                          fill\n                          prominence={code.length < CODE_LENGTH ? \"secondary\" : \"primary\"}\n                          label={pending ? t`Working\u2026` : t`Continue`}",
+      "reason": "code step: Continue keeps one width and height before and after the sixth digit; until then it is the outlined style, left enabled because a disabled control is dimmed below legible contrast (submit already ignores a short code)"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                            setCode(digits);\n                            // iOS offers",
+      "replace": "                            setCode(digits);\n                            setError(null);\n                            // iOS offers",
+      "reason": "code step: an Invalid code error goes away as soon as the field changes"
     },
     {
       "file": "apps/mobile/app/sign-in.tsx",
