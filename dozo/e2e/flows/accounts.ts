@@ -32,7 +32,7 @@ async function authCall(page: Page, path: string, data: unknown) {
  * sign-up and a server without codes show the form, or a choice of providers first.
  */
 export async function openPasswordFormTr(page: Page) {
-  const password = page.getByRole("button", { name: "Bunun yerine şifre kullan" });
+  const password = page.getByRole("button", { name: /Bunun yerine (şifre|parola) kullan/ });
   const choice = page.getByRole("button", { name: "E-posta ile devam et" });
   const field = page.getByPlaceholder("Parola");
   await expect(password.or(choice).or(field).first()).toBeVisible();
