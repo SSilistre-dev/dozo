@@ -15569,6 +15569,24 @@
         "apps/web/src/pages/dozo-result.tsx"
       ],
       "reason": "a shared page that is off or deleted: the sign-in column's frame in both themes, with one way into the app"
+    },
+    {
+      "file": "apps/web/src/App.test.tsx",
+      "find": "vi.mock(\"./pages/integrations/IntegrationSetup\", () => ({ IntegrationSetupPage: () => null }));\nvi.mock(\"./pages/integrations/McpOAuthCallback\"",
+      "replace": "vi.mock(\"./pages/integrations/IntegrationSetup\", () => ({ IntegrationSetupPage: () => null }));\nvi.mock(\"./pages/dozo-result-lazy\", () => ({\n  DozoCallbackResult: () => <>You can close this window.</>,\n}));\nvi.mock(\"./pages/integrations/McpOAuthCallback\"",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx"
+      ],
+      "reason": "integration return: the page is the shared result page, loaded on demand; the case keeps its other claims (the window closes once, the app does not load, no session is needed) and the mock says the same words"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.test.tsx",
+      "find": "vi.mock(\"../../components/PageLoading\", () => ({ PageLoading: () => <div>Loading</div> }));\nvi.mock(\"@lingui",
+      "replace": "vi.mock(\"../../components/PageLoading\", () => ({ PageLoading: () => <div>Loading</div> }));\nvi.mock(\"../dozo-result-lazy\", () => ({\n  DozoSlackInstallFailed: () => <p>Could not connect</p>,\n}));\nvi.mock(\"@lingui",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx"
+      ],
+      "reason": "Slack install failure: the page is the shared result page, loaded on demand; the cases keep their other claims (the API is called or not, the app opens) and the mock says the same words"
     }
   ],
   "assets": {
