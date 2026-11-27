@@ -4183,6 +4183,24 @@
       "reason": "plugin catalog: logos and site icons are served by content hash from our own domain with a year-long immutable cache"
     },
     {
+      "file": "apps/api/src/routes/connections.ts",
+      "find": "        return catalogs\n          .flat()\n          .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item));",
+      "replace": "        return withOwnLogosOnly(\n          catalogs\n            .flat()\n            .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item)),\n          deps.env.webOrigin,\n        );",
+      "requires": [
+        "apps/api/src/dozo-connection-logos.ts"
+      ],
+      "reason": "managed app logos: a provider's logo address never reaches a client; only our own does"
+    },
+    {
+      "file": "apps/api/src/routes/connections.ts",
+      "find": "import { recordToolConnected } from \"../integrations/tool-connect-analytics.js\";",
+      "replace": "import { recordToolConnected, withOwnLogosOnly } from \"../dozo-connection-logos.js\";",
+      "requires": [
+        "apps/api/src/dozo-connection-logos.ts"
+      ],
+      "reason": "managed app logos: one import redirect to the wrapper that also re-exports the same name"
+    },
+    {
       "file": "apps/web/src/pages/shell/shell-overlays.tsx",
       "find": "import { FALLBACK_BOT_COLOR } from \"./chat/chat-shared\";\nimport type { ShellOverlay }",
       "replace": "import { FALLBACK_BOT_COLOR } from \"./chat/chat-shared\";\nimport { PluginsOverlay, usePreloadPluginsOverlay } from \"../dozo-plugins-overlay\";\nimport type { ShellOverlay }",
