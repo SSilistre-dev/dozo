@@ -27,8 +27,12 @@ payment page:
   paywall lands on the chats (`components/dozo-store-gate.tsx`);
 - a limit (no computer on Free, hours used up, shared space full) is named without Upgrade, without
   "ask the owner to upgrade" and without "change the plan" (alerts, the chat's failed run, the
-  computer screen, the Own computer switch); deleting files stays the way out of a full space;
+  computer screen, the Own computer switch, the computer size picker's "plan does not include this size"
+  alert: `showSizeNotInPlan`); deleting files stays the way out of a full space;
 - a plan bought on the web still works in the app; the app only stops offering one.
+- held by a test: `apps/mobile/lib/dozo-store-purchase-text.test.ts` lists every mobile source file that
+  has buying wording (plan, price, credits, Upgrade, Billing, trial) with the reason it is safe and
+  the gate it needs; a new file with such wording fails until it is gated and listed.
 - a run that failed for want of credits or a plan says "Connect a model in Settings before running
   bots." instead of pointing at Billing (`storeRunErrorDetails`, on the run-error sheet).
 - no Wallet row either: connecting the wallet bots spend from opens the payment provider's page

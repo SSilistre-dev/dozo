@@ -43,6 +43,14 @@ export function storePlanLimitNotice<T extends PlanLimitNotice | null>(
   return { ...notice, action: null };
 }
 
+/** The computer-hours sentence, with its Start plan now, Renew plan or Upgrade action dropped in the store build. */
+export function storeComputerHoursOut(
+  copy: { summary: string; action: string },
+  store = storeBuild,
+): { summary: string; action: string | null } {
+  return store ? { summary: copy.summary, action: null } : copy;
+}
+
 /** Run failures whose advice is to buy credits or a plan in Billing. */
 const PURCHASE_RUN_ERRORS = [
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
