@@ -15449,6 +15449,126 @@
       "find": "msgstr \" (okunmadı)\"\n\n#. placeholder {0}: servers.length",
       "replace": "msgstr \" (okunmadı)\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Add login\"\nmsgstr \"Giriş ekle\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Add organization model\"\nmsgstr \"Kuruluş modeli ekle\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Allowed agents\"\nmsgstr \"İzinli agent'lar\"\n\n#: apps/web/src/components/settings/ApiKeysSettings.tsx\nmsgid \"Anything using this key stops working.\"\nmsgstr \"Bu anahtarı kullanan her şey çalışmayı bırakır.\"\n\n#: apps/mobile/app/(settings)/_layout.tsx\n#: apps/mobile/app/(settings)/app-icon.tsx\n#: apps/mobile/app/(settings)/general.tsx\n#: apps/web/src/pages/settings/AppIconPicker.tsx\nmsgid \"App icon\"\nmsgstr \"Uygulama simgesi\"\n\n#: apps/mobile/components/integrations/connection-owner-picker.tsx\n#: apps/web/src/components/integrations/connection-owner-picker.tsx\n#: apps/web/src/pages/integrations/McpServerForm.tsx\nmsgid \"Available to\"\nmsgstr \"Erişebilenler\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Beanie\"\nmsgstr \"Bere\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Bow tie\"\nmsgstr \"Papyon\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Cap\"\nmsgstr \"Kasket\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\nmsgid \"Choose a connection\"\nmsgstr \"Bir bağlantı seç\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Connection name\"\nmsgstr \"Bağlantı adı\"\n\n#: apps/web/src/pages/shell/bots/agent-import.tsx\nmsgid \"Could not create bots\"\nmsgstr \"Botlar oluşturulamadı\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Could not save organization model\"\nmsgstr \"Kuruluş modeli kaydedilemedi\"\n\n#: apps/mobile/app/(settings)/app-icon.tsx\n#: apps/web/src/pages/settings/AppIconPicker.tsx\nmsgid \"Couldn't change the app icon\"\nmsgstr \"Uygulama simgesi değiştirilemedi\"\n\n#: apps/web/src/components/settings/ApiKeysSettings.tsx\nmsgid \"Create key\"\nmsgstr \"Anahtar oluştur\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Delete login\"\nmsgstr \"Girişi sil\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Delete this shared login and its session?\"\nmsgstr \"Bu ortak giriş ve oturumu silinsin mi?\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Feet\"\nmsgstr \"Patiler\"\n\n#: apps/mobile/components/integrations/use-connection-actions.ts\nmsgid \"Finish connecting in the browser. If the connection stays pending, select Reconnect.\"\nmsgstr \"Bağlantıyı tarayıcıda tamamla. Bağlantı beklemede kalırsa Yeniden bağlan'ı seç.\"\n\n#. placeholder {0}: item.name\n#: apps/web/src/pages/plugins/use-plugin-connections.ts\nmsgid \"Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect.\"\nmsgstr \"{0} oturumunu tarayıcıda tamamla. Bağlantı beklemede kalırsa Yeniden bağlan'ı seç.\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Flower\"\nmsgstr \"Çiçek\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Heading after sign-in\"\nmsgstr \"Oturum açtıktan sonraki başlık\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Headphones\"\nmsgstr \"Kulaklık\"\n\n#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx\nmsgid \"Imported\"\nmsgstr \"İçe aktarıldı\"\n\n#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx\nmsgid \"Importing…\"\nmsgstr \"İçe aktarılıyor…\"\n\n#: apps/mobile/app/(settings)/plugin.tsx\n#: apps/web/src/components/integrations/plugin-marketplace.tsx\nmsgid \"Install for organization\"\nmsgstr \"Kuruluş için yükle\"\n\n#: apps/mobile/components/integrations/connection-owner-picker.tsx\n#: apps/web/src/components/integrations/connection-owner-picker.tsx\n#: apps/web/src/pages/integrations/McpServerForm.tsx\nmsgid \"Just me\"\nmsgstr \"Yalnızca ben\"\n\n#: apps/web/src/components/settings/ApiKeysSettings.tsx\nmsgid \"Key name\"\nmsgstr \"Anahtar adı\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Manage access\"\nmsgstr \"Erişimi yönet\"\n\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Manage organization models\"\nmsgstr \"Kuruluş modellerini yönet\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Model ID\"\nmsgstr \"Model kimliği\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"No session\"\nmsgstr \"Oturum yok\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Organization override for this Space\"\nmsgstr \"Bu Alan için kuruluş geçersiz kılması\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Password field label\"\nmsgstr \"Parola alanı etiketi\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Protected sign-in is unavailable.\"\nmsgstr \"Korumalı oturum açma kullanılamıyor.\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\nmsgid \"Remove organization model\"\nmsgstr \"Kuruluş modelini kaldır\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Remove this saved session?\"\nmsgstr \"Kayıtlı bu oturum kaldırılsın mı?\"\n\n#. placeholder {0}: connection.label\n#. placeholder {0}: removing.label\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Remove {0} for everyone in the organization?\"\nmsgstr \"{0} kuruluştaki herkes için kaldırılsın mı?\"\n\n#. placeholder {0}: bot.name\n#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx\nmsgid \"Review {0}\"\nmsgstr \"{0} öğesini incele\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Revoke session\"\nmsgstr \"Oturumu iptal et\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Save access\"\nmsgstr \"Erişimi kaydet\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Save session\"\nmsgstr \"Oturumu kaydet\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Scarf\"\nmsgstr \"Atkı\"\n\n#: apps/mobile/app/paywall.tsx\nmsgid \"Self-hosting guide\"\nmsgstr \"Kendi sunucunda çalıştırma rehberi\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Session saved\"\nmsgstr \"Oturum kaydedildi\"\n\n#: apps/mobile/app/(settings)/skill.tsx\n#: apps/web/src/pages/space/KnowledgeSection.tsx\nmsgid \"Share with organization\"\nmsgstr \"Kuruluşla paylaş\"\n\n#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Shared logins\"\nmsgstr \"Ortak girişler\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Sign-in button label\"\nmsgstr \"Oturum açma düğmesi etiketi\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Sign-in page\"\nmsgstr \"Oturum açma sayfası\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Sprout\"\nmsgstr \"Filiz\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Sunglasses\"\nmsgstr \"Güneş gözlüğü\"\n\n#: apps/web/src/components/billing/CreditChoice.tsx\nmsgid \"Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>.\"\nmsgstr \"Erken kullanıcımız olduğun için teşekkürler. Rakazo'yu bulutta çalıştırmanın gerçek bir maliyeti var, bu yüzden artık ücretli. <0>Kendi sunucunda</0> çalıştırırsan hâlâ ücretsiz.\"\n\n#: apps/mobile/app/paywall.tsx\nmsgid \"Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host.\"\nmsgstr \"Erken kullanıcımız olduğun için teşekkürler. Rakazo'yu bulutta çalıştırmanın gerçek bir maliyeti var, bu yüzden artık ücretli. Kendi sunucunda çalıştırırsan hâlâ ücretsiz.\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Tie\"\nmsgstr \"Kravat\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Unavailable organization model\"\nmsgstr \"Kullanılamayan kuruluş modeli\"\n\n#: apps/mobile/components/models/organization-model-settings.tsx\n#: apps/web/src/pages/model-settings/organization-model-settings.tsx\nmsgid \"Use saved main model\"\nmsgstr \"Kayıtlı ana modeli kullan\"\n\n#: apps/web/src/components/settings/ApiKeysSettings.tsx\nmsgid \"Use your bots from scripts and other agents\"\nmsgstr \"Botlarını betiklerden ve diğer agent'lardan kullan\"\n\n#. placeholder {0}: formatRelativeTime(key.lastUsedAt)\n#: apps/web/src/components/settings/ApiKeysSettings.tsx\nmsgid \"Used {0}\"\nmsgstr \"Kullanıldı: {0}\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Username field label\"\nmsgstr \"Kullanıcı adı alanı etiketi\"\n\n#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx\nmsgid \"Website\"\nmsgstr \"Web sitesi\"\n\n#. placeholder {0}: picked.length\n#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx\nmsgid \"{0, plural, one {Import # Bot} other {Import # Bots}}\"\nmsgstr \"{0, plural, one {# botu içe aktar} other {# botu içe aktar}}\"\n\n#: apps/mobile/app/(settings)/billing.tsx\nmsgid \"{used} of {total}\"\nmsgstr \"{used} / {total}\"\n\n#: apps/mobile/components/cards/AppConnectCard.tsx\n#: apps/mobile/components/integrations/integration-detail.tsx\n#: apps/web/src/pages/plugins/connector-detail.tsx\n#: apps/web/src/pages/shell/chat/message-cards.tsx\nmsgid \"Needs sign-in\"\nmsgstr \"Oturum açılması gerekiyor\"\n\n#: apps/mobile/app/(settings)/billing.tsx\nmsgid \"Shared space\"\nmsgstr \"Paylaşılan alan\"\n\n#. placeholder {0}: servers.length",
       "reason": "upstream strings added by the sync that no catalog translated yet (organization models, shared logins, API keys, bot import, app icon accessories, paywall): the Turkish copy, in the words the catalog already uses; the other languages show the English source, as catalog-fill.mjs gives them"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "\"./lib/auth/sso-flow\";\nimport { getLabs",
+      "replace": "\"./lib/auth/sso-flow\";\nimport { DozoCallbackResult } from \"./pages/dozo-result-lazy\";\nimport { getLabs",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "  }, []);\n  return null;\n}\n\n// Link icons",
+      "replace": "  }, []);\n  return <DozoCallbackResult />;\n}\n\n// Link icons",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "sign-in popup return: a page with the sign-in column's frame and one way back instead of a blank screen when the window does not close itself"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/IntegrationCallback.tsx",
+      "find": "import { Trans } from \"@lingui/react/macro\";\nimport { useEffect } from \"react\";",
+      "replace": "import { useEffect } from \"react\";\nimport { DozoCallbackResult } from \"../dozo-result-lazy\";",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/IntegrationCallback.tsx",
+      "find": "  return (\n    <div className=\"grid min-h-screen place-items-center bg-background p-6 text-center text-muted-foreground\">\n      <p>\n        <Trans>You can close this window.</Trans>\n      </p>\n    </div>\n  );\n",
+      "replace": "  return <DozoCallbackResult />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "integration return: the sign-in column's frame and one way back, not a bare line"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/McpOAuthCallback.tsx",
+      "find": "import { Trans, useLingui } from \"@lingui/react/macro\";",
+      "replace": "import { useLingui } from \"@lingui/react/macro\";\nimport { DozoMcpOAuthResult } from \"../dozo-result-lazy\";",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/McpOAuthCallback.tsx",
+      "find": "import { Button } from \"@rakazo/ui-web\";\nimport { useEffect",
+      "replace": "import { useEffect",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the button is the shared page's now"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/McpOAuthCallback.tsx",
+      "find": "  const showReturn = Boolean(error) && !window.name.startsWith(`${POPUP_NAME}:`);\n  return (\n    <div className=\"grid min-h-screen place-items-center bg-background p-6 text-center\">\n      <div>\n        <div className=\"text-heading3 text-foreground\">\n          {error ? (\n            <Trans>OAuth connection failed</Trans>\n          ) : done ? (\n            <Trans>Connected</Trans>\n          ) : (\n            <Trans>Finishing MCP connection…</Trans>\n          )}\n        </div>\n        {error ? <p className=\"mt-2 max-w-md text-body text-muted-foreground\">{error}</p> : null}\n        {showReturn ? (\n          <Button type=\"button\" className=\"mt-5\" onClick={() => navigate(\"/app\")}>\n            <Trans>Return to Rakazo</Trans>\n          </Button>\n        ) : (\n          <p className=\"mt-2 text-body text-muted-foreground\">\n            {error || done ? (\n              <Trans>You can close this window.</Trans>\n            ) : (\n              <Trans>You can close this tab if it does not redirect automatically.</Trans>\n            )}\n          </p>\n        )}\n      </div>\n    </div>\n  );\n",
+      "replace": "  return <DozoMcpOAuthResult error={error} done={done} />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "OAuth return: the state, the provider's reason and one way back in the sign-in column's frame"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.tsx",
+      "find": "import { Trans } from \"@lingui/react/macro\";\nimport { Button } from \"@rakazo/ui-web\";\nimport { useEffect",
+      "replace": "import { useEffect",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: unused imports of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.tsx",
+      "find": "import { PageLoading } from \"../../components/PageLoading\";\nimport { rpc }",
+      "replace": "import { PageLoading } from \"../../components/PageLoading\";\nimport { DozoSlackInstallFailed } from \"../dozo-result-lazy\";\nimport { rpc }",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "outside-flow results: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/integrations/SlackInstallCallback.tsx",
+      "find": "  return (\n    <div className=\"grid min-h-screen place-items-center bg-background p-6 text-center\">\n      <div>\n        <div className=\"text-heading3 text-foreground\">\n          <Trans>Could not connect</Trans>\n        </div>\n        <Button type=\"button\" className=\"mt-5\" onClick={() => navigate(\"/app?settings=messaging\")}>\n          <Trans>Return to Rakazo</Trans>\n        </Button>\n      </div>\n    </div>\n  );\n",
+      "replace": "  return <DozoSlackInstallFailed />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "Slack install failure: the sign-in column's frame and one way back"
+    },
+    {
+      "file": "apps/web/src/pages/SharedPage.tsx",
+      "find": "import { Button, buttonVariants, Spinner } from \"@rakazo/ui-web\";",
+      "replace": "import { Button, Spinner } from \"@rakazo/ui-web\";\nimport { DozoPageUnavailable } from \"./dozo-result-lazy\";",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "shared page that is gone: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/SharedPage.tsx",
+      "find": "    return (\n      <main className=\"grid min-h-dvh place-items-center bg-background px-6 text-center\">\n        <div className=\"flex max-w-[360px] flex-col items-center gap-3\">\n          <img src=\"/favicon-32x32.png\" alt=\"\" className=\"size-8 rounded-full\" />\n          <h1 className=\"text-heading3 font-medium text-foreground\">\n            <Trans>This page isn't available</Trans>\n          </h1>\n          <p className=\"text-body text-muted-foreground\">\n            <Trans>The owner may have turned off its link or deleted it.</Trans>\n          </p>\n          <a href=\"/\" className={`${buttonVariants({ variant: \"outline\", size: \"sm\" })} mt-1`}>\n            <Trans>Open Rakazo</Trans>\n          </a>\n        </div>\n      </main>\n    );\n",
+      "replace": "    return <DozoPageUnavailable />;\n",
+      "requires": [
+        "apps/web/src/pages/dozo-result-lazy.tsx",
+        "apps/web/src/pages/dozo-result.tsx"
+      ],
+      "reason": "a shared page that is off or deleted: the sign-in column's frame in both themes, with one way into the app"
     }
   ],
   "assets": {
