@@ -885,8 +885,8 @@
     {
       "file": "apps/mobile/app.json",
       "find": "\"version\": \"1.0.21\",",
-      "replace": "\"version\": \"1.0.22\",",
-      "reason": "the iOS app ships as 1.0.22, ahead of upstream's 1.0.21. When upstream bumps its version the anchor stops matching and the gate fails naming this rule: drop it if upstream's version is higher, else bump both numbers"
+      "replace": "\"version\": \"1.0.23\",",
+      "reason": "the iOS app ships as 1.0.23, ahead of upstream's 1.0.21. When upstream bumps its version the anchor stops matching and the gate fails naming this rule: drop it if upstream's version is higher, else bump both numbers"
     },
     {
       "file": "apps/mobile/app.json",
