@@ -10,7 +10,11 @@ import type {
   Person,
 } from "./dozo-isolation.test-support.js";
 import { canary, person, rand, rpc, startIsolationApp } from "./dozo-isolation.test-support.js";
-import { seedExtras, seedTarget } from "./dozo-isolation-seed.test-support.js";
+import {
+  seedExtras,
+  seedOrganizationItems,
+  seedTarget,
+} from "./dozo-isolation-seed.test-support.js";
 import { asSystem } from "./system-db.js";
 
 export async function joinWithInvite(
@@ -168,6 +172,10 @@ export async function buildIsolationWorld(
     name: canary("B", "soloorg").slice(0, 60),
   });
   await seedExtras(world, B, Bown, "B", soloB.id);
+  // P and S are in A's one organization, so they name the same account and organization items.
+  if (P.organizationId === S.organizationId) await seedOrganizationItems(world, A, [P, S], "A");
+  else for (const target of [P, S]) await seedOrganizationItems(world, A, [target], "A");
+  await seedOrganizationItems(world, B, [Bown], "B");
   for (const target of [P, S]) target.identityCanaries = [A.email, ownerName!];
   return {
     handles,

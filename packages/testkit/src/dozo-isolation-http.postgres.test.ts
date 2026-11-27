@@ -18,6 +18,7 @@ import {
   sendAndWait,
   signup,
   startIsolationApp,
+  waitUntilBotIdle,
 } from "./dozo-isolation.test-support.js";
 import type {
   Answer,
@@ -105,12 +106,17 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       bId: string;
       bToken: string;
     };
+    /** The public API's keys: B's for the route sweep and for its own test, and A's. */
+    const apiKeys = {} as Record<"routes" | "b" | "a", string>;
     const extra = {} as { accountId: string; session: string };
     /** Per target, a run of its extra chat: the generated requests name that chat too. */
     const chatRuns = {} as Record<"P" | "S", string>;
+    /** Per target, the task of its first message, whose reply carries that message's canary. */
+    const tasks = {} as Record<"P" | "S", string>;
     const idsOf = (target: Target): TargetIds => ({
       ...target.ids,
       runId: chatRuns[target.label as "P" | "S"] ?? target.ids.runId,
+      taskId: tasks[target.label as "P" | "S"],
       deviceId: devices.aId,
       ...extra,
     });
@@ -176,6 +182,11 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       return made.token;
     };
 
+    const createApiKey = async (who: Person, name: string) => {
+      await confirmIdentity(world.app, who.cookie);
+      return (await rpc<{ key: string }>(world, who.cookie, "apiKeys/create", { name })).key;
+    };
+
     const pair = async (who: Person, name: string) => {
       const answer = await send(world, "/api/devices/pair", {
         method: "POST",
@@ -196,6 +207,9 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       tokens.mcpAll = await createToken(B, B.spaceId);
       tokens.aInS = await createToken(A, S.spaceId, S.ids.botId);
       tokens.aInP = await createToken(A, P.spaceId);
+      apiKeys.routes = await createApiKey(B, "iso-b-routes");
+      apiKeys.b = await createApiKey(B, "iso-b-api");
+      apiKeys.a = await createApiKey(A, "iso-a-api");
       // A's computer through the real pairing route, as the desktop app pairs one.
       devices.aName = canary("A", "device");
       const aDevice = await pair(A, devices.aName);
@@ -212,6 +226,15 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       for (const target of [P, S]) {
         const run = await world.db.run.findFirstOrThrow({ where: { threadId: target.ids.chatId } });
         chatRuns[target.label as "P" | "S"] = run.id;
+        const message = await world.db.message.findUniqueOrThrow({
+          where: { id: target.ids.messageId! },
+          select: { runId: true },
+        });
+        const firstRun = await world.db.run.findUniqueOrThrow({
+          where: { id: message.runId! },
+          select: { taskId: true },
+        });
+        tasks[target.label as "P" | "S"] = firstRun.taskId;
       }
     }, 240_000);
 
@@ -586,6 +609,177 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       );
       if (unreached.length) console.log(`[isolation-http] not reached:\n${unreached.join("\n")}`);
       expect(unreached, "B's refused calls the owner's token does not reach").toEqual([]);
+    }, 120_000);
+
+    it("the public API and its MCP server answer B's API key on A's bots and tasks as missing", async () => {
+      const { A, P, S } = world;
+      let id = 0;
+      const call = (key: string, method: string, path: string, body?: unknown) =>
+        send(
+          world,
+          path,
+          {
+            method,
+            headers: { authorization: `Bearer ${key}`, ...(body ? json({}) : {}) },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          },
+          26,
+          5_000,
+        );
+      const mcp = async (key: string, name: string, args: Record<string, unknown>) => {
+        const answer = await send(
+          world,
+          "/api/mcp",
+          {
+            method: "POST",
+            headers: { authorization: `Bearer ${key}`, accept: MCP_ACCEPT, ...json({}) },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: ++id,
+              method: "tools/call",
+              params: { name, arguments: args },
+            }),
+          },
+          26,
+          5_000,
+        );
+        const parsed = JSON.parse(answer.text) as {
+          error?: { message?: string };
+          result?: { isError?: boolean; content?: { text?: string }[] };
+        };
+        const refused = Boolean(parsed.error) || parsed.result?.isError === true;
+        const message = parsed.error?.message ?? parsed.result?.content?.[0]?.text ?? "";
+        return { ...answer, refused, message: refused ? message : "" };
+      };
+      type Check = {
+        name: string;
+        target: Target;
+        send: (key: string) => Promise<Answer & { refused?: boolean; message?: string }>;
+        /** Shows the target's chat to its owner, so the owner's answer must carry a canary. */
+        read: boolean;
+      };
+      const checks: Check[] = [];
+      for (const target of [P, S]) {
+        const bot = target.ids.botId!;
+        const task = tasks[target.label as "P" | "S"];
+        const botName = (
+          await world.db.bot.findUniqueOrThrow({ where: { id: bot }, select: { name: true } })
+        ).name;
+        const name = (what: string) => `${target.label}: ${what}`;
+        const chat = { messages: [{ role: "user", content: "iso-probe" }], stream: true };
+        checks.push(
+          {
+            name: name("task by bot id"),
+            target,
+            read: false,
+            send: (key) => call(key, "POST", "/api/v1/tasks", { bot, input: "iso-probe" }),
+          },
+          {
+            name: name("task by bot name"),
+            target,
+            read: false,
+            send: (key) => call(key, "POST", "/api/v1/tasks", { bot: botName, input: "iso-probe" }),
+          },
+          {
+            name: name("chat completion"),
+            target,
+            read: false,
+            send: (key) => call(key, "POST", "/api/v1/chat/completions", { model: bot, ...chat }),
+          },
+          {
+            name: name("read task"),
+            target,
+            read: true,
+            send: (key) => call(key, "GET", `/api/v1/tasks/${task}`),
+          },
+          {
+            name: name("task events"),
+            target,
+            read: true,
+            send: (key) => call(key, "GET", `/api/v1/tasks/${task}/events`),
+          },
+          {
+            name: name("task follow-up"),
+            target,
+            read: false,
+            send: (key) =>
+              call(key, "POST", `/api/v1/tasks/${task}/messages`, { input: "iso-probe" }),
+          },
+          {
+            name: name("MCP create_task"),
+            target,
+            read: false,
+            send: (key) => mcp(key, "create_task", { bot, message: "iso-probe", wait_seconds: 0 }),
+          },
+          {
+            name: name("MCP get_task"),
+            target,
+            read: true,
+            send: (key) => mcp(key, "get_task", { task_id: task, wait_seconds: 0 }),
+          },
+          {
+            name: name("MCP send_task_message"),
+            target,
+            read: false,
+            send: (key) =>
+              mcp(key, "send_task_message", {
+                task_id: task,
+                message: "iso-probe",
+                wait_seconds: 0,
+              }),
+          },
+        );
+      }
+      const before = await snapshot(world.db, scopeOf(P, S));
+      const problems: string[] = [];
+      /** The refusal B's MCP call got, by the check's name. */
+      const refusals = new Map<string, string>();
+      for (const list of [
+        await call(apiKeys.b, "GET", "/api/v1/models"),
+        await mcp(apiKeys.b, "list_bots", {}),
+      ]) {
+        const named = [P, S].flatMap((target) => [target.ids.botId!, target.ids.secondBotId!]);
+        if (list.status !== 200 || named.some((bot) => list.text.includes(bot)))
+          problems.push(`B's bot list: ${list.status} ${list.text.slice(0, 160)}`);
+        for (const target of [P, S])
+          if (foreignLeaks(list, target.canaries, targetIds(target)).length)
+            problems.push(`B's bot list leaked ${target.label}`);
+      }
+      for (const check of checks) {
+        const answer = await check.send(apiKeys.b);
+        refusals.set(check.name, answer.message ?? "");
+        const leaked = foreignLeaks(answer, check.target.canaries, targetIds(check.target));
+        const refused = check.name.includes("MCP") ? answer.refused : answer.status === 404;
+        if (!refused || leaked.length)
+          problems.push(
+            `${check.name}: ${answer.status} ${leaked.join(",")} ${answer.text.slice(0, 160)}`,
+          );
+      }
+      expect(problems).toEqual([]);
+      expect(
+        snapshotDiff(before, await snapshot(world.db, scopeOf(P, S))),
+        `rows of P or S changed (A is ${A.userId})`,
+      ).toEqual([]);
+
+      // Owner controls: A's key with the very same request gets through (a read shows the chat's
+      // canary), so B's refusals are refusals and not a request that reaches nothing. A send may
+      // be refused for a reason B never got (the bot is being taught), which the API says only
+      // after it found the bot or task as the caller's: B's answer to the same request differs.
+      const unreached: string[] = [];
+      for (const check of checks) {
+        const answer = await check.send(apiKeys.a);
+        const through = check.name.includes("MCP")
+          ? !answer.refused || (!check.read && answer.message !== refusals.get(check.name))
+          : (answer.status >= 200 && answer.status < 300) || (!check.read && answer.status === 409);
+        if (!through || (check.read && !findCanaries(answer.text, check.target.canaries).length))
+          unreached.push(`${check.name}: ${answer.status} ${answer.text.slice(0, 160)}`);
+      }
+      for (const target of [P, S])
+        await waitUntilBotIdle(world, A.cookie, { botId: target.ids.botId! }, target.spaceId);
+      console.log(
+        `[isolation-http] public API owner controls: ${checks.length - unreached.length}/${checks.length} of B's refused requests reach for the owner`,
+      );
+      expect(unreached, "B's refused requests the owner's key does not reach").toEqual([]);
     }, 120_000);
 
     it("an account export link works once and holds only its own account", async () => {
@@ -1044,6 +1238,11 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           headers: { authorization: `Bearer ${tokens.routesAll}` },
           from: 34,
         },
+        {
+          name: "B API key",
+          headers: { authorization: `Bearer ${apiKeys.routes}` },
+          from: 38,
+        },
         { name: "anonymous", headers: { origin: ORIGIN }, from: 35 },
       ];
       // Every route and called auth endpoint is classified once (what it returns), and only those.
@@ -1126,7 +1325,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       // Owner control: every route that returns its owner's data, called by P's owner with the
       // very requests generated above, shows P's data; a route that is not served refuses the
       // owner too. So the refusals above are refusals, and the scan sees what the route returns.
-      const owners: Record<"session" | "token", HttpCaller> = {
+      const owners: Record<"session" | "token" | "apiKey", HttpCaller> = {
         session: {
           name: "A session on P",
           headers: { cookie: A.cookie, "x-rakazo-space-id": P.spaceId, origin: ORIGIN },
@@ -1136,6 +1335,11 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           name: "A token in P",
           headers: { authorization: `Bearer ${tokens.aInP}` },
           from: 37,
+        },
+        apiKey: {
+          name: "A API key",
+          headers: { authorization: `Bearer ${apiKeys.a}` },
+          from: 39,
         },
       };
       const ids = idsOf(P);

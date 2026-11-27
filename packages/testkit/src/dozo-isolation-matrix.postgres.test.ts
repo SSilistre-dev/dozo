@@ -77,9 +77,47 @@ const OWNER_REMOVES_LAST = [
   "bots/remove",
 ];
 
-/** Tables a member's or guest's calls in S must leave as they were: who is in S, and A's keys. */
+/**
+ * Tables a member's or guest's calls in S must leave as they were: who is in S, A's keys, and what
+ * only the organization's admins manage.
+ */
 const ADMIN_TABLES =
-  /^(space|spaceMember|member|organization|secret|agentSecret|vaultCredential|userModelCredential|billingAccount|sql:dozo_access_tokens)$/;
+  /^(space|spaceMember|member|organization|secret|agentSecret|vaultCredential|userModelCredential|billingAccount|apiKey|organizationModelConnection|organizationLogin|sql:dozo_access_tokens)$/;
+
+/** A member's own choice among the organization's models, kept on their own membership row. */
+const MODEL_CHOICE_FIELDS = [
+  "organizationModelConnectionId",
+  "organizationModelProvider",
+  "organizationModelId",
+];
+
+/** Whether `before` and `after`, one row as the snapshot keeps it, differ only in `fields`. */
+const differsOnlyIn = (before: string, after: string, fields: string[]) => {
+  const without = (text: string) => {
+    const row = JSON.parse(text) as Record<string, unknown>;
+    for (const field of fields) delete row[field];
+    return JSON.stringify(row);
+  };
+  return without(before) === without(after);
+};
+
+/**
+ * Choices that change which model the caller's later runs use. The world's organization model has
+ * no working key, so a run after the choice fails: they go after the caller's other calls, and the
+ * choice is cleared once the sweep is over.
+ */
+const MODEL_CHOICES = ["models/organizationConnections/select"];
+
+/** Clears the organization model the people of `userIds` chose for themselves. */
+const clearModelChoices = (world: IsolationWorld, userIds: string[]) =>
+  world.db.spaceMember.updateMany({
+    where: { userId: { in: userIds } },
+    data: {
+      organizationModelConnectionId: null,
+      organizationModelProvider: null,
+      organizationModelId: null,
+    },
+  });
 
 describeWithDatabase.each(ISOLATION_LOGINS)(
   "cross-tenant isolation over every RPC procedure ($name)",
@@ -222,9 +260,10 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         `${prefix} procedures enumerated ${procedures.length}, swept ${swept().length}, naming a target ${foreign}, exemptions: input ${count("input")}, side-effect ${count("side-effect")}, unreached ${count("unreached")}, no-target ${count("no-target")}, reached-409 ${count("reached-409")}, distinguishable ${count("distinguishable")}`,
       );
       expect(missing, "procedures with no generated input and no exemption").toEqual([]);
-      expect(unfilled, "id fields no target thing fills and no no-target entry explains").toEqual(
-        [],
-      );
+      expect(
+        unfilled,
+        named("id fields no target thing fills and no no-target entry explains", unfilled),
+      ).toEqual([]);
       expect(problems, "exemptions without their proof").toEqual([]);
       expect(stale, "stale exemptions").toEqual([]);
     });
@@ -487,11 +526,20 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(await waitingRunKept(world, [C.cookie, D.cookie], P, S.spaceId)).toEqual([]);
       const from = mark(records);
       const before = await snapshot(world.db, scope);
-      const outcomes = await sweep(world.app, callers, swept());
+      const choice = (procedure: Procedure) => MODEL_CHOICES.includes(procedure.path);
+      const outcomes = [
+        ...(await sweep(
+          world.app,
+          callers,
+          swept().filter((procedure) => !choice(procedure)),
+        )),
+        ...(await sweep(world.app, callers, swept().filter(choice))),
+      ];
       console.log(
         `${prefix} statuses per caller\n${summary(outcomes)}\n${prefix} notable\n${notable(outcomes)}`,
       );
       const after = await snapshot(world.db, scope);
+      await clearModelChoices(world, [C.userId, D.userId]);
       expect(failures(outcomes)).toEqual([]);
       expect(snapshotDiff(before, after).join("\n"), "rows of P changed").toBe("");
       // A guest's new Space goes to the guest's own organization, never into A's.
@@ -549,7 +597,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       // Removals the rest hang off (a bot, a chat, a group) go last, one at a time, so a member's
       // removal of S's bot does not answer the other destructive calls "not found".
       const procedures = swept().filter((procedure) => procedure.path !== "spaces/members/leave");
-      const last = (procedure: Procedure) => OWNER_REMOVES_LAST.includes(procedure.path);
+      const last = (procedure: Procedure) =>
+        MODEL_CHOICES.includes(procedure.path) || OWNER_REMOVES_LAST.includes(procedure.path);
       const outcomes = [
         ...(await sweep(
           world.app,
@@ -569,6 +618,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         )),
       ];
       const after = await snapshot(world.db, scope);
+      await clearModelChoices(world, [C.userId, D.userId]);
       const seen = new Map<string, Set<string>>();
       for (const outcome of outcomes)
         for (const value of outcome.matched) {
@@ -588,16 +638,23 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           .join("\n")}`,
       );
       // What C or D added as their own (a Space C makes in the organization it is a member of, a
-      // token of C's own) is theirs by design; any other change to these tables is not.
+      // token of C's own) is theirs by design, and so is the organization's model C picks for
+      // itself in S; any other change to these tables is not.
       const admin: string[] = [];
+      const ownMembership = (table: string, oldText: string, text: string) =>
+        table === "spaceMember" &&
+        [C.userId, D.userId].some((id) => text.includes(`"userId":"${id}"`)) &&
+        differsOnlyIn(oldText, text, MODEL_CHOICE_FIELDS);
       for (const [table, rows] of after) {
         if (!ADMIN_TABLES.test(table)) continue;
         const old = before.get(table) ?? new Map<string, string>();
         for (const [key, text] of rows) {
-          if (!old.has(key)) {
+          const oldText = old.get(key);
+          if (oldText === undefined) {
             if (![C.userId, D.userId].some((id) => text.includes(id)))
               admin.push(`${table}: added ${text.slice(0, 300)}`);
-          } else if (old.get(key) !== text) admin.push(`${table}: changed ${text.slice(0, 300)}`);
+          } else if (oldText !== text && !ownMembership(table, oldText, text))
+            admin.push(`${table}: changed ${text.slice(0, 300)}`);
         }
         for (const key of old.keys())
           if (!rows.has(key)) admin.push(`${table}: removed ${old.get(key)!.slice(0, 300)}`);
@@ -713,6 +770,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         return [];
       };
       const stop = swept().filter((procedure) => procedure.path === "skills/stop");
+      const choiceLast = (procedure: Procedure) => Number(MODEL_CHOICES.includes(procedure.path));
       const outcomes = [
         ...(await sweep(world.app, [owner], kept.filter(isRead))),
         ...(await sweep(
@@ -728,7 +786,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           [owner],
           writes
             .filter((procedure) => !teaching(procedure))
-            .sort((a, b) => computerFirst(a) - computerFirst(b)),
+            .sort((a, b) => computerFirst(a) - computerFirst(b) || choiceLast(a) - choiceLast(b)),
           { concurrency: 1, settle },
         )),
       ];

@@ -43,7 +43,7 @@ function stable(value: unknown): string {
 
 /**
  * Every row any table holds for the given Spaces: rows keyed by the Space, its organization, its
- * owner, or one of its bots or chats. Rows are compared whole, so an update shows as a change.
+ * owner (an API key by its reference), or one of its bots or chats. Rows are compared whole, so an update shows as a change.
  */
 export async function snapshot(
   db: PrismaClient,
@@ -59,6 +59,8 @@ export async function snapshot(
     spaceId: scope.spaceIds,
     organizationId: scope.organizationIds,
     userId: scope.userIds,
+    // An API key names its person as its reference.
+    referenceId: scope.userIds,
     botId: bots,
     threadId: threads,
   };
