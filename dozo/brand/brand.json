@@ -15463,6 +15463,135 @@
       "reason": "self-host link: the screens that offer self-hosting point at this repository, not at upstream's documentation site"
     },
     {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "import { useResolvedAppearance } from \"../../lib/native/native\";",
+      "replace": "import { useMobileTokens, useResolvedAppearance } from \"../../lib/native/native\";",
+      "reason": "monochrome switch: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "  const scheme = useResolvedAppearance();\n  return (",
+      "replace": "  const scheme = useResolvedAppearance();\n  const tokens = useMobileTokens();\n  return (",
+      "reason": "monochrome switch: the ink the rule below paints with"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "          // SwiftUI defaults to systemGreen (adapts to dark mode and Increase Contrast), so no default tint is set.\n          ...(tintColor ? [tint(tintColor)] : []),",
+      "replace": "          tint(tintColor ?? switchTrackTint(tokens)),",
+      "requires": [
+        "apps/mobile/lib/dozo-switch-tint.ts"
+      ],
+      "reason": "monochrome switch: an on switch is the primary ink, or where that is as pale as the white thumb SwiftUI always draws, a gray that stands out from it (3:1), not SwiftUI's default system green; a caller's own tint still wins"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "computer-mode-picker\";\nimport { GlassIconButton }",
+      "replace": "computer-mode-picker\";\nimport { useNoComputerPlan } from \"../lib/dozo-own-computer\";\nimport { GlassIconButton }",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "  const [cleaningUp, setCleaningUp] = useState(false);\n  const [screenError,",
+      "replace": "  const [cleaningUp, setCleaningUp] = useState(false);\n  const noComputerPlan = useNoComputerPlan();\n  const [screenError,",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: a plan with no hosted computer (Free) is read once at the screen's top level"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "            label={t`Take control`}\n            prominence=\"secondary\"\n            disabled={bootPending}\n",
+      "replace": "            label={t`Take control`}\n            prominence=\"secondary\"\n            disabled={bootPending || noComputerPlan}\n",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: Take control would only be refused, so it shows off"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "                    fill={false}\n                    style={{ alignSelf: \"center\" }}",
+      "replace": "                    fill={false}\n                    disabled={noComputerPlan}\n                    style={{ alignSelf: \"center\" }}",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: the same button in the full window"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "        disabled={switching || bootPending}\n",
+      "replace": "        disabled={switching || bootPending || noComputerPlan}\n",
+      "requires": [
+        "apps/mobile/lib/dozo-own-computer.ts"
+      ],
+      "reason": "no-computer plan: both modes are hosted computers, which the plan does not include, so the picker shows off"
+    },
+    {
+      "file": "apps/mobile/components/thread/failed-send-bubble.tsx",
+      "find": "          gap: 8,\n          opacity: 0.8,\n",
+      "replace": "          gap: 8,\n",
+      "reason": "contrast: a message that was not sent keeps the bubble's own text colour at full strength; the dimmed bubble put its text under the contrast the colours were chosen for, and the caption below already says it was not sent"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "        <TextInput\n          autoFocus\n          accessibilityLabel={t`Name`}",
+      "replace": "        <TextInput\n          accessibilityLabel={t`Name`}",
+      "reason": "new bot: the keyboard no longer opens over the colour choices; they show first and the name is one tap away"
+    },
+    {
+      "file": "apps/mobile/app/new-bot.tsx",
+      "find": "        keyboardShouldPersistTaps=\"handled\"\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
+      "replace": "        keyboardShouldPersistTaps=\"handled\"\n        automaticallyAdjustKeyboardInsets\n      >\n        <View style={{ alignItems: \"center\", marginTop: 8, marginBottom: 24 }}>",
+      "reason": "new bot: with the keyboard open the form scrolls above it, so the colour choices stay reachable"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.ios.tsx",
+      "find": "native\";\nimport type { NativeSwitchProps }",
+      "replace": "native\";\nimport { switchTrackTint } from \"../../lib/dozo-switch-tint\";\nimport type { NativeSwitchProps }",
+      "requires": [
+        "apps/mobile/lib/dozo-switch-tint.ts"
+      ],
+      "reason": "monochrome switch: the import of the rule above"
+    },
+    {
+      "file": "apps/mobile/components/composer/thread-composer.tsx",
+      "find": "  const mentionStyle = (selected: boolean) => ({\n    color: tokens.link,\n    fontWeight: selected ? (\"bold\" as const) : undefined,\n  });",
+      "replace": "  const mentionStyle = (selected: boolean) => dozoMentionStyle(tokens, selected);",
+      "requires": [
+        "apps/mobile/lib/dozo-mention-style.ts"
+      ],
+      "reason": "ink links: a mention is no longer set apart by colour, so it is underlined"
+    },
+    {
+      "file": "apps/mobile/components/composer/thread-composer.tsx",
+      "find": "composer-model\";\nimport { useMobileTokens",
+      "replace": "composer-model\";\nimport { dozoMentionStyle } from \"../../lib/dozo-mention-style\";\nimport { useMobileTokens",
+      "requires": [
+        "apps/mobile/lib/dozo-mention-style.ts"
+      ],
+      "reason": "ink links: the import of the rule above"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.test.tsx",
+      "find": "leaves the system tint unset in %s\", (scheme) => {\n    system.scheme = scheme;\n    renderToStaticMarkup(<IosSwitch {...props} />);\n    expect(swiftHost.mock.lastCall?.[0].colorScheme).toBe(scheme);\n    expect(\n      swiftToggle.mock.lastCall?.[0].modifiers.filter(\n        (modifier: { name: string }) => modifier.name === \"tint\",\n      ),\n    ).toEqual([]);",
+      "replace": "tints the switch in the ink in %s\", (scheme) => {\n    system.scheme = scheme;\n    renderToStaticMarkup(<IosSwitch {...props} />);\n    expect(swiftHost.mock.lastCall?.[0].colorScheme).toBe(scheme);\n    expect(\n      swiftToggle.mock.lastCall?.[0].modifiers.filter(\n        (modifier: { name: string }) => modifier.name === \"tint\",\n      ),\n    ).toEqual([{ name: \"tint\", value: expect.any(String) }]);",
+      "reason": "monochrome switch: the default switch carries one tint (the ink) instead of none; the colour scheme assertion is unchanged, the exact values are held by dozo-native-switch.test.tsx and dozo-switch-tint.test.ts"
+    },
+    {
+      "file": "apps/mobile/components/native/native-switch.test.tsx",
+      "find": "    renderToStaticMarkup(<IosSwitch {...props} />);\n    expect(swiftHost.mock.lastCall?.[0].colorScheme).toBe(preference);\n    expect(\n      swiftToggle.mock.lastCall?.[0].modifiers.filter(\n        (modifier: { name: string }) => modifier.name === \"tint\",\n      ),\n    ).toEqual([]);",
+      "replace": "    renderToStaticMarkup(<IosSwitch {...props} />);\n    expect(swiftHost.mock.lastCall?.[0].colorScheme).toBe(preference);\n    expect(\n      swiftToggle.mock.lastCall?.[0].modifiers.filter(\n        (modifier: { name: string }) => modifier.name === \"tint\",\n      ),\n    ).toEqual([{ name: \"tint\", value: expect.any(String) }]);",
+      "reason": "monochrome switch: an explicit app scheme still sets the host's scheme, and the default switch carries the one ink tint"
+    },
+    {
+      "file": "apps/mobile/lib/appearance/appearance.test.ts",
+      "find": "    expect(mobileTokens()).toEqual(lightTokens);",
+      "replace": "    expect(mobileTokens()).toEqual({ ...lightTokens, link: lightTokens.foreground });",
+      "reason": "ink links: the phone's palette is upstream's with the link colour in the ink; the notification assertions of the test are unchanged"
+    },
+    {
       "file": "apps/mobile/components/cards/ChoiceCard.tsx",
       "find": "import { errorText } from \"../../lib/api/user-error\";\nimport {\n  choiceCardOptions,",
       "replace": "import { errorText } from \"../../lib/api/user-error\";\nimport { dozoFocusOptionLabel, dozoFocusQuestion } from \"../../lib/dozo-focus-choice-copy\";\nimport {\n  choiceCardOptions,",
