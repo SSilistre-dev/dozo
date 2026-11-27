@@ -4,7 +4,10 @@ A Playwright suite for what the fork changes, run against the branded Docker sta
 whole web app (every route, settings section, overlay and onboarding step the app's source lists)
 and scans every screen it reaches for the upstream name, upstream links and copied text.
 Upstream's own web e2e (`apps/web/e2e`) is left to CI and is not touched or run here. This suite is
-not part of `make qa` or of CI.
+not part of `make qa`. In CI it runs in two places: the `inventory` project (`inventory.sh`, no
+stack and no browser, seconds) on every pull request in `dozo-gate`, and the whole suite every night
+in `dozo-e2e-nightly` (also on demand: Actions, run workflow). A red night opens or updates the one
+issue labelled `e2e-nightly`; the next green night closes it.
 
 ## Run
 

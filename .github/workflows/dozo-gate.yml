@@ -6,7 +6,7 @@ name: dozo-gate
 # their coverage floor and the web startup budget on the branded web build. Needs only Docker, which
 # stock GitHub runners have. It runs olc, stage, brand, checks, unit and budget (on the Dockerfile's
 # build stage alone), never the full image build, up, smoke or the
-# e2e suite (see dozo/README.md, Status and known limits). A required status check matches the job
+# browser e2e suite (only its inventory project runs; the whole suite is dozo-e2e-nightly; see dozo/README.md, Status and known limits). A required status check matches the job
 # name below: when it changes, update the branch protection rule too.
 # Third-party actions are pinned to a full commit SHA with the version in a comment (the same
 # SHAs the upstream workflows use).
@@ -112,6 +112,12 @@ jobs:
             gh issue edit "$n" --body "Nothing is waiting: every upstream string has a Turkish translation, as of pull request #$PR."
             gh issue close "$n" || true
           fi
+
+      # Every route, settings section and overlay of the branded web app is crawled or skipped with a
+      # reason (dozo/e2e/surfaces.ts). It reads the staged tree only, no stack and no browser, so a
+      # moved or renamed upstream file is caught here and not by the nightly e2e run.
+      - name: e2e inventory
+        run: dozo/e2e/inventory.sh
 
       # The fork's own tests and the per-file coverage floor. A runner starts with no dependency
       # volume, so this is the cold run (about 80 s: pnpm install and the coverage provider, inside

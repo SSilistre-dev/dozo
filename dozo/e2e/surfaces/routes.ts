@@ -145,14 +145,24 @@ export const routes: Surface[] = [
     covers: ["route:/app/board"],
     async reach({ page, world, scan }) {
       await openBot(page, world.chiefId, "Chief");
-      await gotoStable(page, `/app/${world.chiefId}?settings=labs`);
-      const toggle = page.getByTestId("lab-board-toggle");
-      await expect(toggle).toBeVisible();
-      await toggle.click();
-      await page.getByRole("button", { name: "Close user settings" }).click();
-      await gotoStable(page, "/app/board");
-      await expect(page).toHaveURL(/\/app\/board/);
-      await scan("board");
+      // Board is switched on for the visit and back off at the end, so later screens start from the
+      // surface a new account has.
+      const switchBoard = async (on: boolean) => {
+        await gotoStable(page, `/app/${world.chiefId}?settings=labs`);
+        const toggle = page.getByTestId("lab-board-toggle");
+        await expect(toggle).toBeVisible();
+        if ((await toggle.getAttribute("aria-checked")) !== String(on)) await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-checked", String(on));
+        await page.getByRole("button", { name: "Close user settings" }).click();
+      };
+      await switchBoard(true);
+      try {
+        await gotoStable(page, "/app/board");
+        await expect(page).toHaveURL(/\/app\/board/);
+        await scan("board");
+      } finally {
+        await switchBoard(false);
+      }
     },
   },
 ];
