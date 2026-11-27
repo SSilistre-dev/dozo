@@ -52,8 +52,10 @@ vi.mock("@rakazo/contracts", async (importOriginal) => ({
   signInProviders: (capabilities: { providers?: { id: string }[] }) => capabilities.providers ?? [],
 }));
 vi.mock("./dozo-code-sign-in", () => ({
-  DozoCodeSignIn: ({ providers }: { providers: { id: string }[] }) => (
-    <div data-testid="code-first">{providers.map((provider) => provider.id).join(",")}</div>
+  DozoCodeSignIn: ({ providers, mode }: { providers: { id: string }[]; mode?: string }) => (
+    <div data-testid="code-first" data-mode={mode}>
+      {providers.map((provider) => provider.id).join(",")}
+    </div>
   ),
 }));
 vi.mock("./dozo-hosted-login", () => ({
@@ -122,6 +124,7 @@ async function open(path: string) {
           <Route path="/sign-in" element={<AuthPage mode="in" />} />
           <Route path="/sign-in/email" element={<AuthPage mode="in" />} />
           <Route path="/sign-up" element={<AuthPage mode="up" />} />
+          <Route path="/sign-up/email" element={<AuthPage mode="up" />} />
           <Route path="/forgot-password" element={<AuthPage mode="forgot" />} />
         </Routes>
       </MemoryRouter>,
@@ -247,13 +250,57 @@ describe("email-first sign-in", () => {
     expect(where()).toBe("/sign-in?next=%2Fapp");
   });
 
-  it("keeps upstream's password form one step away, and sign-up unchanged", async () => {
+  it("keeps upstream's password form one step away", async () => {
     mocks.capabilities.mockResolvedValue({ passwordAuth: true, emailCode: true });
     await open("/sign-in/email");
     expect(shown()).toBe("in");
     expect(codeFirst()).toBeUndefined();
-    act(() => root?.unmount());
-    container.remove();
+  });
+
+  it("starts sign-up with a name, an address and a code where the server mails codes", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: true,
+      passwordAuth: true,
+      emailCode: true,
+      providers: [{ id: "google" }],
+    });
+    await open("/sign-up?next=%2Fapp");
+    expect(codeFirst()).toBe("google");
+    expect(container.querySelector('[data-testid="code-first"]')?.getAttribute("data-mode")).toBe(
+      "up",
+    );
+    expect(shown()).toBeUndefined();
+    expect(where()).toBe("/sign-up?next=%2Fapp");
+  });
+
+  it("sends the password sign-up address to the code sign-up, keeping the query", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: true,
+      passwordAuth: true,
+      emailCode: true,
+    });
+    await open("/sign-up/email?next=%2Finvite%2Ftoken-1&plan=premium&period=year");
+    expect(where()).toBe("/sign-up?next=%2Finvite%2Ftoken-1");
+    expect(codeFirst()).toBe("");
+    expect(readPlanIntent()).not.toBeNull();
+  });
+
+  it("keeps upstream's password sign-up address on a server without codes", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: true,
+      passwordAuth: true,
+      emailCode: false,
+    });
+    await open("/sign-up/email");
+    expect(where()).toBe("/sign-up/email");
+    expect(shown()).toBe("up");
+  });
+
+  it.each([
+    ["no mail sender", { signupsOpen: true, passwordAuth: true, emailCode: false }],
+    ["password sign-in off", { signupsOpen: true, passwordAuth: false, emailCode: true }],
+  ])("leaves sign-up to upstream's form with %s", async (_, capabilities) => {
+    mocks.capabilities.mockResolvedValue(capabilities);
     await open("/sign-up");
     expect(shown()).toBe("up");
     expect(codeFirst()).toBeUndefined();

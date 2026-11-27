@@ -29,8 +29,13 @@ export const signedOut: Surface[] = [
       await goto("/sign-up");
       await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
       await scan("email chooser");
+      // A server that mails codes signs up with a name and an address, never a password.
+      const { emailCode } = await (await page.request.get("/api/auth/capabilities")).json();
+      if (emailCode) await expect(page.getByPlaceholder("Password")).toHaveCount(0);
       await goto("/sign-up/email");
-      await expect(page.getByPlaceholder("Password")).toBeVisible();
+      // There the address leads to the code sign-up, so no verification link can strand an account.
+      if (emailCode) await expect(page).toHaveURL(/\/sign-up$/);
+      else await expect(page.getByPlaceholder("Password")).toBeVisible();
     },
   },
   {

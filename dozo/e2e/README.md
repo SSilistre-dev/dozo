@@ -68,10 +68,11 @@ written.
 
 Two kinds of local stack, and the suite runs on both. Without a mail provider (plain `make up`) a
 password sign-up opens a session at once and a second sign-up for an address is refused (422). With
-the email emulator (`DOZO_EMAIL_EMULATOR=1 make up`, mail readable at `/api/dev/emails`) a password
-sign-up opens no session (`token: null`, "Check your email") and an unverified account cannot sign in
-with its password: `signUpThroughForm` and `newAccount` finish through the mail's link (opened in
-the same browser, which holds it) and then the password. Each spec that depends on the kind reads
+the email emulator (`DOZO_EMAIL_EMULATOR=1 make up`, mail readable at `/api/dev/emails`) the sign-up
+form asks for a name and an address and then a code (no password), which `signUpThroughForm` reads
+from the mail; a password sign-up through the API opens no session (`token: null`) and an
+unverified account cannot sign in with its password: `newAccount` finishes through the mail's link
+(opened in the same browser, which holds it) and then the password. Each spec that depends on the kind reads
 the server's own `capabilities.emailCode` and asserts what that kind does; one that cannot run on
 a kind skips with its reason (`flows/signup-verification.spec.ts` needs mail,
 `flows/verify.spec.ts`'s reminder scenario needs a session without it).
@@ -274,13 +275,14 @@ trial account:
 - `canli/public.spec.ts`: no account. Cold first paint of `/sign-in`, the wrong-password line, the
   reset form, the 404 page, placeholder links (`dozo.example`, `OWNER/`) and our own links on the
   public pages (each must answer), `/assets` cache headers.
-- `canli/account.spec.ts`, in order: (1) "kayıt e-posta doğrulaması ister": a signed-out browser
-  submits the sign-up form with the trial account's address and a random password. Before the
-  verification change reaches the live server it answers 422 and "Bu e-postayla bir hesap zaten
-  var"; after, 200 with no session and the "E-postanızı kontrol edin" screen. Either is accepted and
-  the report's Notlar says which was seen ("sunucu henüz eski davranışta" / "sunucu kayıtta
-  doğrulama istiyor"); anything else fails. It opens no account and sends no mail (an address that
-  already has an account gets the generic answer and no mail). (2) Sign-in with the trial account
+- `canli/account.spec.ts`, in order: (1) "kayıt önce kod ister": on a server that mails codes, a
+  signed-out browser fills the sign-up form (name and the trial account's address; no password
+  field) and presses "Devam". The run sends no mail and opens no account: the one request that
+  would mail the code is answered inside the browser and never reaches the server, the run asserts
+  it asked for a sign-in code, that the password sign-up was never called, and that no session
+  exists; the code is never entered. A server without codes keeps upstream's form, which answers
+  422 "Bu e-postayla bir hesap zaten var" for the trial address. The report's Notlar says which was
+  seen; anything else fails. (2) Sign-in with the trial account
   through the password form; its first run meets onboarding (survey, "Daha sonra"), later runs go
   straight to the app; the session is saved for the rest. Then, with that session: cold first paint
   of `/app`; the Apps window (time to window and first tile, every logo loaded from our own host);

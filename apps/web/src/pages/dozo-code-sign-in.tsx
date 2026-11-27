@@ -56,8 +56,19 @@ class Refused extends Error {}
  * under the deployment's sign-up policy. A password is the way round: "Use a password instead"
  * opens upstream's own form at `/sign-in/email`, handing it the address in the history entry.
  * The deployment's providers and passkeys stay on the first step.
+ *
+ * Sign-up (`mode="up"`) is the same two steps with a name beside the address and no password at
+ * all: a password account made by a mailed link can only finish in the browser that opened the
+ * link. The code makes the account, and the name goes with it (`signIn.emailOtp` uses it only when
+ * it creates one), so `sign-up/email` is never called.
  */
-export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
+export function DozoCodeSignIn({
+  providers,
+  mode = "in",
+}: {
+  providers: SignInProvider[];
+  mode?: "in" | "up";
+}) {
   const { t } = useLingui();
   const location = useLocation();
   const navigate = useNavigate();
@@ -68,6 +79,8 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
     const handed = (location.state as { email?: unknown } | null)?.email;
     return typeof handed === "string" ? handed : "";
   });
+  const signingUp = mode === "up";
+  const [name, setName] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
   const [code, setCode] = useState("");
   const [sentAt, setSentAt] = useState(0);
@@ -121,7 +134,14 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
   // A code is checked once: a second submit while the first is on its way would spend another of
   // the code's three attempts, and `run` ignores it.
   const checkCode = useSave<string>({
-    save: (otp) => answered(authClient.signIn.emailOtp({ email: email.trim(), otp })),
+    save: (otp) =>
+      answered(
+        authClient.signIn.emailOtp({
+          email: email.trim(),
+          otp,
+          ...(signingUp ? { name: name.trim() || email.trim().split("@")[0] || "User" } : {}),
+        }),
+      ),
     onSaved: () => {
       clearSpaceSelection();
       // Forgetting the Space changes what `useSave` holds a save under, so it would let go of this
@@ -258,7 +278,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
 
   return (
     <AuthFrame
-      title={<Trans>Sign in to Rakazo</Trans>}
+      title={signingUp ? <Trans>Create your account</Trans> : <Trans>Sign in to Rakazo</Trans>}
       onSubmit={(event) => {
         event.preventDefault();
         const issue = credentialIssue({ email });
@@ -269,6 +289,21 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
         send("email");
       }}
     >
+      {signingUp ? (
+        <div className="mb-4 w-full">
+          <Label htmlFor="name" className="text-muted-foreground">
+            <Trans>Name</Trans>
+          </Label>
+          <Input
+            id="name"
+            name="name"
+            autoComplete="name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t`Your name`}
+          />
+        </div>
+      ) : null}
       <div className="w-full">
         <Label htmlFor="email" className="text-muted-foreground">
           <Trans>Email</Trans>
@@ -277,7 +312,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
           id="email"
           name="email"
           type="email"
-          autoComplete="username webauthn"
+          autoComplete={signingUp ? "email" : "username webauthn"}
           // Back from the code step lands on the address, ready to correct it.
           autoFocus={returned}
           required
@@ -301,6 +336,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
       <Button type="submit" size="lg" disabled={pending} className={submitClass}>
         {pending ? <Trans>Working…</Trans> : <Trans>Continue</Trans>}
       </Button>
+      {signingUp ? <DozoSignupTerms /> : null}
       {providers.length > 0 ? (
         <div data-dozo-auth-providers className="w-full">
           <SocialSignInButtons
@@ -311,7 +347,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
         </div>
       ) : null}
       <div data-dozo-auth-links className="flex flex-col items-center">
-        {passkey.supported ? (
+        {passkey.supported && !signingUp ? (
           <button
             type="button"
             data-dozo-quiet
@@ -321,23 +357,36 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
             <Trans>Continue with passkey</Trans>
           </button>
         ) : null}
-        <button
-          type="button"
-          data-dozo-quiet
-          data-testid="use-password"
-          disabled={pending}
-          onClick={() =>
-            navigate(`/sign-in/email${location.search}`, { state: { email: email.trim() } })
-          }
-        >
-          <Trans>Use a password instead</Trans>
-        </button>
+        {signingUp ? null : (
+          <button
+            type="button"
+            data-dozo-quiet
+            data-testid="use-password"
+            disabled={pending}
+            onClick={() =>
+              navigate(`/sign-in/email${location.search}`, { state: { email: email.trim() } })
+            }
+          >
+            <Trans>Use a password instead</Trans>
+          </button>
+        )}
       </div>
       <p className="mt-8 text-center text-muted-foreground">
-        <Trans>Don’t have an account?</Trans>{" "}
-        <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
-          <Trans>Sign up</Trans>
-        </Link>
+        {signingUp ? (
+          <>
+            <Trans>Already have an account?</Trans>{" "}
+            <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+              <Trans>Sign in</Trans>
+            </Link>
+          </>
+        ) : (
+          <>
+            <Trans>Don’t have an account?</Trans>{" "}
+            <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+              <Trans>Sign up</Trans>
+            </Link>
+          </>
+        )}
       </p>
     </AuthFrame>
   );
