@@ -4,6 +4,7 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readPlanLimits, sharedSpaceUsage } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { withComputerSpecs } from "./dozo-computer-size.js";
 
 /** A checkout was asked for a plan that has no price: the free one, which nobody pays for. */
 export class PlanNotOfferedError extends ClientError {
@@ -39,4 +40,14 @@ export async function withPlanHours<Offer extends { tier: ByokTier; computerHour
     ...offer,
     computerHours: sandboxAllowanceHours(limits[offer.tier].computerAllowanceCents, hourMicros),
   }));
+}
+
+/** `withPlanHours` over offers that also carry the machine this server's computer provider starts. */
+export async function withPlanOffers(
+  prisma: Pick<PrismaClient, "dozoPlanQuota">,
+  sandbox: Parameters<typeof withComputerSpecs>[1],
+  offers: Parameters<typeof withComputerSpecs>[0],
+  hourMicros?: number,
+) {
+  return withPlanHours(prisma, withComputerSpecs(offers, sandbox), hourMicros);
 }

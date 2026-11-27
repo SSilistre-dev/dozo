@@ -2668,7 +2668,7 @@
     {
       "file": "apps/api/src/billing/billing.ts",
       "find": "        const tier = free?.tier ?? subscribed?.tier ?? \"standard\";\n        const hourMicros",
-      "replace": "        const tier = free?.tier ?? subscribed?.tier ?? \"standard\";\n        // What clients are told the plan is. Prices stay the subscription's: a granted plan has none.\n        const planGrant = await planGrantOf(prisma, organizationId);\n        const planTier = tierInForce(free?.tier ?? subscribed?.tier ?? null, planGrant) ?? \"standard\";\n        const hourMicros",
+      "replace": "        const tier = free?.tier ?? subscribed?.tier ?? \"standard\";\n        const planGrant = await planGrantOf(prisma, organizationId);\n        const planTier = tierInForce(free?.tier ?? subscribed?.tier ?? null, planGrant) ?? \"standard\";\n        const hourMicros",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -2701,7 +2701,7 @@
     {
       "file": "apps/api/src/billing/billing.ts",
       "find": "import { applyAccessGrants, grantCreditCode } from \"../auth/access-grants.js\";\nimport type { ScheduleLifecycleEmail }",
-      "replace": "import { applyAccessGrants, grantCreditCode } from \"../auth/access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace, withPlanHours } from \"../dozo-billing.js\";\nimport type { ScheduleLifecycleEmail }",
+      "replace": "import { applyAccessGrants, grantCreditCode } from \"../auth/access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace, withPlanOffers } from \"../dozo-billing.js\";\nimport type { ScheduleLifecycleEmail }",
       "requires": [
         "apps/api/src/dozo-billing.ts"
       ],
@@ -2877,17 +2877,8 @@
     },
     {
       "file": "apps/api/src/billing/billing.ts",
-      "find": "} from \"@rakazo/adapters\";\nimport type {\n  Actor,",
-      "replace": "} from \"@rakazo/adapters\";\nimport { withComputerSpecs } from \"../dozo-computer-size.js\";\nimport type {\n  Actor,",
-      "requires": [
-        "apps/api/src/dozo-computer-size.ts"
-      ],
-      "reason": "computer sizes: the import of the rule below"
-    },
-    {
-      "file": "apps/api/src/billing/billing.ts",
       "find": "        const offers = byokTierOffers(Boolean(sized), hourMicros);",
-      "replace": "        const offers = await withPlanHours(\n          prisma,\n          withComputerSpecs(byokTierOffers(Boolean(sized), hourMicros), deps.sandbox),\n          hourMicros,\n        );",
+      "replace": "        const sizedOffers = byokTierOffers(Boolean(sized), hourMicros);\n        const offers = await withPlanOffers(prisma, deps.sandbox, sizedOffers, hourMicros);",
       "requires": [
         "apps/api/src/dozo-computer-size.ts"
       ],
@@ -4770,13 +4761,13 @@
     {
       "file": "apps/api/src/billing/billing.ts",
       "find": "  partnerProgram?: PartnerProgram;\n  scheduleLifecycleEmail?",
-      "replace": "  partnerProgram?: PartnerProgram;\n  /** Billing's mails, told after each sync of a customer; they never throw. */\n  dozoAfterSync?: (customerId: string) => Promise<void>;\n  scheduleLifecycleEmail?",
+      "replace": "  partnerProgram?: PartnerProgram;\n  dozoAfterSync?: (customerId: string) => Promise<void>;\n  scheduleLifecycleEmail?",
       "reason": "billing mails: the billing service takes the hook a sync calls"
     },
     {
       "file": "apps/api/src/billing/billing.ts",
       "find": "reconcileSeats({ customerId }));\n  }",
-      "replace": "reconcileSeats({ customerId }));\n    // Billing's mails come after every step of the sync, so a plan just paid is set up first.\n    await deps.dozoAfterSync?.(customerId);\n  }",
+      "replace": "reconcileSeats({ customerId }));\n    await deps.dozoAfterSync?.(customerId);\n  }",
       "reason": "billing mails: decided after the whole sync (funding of a newly paid plan, analytics, referrals), never in the middle of it, so a mail can never cost a sync a step"
     },
     {
@@ -6131,7 +6122,7 @@
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
       "find": "      userComputerShell = !device.screenOnly;\n      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      const computers = await deps.userDevices.list(userComputerOwnerId);\n      userComputerScreen = [device, ...computers.filter((computer) => computer.connected)].some(\n        (computer) => computer.platform === \"darwin\" || computer.platform === \"win32\",\n      );",
-      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      // Only a run without a graphical computer of its own: one that has it keeps its browser.\n      if (offers.browser && !graphical)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n      // A screen is offered when a connected computer declared one; a bot may target any of them.\n      const gateway = deps.userDevices;\n      const computers = await gateway.list(userComputerOwnerId);\n      const others = await Promise.all(\n        computers\n          .filter((computer) => computer.connected && computer.deviceId !== device.deviceId)\n          .map(async (computer) => {\n            try {\n              return await gateway.connected(userComputerOwnerId, computer.deviceId);\n            } catch (error) {\n              // One computer that cannot answer is left out of the screen decision, not the run.\n              getLogger().warn(\"device capabilities unavailable\", { error });\n              return null;\n            }\n          }),\n      );\n      userComputerScreen = [device, ...others].some(\n        (computer) => computer !== null && deviceOffers(computer).screen,\n      );",
+      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      if (offers.browser && !graphical)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n      const gateway = deps.userDevices;\n      const computers = await gateway.list(userComputerOwnerId);\n      const others = await Promise.all(\n        computers\n          .filter((computer) => computer.connected && computer.deviceId !== device.deviceId)\n          .map(async (computer) => {\n            try {\n              return await gateway.connected(userComputerOwnerId, computer.deviceId);\n            } catch (error) {\n              getLogger().warn(\"device capabilities unavailable\", { error });\n              return null;\n            }\n          }),\n      );\n      userComputerScreen = [device, ...others].some(\n        (computer) => computer !== null && deviceOffers(computer).screen,\n      );",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
@@ -8821,7 +8812,7 @@
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
       "find": "  const ownerStartedRun = isOwnerStartedRun(\n    conversationRun.trigger,\n    (origin?.sourceMessage ?? sourceMessage)?.role === \"user\",\n    nonOwnerChatRun,\n  );",
-      "replace": "  // A message sent with an access token is not the owner's word: it may come from another program.\n  const ownerStartedRun =\n    isOwnerStartedRun(\n      conversationRun.trigger,\n      (origin?.sourceMessage ?? sourceMessage)?.role === \"user\",\n      nonOwnerChatRun,\n    ) && !isDozoTokenNonce((origin?.sourceMessage ?? sourceMessage)?.clientNonce);",
+      "replace": "  const ownerStartedRun =\n    isOwnerStartedRun(\n      conversationRun.trigger,\n      (origin?.sourceMessage ?? sourceMessage)?.role === \"user\",\n      nonOwnerChatRun,\n    ) && !isDozoTokenNonce((origin?.sourceMessage ?? sourceMessage)?.clientNonce);",
       "requires": [
         "packages/core/src/dozo-token-source.ts"
       ],
@@ -9157,7 +9148,7 @@
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
       "find": "  const trustLoaders = createRunTrustLoaders(deps, {\n    run,\n    runId,\n    botId: bot.id,\n    taskPrompt: task.prompt,\n",
-      "replace": "  // A bot or routine marked by a token's text: its routine's words are not the owner's.\n  const dozoTokenTaintedRun = await dozoBotTokenTainted(deps.prisma, run);\n  const trustLoaders = createRunTrustLoaders(deps, {\n    run,\n    runId,\n    botId: bot.id,\n    taskPrompt: dozoTokenTaintedRun ? \"\" : task.prompt,\n",
+      "replace": "  const dozoTokenTaintedRun = await dozoBotTokenTainted(deps.prisma, run);\n  const trustLoaders = createRunTrustLoaders(deps, {\n    run,\n    runId,\n    botId: bot.id,\n    taskPrompt: dozoTokenTaintedRun ? \"\" : task.prompt,\n",
       "requires": [
         "packages/adapters/src/dozo-token-run.ts"
       ],
