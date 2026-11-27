@@ -2577,7 +2577,7 @@
     {
       "file": "packages/db/src/billing/sandbox-allowance.ts",
       "find": "): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {\n  const [settings, organization] = await Promise.all([\n    prisma.deploymentSettings.findUnique({\n      where: { id: \"default\" },\n      select: { modelCreditsEnabled: true },\n    }),\n    prisma.organization.findUnique({\n      where: { id: organizationId },\n      select: {\n        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },\n        billing: {",
-      "replace": "): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {\n  const [settings, organization] = await Promise.all([\n    prisma.deploymentSettings.findUnique({\n      where: { id: \"default\" },\n      select: { modelCreditsEnabled: true },\n    }),\n    prisma.organization.findUnique({\n      where: { id: organizationId },\n      select: {\n        modelCredits: { select: { mode: true } },\n        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n        billing: {",
+      "replace": "): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {\n  const [settings, organization] = await Promise.all([\n    prisma.deploymentSettings.findUnique({\n      where: { id: \"default\" },\n      select: { modelCreditsEnabled: true },\n    }),\n    prisma.organization.findUnique({\n      where: { id: organizationId },\n      select: {\n        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },\n        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n        billing: {",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],

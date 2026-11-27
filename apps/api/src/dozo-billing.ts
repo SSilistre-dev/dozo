@@ -1,4 +1,4 @@
-import type { ByokTier } from "@rakazo/contracts";
+import type { ByokTier, ComputerSize } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, sandboxAllowanceHours } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -43,10 +43,12 @@ export async function withPlanHours<Offer extends { tier: ByokTier; computerHour
 }
 
 /** `withPlanHours` over offers that also carry the machine this server's computer provider starts. */
-export async function withPlanOffers(
+export async function withPlanOffers<
+  Offer extends { tier: ByokTier; computerHours: number; computerSize: ComputerSize },
+>(
   prisma: Pick<PrismaClient, "dozoPlanQuota">,
   sandbox: Parameters<typeof withComputerSpecs>[1],
-  offers: Parameters<typeof withComputerSpecs>[0],
+  offers: Offer[],
   hourMicros?: number,
 ) {
   return withPlanHours(prisma, withComputerSpecs(offers, sandbox), hourMicros);
