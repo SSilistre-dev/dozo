@@ -750,12 +750,6 @@
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-records.ts",
-      "find": "    deps.prisma.connection.findMany({\n      where: connectionIn(run),\n      select: {",
-      "replace": "    deps.prisma.connection.findMany({\n      where: connectionIn(run),\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: {",
-      "reason": "the connected plugins line is in the system prompt: a stable order keeps the cached prefix when a status sync rewrites a row"
-    },
-    {
-      "file": "packages/adapters/src/runs/assembly/run-assembly-records.ts",
       "find": "    deps.prisma.taughtSkill.findMany({\n      where: { botId: run.botId, spaceId: run.spaceId, status: \"saved\" },\n    }),",
       "replace": "    deps.prisma.taughtSkill.findMany({\n      where: { botId: run.botId, spaceId: run.spaceId, status: \"saved\" },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n    }),",
       "reason": "the first 20 taught skills are listed in the system prompt: a stable order keeps the cached prefix and the same 20"
@@ -2502,8 +2496,8 @@
     },
     {
       "file": "packages/adapters/src/storage/thread-artifacts.ts",
-      "find": "  const row = await deps.prisma.artifact\n    .create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    })\n    .catch(async (error) => {\n      await deps.artifacts.remove(stored.id, context).catch(() => undefined);\n      throw error;\n    });\n",
-      "replace": "  const row = await withSharedSpace(deps.prisma, owner.spaceId, (tx) =>\n    tx.artifact.create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    }),\n  ).catch(async (error) => {\n    await deps.artifacts.remove(stored.id, context).catch(() => undefined);\n    throw error;\n  });\n",
+      "find": "  const row = await deps.prisma.artifact\n    .create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    })\n    .catch(async (error) => {\n      await bestEffort(\n        \"remove a hidden artifact after its row could not be saved\",\n        deps.artifacts.remove(stored.id, context),\n      );\n      throw error;\n    });\n",
+      "replace": "  const row = await withSharedSpace(deps.prisma, owner.spaceId, (tx) =>\n    tx.artifact.create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    }),\n  ).catch(async (error) => {\n    await bestEffort(\n      \"remove a hidden artifact after its row could not be saved\",\n      deps.artifacts.remove(stored.id, context),\n    );\n    throw error;\n  });\n",
       "requires": [
         "packages/db/src/dozo-shared-space.ts"
       ],
@@ -7681,8 +7675,8 @@
     },
     {
       "file": "apps/web/src/components/settings/ApprovalRulesSettings.tsx",
-      "find": "import { SettingsGroup, SettingsRow } from \"./SettingsRows\";\n\nconst segmented",
-      "replace": "import { SettingsGroup, SettingsRow } from \"./SettingsRows\";\nimport { DozoCommandRules } from \"../dozo-command-rules\";\n\nconst segmented",
+      "find": "import { SettingsGroup, SettingsRow } from \"./SettingsRows\";\n\ntype Change",
+      "replace": "import { SettingsGroup, SettingsRow } from \"./SettingsRows\";\nimport { DozoCommandRules } from \"../dozo-command-rules\";\n\ntype Change",
       "requires": [
         "apps/web/src/components/dozo-command-rules.tsx"
       ],
@@ -7690,8 +7684,8 @@
     },
     {
       "file": "apps/web/src/components/settings/ApprovalRulesSettings.tsx",
-      "find": "      })}\n      {error ? (",
-      "replace": "      })}\n      <DozoCommandRules />\n      {error ? (",
+      "find": "      </section>\n      {error ? (",
+      "replace": "      </section>\n      <DozoCommandRules />\n      {error ? (",
       "requires": [
         "apps/web/src/components/dozo-command-rules.tsx"
       ],
