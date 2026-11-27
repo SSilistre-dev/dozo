@@ -192,23 +192,22 @@
   background: transparent;
   justify-content: flex-end;
 }
-/* A destructive button in a dialog: the red word on a quiet pill. */
-:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
-  :is(
-    [data-slot="button"],
-    [data-slot="alert-dialog-action"],
-    [data-slot="alert-dialog-cancel"]
-  ).bg-destructive\/10 {
+/* A destructive button anywhere: the red word on a quiet pill, never a pink one that reads as
+   disabled. */
+[data-slot="button"].bg-destructive\/10,
+:is([data-slot="alert-dialog-action"], [data-slot="alert-dialog-cancel"]).bg-destructive\/10 {
   background: var(--dozo-wash);
   color: var(--dozo-danger-text);
 }
-:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
-  :is(
-    [data-slot="button"],
-    [data-slot="alert-dialog-action"],
-    [data-slot="alert-dialog-cancel"]
-  ).bg-destructive\/10:hover {
+[data-slot="button"].bg-destructive\/10:hover,
+:is([data-slot="alert-dialog-action"], [data-slot="alert-dialog-cancel"]).bg-destructive\/10:hover {
   background: var(--dozo-wash-strong);
+}
+
+/* A label that sits straight on its field gets room above the field's edge. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  [data-slot="label"]:has(+ [data-slot="input"]) {
+  margin-bottom: 6px;
 }
 
 /* Controls inside dialogs and the settings window: quiet pills, borderless fields, a washed
