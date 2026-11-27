@@ -20,7 +20,7 @@ const LIMIT_MS = 25_000;
 const NOT_HELD = new Set(["/theme.js", "/dozo-boot.js"]);
 
 const UNREACHABLE =
-  /Can't reach the server\.|Retry now|Something went wrong\. Try again\.|Sunucuya ulaşılamıyor\.|Şimdi tekrar dene|Bir şeyler ters gitti/;
+  /Can't reach the server\.|Retry now|Something went wrong\. Try again\.|Could not reach the server|Sunucuya ulaşılamıyor\.|Sunucuya ulaşılamadı|Şimdi tekrar dene|Bir şeyler ters gitti/;
 
 type Start = {
   path: string;
@@ -57,7 +57,8 @@ async function withHeld(browser: Browser, start: Start, held: string) {
   const began = Date.now();
   await page.goto(start.path, { waitUntil: "commit" });
   const content = start.content(page);
-  const unreachable = page.getByText(UNREACHABLE).first();
+  // The page also holds a hidden copy of the boot shell's text (`#dozo-late`), which comes first.
+  const unreachable = page.getByText(UNREACHABLE).locator("visible=true").first();
   const shown = await content
     .or(unreachable)
     .first()
