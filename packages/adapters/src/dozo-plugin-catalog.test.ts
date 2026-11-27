@@ -732,15 +732,18 @@ describe("managed app logos", () => {
     const store = fakeStore();
     const fetchImage = vi.fn(async () => png());
     const logos = createConnectionLogos({ prisma: store.prisma as never, imageUrl, fetchImage });
-    const items = [{ slug: "gmail", logo: foreign }, { slug: "plain", logo: null }];
+    const items = [
+      { slug: "gmail", logo: foreign },
+      { slug: "plain", logo: null },
+    ];
     expect((await logos.own(items, mine)).map((item) => item.logo)).toEqual([null, null]);
     await logos.settled();
     const [gmail] = await logos.own(items, mine);
     expect(gmail?.logo).toMatch(new RegExp(`^${mine}/images/[a-f0-9]{64}\\.webp$`));
     const file = gmail!.logo!.split("/").pop()!;
-    expect((await sharp((await storedCatalogImage(store.prisma as never, file))!).metadata()).width).toBe(
-      CATALOG_IMAGE_SIZE,
-    );
+    expect(
+      (await sharp((await storedCatalogImage(store.prisma as never, file))!).metadata()).width,
+    ).toBe(CATALOG_IMAGE_SIZE);
     expect(fetchImage).toHaveBeenCalledTimes(1);
   });
 

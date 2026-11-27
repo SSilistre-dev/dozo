@@ -80,6 +80,8 @@ describe("connections.catalog", () => {
     const second = await api.connections.catalog({ connectorId: "apps" });
     expect(second).toHaveLength(2);
     for (const item of second)
-      expect(item.logo).toMatch(new RegExp(`^${origin}/api/dozo/catalog-images/[a-f0-9]{64}\\.webp$`));
+      expect(item.logo).toMatch(
+        new RegExp(`^${origin}/api/dozo/catalog-images/[a-f0-9]{64}\\.webp$`),
+      );
   });
 });

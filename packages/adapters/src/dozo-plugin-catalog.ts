@@ -5,9 +5,9 @@ import { comparePlugins, matchesPluginQuery } from "@rakazo/core";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseHeldError, readJsonColumn, withLease } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { createFaviconResolver } from "./web/favicon.js";
 import type { PluginTextReader } from "./integrations/plugin-connectors.js";
 import { createPluginMarketplace } from "./integrations/plugin-marketplace.js";
+import { createFaviconResolver } from "./web/favicon.js";
 import { fetchSafeWebBytes, fetchSafeWebText } from "./web/web-ssrf.js";
 
 /**
@@ -535,7 +535,9 @@ export function createConnectionLogos(options: ConnectionLogosOptions) {
   async function store(url: string): Promise<void> {
     let body: Uint8Array<ArrayBuffer> | null = null;
     try {
-      body = await catalogImage(await fetchImage(url, AbortSignal.timeout(2 * IMAGE_FETCH_TIMEOUT_MS)));
+      body = await catalogImage(
+        await fetchImage(url, AbortSignal.timeout(2 * IMAGE_FETCH_TIMEOUT_MS)),
+      );
     } catch (error) {
       if (!(error instanceof Error && NO_IMAGE.test(error.message))) {
         // Not an answer: tried again after a restart, and meanwhile the tile shows no logo.
@@ -575,7 +577,8 @@ export function createConnectionLogos(options: ConnectionLogosOptions) {
     });
     for (const row of rows) {
       const fresh = row.hash || now() - row.checkedAt.getTime() < IMAGE_MISSING_TTL_MS;
-      if (fresh) known.set(row.source.slice(APP_LOGO_PREFIX.length), row.hash ? `${row.hash}.webp` : null);
+      if (fresh)
+        known.set(row.source.slice(APP_LOGO_PREFIX.length), row.hash ? `${row.hash}.webp` : null);
     }
   }
 
@@ -590,7 +593,8 @@ export function createConnectionLogos(options: ConnectionLogosOptions) {
       if (unknown.length) {
         await learn(unknown);
         for (const url of unknown) {
-          if (known.has(url) || pending.has(url) || known.size + pending.size >= APP_LOGO_MAX) continue;
+          if (known.has(url) || pending.has(url) || known.size + pending.size >= APP_LOGO_MAX)
+            continue;
           pending.add(url);
           queue.push(url);
         }
