@@ -15470,8 +15470,8 @@
     },
     {
       "file": "packages/core/src/index.ts",
-      "find": "export * from \"./integrations/plugin-catalog.js\";",
-      "replace": "export * from \"./integrations/plugin-catalog.js\";\nexport * from \"./integrations/dozo-plugin-sections.js\";",
+      "find": "export * from \"./integrations/mcp-server-update.js\";\nexport * from \"./integrations/plugin-catalog.js\";",
+      "replace": "export * from \"./integrations/plugin-catalog.js\";\nexport * from \"./integrations/mcp-server-update.js\";\nexport * from \"./integrations/dozo-plugin-sections.js\";",
       "requires": [
         "packages/core/src/integrations/dozo-plugin-sections.ts"
       ],
