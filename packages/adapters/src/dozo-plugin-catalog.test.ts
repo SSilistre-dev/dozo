@@ -13,6 +13,7 @@ import {
   CATALOG_RETRY_MS,
   CATALOG_SHRINK_ACCEPTED_AFTER,
   catalogImage,
+  createConnectionLogos,
   createPersistentPluginMarketplace,
   imageSource,
   storedCatalogImage,
@@ -96,10 +97,20 @@ function fakeStore(snapshot?: SnapshotRow) {
       upsert: vi.fn(async ({ create }: { create: ImageRow }) => {
         images.set(create.source, create);
       }),
-      deleteMany: vi.fn(async ({ where }: { where: { source: { notIn: string[] } } }) => {
-        for (const source of images.keys())
-          if (!where.source.notIn.includes(source)) images.delete(source);
-      }),
+      deleteMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { source: { notIn: string[] }; NOT?: { source: { startsWith: string } } };
+        }) => {
+          for (const source of images.keys())
+            if (
+              !where.source.notIn.includes(source) &&
+              !(where.NOT && source.startsWith(where.NOT.source.startsWith))
+            )
+              images.delete(source);
+        },
+      ),
     },
   };
   return { prisma, snapshots, images };
@@ -709,5 +720,75 @@ describe("catalog images", () => {
     expect(await storedCatalogImage(store.prisma as never, `${"b".repeat(64)}.webp`)).toBeNull();
     expect(await storedCatalogImage(store.prisma as never, "../secret.webp")).toBeNull();
     expect(store.prisma.dozoCatalogImage.findFirst).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("managed app logos", () => {
+  const foreign = "https://logos.example.test/api/gmail";
+  const mine = "https://app.example.test";
+  const imageUrl = (file: string) => `${mine}/images/${file}`;
+
+  it("reads a logo as none until it is stored, then answers from our own address", async () => {
+    const store = fakeStore();
+    const fetchImage = vi.fn(async () => png());
+    const logos = createConnectionLogos({ prisma: store.prisma as never, imageUrl, fetchImage });
+    const items = [{ slug: "gmail", logo: foreign }, { slug: "plain", logo: null }];
+    expect((await logos.own(items, mine)).map((item) => item.logo)).toEqual([null, null]);
+    await logos.settled();
+    const [gmail] = await logos.own(items, mine);
+    expect(gmail?.logo).toMatch(new RegExp(`^${mine}/images/[a-f0-9]{64}\\.webp$`));
+    const file = gmail!.logo!.split("/").pop()!;
+    expect((await sharp((await storedCatalogImage(store.prisma as never, file))!).metadata()).width).toBe(
+      CATALOG_IMAGE_SIZE,
+    );
+    expect(fetchImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers from the stored row after a restart without fetching again", async () => {
+    const store = fakeStore();
+    const first = createConnectionLogos({
+      prisma: store.prisma as never,
+      imageUrl,
+      fetchImage: async () => png(),
+    });
+    await first.own([{ logo: foreign }], mine);
+    await first.settled();
+    const fetchImage = vi.fn(async () => png());
+    const second = createConnectionLogos({ prisma: store.prisma as never, imageUrl, fetchImage });
+    expect((await second.own([{ logo: foreign }], mine))[0]?.logo).toContain("/images/");
+    expect(fetchImage).not.toHaveBeenCalled();
+  });
+
+  it("keeps our own address and never lets a failed or non-image logo through", async () => {
+    const store = fakeStore();
+    const own = `${mine}/api/dozo/catalog-images/${"a".repeat(64)}.webp`;
+    const fetchImage = vi.fn(async (url: string) => {
+      if (url.endsWith("/broken")) throw new Error("connection reset");
+      return new TextEncoder().encode("<html>not an image</html>");
+    });
+    const logos = createConnectionLogos({ prisma: store.prisma as never, imageUrl, fetchImage });
+    const items = [
+      { logo: own },
+      { logo: "https://logos.example.test/broken" },
+      { logo: "https://logos.example.test/page" },
+    ];
+    await logos.own(items, mine);
+    await logos.settled();
+    expect((await logos.own(items, mine)).map((item) => item.logo)).toEqual([own, null, null]);
+  });
+
+  it("survives a plugin catalog refresh that drops images of unlisted sources", async () => {
+    const store = fakeStore();
+    const logos = createConnectionLogos({
+      prisma: store.prisma as never,
+      imageUrl,
+      fetchImage: async () => png(),
+    });
+    await logos.own([{ logo: foreign }], mine);
+    await logos.settled();
+    const { marketplace } = setup(store);
+    await marketplace.catalog("");
+    await marketplace.settled();
+    expect([...store.images.keys()]).toContain(`app:${foreign}`);
   });
 });

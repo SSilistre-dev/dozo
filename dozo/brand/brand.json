@@ -4195,20 +4195,29 @@
     {
       "file": "apps/api/src/routes/connections.ts",
       "find": "        return catalogs\n          .flat()\n          .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item));",
-      "replace": "        return withOwnLogosOnly(\n          catalogs\n            .flat()\n            .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item)),\n          deps.env.webOrigin,\n        );",
+      "replace": "        return ownLogos(\n          catalogs\n            .flat()\n            .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item)),\n        );",
       "requires": [
         "apps/api/src/dozo-connection-logos.ts"
       ],
-      "reason": "managed app logos: a provider's logo address never reaches a client; only our own does"
+      "reason": "managed app logos: a provider's logo address never reaches a client; the logo is stored and served from our own address"
     },
     {
       "file": "apps/api/src/routes/connections.ts",
       "find": "import { recordToolConnected } from \"../integrations/tool-connect-analytics.js\";",
-      "replace": "import { recordToolConnected, withOwnLogosOnly } from \"../dozo-connection-logos.js\";",
+      "replace": "import { dozoConnectionLogos, recordToolConnected } from \"../dozo-connection-logos.js\";",
       "requires": [
         "apps/api/src/dozo-connection-logos.ts"
       ],
       "reason": "managed app logos: one import redirect to the wrapper that also re-exports the same name"
+    },
+    {
+      "file": "apps/api/src/routes/connections.ts",
+      "find": "  const { deps, authed } = ctx;\n  const healthChecks = new Map<",
+      "replace": "  const { deps, authed } = ctx;\n  const ownLogos = dozoConnectionLogos(deps);\n  const healthChecks = new Map<",
+      "requires": [
+        "apps/api/src/dozo-connection-logos.ts"
+      ],
+      "reason": "managed app logos: the store lives as long as the routes, like the plugin catalog's"
     },
     {
       "file": "apps/web/src/pages/shell/shell-overlays.tsx",
