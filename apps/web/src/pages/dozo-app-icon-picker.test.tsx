@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -19,9 +19,6 @@ it("renders no picker even where the desktop app can change its icon", async () 
 afterEach(() => vi.unstubAllGlobals());
 
 it("is the picker account settings imports (branded tree)", () => {
-  const overlay = readFileSync(
-    fileURLToPath(new URL("./settings/AccountSettingsOverlay.tsx", import.meta.url)),
-    "utf8",
-  );
+  const overlay = readFileSync(join(import.meta.dirname, "settings/AccountSettingsOverlay.tsx"), "utf8");
   expect(overlay).toContain('import { AppIconPicker } from "./dozo-app-icon-picker"');
 });
