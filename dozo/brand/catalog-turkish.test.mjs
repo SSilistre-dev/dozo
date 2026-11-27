@@ -110,6 +110,14 @@ describe("main", () => {
     assert.deepEqual(lines, ['pending: "New"', "TURKISH: PASS (2 ids; 1 upstream ids pending translation)"]);
   });
 
+  it("lists the first pending ids only and counts the rest", () => {
+    const body = Array.from({ length: 202 }, (_, i) => entry(`Id ${i}`, "", "up.tsx")).join("");
+    const { argv, options } = tree(body, [], ["up.tsx"]);
+    const { lines } = main(argv, options);
+    assert.equal(lines.at(-2), "pending: ... and 2 more ids");
+    assert.match(lines.at(-1), /202 upstream ids pending/);
+  });
+
   it("fails on an English entry the fork added even when upstream's are pending", () => {
     const body = entry("New", "", "up.tsx") + entry("Mine", "Mine", "dozo-a.tsx");
     const { argv, options } = tree(body, [], ["up.tsx"]);

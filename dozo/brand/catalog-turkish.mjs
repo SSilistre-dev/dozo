@@ -83,7 +83,7 @@ export function bySource(entries, { upstream, rules }) {
 
 /** What the brand rules look for in upstream's files and what they put there instead. */
 function readRules(brandFile) {
-  const { anchored = [] } = JSON.parse(fs.readFileSync(brandFile, "utf8"));
+  const { anchored } = JSON.parse(fs.readFileSync(brandFile, "utf8"));
   return { found: anchored.map(({ find }) => find), replaced: anchored.map(({ replace }) => replace) };
 }
 
