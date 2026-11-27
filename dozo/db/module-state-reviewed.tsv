@@ -13,6 +13,7 @@ apps/api/src/dozo-bot-api.ts	fn mountDozoBotApi	const openStreams = new Map<stri
 apps/api/src/dozo-chat-export.ts	fn exportChat	const botNames = new Map<string, string>(	local	per-call local, dies with the call
 apps/api/src/dozo-chat-export.ts	fn exportChat	const pending = new Set<string>();	local	per-call local, dies with the call
 apps/api/src/dozo-chat-markdown.ts	fn chatTimeFormatter	let format: Intl.DateTimeFormat;	local	per-call local, dies with the call
+apps/api/src/dozo-connection-logos.ts	fn dozoConnectionLogos	const logos = createConnectionLogos({	global-safe	store of public managed app logos, the same for everyone
 apps/api/src/dozo-events.ts	module	const remembered = new Set<string>();	user	`kind:userId` keys of firsts already recorded, bounded; only a yes-already-recorded flag, never read back as data
 apps/api/src/dozo-mcp.ts	fn mountDozoMcp	const lockedUntil = new Map<string, number>();	global-safe	refusal lock by client address, bounded; times only
 apps/api/src/dozo-message-revision.ts	module	const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);	global-safe	constant set of fixed words, never changed after load
