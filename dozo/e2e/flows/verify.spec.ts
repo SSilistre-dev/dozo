@@ -133,7 +133,7 @@ test("doğrulama bağlantısı: hatırlatma, doğrulandı, ikinci tıklama, otur
   await page.context().clearCookies();
   await page.goto(LINK);
   await expect(page.getByRole("heading", { name: "E-posta adresiniz doğrulandı" })).toBeVisible();
-  await page.getByRole("link", { name: "Devam" }).click();
+  await page.getByRole("link", { name: "Oturum aç" }).click();
   await page.waitForURL(/\/sign-in\/email$/);
   await expect(page.getByPlaceholder("E-posta adresiniz")).toHaveValue(EMAIL);
 });

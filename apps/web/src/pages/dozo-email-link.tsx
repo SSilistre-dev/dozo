@@ -7,12 +7,15 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth/auth";
 import { fetchAuthCapabilities } from "../lib/auth/auth-capabilities";
+import { getActiveUiLocale } from "../lib/locale/i18n";
+import type { UiLocale } from "../lib/locale/ui-locale";
 import { useSave } from "../lib/query/query";
 import {
   AuthFrame,
   submitClass,
   PasswordResetPage as UpstreamPasswordResetPage,
 } from "./auth/Auth";
+import { AuthLocaleSelect } from "./dozo-auth-locale";
 
 /**
  * Where an emailed link lands once the server has checked it. The verification link comes back
@@ -108,7 +111,8 @@ function VerifyEmailResult({
   signedInEmail: string | null;
 }) {
   const signedIn = signedInEmail !== null;
-  // Onward: into the app when signed in, else to sign-in with the address filled in.
+  // Onward: into the app when signed in, else to sign-in with the address filled in. Signed out,
+  // the button says where it goes, also after "verified".
   const onward = (primary: boolean) =>
     signedIn ? (
       <OnwardLink to="/app" primary={primary}>
@@ -116,7 +120,7 @@ function VerifyEmailResult({
       </OnwardLink>
     ) : (
       <OnwardLink to="/sign-in/email" state={email ? { email } : undefined} primary={primary}>
-        {outcome === "verified" ? <Trans>Continue</Trans> : <Trans>Sign in</Trans>}
+        <Trans>Sign in</Trans>
       </OnwardLink>
     );
   if (outcome === "expired") {
@@ -136,8 +140,24 @@ function VerifyEmailResult({
     ) : (
       <Trans>Sign in to continue</Trans>
     );
-  return <LinkResult title={title}>{onward(true)}</LinkResult>;
+  const openApp = (outcome === "verified" || outcome === "neutral") && onPhone();
+  return (
+    <LinkResult title={title} address={outcome === "verified" ? email || signedInEmail : null}>
+      {onward(true)}
+      {openApp ? (
+        <div className="mt-6">
+          {/* The app's own scheme (apps/mobile `scheme`): the mail opened in the phone's browser. */}
+          <a href="dozo://" className="font-medium">
+            <Trans>Open Dozo</Trans>
+          </a>
+        </div>
+      ) : null}
+    </LinkResult>
+  );
 }
+
+/** A mailed link opens in the phone's browser, which cannot hand the person back to the app. */
+const onPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 /** An error from the auth client, kept with its code so the shared copy can name it. */
 class AuthCallError extends Error {
@@ -241,7 +261,14 @@ function Sent({ to }: { to: string }) {
 export function PasswordResetPage() {
   const [params] = useSearchParams();
   const state = useLinkState();
-  if (!state && params.get("token")) return <UpstreamPasswordResetPage />;
+  const [locale, setLocale] = useState<UiLocale>(getActiveUiLocale);
+  if (!state && params.get("token"))
+    return (
+      <>
+        <UpstreamPasswordResetPage />
+        <AuthLocaleSelect locale={locale} onChange={setLocale} />
+      </>
+    );
   return (
     <LinkResult title={<Trans>This link is no longer valid</Trans>}>
       <OnwardLink to="/forgot-password" primary>
@@ -258,17 +285,28 @@ export function PasswordResetPage() {
 
 function LinkResult({
   title,
+  address = null,
   onSubmit = (event) => event.preventDefault(),
   children,
 }: {
   title: ReactNode;
+  address?: string | null;
   onSubmit?: (event: React.FormEvent) => void;
   children: ReactNode;
 }) {
+  const [locale, setLocale] = useState<UiLocale>(getActiveUiLocale);
   return (
-    <AuthFrame title={title} onSubmit={onSubmit}>
-      {children}
-    </AuthFrame>
+    <>
+      <AuthFrame title={title} onSubmit={onSubmit}>
+        {address ? (
+          <p data-dozo-auth-address className="w-full text-center text-muted-foreground">
+            {address}
+          </p>
+        ) : null}
+        {children}
+      </AuthFrame>
+      <AuthLocaleSelect locale={locale} onChange={setLocale} />
+    </>
   );
 }
 
@@ -287,7 +325,8 @@ function OnwardLink({
     <Link
       to={to}
       state={state}
-      className={primary ? buttonVariants({ size: "lg", className: submitClass }) : "font-medium"}
+      data-dozo-onward={primary || undefined}
+      className={primary ? buttonVariants({ size: "lg", className: "px-10" }) : "font-medium"}
     >
       {children}
     </Link>

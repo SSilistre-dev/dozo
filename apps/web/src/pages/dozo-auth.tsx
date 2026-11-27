@@ -1,7 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { signInProviders } from "@rakazo/contracts";
-import { APP_LOCALE_LABELS } from "@rakazo/core";
-import { Button, OptionSelect } from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import type { ComponentProps } from "react";
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
@@ -13,6 +12,7 @@ import { getActiveUiLocale, setUiLocale } from "../lib/locale/i18n";
 import type { UiLocale } from "../lib/locale/ui-locale";
 import { UI_LOCALES } from "../lib/locale/ui-locale";
 import { AuthFrame, submitClass, AuthPage as UpstreamAuthPage } from "./auth/Auth";
+import { AuthLocaleSelect } from "./dozo-auth-locale";
 import { DozoCodeSignIn } from "./dozo-code-sign-in";
 import { dozoCodeSignInAvailable } from "./dozo-email-code-link";
 import { HostedSignIn } from "./dozo-hosted-login";
@@ -178,20 +178,7 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
       ) : (
         <UpstreamAuthPage {...props} />
       )}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2">
-        <OptionSelect
-          size="sm"
-          className="w-auto"
-          data-testid="auth-locale-select"
-          aria-label={t`Language`}
-          options={UI_LOCALES.map((code) => ({ value: code, label: APP_LOCALE_LABELS[code] }))}
-          value={locale}
-          onValueChange={(next) => {
-            setLocale(next);
-            void setUiLocale(next).then(setLocale);
-          }}
-        />
-      </div>
+      <AuthLocaleSelect locale={locale} onChange={setLocale} />
     </div>
   );
 }

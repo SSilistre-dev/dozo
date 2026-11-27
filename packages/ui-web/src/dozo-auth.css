@@ -29,6 +29,13 @@
   mask-composite: intersect;
 }
 
+/* The column starts at one height on every step, so the logo and title stay put from one screen
+   to the next instead of moving with the height of what follows. */
+[data-rakazo-surface="auth"] > div.flex-1 {
+  align-items: flex-start;
+  padding-top: clamp(24px, 16vh, 160px);
+}
+
 /* One narrow column; the card the chooser used becomes the same plain column. */
 [data-rakazo-surface="auth"] form {
   max-width: 380px;
@@ -83,6 +90,14 @@
 }
 [data-rakazo-surface="auth"] form [data-slot="button"].border-border:hover {
   background: var(--dozo-wash-strong);
+}
+/* A result page's one onward link: the same pill, as wide as its word and not the column, right
+   under the title. */
+[data-rakazo-surface="auth"] form a[data-dozo-onward] {
+  height: 44px;
+  min-width: 180px;
+  border-radius: 999px;
+  font-size: 15px;
 }
 [data-dozo-auth-providers] {
   margin-top: 12px;
