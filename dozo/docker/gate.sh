@@ -694,7 +694,7 @@ repo_checks() {
   node_image || return 1
   checks_image || return 1
   # shellcheck disable=SC2016
-  if drun checks -v "$src:/src:ro" "$CHECKS_IMAGE" sh -c 'set -e
+  if drun checks -v "$src:/src:ro" -v "$ROOT/dozo/brand:/brand:ro" "$CHECKS_IMAGE" sh -c 'set -e
       mkdir /w; tar -C /src --exclude=./node_modules --exclude="*/node_modules" -cf - . | tar -C /w -xf -
       git config --global --add safe.directory /w  # the copy is owned by the host user, git runs as root
       cd /w; git init -q; git add -A
@@ -702,6 +702,10 @@ repo_checks() {
       node --test scripts/checks/*.test.mjs > /tmp/checks.log 2>&1 && rc=0 || rc=$?
       [ "$rc" -eq 0 ] || cat /tmp/checks.log
       echo "[checks] $(grep -E "^ℹ (tests|pass|fail) " /tmp/checks.log | paste -sd " ")"
+      # Extraction writes every string the code holds into the Turkish catalog; none may still be English.
+      if /deps/node_modules/.bin/lingui extract > /tmp/extract.log 2>&1; then
+        node /brand/catalog-turkish.mjs --root /w || rc=2
+      else cat /tmp/extract.log; echo "TURKISH: FAIL (lingui extract failed)"; rc=2; fi
       exit "$rc"'; then echo "[checks] repository checks ok on the branded tree"
   else fail "checks: repository checks (scripts/checks) on the branded tree"; return 1; fi
 }

@@ -234,6 +234,11 @@ recipe; the tree is not installed, so they are linked in as its `node_modules`),
 on a machine that has the image no longer fails on a DNS hiccup; a fresh CI runner builds it once per
 run. It runs in `qa` and in the CI job `dozo-gate` after `brand`, not in `olc`, which stays offline.
 
+The same step then runs `lingui extract` in the copy and holds the Turkish catalog to `dozo/brand/catalog-turkish.mjs`:
+an entry whose translation is empty or the English source fails (`TURKISH: FAIL`), unless its id is in
+`dozo/brand/catalog-turkish-same.json`, the words and technical terms Turkish keeps in English. Translate a new
+string in a brand rule on the Turkish catalog; list only a term that reads the same in Turkish.
+
 ### budget
 
 The web startup budget: upstream's `scripts/checks/bundle-size.mjs` and its limit in

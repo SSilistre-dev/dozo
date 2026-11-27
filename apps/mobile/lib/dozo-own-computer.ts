@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { Bot, ComputerMode } from "@rakazo/contracts";
-import { ownComputerNote } from "@rakazo/contracts";
+import { ownComputerNote, planHasNoComputer } from "@rakazo/contracts";
 import { knownServerText } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "react-native";
@@ -58,4 +58,14 @@ export function confirmComputerMove(mode: ComputerMode, apply: (mode: ComputerMo
       { text: t`Move`, onPress: () => apply(mode) },
     ],
   );
+}
+
+/**
+ * True on a plan with no hosted computer (Free): Take control and the Team or Private picker on
+ * the Computer screen would only be refused, so the screen shows them off. Unknown billing, a trial,
+ * credits and a server that does not bill leave them on.
+ */
+export function useNoComputerPlan(): boolean {
+  const billing = useQuery(rpcQuery("billing/status"), queryClient).data;
+  return planHasNoComputer(billing);
 }
