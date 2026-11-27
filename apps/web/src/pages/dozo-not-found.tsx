@@ -1,20 +1,23 @@
-import { NotFoundPage as UpstreamNotFoundPage } from "./NotFound";
+import { Trans } from "@lingui/react/macro";
+import { ResultPage } from "./dozo-result";
 
 /**
- * Upstream's 404 page with the Dozo dragon of the landing page faint behind it. App.tsx loads this
+ * The 404 page: the sign-in column's frame with the Dozo dragon of the landing page faint behind it. App.tsx loads this
  * page on demand (an anchored rule points its lazy import here), so the drawing never reaches the
  * startup bundle. The figure adds no words and does not move.
  */
 export function NotFoundPage() {
   return (
-    <div className="relative isolate h-full bg-background [&>[data-rakazo-surface=not-found]]:bg-transparent">
+    <div className="relative isolate h-full bg-background [&>[data-rakazo-surface]]:bg-transparent">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
       >
         <DozoDragon className="absolute top-1/2 left-1/2 w-[max(36rem,min(62rem,110%))] -translate-x-1/2 -translate-y-1/2 text-foreground opacity-10" />
       </div>
-      <UpstreamNotFoundPage />
+      <ResultPage title={<Trans>Page not found</Trans>} to="/">
+        <Trans>Go home</Trans>
+      </ResultPage>
     </div>
   );
 }

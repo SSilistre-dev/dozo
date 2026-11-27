@@ -91,4 +91,14 @@ export const overlays: Surface[] = [
       await dismiss(page);
     },
   },
+  {
+    name: "import an agent dialog",
+    group: "overlays",
+    covers: ["overlay:import"],
+    async reach({ page, world, scan }) {
+      await gotoStable(page, `/app/${world.chiefId}?import`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await scan("import dialog");
+    },
+  },
 ];

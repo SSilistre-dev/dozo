@@ -41,13 +41,13 @@ const SOURCE: Record<string, string> = {
     {window.location.pathname === "/integrations/callback" ? 1 : 2}
     {pathname === SSO_CALLBACK_PATH ? 1 : 2}
     <Route path="*" element={<NotFound />} />`,
-  "lib/sign-in-next.ts": 'export const SIGN_UP_PATH = "/sign-up";',
-  "lib/sso-flow.ts": 'export const SSO_CALLBACK_PATH = "/sso/callback";',
-  "pages/shell-overlay.ts": `
+  "lib/auth/sign-in-next.ts": 'export const SIGN_UP_PATH = "/sign-up";',
+  "lib/auth/sso-flow.ts": 'export const SSO_CALLBACK_PATH = "/sso/callback";',
+  "pages/shell/shell-overlay-url.ts": `
     const SETTINGS_SECTIONS = ["profile", "billing", "wallet"] as const;
     const OVERLAY_KEYS = ["settings", "space", "messaging", "skills", "mcp"] as const;`,
-  "pages/settings-nav.ts": 'available.billing ? [{ id: "billing", label: "Billing" }] : []',
-  "pages/Onboarding.tsx": 'step === "loading"; step === "survey"; step === "model";',
+  "pages/settings/settings-nav.ts": 'available.billing ? [{ id: "billing", label: "Billing" }] : []',
+  "pages/onboarding/Onboarding.tsx": 'step === "loading"; step === "survey"; step === "model";',
 };
 
 function withSource<T>(files: Record<string, string>, run: (root: string) => T): T {
@@ -97,10 +97,10 @@ test("readInventory refuses a source tree whose shape it no longer understands",
     return files;
   };
   const cases: [string, Record<string, string>, RegExp][] = [
-    ["a missing file", without("pages/settings-nav.ts"), /settings-nav\.ts is gone/],
+    ["a missing file", without("pages/settings/settings-nav.ts"), /settings-nav\.ts is gone/],
     [
       "a route constant that is not a string export",
-      without("lib/sign-in-next.ts", "export const OTHER = 1;"),
+      without("lib/auth/sign-in-next.ts", "export const OTHER = 1;"),
       /SIGN_UP_PATH is not exported/,
     ],
     [
@@ -110,7 +110,7 @@ test("readInventory refuses a source tree whose shape it no longer understands",
     ],
     [
       "no settings list",
-      without("pages/shell-overlay.ts", "const OVERLAY_KEYS = [];"),
+      without("pages/shell/shell-overlay-url.ts", "const OVERLAY_KEYS = [];"),
       /SETTINGS_SECTIONS not found/,
     ],
   ];

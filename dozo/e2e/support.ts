@@ -174,8 +174,8 @@ export async function connectModelThroughOnboarding(page: Page) {
   await page.getByRole("combobox", { name: "Provider" }).click();
   await page.getByRole("option", { name: "OpenAI-compatible", exact: true }).click();
   await page.getByLabel("OpenAI-compatible server URL").fill(modelUrl());
-  await page.getByRole("button", { name: "Find models" }).click();
-  await expect(page.getByText("Found 1 model.")).toBeVisible();
+  // The form lists the server's models by itself once the address is in.
+  await expect(page.getByText("dozo-e2e-model", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.waitForURL(/\/app\/[^/?]+/, { timeout: 60_000 });
 }

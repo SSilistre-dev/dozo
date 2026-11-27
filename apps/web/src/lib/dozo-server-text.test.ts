@@ -104,7 +104,10 @@ it("says the key refusal in Turkish where onboarding would only say the model wa
 });
 
 it("says a server-sent sign-in label in the UI's language and leaves other labels alone", () => {
-  expect(signInLabelText("Sign in with ChatGPT")).toBe("ChatGPT ile giriş yap");
+  expect(signInLabelText("Sign in with ChatGPT")).toBe("ChatGPT ile oturum aç");
+  expect(signInLabelText("Workspace accounts need an admin to turn this on.")).toBe(
+    "Çalışma alanı hesaplarında bunu bir yönetici açmalı.",
+  );
   const untranslated = [...SIGN_IN_LABELS].filter((label) => signInLabelText(label) === label);
   expect(untranslated).toEqual([]);
   expect(signInLabelText("Sign in with Something")).toBe("Sign in with Something");

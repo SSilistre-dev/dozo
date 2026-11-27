@@ -72,6 +72,7 @@ export type SettingsId =
   | "voice"
   | "labs"
   | "usage"
+  | "spaces"
   | "organization"
   | "wallet"
   | "messaging"
@@ -149,10 +150,10 @@ export async function expandAll(scope: Locator) {
 
 /**
  * Brings the bot's computer up from its panel, however it was left: "Retry screen" after a failed
- * start, "Wake" when asleep, nothing when already "Awake". Waits for a start to finish.
+ * start, "Wake" when asleep, nothing when the preview already reports a running computer. Waits for a start to finish.
  */
 export async function ensureComputerAwake(page: Page) {
-  const awake = page.getByText("Awake", { exact: true });
+  const awake = page.locator('[data-testid="computer-preview"][data-state="running"]');
   await expect(async () => {
     if (await awake.isVisible()) return;
     const retry = page.getByRole("button", { name: "Retry screen" });
@@ -195,4 +196,10 @@ export async function openEachPopup(
       }
     }
   }
+}
+
+/** Picks `option` in a dropdown built on the shared `OptionSelect`: open its trigger, click the option. */
+export async function choose(page: Page, trigger: Locator, option: string | RegExp) {
+  await trigger.click();
+  await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
 }

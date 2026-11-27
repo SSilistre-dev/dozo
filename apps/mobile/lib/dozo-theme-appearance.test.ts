@@ -1,6 +1,10 @@
+import type { ColorTokens } from "@rakazo/ui-tokens";
 import { darkTokens, lightTokens, UI_APPEARANCE_STORAGE_KEY } from "@rakazo/ui-tokens";
 import { dozoTheme } from "@rakazo/ui-tokens/dozo-themes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Links read in the ink, not upstream's blue.
+const ink = (tokens: ColorTokens) => ({ ...tokens, link: tokens.foreground });
 
 // The anchored rules in apps/mobile/lib/appearance/appearance.ts and user-bubble.ts, on the branded tree: the
 // phone's own appearance module paints a saved theme, tells its subscribers, and starts plain when
@@ -48,10 +52,10 @@ describe("the phone's appearance with a saved theme", () => {
     store.set("dozo.uiTheme", "yoru");
     const { loadAppearancePreference, mobileTokens } = await import("./appearance/appearance");
     await loadAppearancePreference();
-    expect(mobileTokens()).toEqual(lightTokens);
+    expect(mobileTokens()).toEqual(ink(lightTokens));
     store.set("dozo.uiTheme", "neon");
     await loadAppearancePreference();
-    expect(mobileTokens()).toEqual(lightTokens);
+    expect(mobileTokens()).toEqual(ink(lightTokens));
   });
 
   it("starts plain when the choice is System, whatever theme was left behind", async () => {
@@ -59,7 +63,7 @@ describe("the phone's appearance with a saved theme", () => {
     store.set("dozo.uiTheme", "sumi");
     const { loadAppearancePreference, mobileTokens } = await import("./appearance/appearance");
     await loadAppearancePreference();
-    expect(mobileTokens()).toEqual(darkTokens);
+    expect(mobileTokens()).toEqual(ink(darkTokens));
   });
 
   it("tells whoever follows the appearance when the theme changes within one tone", async () => {
