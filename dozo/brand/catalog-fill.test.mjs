@@ -12,8 +12,8 @@ const catalog = (...entries) => `${HEADER}${entries.join("\n\n")}\n`;
 const po = (language) => `packages/i18n/locales/${language}/messages.po`;
 const TURKISH = catalog(
   '#: a.tsx\nmsgid "Shared"\nmsgstr "Ortak"',
-  '#. js-lingui-explicit-id\n#: dozo-b.ts\nmsgid "Upgrade to {plan}"\nmsgstr "{plan} planına geç"',
-  '#: c.tsx\nmsgctxt "recipient"\nmsgid "To"\nmsgstr "Kime"',
+  '#. js-lingui-explicit-id\n#: dozo-b.ts\nmsgid "Fixture upgrade to {plan}"\nmsgstr "{plan} planına geç"',
+  '#: c.tsx\nmsgctxt "fixture recipient"\nmsgid "To"\nmsgstr "Kime"',
   '#: d.tsx\nmsgid ""\n"Line one\\n"\n"Line two"\nmsgstr ""\n"Satır bir\\n"\n"Satır iki"',
   '#~ msgid "Gone"\n#~ msgstr "Gitti"',
 );
@@ -26,9 +26,9 @@ describe("catalogEntries", () => {
     const entries = catalogEntries(TURKISH);
     assert.deepEqual(
       [...entries.keys()],
-      ["\u0004Shared", "\u0004Upgrade to {plan}", "recipient\u0004To", "\u0004Line one\nLine two"],
+      ["\u0004Shared", "\u0004Fixture upgrade to {plan}", "fixture recipient\u0004To", "\u0004Line one\nLine two"],
     );
-    assert.deepEqual(entries.get("\u0004Upgrade to {plan}").comments, [
+    assert.deepEqual(entries.get("\u0004Fixture upgrade to {plan}").comments, [
       "#. js-lingui-explicit-id",
       "#: dozo-b.ts",
     ]);
@@ -50,8 +50,8 @@ describe("fillCatalogs", () => {
     assert.deepEqual([...changed.keys()], [po("de"), po("en")]);
     assert.equal(
       changed.get(po("de")),
-      `${GERMAN}\n#. js-lingui-explicit-id\n#: dozo-b.ts\nmsgid "Upgrade to {plan}"\nmsgstr "Upgrade to {plan}"\n\n` +
-        '#: c.tsx\nmsgctxt "recipient"\nmsgid "To"\nmsgstr "To"\n\n' +
+      `${GERMAN}\n#. js-lingui-explicit-id\n#: dozo-b.ts\nmsgid "Fixture upgrade to {plan}"\nmsgstr "Fixture upgrade to {plan}"\n\n` +
+        '#: c.tsx\nmsgctxt "fixture recipient"\nmsgid "To"\nmsgstr "To"\n\n' +
         '#: d.tsx\nmsgid ""\n"Line one\\n"\n"Line two"\nmsgstr ""\n"Line one\\n"\n"Line two"\n',
     );
   });
@@ -110,7 +110,7 @@ describe("the brand step", () => {
     const first = apply(root, configFile());
     assert.equal(first.status, 0, first.stderr);
     assert.match(first.stdout, /catalogs: 6 entries added to 2 languages/);
-    assert.match(read(root, po("de")), /msgid "Upgrade to \{plan\}"\nmsgstr "Upgrade to \{plan\}"/);
+    assert.match(read(root, po("de")), /msgid "Fixture upgrade to \{plan\}"\nmsgstr "Fixture upgrade to \{plan\}"/);
     const again = apply(root, configFile());
     assert.equal(again.status, 0, again.stderr);
     assert.match(again.stdout, /catalogs: 0 entries added to 0 languages/);
@@ -121,5 +121,59 @@ describe("the brand step", () => {
     const dry = apply(root, configFile(), "--check");
     assert.match(dry.stdout, /catalogs: 6 entries added to 2 languages/);
     assert.equal(read(root, po("de")), GERMAN);
+  });
+});
+
+describe("translations", () => {
+  const turkish = catalog(
+    '#: a.tsx\nmsgid "Shared"\nmsgstr "Ortak"',
+    '#: b.tsx\nmsgid "Fixture upgrade to {plan}"\nmsgstr "{plan} planına geç"',
+    '#: c.tsx\nmsgctxt "fixture recipient"\nmsgid "To"\nmsgstr "Kime"',
+  );
+  const english = catalog('#: a.tsx\nmsgid "Shared"\nmsgstr "Shared"');
+  const german = catalog('#: a.tsx\nmsgid "Shared"\nmsgstr "Gemeinsam"');
+  const translations = new Map([
+    [
+      "de",
+      new Map([
+        ["\u0004Shared", "Geteilt"],
+        ["\u0004Fixture upgrade to {plan}", "Auf {plan} wechseln"],
+        ["fixture recipient\u0004To", "An"],
+      ]),
+    ],
+  ]);
+  const run = (de) => {
+    const root = tree({ [po("tr")]: turkish, [po("de")]: de, [po("en")]: german });
+    return { root, ...fillCatalogs(root, readFrom(root), translations) };
+  };
+
+  it("gives a new id its translation instead of the English source", () => {
+    const { changed } = run(german);
+    assert.match(changed.get(po("de")), /msgid "Fixture upgrade to \{plan\}"\nmsgstr "Auf \{plan\} wechseln"/);
+    assert.match(changed.get(po("de")), /msgctxt "fixture recipient"\nmsgid "To"\nmsgstr "An"/);
+    assert.match(changed.get(po("en")), /msgid "Fixture upgrade to \{plan\}"\nmsgstr "Fixture upgrade to \{plan\}"/);
+  });
+
+  it("translates an entry that is still English, and keeps the words someone already wrote", () => {
+    const { changed, translated } = run(english);
+    assert.match(changed.get(po("de")), /msgid "Shared"\nmsgstr "Geteilt"/);
+    assert.equal(translated, 3);
+    assert.equal(run(german).changed.get(po("de")).includes("Geteilt"), false);
+  });
+
+  it("changes nothing on a catalog it already translated", () => {
+    const { root, changed } = run(english);
+    for (const [rel, text] of changed) fs.writeFileSync(path.join(root, rel), text);
+    const again = fillCatalogs(root, readFrom(root), translations);
+    assert.equal(again.added, 0);
+    assert.equal(again.translated, 0);
+    assert.equal(again.changed.size, 0);
+  });
+
+  it("writes a multi-line source translation on one line", () => {
+    const multi = catalog('#: d.tsx\nmsgid ""\n"A\\n"\n"B"\nmsgstr ""\n"A\\n"\n"B"');
+    const root = tree({ [po("tr")]: multi, [po("de")]: multi, [po("en")]: multi });
+    const { changed } = fillCatalogs(root, readFrom(root), new Map([["de", new Map([["\u0004A\nB", "X\nY"]])]]));
+    assert.match(changed.get(po("de")), /msgid ""\n"A\\n"\n"B"\nmsgstr "X\\nY"/);
   });
 });
