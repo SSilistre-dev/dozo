@@ -65,10 +65,6 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
   browser,
   guard,
 }) => {
-  test.fixme(
-    true,
-    "FINDING: a routine that posts in a busy chat waits with a wake time in the future (chat-wait.ts), which planQueue reads as a backoff, so the line never lists it; fix the plan, then remove this line",
-  );
   test.setTimeout(420_000);
   const name = `Queuebot ${Math.random().toString(36).slice(2, 7)}`;
   const bot = await rpcAs<{ id: string }>(page, "bots/create", {

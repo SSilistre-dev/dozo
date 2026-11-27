@@ -14,6 +14,11 @@ export interface QueueRun {
   /** The routine's name, when the run is a routine's. Shown only to the person it belongs to. */
   routineName: string | null;
   sourceMessageId: string | null;
+  /**
+   * Held back by its chat's busy run, not by a failure: its wake time is the chat wait's next
+   * look, not a backoff (see `waitsForChat`).
+   */
+  waitsForChat: boolean;
 }
 
 /** A message held until the run ahead of it ends. `runId` is the run it was sent behind. */
@@ -43,6 +48,25 @@ export interface QueueSnapshot {
   previews: Map<string, string>;
 }
 
+/**
+ * A scheduled task or a bot's message that has not started and has no attempt behind it waits
+ * for its chat with a wake time ahead (`holdRunForChat`, which `startRunsWaitingOnChat` reads as
+ * this same test). A run backing off after a failure has an attempt or is a retry.
+ */
+export function waitsForChat(run: {
+  trigger: string;
+  startedAt: Date | null;
+  retryOfRunId: string | null;
+  attempts: number;
+}): boolean {
+  return (
+    (run.trigger === "routine" || run.trigger === "bot_message") &&
+    !run.startedAt &&
+    !run.retryOfRunId &&
+    run.attempts === 0
+  );
+}
+
 /** The order the next run starts in (`startNextWaitingRun` reads the same one). */
 const byStart = compareQueueStart;
 
@@ -69,7 +93,7 @@ export function planQueue(snapshot: QueueSnapshot): DozoQueueItem[] {
     const line: Array<{ run: QueueRun; reason: DozoQueueItem["reason"]; ahead: QueueRun | null }> =
       [];
     for (const run of own.filter((candidate) => candidate.status === "queued").sort(byStart)) {
-      if (!run.wakeAt || run.wakeAt <= now) {
+      if (!run.wakeAt || run.wakeAt <= now || run.waitsForChat) {
         const ahead = working.find((other) => other.id !== run.id);
         if (ahead) line.push({ run, reason: "bot_busy", ahead });
         continue;

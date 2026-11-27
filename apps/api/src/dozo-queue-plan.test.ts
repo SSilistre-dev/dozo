@@ -21,6 +21,7 @@ function run(id: string, patch: Partial<QueueRun> = {}): QueueRun {
     threadId: "thread-1",
     routineName: null,
     sourceMessageId: null,
+    waitsForChat: false,
     ...patch,
   };
 }
@@ -162,6 +163,24 @@ describe("a run waiting for a computer another bot holds", () => {
     const waiting = run("waiting", { wakeAt: later });
     expect(planQueue(snapshot({ runs: [waiting] }))).toEqual([]);
     expect(planQueue(snapshot({ runs: [waiting], leases: [lease(null, "bot-1")] }))).toEqual([]);
+  });
+
+  it("is in line behind its bot's run while it waits for the chat, though its wake time is ahead", () => {
+    const working = run("working", { status: "running", userId: OTHER });
+    const routine = run("routine", { trigger: "routine", wakeAt: later, waitsForChat: true });
+    const backoff = run("backoff", { wakeAt: later });
+    expect(
+      planQueue(snapshot({ runs: [working, backoff, routine] })).map((item) => [
+        item.id,
+        item.position,
+        item.reason,
+      ]),
+    ).toEqual([["routine", 1, "bot_busy"]]);
+  });
+
+  it("is not in line while it waits for the chat and nothing of its bot works", () => {
+    const routine = run("routine", { trigger: "routine", wakeAt: later, waitsForChat: true });
+    expect(planQueue(snapshot({ runs: [routine] }))).toEqual([]);
   });
 
   it("is not held by a lease on another bot's computer", () => {

@@ -12,7 +12,7 @@ import {
   transientRunEventsWhere,
 } from "@rakazo/db";
 import type { QueueRun, QueueSnapshot } from "../dozo-queue-plan.js";
-import { planQueue, queueLabel } from "../dozo-queue-plan.js";
+import { planQueue, queueLabel, waitsForChat } from "../dozo-queue-plan.js";
 import { finishThreadStop, STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../threads/thread-stop.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
@@ -27,14 +27,29 @@ const RUN_FIELDS = {
   createdAt: true,
   threadId: true,
   sourceMessageId: true,
+  startedAt: true,
+  retryOfRunId: true,
+  _count: { select: { attempts: true } },
   routine: { select: { name: true } },
 } as const;
 
 function queueRun({
   routine,
+  startedAt,
+  retryOfRunId,
+  _count,
   ...run
-}: { routine: { name: string } | null } & Omit<QueueRun, "routineName">) {
-  return { ...run, routineName: routine?.name ?? null };
+}: {
+  routine: { name: string } | null;
+  startedAt: Date | null;
+  retryOfRunId: string | null;
+  _count: { attempts: number };
+} & Omit<QueueRun, "routineName" | "waitsForChat">): QueueRun {
+  return {
+    ...run,
+    routineName: routine?.name ?? null,
+    waitsForChat: waitsForChat({ ...run, startedAt, retryOfRunId, attempts: _count.attempts }),
+  };
 }
 
 /**
