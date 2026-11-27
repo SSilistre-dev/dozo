@@ -74,6 +74,17 @@ describe("a run waiting for its bot", () => {
     expect(items.map((item) => item.id)).toEqual(byKeys.map((entry) => entry.id));
   });
 
+  it("puts a person's run before a routine's, though the routine is older, as it starts", () => {
+    const working = run("working", { status: "running", userId: OTHER });
+    const routine = run("routine", { trigger: "routine", routineName: "Weekly sums" });
+    const person = run("person", { trigger: "follow_up" });
+    const items = planQueue(snapshot({ runs: [person, working, routine] }));
+    expect(items.map((item) => [item.id, item.position])).toEqual([
+      ["person", 1],
+      ["routine", 2],
+    ]);
+  });
+
   it("is not in line when nothing is in its way, the first moments of a run", () => {
     expect(planQueue(snapshot({ runs: [run("starting")] }))).toEqual([]);
   });
