@@ -15982,6 +15982,36 @@
       "find": "size === \"xl\" ? \"right-2\" : \"right-1\",",
       "replace": "size === \"xl\" ? \"end-2\" : \"end-1\",",
       "reason": "hidden field: the show button sits at the end of the field, which is the left in right-to-left languages"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "                variant=\"ghost\"\n                type=\"button\"\n                disabled={busy || !draft.trim() || (!creating && draft === open?.content)}\n                onClick={() => void save()}\n                className=\"bg-muted px-3 py-1.5 text-body-sm text-foreground disabled:opacity-50\"\n",
+      "replace": "                size=\"sm\"\n                type=\"button\"\n                disabled={busy || !draft.trim() || (!creating && draft === open?.content)}\n                onClick={() => void save()}\n",
+      "reason": "skill editor: Save is the one main button of the editor, the ink pill the other dialogs use, not plain text that reads as disabled"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "              variant=\"ghost\"\n              type=\"button\"\n              disabled={busy}\n              onClick={() => {\n                selection.current += 1;\n",
+      "replace": "              variant=\"secondary\"\n              size=\"sm\"\n              type=\"button\"\n              disabled={busy}\n              onClick={() => {\n                selection.current += 1;\n",
+      "reason": "skill editor: Cancel is the quiet pill the other dialogs use for their second button"
+    },
+    {
+      "file": "apps/web/src/pages/space/KnowledgeSection.tsx",
+      "find": "              className=\"px-3 py-1.5 text-body-sm text-muted-foreground\"\n            >\n              {open?.readOnly",
+      "replace": "            >\n              {open?.readOnly",
+      "reason": "skill editor: the secondary pill carries its own colours"
+    },
+    {
+      "file": "apps/web/src/pages/routines/RoutineEditor.tsx",
+      "find": "<fieldset disabled={readOnly} className=\"min-w-0\">",
+      "replace": "<fieldset disabled={readOnly} className=\"min-w-0\" data-testid=\"routine-fields\">",
+      "reason": "routine editor: a hook for dozo-overlays.css, so its name and instruction fields share the dialogs' quiet field style"
+    },
+    {
+      "file": "apps/web/src/pages/settings/BillingSettingsPanel.tsx",
+      "find": "      {portal.error || error ? (\n        <p role=\"alert\" className=\"mt-3 text-body text-destructive\">\n          {portal.error ? t`Could not open billing` : t`Could not load billing`}\n        </p>\n      ) : null}\n",
+      "replace": "      {portal.error ? (\n        <p role=\"alert\" className=\"mt-3 text-body text-destructive\">\n          {t`Could not open billing`}\n        </p>\n      ) : error ? (\n        <div role=\"alert\" className=\"mt-3 flex items-center gap-3 text-body text-muted-foreground\">\n          {t`Could not load billing`}\n          <Button variant=\"secondary\" size=\"sm\" onClick={() => void statusRead.refetch()}>\n            <Trans>Retry</Trans>\n          </Button>\n        </div>\n      ) : null}\n",
+      "reason": "billing: a read that failed is not a refusal of the person's action, so it is neutral text with a way to read again, not a red line with no way on"
     }
   ],
   "assets": {
