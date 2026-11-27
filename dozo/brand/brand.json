@@ -1786,7 +1786,7 @@
     {
       "file": "apps/web/src/pages/onboarding/model-step.tsx",
       "find": "                  placeholder=\"sk-…\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n              </label>",
-      "replace": "                  placeholder=\"sk-…\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n                <DozoKeyLink provider={provider} />\n              </label>",
+      "replace": "                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n                <DozoKeyLink provider={provider} />\n              </label>",
       "requires": [
         "apps/web/src/pages/onboarding/dozo-key-link.tsx"
       ],
@@ -15463,16 +15463,52 @@
       "reason": "API key field: the one hint was an OpenAI-style key shown for every provider, wrong for most; the label already names the field"
     },
     {
-      "file": "apps/web/src/pages/onboarding/model-step.tsx",
-      "find": "                  placeholder=\"sk-…\"\n",
-      "replace": "",
-      "reason": "API key field: the same OpenAI-style hint for every provider"
-    },
-    {
       "file": "apps/web/src/pages/space/GroupPanel.tsx",
       "find": "variant=\"ghost\"\n          size=\"icon\"\n          aria-label={t`Cancel new group`}",
       "replace": "variant=\"floating\"\n          size=\"icon\"\n          aria-label={t`Cancel new group`}",
       "reason": "new group panel: its close button is the floating one the group settings panel uses, not a bare X"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./integrations/plugin-catalog.js\";",
+      "replace": "export * from \"./integrations/plugin-catalog.js\";\nexport * from \"./integrations/dozo-plugin-sections.js\";",
+      "requires": [
+        "packages/core/src/integrations/dozo-plugin-sections.ts"
+      ],
+      "reason": "integrations: the Recommended section's plugins are not listed again in their category"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "  OTHER_PLUGINS,\n  publicMcpCatalogQuery,\n} from \"@rakazo/core\";",
+      "replace": "  OTHER_PLUGINS,\n  pluginsNotListedAbove,\n  publicMcpCatalogQuery,\n} from \"@rakazo/core\";",
+      "requires": [
+        "packages/core/src/integrations/dozo-plugin-sections.ts"
+      ],
+      "reason": "integrations: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "    const uncategorized = plugins.filter((entry) => !entry.category);",
+      "replace": "    const unlisted = pluginsNotListedAbove(\n      plugins,\n      recommended.map(({ entry }) => entry),\n    );\n    const uncategorized = unlisted.filter((entry) => !entry.category);",
+      "reason": "integrations: a plugin shown under Recommended is not shown again in its category"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "        plugins.filter((entry) => entry.category === name),",
+      "replace": "        unlisted.filter((entry) => entry.category === name),",
+      "reason": "integrations: the rule above"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "        description={entry.description}\n        logo={entry.logo}",
+      "replace": "        description=\"\"\n        logo={entry.logo}",
+      "reason": "integrations: the description is a third party's text naming other companies, English in every language and cut off, and managed apps show none; the plugin's page keeps it"
+    },
+    {
+      "file": "apps/mobile/components/integrations/integration-plugins.tsx",
+      "find": "        {entry.description ? (\n          <Text numberOfLines={1} style={styles.secondary}>\n            {entry.description}\n          </Text>\n        ) : null}\n",
+      "replace": "        {/* The plugin's own page shows its description. */}\n",
+      "reason": "integrations: the same as the web list, no third party description in a browse row"
     }
   ],
   "assets": {
