@@ -1,3 +1,4 @@
+import type { ColorTokens } from "@rakazo/ui-tokens";
 import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
 import { DOZO_THEMES, dozoThemeTokens } from "@rakazo/ui-tokens/dozo-themes";
 import { describe, expect, it } from "vitest";
@@ -6,14 +7,14 @@ import { contrastRatio, SWITCH_MIN_CONTRAST, switchTrackTint } from "./dozo-swit
 // SwiftUI's switch thumb is white in every scheme.
 const THUMB = "#FFFFFF";
 
-const palettes = [
+const palettes: [string, ColorTokens][] = [
   ["light", lightTokens],
   ["dark", darkTokens],
-  ...DOZO_THEMES.map((theme) => [
+  ...DOZO_THEMES.map((theme): [string, ColorTokens] => [
     theme.label,
     dozoThemeTokens(theme.tone === "dark" ? darkTokens : lightTokens, theme),
   ]),
-] as const;
+];
 
 describe("an on switch's track", () => {
   it.each(palettes)("stands out from the white thumb in %s", (_name, tokens) => {
