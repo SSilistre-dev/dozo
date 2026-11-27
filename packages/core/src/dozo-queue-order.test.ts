@@ -33,7 +33,13 @@ describe("the order work waiting for a bot starts in", () => {
   it("is the same whether the database sorts by the key list or the line sorts by the comparator", () => {
     const expected = ["b", "d", "z", "c", "a"];
     expect(sortedBy(rows, queueStartOrder()).map((row) => row.id)).toEqual(expected);
-    expect([...rows].sort(compareQueueStart).map((row) => row.id)).toEqual(expected);
+    expect(rows.map((row) => ({ ...row, trigger: "user" })).sort(compareQueueStart).map((row) => row.id)).toEqual(expected);
+  });
+
+  it("puts a person's run before background work, whatever their ages", () => {
+    const routine = { id: "a", createdAt: at(1), trigger: "routine" };
+    const person = { id: "z", createdAt: at(9), trigger: "messaging" };
+    expect([routine, person].sort(compareQueueStart).map((run) => run.id)).toEqual(["z", "a"]);
   });
 
   it("gives a fresh list each time, so no caller can change what another reads", () => {
