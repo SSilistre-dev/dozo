@@ -1963,11 +1963,12 @@
     {
       "file": "apps/web/src/pages/auth/Auth.tsx",
       "find": "signInNext } from \"../../lib/auth/sign-in-next\";\nimport { holdSsoAutoStart",
-      "replace": "signInNext } from \"../../lib/auth/sign-in-next\";\nimport { DozoEmailCodeLink } from \"../dozo-email-code-link\";\nimport { holdSsoAutoStart",
+      "replace": "signInNext } from \"../../lib/auth/sign-in-next\";\nimport { isUnverifiedSignIn } from \"../../lib/dozo-unverified-sign-in\";\nimport { DozoEmailCodeLink } from \"../dozo-email-code-link\";\nimport { holdSsoAutoStart",
       "requires": [
-        "apps/web/src/pages/dozo-email-code-link.tsx"
+        "apps/web/src/pages/dozo-email-code-link.tsx",
+        "apps/web/src/lib/dozo-unverified-sign-in.ts"
       ],
-      "reason": "email-first sign-in: the import of the rule below"
+      "reason": "email-first sign-in: the imports of the rules below"
     },
     {
       "file": "apps/web/src/pages/auth/Auth.tsx",
@@ -1977,6 +1978,15 @@
         "apps/web/src/pages/dozo-email-code-link.tsx"
       ],
       "reason": "email-first sign-in: the password form (one step away at /sign-in/email) offers the way back to signing in with an emailed code, where the server has one"
+    },
+    {
+      "file": "apps/web/src/pages/auth/Auth.tsx",
+      "find": "      if (result.error) {\n        setError(authErrorText(result.error, t`Could not continue`));\n        return;\n      }\n      if (mode === \"up\" && signupRequiresEmailVerification",
+      "replace": "      if (result.error) {\n        if (mode === \"in\" && useCode && isUnverifiedSignIn(result.error)) {\n          // The address was never confirmed; a code confirms it in this browser.\n          const request = await authClient.emailOtp.sendVerificationOtp({\n            email: trimmedEmail,\n            type: \"sign-in\",\n          });\n          if (request.error) {\n            setError(authErrorText(request.error, t`Could not continue`));\n            return;\n          }\n          setCode(\"\");\n          setCodeSent(true);\n          return;\n        }\n        setError(authErrorText(result.error, t`Could not continue`));\n        return;\n      }\n      if (mode === \"up\" && signupRequiresEmailVerification",
+      "requires": [
+        "apps/web/src/lib/dozo-unverified-sign-in.ts"
+      ],
+      "reason": "email-first sign-in: a password sign-in refused because the email was never confirmed goes on with an emailed code; a wrong password only shows its error"
     },
     {
       "file": "apps/web/src/pages/shell/resizable-side-panel.tsx",

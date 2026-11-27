@@ -5,11 +5,12 @@ import type { FormEvent, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   verify: vi.fn(),
+  signUp: vi.fn(),
   social: vi.fn(),
   sso: vi.fn(),
   clear: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock("../lib/auth/auth", () => ({
   authClient: {
     emailOtp: { sendVerificationOtp: mocks.send },
     signIn: { emailOtp: mocks.verify, social: mocks.social },
+    signUp: { email: mocks.signUp },
   },
 }));
 vi.mock("../lib/auth/sso-flow", () => ({ runSsoFlow: mocks.sso }));
@@ -126,7 +128,7 @@ let client: QueryClient;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  for (const mock of [mocks.send, mocks.verify, mocks.social, mocks.sso, mocks.clear])
+  for (const mock of [mocks.send, mocks.verify, mocks.signUp, mocks.social, mocks.sso, mocks.clear])
     mock.mockReset();
   mocks.providers.mockClear();
   mocks.passkeyStart.mockClear();
@@ -176,6 +178,7 @@ async function open(
           <Where />
           <Routes>
             <Route path="/sign-in" element={<DozoCodeSignIn providers={providers} />} />
+            <Route path="/sign-up" element={<DozoCodeSignIn mode="up" providers={providers} />} />
             <Route path="/sign-in/email" element={<p>password form</p>} />
           </Routes>
         </MemoryRouter>
@@ -549,4 +552,59 @@ it("hands over an empty address from a link outside any form", async () => {
   );
   await act(async () => button("Email me a code instead")?.click());
   expect(where()).toBe('/sign-in|{"email":""}');
+});
+
+describe("sign-up", () => {
+  const nameField = () =>
+    host.querySelector<HTMLInputElement>('input[name="name"]') as HTMLInputElement;
+
+  it("asks for a name and an address, never a password, under the sign-up title", async () => {
+    await open("/sign-up?next=%2Fadmin%2Faccess");
+    expect(text()).toContain("Create your account");
+    expect(nameField()).not.toBeNull();
+    expect(emailField()).not.toBeNull();
+    expect(host.querySelector('input[type="password"]')).toBeNull();
+    expect(button("Use a password instead")).toBeUndefined();
+    const back = [...host.querySelectorAll("a")].find((a) => a.textContent === "Sign in");
+    expect(back?.getAttribute("href")).toBe("/sign-in?next=%2Fadmin%2Faccess");
+  });
+
+  it("mails a code and never calls the password sign-up", async () => {
+    await open("/sign-up");
+    await type(nameField(), "Maya");
+    await toCode(" maya@example.com ");
+    expect(mocks.send).toHaveBeenCalledWith({ email: "maya@example.com", type: "sign-in" });
+    expect(mocks.signUp).not.toHaveBeenCalled();
+    expect(text()).toContain("Check your email");
+  });
+
+  it("names the account with the typed name, or the address's first part", async () => {
+    mocks.verify.mockResolvedValue({ data: {}, error: null });
+    await open("/sign-up");
+    await type(nameField(), " Maya ");
+    await toCode();
+    await type(
+      host.querySelector<HTMLInputElement>('[data-testid="code"]') as HTMLInputElement,
+      "123456",
+    );
+    expect(mocks.verify).toHaveBeenCalledWith({
+      email: "maya@example.com",
+      otp: "123456",
+      name: "Maya",
+    });
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    mocks.verify.mockClear();
+    await open("/sign-up");
+    await toCode("lee@example.com");
+    await type(
+      host.querySelector<HTMLInputElement>('[data-testid="code"]') as HTMLInputElement,
+      "123456",
+    );
+    expect(mocks.verify).toHaveBeenCalledWith({
+      email: "lee@example.com",
+      otp: "123456",
+      name: "lee",
+    });
+  });
 });

@@ -61,6 +61,22 @@ export async function stackReadsMail(request: APIRequestContext) {
 export const codeIn = (mail: Mail | undefined) =>
   /\b(\d{6})\b/.exec(`${mail?.text ?? ""} ${mail?.html ?? ""}`)?.[1];
 
+/** Waits for a sign-in code mail to `address` newer than the `before` mails already there. */
+export async function codeAfter(request: APIRequestContext, address: string, before: number) {
+  let code: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        const mails = await mailsTo(request, address);
+        code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
+        return code;
+      },
+      { message: `a code mail to ${address}`, timeout: 60_000 },
+    )
+    .toMatch(/^\d{6}$/);
+  return code as string;
+}
+
 /**
  * The verification link of a mail as a path on the stack under test (`/api/auth/verify-email?...`),
  * whatever host the mail names. The HTML form writes `&` as `&amp;`.
@@ -95,42 +111,37 @@ export async function verificationLinkAfter(
 }
 
 /**
- * Signs up through the real form. A stack that asks for the mailbox first (it has a mail provider)
- * is finished through its mail: the link opens in this browser, the result page asks to sign in,
- * and the password does. A stack that asks for a mailbox but captures none fails with a clear message.
+ * Signs up through the real form. A stack that mails codes asks for a name and an address and then
+ * the code, which makes the account (no password, no `sign-up/email` call), so the code is read
+ * from the captured mail. A stack without codes shows upstream's form, which opens a session at
+ * once.
  */
 export async function signUpThroughForm(page: Page, user = throwawayUser()) {
   await page.goto("/sign-up");
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  const before = (await mailsTo(page.request, user.email)).length;
+  if (capabilities.emailCode) {
+    await page.getByPlaceholder("Your name").fill(user.name);
+    await page.getByPlaceholder("Your email address").fill(user.email);
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    await page
+      .getByLabel("Code", { exact: true })
+      .fill(await codeAfter(page.request, user.email, before));
+    await page.waitForURL(/\/(onboarding|app)/, { timeout: 30_000 });
+    return user;
+  }
   await openEmailForm(page);
   await page.getByPlaceholder("Your name").fill(user.name);
   await page.getByPlaceholder("Your email address").fill(user.email);
   await page.getByPlaceholder("Password").fill(user.password);
-  const before = (await mailsTo(page.request, user.email)).length;
   const signUp = page.waitForResponse((r) => r.url().includes("/api/auth/sign-up/email"));
   await page.getByRole("button", { name: "Create account" }).click();
   const response = await signUp;
   expectNotRateLimited(response.status(), response.headers(), "sign-up");
   expect(response.ok(), `sign-up answered ${response.status()}`).toBe(true);
-  const landed = page.waitForURL(/\/(onboarding|app)/, { timeout: 30_000 });
-  const verify = page.getByRole("heading", { name: "Check your email" });
-  await Promise.race([landed, verify.waitFor({ timeout: 30_000 })]);
-  if (await verify.isVisible().catch(() => false)) {
-    if (!(await stackReadsMail(page.request))) {
-      throw new Error(
-        "sign-up needs mail confirmation; this stack cannot create an account without it",
-      );
-    }
-    await page.goto(await verificationLinkAfter(page.request, user.email, before));
-    await expect(page.getByRole("heading", { name: "Sign in to continue" })).toBeVisible();
-    await page.getByRole("link", { name: "Sign in", exact: true }).click();
-    await page.waitForURL(/\/sign-in\/email/);
-    await openEmailForm(page);
-    await page.getByPlaceholder("Your email address").fill(user.email);
-    await page.getByPlaceholder("Password").fill(user.password);
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await page.waitForURL(/\/(onboarding|app)/, { timeout: 30_000 });
-  }
+  await page.waitForURL(/\/(onboarding|app)/, { timeout: 30_000 });
   return user;
 }
 
