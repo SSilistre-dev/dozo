@@ -487,3 +487,65 @@
   ):is([aria-invalid="true"], :has([aria-invalid="true"])) {
   box-shadow: inset 0 0 0 1.5px var(--destructive);
 }
+
+/* ---- Forms outside dialogs, one segmented control, compact dialogs ------------------------ */
+
+/* The bot's name while it is edited and the routine's fields: the quiet field a dialog uses, with the
+   dialog's focus ring, so a name looks the same wherever it is typed. */
+:is([data-testid="bot-profile-header"], [data-testid="routine-fields"])
+  :is([data-slot="input"], [data-slot="textarea"]) {
+  border-color: transparent;
+  border-radius: 10px;
+  background: var(--dozo-wash);
+  box-shadow: none;
+}
+:is([data-testid="bot-profile-header"], [data-testid="routine-fields"])
+  :is([data-slot="input"], [data-slot="textarea"]):is(:hover, :focus-visible) {
+  background: var(--dozo-wash-strong);
+}
+:is([data-testid="bot-profile-header"], [data-testid="routine-fields"])
+  :is([data-slot="input"], [data-slot="textarea"]):focus-visible {
+  outline: 2px solid var(--dozo-focus);
+  outline-offset: 2px;
+}
+
+/* Tabs in a dialog (the MCP transport): the washed track with the chosen segment lifted, as the
+   dialog's toggle groups draw it. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) [data-slot="tabs-list"] {
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--dozo-wash);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) [data-slot="tabs-trigger"] {
+  height: 24px;
+  border-radius: 999px;
+  color: var(--dozo-ink-2);
+  font-size: 13px;
+  box-shadow: none;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  [data-slot="tabs-trigger"]:is([data-active], [aria-selected="true"]) {
+  border-color: transparent;
+  background: var(--dozo-lift);
+  color: var(--foreground);
+}
+
+/* The GitHub import asks for one address: the dialog is as tall as that, not the 680px the skills
+   list needs. */
+[data-slot="dialog-content"]:has([data-testid="skills-git-import"]) {
+  height: auto;
+}
+
+/* A control scrolled into view in settings keeps room below it, not flush with the sheet's edge. */
+[data-testid="settings-scroll"] {
+  scroll-padding-bottom: 32px;
+}
+
+/* A card that holds nothing but one link is that link's size. */
+[data-testid="settings-scroll"] .rounded-xl.border:has(> [data-slot="button"]:only-child) {
+  padding: 8px 12px;
+}
+[data-testid="settings-scroll"] .rounded-xl.border > [data-slot="button"]:only-child {
+  margin-top: 0;
+}

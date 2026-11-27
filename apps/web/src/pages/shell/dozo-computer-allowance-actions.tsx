@@ -26,7 +26,7 @@ export function ComputerAllowanceActions({
     <>
       {upgrade ? <Button size="sm" onClick={onUpgrade}>{upgrade}</Button> : null}
       {ownDevice ? (
-        <Link to={devices} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+        <Link to={devices} className={buttonVariants({ variant: "secondary", size: "sm" })}>
           <Trans>Your devices</Trans>
         </Link>
       ) : null}

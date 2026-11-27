@@ -66,3 +66,9 @@ it("a member who cannot upgrade still gets the devices; a paid plan gets only Up
     "Yükselt",
   ]);
 });
+
+it("the devices link is drawn as the secondary button, not as faint text", () => {
+  show({ upgrade: null, ownDevice: true });
+  const link = host.querySelector("a") as HTMLElement;
+  expect(link.className).toContain("bg-secondary");
+});
