@@ -210,6 +210,29 @@ it("lists the reply's live links and revokes one", async () => {
   await vi.waitFor(() => expect(button("Revoke")).toBeUndefined());
 });
 
+it("takes the new link off the dialog once it is revoked, and keeps it when another link is", async () => {
+  api.preview.mockResolvedValue({ steps, links: [] });
+  api.publish.mockResolvedValue({ link, url: "https://app.example.test/s/token" });
+  api.revoke.mockResolvedValue({ revoked: true });
+  await render();
+  await vi.waitFor(() => expect(button("Create link")).toBeDefined());
+  const other = { ...link, id: "l-2" };
+  api.preview.mockResolvedValue({ steps, links: [link, other] });
+  await click(button("Create link"));
+  await vi.waitFor(() => expect(container.querySelector("input[readonly]")).not.toBeNull());
+  await vi.waitFor(() => expect(container.querySelectorAll("li button")).toHaveLength(2));
+  api.preview.mockResolvedValue({ steps, links: [link] });
+  await click(container.querySelectorAll("li button")[1]);
+  expect(api.revoke).toHaveBeenCalledWith({ id: "l-2" });
+  await vi.waitFor(() => expect(container.querySelectorAll("li button")).toHaveLength(1));
+  expect(container.querySelector("input[readonly]")).not.toBeNull();
+  api.preview.mockResolvedValue({ steps, links: [] });
+  await click(container.querySelector("li button"));
+  expect(api.revoke).toHaveBeenLastCalledWith({ id: "l-1" });
+  await vi.waitFor(() => expect(container.querySelector("input[readonly]")).toBeNull());
+  expect(container.querySelector('button[aria-label="Copy"]')).toBeNull();
+});
+
 it("says why a reply cannot be shared", async () => {
   api.preview.mockRejectedValue(new Error("Only a finished reply can be shared"));
   await render();

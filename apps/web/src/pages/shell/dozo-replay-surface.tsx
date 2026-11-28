@@ -97,7 +97,7 @@ function Review({
   const { t } = useLingui();
   const ids = useId();
   const [choice, setChoice] = useState(() => startingChoice(steps));
-  const [url, setUrl] = useState<string | null>(null);
+  const [made, setMade] = useState<{ id: string; url: string } | null>(null);
   const [copied, copy] = useCopyText();
   const publish = useSave({
     save: (_input: undefined, rpc) =>
@@ -107,9 +107,9 @@ function Review({
         frames: [...choice.frames].filter((index) => !choice.omit.has(index)),
       }),
     stale: [stale],
-    onSaved: (made) => {
-      setUrl(made.url);
-      void copy(made.url);
+    onSaved: (created) => {
+      setMade({ id: created.link.id, url: created.url });
+      void copy(created.url);
     },
   });
   const kept = steps.length - choice.omit.size;
@@ -163,20 +163,24 @@ function Review({
           {errorText(publish.error)}
         </p>
       ) : null}
-      {url ? (
+      {made ? (
         <div className="flex items-center gap-2">
           <Input
             readOnly
-            value={url}
+            value={made.url}
             aria-label={t`Link`}
             onFocus={(event) => event.target.select()}
           />
-          <Button variant="outline" aria-label={t`Copy`} onClick={() => void copy(url)}>
+          <Button variant="outline" aria-label={t`Copy`} onClick={() => void copy(made.url)}>
             {copied ? <Check /> : <Copy />}
           </Button>
         </div>
       ) : null}
-      <LiveLinks links={links} stale={stale} />
+      <LiveLinks
+        links={links}
+        stale={stale}
+        onRevoked={(id) => setMade((shown) => (shown?.id === id ? null : shown))}
+      />
       <DialogFooter>
         <Button disabled={kept === 0 || publish.pending} onClick={() => publish.run(undefined)}>
           <Trans>Create link</Trans>
@@ -210,11 +214,20 @@ function ReviewFrame({
   );
 }
 
-function LiveLinks({ links, stale }: { links: DozoShareLink[]; stale: QueryKey }) {
+function LiveLinks({
+  links,
+  stale,
+  onRevoked,
+}: {
+  links: DozoShareLink[];
+  stale: QueryKey;
+  onRevoked: (id: string) => void;
+}) {
   const { i18n } = useLingui();
   const revoke = useSave({
     save: (id: string, rpc) => rpc.dozoShareLinks.revoke({ id }),
     stale: [stale],
+    onSaved: (_revoked, id) => onRevoked(id),
     onFailed: (error) => toastError(errorText(error)),
   });
   if (links.length === 0) return null;
