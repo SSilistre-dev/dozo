@@ -13,10 +13,11 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { SectionLoadFailed } from "../../components/ErrorBoundary";
 import { toastError } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { DozoBotDefinition } from "../dozo-bot-definition";
+import { DozoBotDefinition, dozoBotShown } from "../dozo-bot-definition";
 import type { DozoSurfaceProps } from "../dozo-surfaces";
 import { SwitchRow } from "./bots/bot-settings-sections";
 
@@ -31,6 +32,8 @@ export function DozoBotShareDialog({ params, onClose }: DozoSurfaceProps) {
   const queries = useSpaceQueries();
   const [includePicture, setIncludePicture] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
+  // A revoked link cannot come back, so revoking asks first, as on mobile.
+  const [confirming, setConfirming] = useState(false);
   const preview = useQuery({
     ...queries.dozoBotShares.preview.queryOptions({ input: { botId, includePicture } }),
     staleTime: 0,
@@ -70,16 +73,7 @@ export function DozoBotShareDialog({ params, onClose }: DozoSurfaceProps) {
         </DialogTitle>
         {shown ? (
           <>
-            <DozoBotDefinition
-              bot={{
-                ...shown.definition,
-                color: shown.definition.avatar.color,
-                routines: shown.definition.routines.map((routine) => ({
-                  name: routine.name,
-                  schedule: routine.crons.join(", "),
-                })),
-              }}
-            />
+            <DozoBotDefinition bot={dozoBotShown(shown.definition)} />
             {shown.hasPicture ? (
               <SwitchRow
                 id={`bot-share-picture-${botId}`}
@@ -119,7 +113,7 @@ export function DozoBotShareDialog({ params, onClose }: DozoSurfaceProps) {
               <Button
                 variant="destructive-secondary"
                 disabled={revoke.pending}
-                onClick={() => revoke.run(undefined)}
+                onClick={() => setConfirming(true)}
               >
                 <Trans>Revoke link</Trans>
               </Button>
@@ -132,6 +126,17 @@ export function DozoBotShareDialog({ params, onClose }: DozoSurfaceProps) {
             {link ? <Trans>Create new link</Trans> : <Trans>Create link</Trans>}
           </Button>
         </DialogFooter>
+        {confirming ? (
+          <ConfirmDialog
+            title={<Trans>Revoke link?</Trans>}
+            confirmLabel={<Trans>Revoke</Trans>}
+            onCancel={() => setConfirming(false)}
+            onConfirm={() => {
+              setConfirming(false);
+              revoke.run(undefined);
+            }}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );

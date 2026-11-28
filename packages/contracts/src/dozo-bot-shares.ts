@@ -27,6 +27,47 @@ export const DOZO_BOT_SHARE_LIMITS = {
 const EXCERPT_LINES = 4;
 const EXCERPT_CHARS = 400;
 
+/**
+ * Characters a reader cannot see but a model reads: format characters (zero-width, bidi
+ * embeddings, overrides and isolates, tags), the whole tag block, and control characters other
+ * than newline and tab.
+ */
+const HIDDEN = /[\p{Cf}\u{E0000}-\u{E007F}]|[^\P{Cc}\n\t]/u;
+
+/** One form for every text: NFC, with line ends as newlines. What is shown is what is stored. */
+export function dozoBotShareText(text: string): string {
+  return text.normalize("NFC").replace(/\r\n?/g, "\n");
+}
+
+/** Every text field of a definition, by the name a refusal gives it. */
+function textFields(definition: {
+  name: string;
+  instructions: string;
+  description: string;
+  routines: readonly { name: string; prompt: string; crons: readonly string[] }[];
+}): [string, string][] {
+  return [
+    ["name", definition.name],
+    ["instructions", definition.instructions],
+    ["description", definition.description],
+    ...definition.routines.flatMap((routine): [string, string][] => [
+      ["routine name", routine.name],
+      ["routine prompt", routine.prompt],
+      ...routine.crons.map((cron): [string, string] => ["routine schedule", cron]),
+    ]),
+  ];
+}
+
+/** The first field holding text a reader cannot see, or one not in its one form; null if none. */
+export function dozoBotShareHiddenField(
+  definition: Parameters<typeof textFields>[0],
+): string | null {
+  const found = textFields(definition).find(
+    ([, text]) => HIDDEN.test(text) || text !== dozoBotShareText(text),
+  );
+  return found ? found[0] : null;
+}
+
 const SharedRoutineSchema = z.strictObject({
   name: z.string().min(1).max(ROUTINE_NAME_MAX_LENGTH),
   prompt: z.string().min(1).max(DOZO_BOT_SHARE_LIMITS.routinePrompt),
@@ -48,14 +89,18 @@ const SharedAvatarSchema = z.strictObject({
  * Strict, so a stored definition with any other field is refused.
  */
 export const DozoBotDefinitionSchema = /* @__PURE__ */ (() =>
-  z.strictObject({
-    name: z.string().min(1).max(BOT_NAME_MAX_LENGTH),
-    avatar: SharedAvatarSchema,
-    instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH),
-    /** How other bots see it. */
-    description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH),
-    routines: z.array(SharedRoutineSchema).max(DOZO_BOT_SHARE_LIMITS.routines),
-  }))();
+  z
+    .strictObject({
+      name: z.string().min(1).max(BOT_NAME_MAX_LENGTH),
+      avatar: SharedAvatarSchema,
+      instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH),
+      /** How other bots see it. */
+      description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH),
+      routines: z.array(SharedRoutineSchema).max(DOZO_BOT_SHARE_LIMITS.routines),
+    })
+    .refine((definition) => dozoBotShareHiddenField(definition) === null, {
+      message: "Holds characters a reader cannot see",
+    }))();
 export type DozoBotDefinition = z.infer<typeof DozoBotDefinitionSchema>;
 
 /** What anyone holding the link sees, signed out. Drawn as text only. */
@@ -94,8 +139,9 @@ const Shown = z.object({ definition: DozoBotDefinitionSchema, fingerprint: Finge
 export const dozoBotSharesContract = /* @__PURE__ */ (() => ({
   /**
    * What publishing would make public, exactly. `hasPicture` says the bot has an uploaded picture
-   * the owner may include. Refused as not found unless the caller owns the bot, and as
-   * `BOT_SHARE_TOO_LARGE` when a field is over its limit.
+   * the owner may include. Refused as not found unless the caller owns the bot, as
+   * `BOT_SHARE_TOO_LARGE` when a field is over its limit, and as `BOT_SHARE_HIDDEN_TEXT` when one
+   * holds characters a reader cannot see.
    */
   preview: oc
     .input(z.object({ botId: Id, includePicture: z.boolean() }))
@@ -113,7 +159,10 @@ export const dozoBotSharesContract = /* @__PURE__ */ (() => ({
     .output(z.object({ link: z.object({ id: Id, expiresAt: IsoDate }).nullable() })),
   /** Revokes the bot's links and deletes what was published. */
   revoke: oc.input(z.object({ botId: Id })).output(z.object({ revoked: z.literal(true) })),
-  /** The whole definition behind a live link, shown before a copy is made. */
+  /**
+   * The whole definition behind a live link, shown before a copy is made. Limited per person a
+   * minute (`BOT_SHARE_OPEN_LIMIT`), with copies.
+   */
   open: oc.input(z.object({ token: Token })).output(Shown),
   /**
    * Makes the caller's own bot from a live link in the current Space, as a template would, with

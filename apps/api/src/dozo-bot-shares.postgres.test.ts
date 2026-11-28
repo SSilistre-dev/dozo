@@ -54,6 +54,35 @@ describePostgres("bot shares (PostgreSQL)", () => {
     return { status: response!.status, json: body.json as Record<string, unknown> };
   }
 
+  /** Someone else in the actor's own Space and organization. */
+  async function member(of: Actor): Promise<Actor> {
+    const id = `bot-share-${randomUUID()}`;
+    users.push(id);
+    const createdAt = new Date();
+    await system.user.create({
+      data: { id, name: "Cy", email: `${id}@example.test`, emailVerified: true },
+    });
+    await system.member.create({
+      data: { id: `m-${id}`, organizationId: of.userId, userId: id, role: "member", createdAt },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId: of.spaceId,
+        organizationId: of.userId,
+        userId: id,
+        role: "member",
+        createdAt,
+      },
+    });
+    return {
+      userId: id,
+      spaceId: of.spaceId,
+      email: `${id}@example.test`,
+      isDeploymentOwner: false,
+    };
+  }
+
   /** A bot of the actor's with one scheduled routine and one that only answers mail. */
   async function bot(actor: Actor) {
     const made = await system.bot.create({
@@ -228,6 +257,133 @@ describePostgres("bot shares (PostgreSQL)", () => {
     expect(await system.$queryRaw`SELECT 1 FROM dozo_bot_shares WHERE "botId" = ${botId}`).toEqual(
       [],
     );
+  });
+
+  it("keeps a member of the same Space from the owner's snapshot and from sharing their bot", async () => {
+    const ada = await person();
+    const cy = await member(ada);
+    const botId = await bot(ada);
+    const token = await publish(ada, botId);
+    const seen = await runAsTenant(
+      cy,
+      () => prisma.$queryRaw`SELECT "definition" FROM dozo_bot_shares WHERE "botId" = ${botId}`,
+    );
+    expect(seen).toEqual([]);
+    for (const path of ["dozoBotShares/preview", "dozoBotShares/status", "dozoBotShares/revoke"]) {
+      const answer = await call(cy, path, { botId, includePicture: false });
+      expect(answer.status, path).toBe(404);
+    }
+    const link = await call(cy, "dozoShareLinks/create", { kind: "bot", targetId: botId, days: 1 });
+    expect(link.status).toBe(404);
+    expect(await readSharedLink(prisma, token)).not.toBeNull();
+  });
+
+  it("makes a bot link only through the reviewed publish, never the generic create", async () => {
+    const ada = await person();
+    const botId = await bot(ada);
+    await publish(ada, botId);
+    const made = await call(ada, "dozoShareLinks/create", {
+      kind: "bot",
+      targetId: botId,
+      days: 30,
+    });
+    expect(made.status).toBe(404);
+  });
+
+  it("closes an archived bot's share for good: un-archiving opens nothing", async () => {
+    const ada = await person();
+    const botId = await bot(ada);
+    const token = await publish(ada, botId);
+    await system.bot.update({ where: { id: botId }, data: { archivedAt: new Date() } });
+    expect(await readSharedLink(prisma, token)).toBeNull();
+    await system.bot.update({ where: { id: botId }, data: { archivedAt: null } });
+    expect(await readSharedLink(prisma, token)).toBeNull();
+    expect(await system.$queryRaw`SELECT 1 FROM dozo_bot_shares WHERE "botId" = ${botId}`).toEqual(
+      [],
+    );
+    const live = await system.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM dozo_share_links WHERE "targetId" = ${botId} AND "revokedAt" IS NULL`;
+    expect(live).toEqual([]);
+  });
+
+  it("copies every field at its limit byte for byte as it was shown", async () => {
+    const ada = await person();
+    const bob = await person();
+    const botId = await bot(ada);
+    await system.routine.deleteMany({ where: { botId } });
+    await system.bot.update({
+      where: { id: botId },
+      data: {
+        name: "N".repeat(80),
+        instructions: `  Indented\n${"é ".repeat(9_992)}\tEND1`,
+        description: `${"d".repeat(3_996)}END2`,
+      },
+    });
+    await system.routine.createMany({
+      data: Array.from({ length: 10 }, (_, index) => ({
+        spaceId: ada.spaceId,
+        botId,
+        userId: ada.userId,
+        name: `${"r".repeat(78)}${index}`.padEnd(80, "x"),
+        prompt: `${"p".repeat(3_995)}E${index}`.padEnd(4000, "x"),
+        crons: ["0 8 * * *", "30 18 * * 1-5"],
+      })),
+    });
+    const token = await publish(ada, botId);
+    const opened = await call(bob, "dozoBotShares/open", { token });
+    const shown = opened.json.definition as {
+      name: string;
+      instructions: string;
+      description: string;
+      routines: { name: string; prompt: string; crons: string[] }[];
+    };
+    expect(shown.instructions.length).toBe(20_000);
+    const copy = await call(bob, "dozoBotShares/clone", {
+      token,
+      fingerprint: opened.json.fingerprint,
+      requestId: randomUUID(),
+    });
+    expect(copy.status).toBe(200);
+    const made = await system.bot.findUniqueOrThrow({
+      where: { id: (copy.json.bot as { id: string }).id },
+      include: { routines: { orderBy: { name: "asc" } } },
+    });
+    expect(made.name).toBe(shown.name);
+    expect(made.instructions).toBe(shown.instructions);
+    expect(made.description).toBe(shown.description);
+    expect(made.routines.map(({ name, prompt, crons }) => ({ name, prompt, crons }))).toEqual(
+      [...shown.routines].sort((a, b) => (a.name < b.name ? -1 : 1)),
+    );
+  });
+
+  it("refuses the same copy request with another link", async () => {
+    const ada = await person();
+    const bob = await person();
+    const first = await publish(ada, await bot(ada));
+    const second = await publish(ada, await bot(ada));
+    const requestId = randomUUID();
+    const copy = async (token: string) => {
+      const opened = await call(bob, "dozoBotShares/open", { token });
+      return call(bob, "dozoBotShares/clone", {
+        token,
+        fingerprint: opened.json.fingerprint,
+        requestId,
+      });
+    };
+    expect((await copy(first)).status).toBe(200);
+    expect((await copy(second)).status).toBe(412);
+  });
+
+  it("refuses to publish text a reader cannot see, naming the field", async () => {
+    const ada = await person();
+    const botId = await bot(ada);
+    await system.bot.update({ where: { id: botId }, data: { description: "Kind\u202e words" } });
+    const preview = await call(ada, "dozoBotShares/preview", { botId, includePicture: false });
+    expect(preview.status).toBe(400);
+    expect(preview.json).toMatchObject({
+      code: "BOT_SHARE_HIDDEN_TEXT",
+      message: "The bot's description has characters a reader cannot see",
+    });
   });
 
   it("keeps the snapshot from other members, and another member's bot from being published", async () => {

@@ -6,6 +6,8 @@ import {
   DOZO_BOT_SHARE_KIND,
   DOZO_SHARE_LINK_WEB_PREFIX,
   DozoBotDefinitionSchema,
+  dozoBotShareHiddenField,
+  dozoBotShareText,
   isBotAvatarValue,
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -14,19 +16,32 @@ import { IsolationError, runAsSystem } from "@rakazo/db";
 import type { AgentImportServices } from "./bots/agent-import.js";
 import { requestDigest, savedTimeZone, writeImportedBot } from "./bots/agent-import.js";
 import { templatePlan } from "./bots/bot-templates.js";
-import { botShareKind, ownsBot, readBotShare } from "./dozo-bot-share-kind.js";
+import { dozoAvatarForSave } from "./dozo-avatar-upload.js";
+import { botShareKind, closeBotShare, ownsBot, readBotShare } from "./dozo-bot-share-kind.js";
 import {
   createShareLink,
   listShareLinks,
   openSharedLink,
   revokeShareLink,
 } from "./dozo-share-links.js";
+import { windowCounter } from "./http/window-counter.js";
 import type { RouterContext } from "./routes/context.js";
 
 /** A field of the bot is over the limit a shared bot has. */
 export class BotShareTooLargeError extends ClientError {
   constructor(field: string) {
     super("BAD_REQUEST", `Over the limit for sharing: the bot's ${field}`, "BOT_SHARE_TOO_LARGE");
+  }
+}
+
+/** A field holds characters a reader cannot see but a model reads. */
+export class BotShareHiddenTextError extends ClientError {
+  constructor(field: string) {
+    super(
+      "BAD_REQUEST",
+      `The bot's ${field} has characters a reader cannot see`,
+      "BOT_SHARE_HIDDEN_TEXT",
+    );
   }
 }
 
@@ -74,16 +89,26 @@ export async function botShareDefinition(
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   const hasPicture = bot.color.startsWith("data:image/");
-  const color = isBotAvatarValue(bot.color) && (!hasPicture || includePicture) ? bot.color : null;
-  const parsed = DozoBotDefinitionSchema.safeParse({
-    name: bot.name,
+  const keep = isBotAvatarValue(bot.color) && (!hasPicture || includePicture);
+  // A picture is encoded again, as an upload is, so nothing but its pixels goes public.
+  const color = !keep ? null : hasPicture ? await dozoAvatarForSave(bot.color) : bot.color;
+  const shown = {
+    name: dozoBotShareText(bot.name),
     avatar: { color, avatarSet: BotAvatarSetSchema.catch("organic").parse(bot.avatarSet) },
-    instructions: bot.instructions,
-    description: bot.description,
+    // Trimmed as a copy stores instructions, so the copy holds exactly what was shown.
+    instructions: dozoBotShareText(bot.instructions).replace(/^\n+/, "").trimEnd(),
+    description: dozoBotShareText(bot.description),
     routines: routines
       .filter((routine) => routine.crons.length > 0)
-      .map(({ name, prompt, crons }) => ({ name, prompt, crons })),
-  });
+      .map(({ name, prompt, crons }) => ({
+        name: dozoBotShareText(name),
+        prompt: dozoBotShareText(prompt),
+        crons: crons.map(dozoBotShareText),
+      })),
+  };
+  const hidden = dozoBotShareHiddenField(shown);
+  if (hidden) throw new BotShareHiddenTextError(hidden);
+  const parsed = DozoBotDefinitionSchema.safeParse(shown);
   if (!parsed.success) throw new BotShareTooLargeError(String(parsed.error.issues[0]?.path[0]));
   return { definition: parsed.data, hasPicture };
 }
@@ -106,22 +131,32 @@ export async function publishBotShare(
 ) {
   const { definition } = await botShareDefinition(prisma, actor, input.botId, input.includePicture);
   if (botShareFingerprint(definition) !== input.fingerprint) throw new BotShareChangedError();
-  await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
-      INSERT INTO dozo_bot_shares ("botId", "userId", "spaceId", "definition")
-      VALUES (${input.botId}, ${actor.userId}, ${actor.spaceId}, ${JSON.stringify(definition)}::jsonb)
-      ON CONFLICT ("botId") DO UPDATE
-        SET "definition" = EXCLUDED."definition", "createdAt" = CURRENT_TIMESTAMP
-      RETURNING "botId"`;
-    for (const link of await botLinks(tx, actor, input.botId)) {
-      await revokeShareLink(tx, actor, link.id);
-    }
-  });
-  return createShareLink(prisma, actor, {
+  // The one step a limit can refuse comes first, so a refusal changes nothing. Nobody holds the
+  // new token until this returns, and the old links keep showing the old snapshot until commit.
+  const made = await createShareLink(prisma, actor, {
     kind: DOZO_BOT_SHARE_KIND,
     targetId: input.botId,
     days: DOZO_BOT_SHARE_DAYS,
   });
+  const newLinkId = made.link.id;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        INSERT INTO dozo_bot_shares ("botId", "userId", "spaceId", "definition")
+        VALUES (${input.botId}, ${actor.userId}, ${actor.spaceId}, ${JSON.stringify(definition)}::jsonb)
+        ON CONFLICT ("botId") DO UPDATE
+          SET "definition" = EXCLUDED."definition", "createdAt" = CURRENT_TIMESTAMP
+        RETURNING "botId"`;
+      for (const link of await botLinks(tx, actor, input.botId)) {
+        if (link.id !== newLinkId) await revokeShareLink(tx, actor, link.id);
+      }
+    });
+  } catch (error) {
+    // Nothing was published: the new link must not open the old snapshot.
+    await revokeShareLink(prisma, actor, newLinkId);
+    throw error;
+  }
+  return made;
 }
 
 /** The bot's newest live link, while something published stands behind it. */
@@ -137,13 +172,7 @@ export async function botShareStatus(prisma: PrismaClient, actor: Actor, botId: 
 /** Revokes every link to the bot and deletes what was published; an archived bot's too. */
 export async function revokeBotShare(prisma: PrismaClient, actor: Actor, botId: string) {
   if (!(await ownsBot(prisma, actor, botId, { archived: true }))) throw new IsolationError();
-  await prisma.$transaction(async (tx) => {
-    for (const link of await botLinks(tx, actor, botId)) await revokeShareLink(tx, actor, link.id);
-    await tx.$queryRaw`
-      DELETE FROM dozo_bot_shares
-      WHERE "botId" = ${botId} AND "userId" = ${actor.userId} AND "spaceId" = ${actor.spaceId}
-      RETURNING "botId"`;
-  });
+  await prisma.$transaction((tx) => closeBotShare(tx, actor, botId));
 }
 
 /**
@@ -174,6 +203,24 @@ function asTemplate(definition: DozoBotDefinition): BotTemplate {
   };
 }
 
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Signed-in reads of whole definitions one person may make a minute, as signed-out reads are limited. */
+const OPENS_PER_USER_PER_MINUTE = 60;
+
+/** Someone opened or copied more links in a minute than anyone reading them would. */
+export class BotShareOpenLimitError extends ClientError {
+  constructor() {
+    super(
+      "TOO_MANY_REQUESTS",
+      "Too many links opened. Try again in a minute",
+      "BOT_SHARE_OPEN_LIMIT",
+    );
+  }
+}
+
 /** Import keys of copies; the key holds the caller's request id only, never the link or its bot. */
 const CLONE_KEY_PREFIX = "dozo-bot-share:";
 
@@ -194,7 +241,8 @@ export async function cloneBotShare<PreparedKey>(
     actor,
     {
       importKey: `${CLONE_KEY_PREFIX}${input.requestId}`,
-      digest: requestDigest({ requestId: input.requestId }),
+      // The same request id with another link is refused, never answered with the first copy.
+      digest: requestDigest({ requestId: input.requestId, link: tokenHash(input.token) }),
       name: definition.name,
       description: definition.description,
       color: definition.avatar.color ?? undefined,
@@ -209,8 +257,18 @@ export async function cloneBotShare<PreparedKey>(
         apiKeys: [],
         leftovers: [],
       },
-      build: async () =>
-        templatePlan(asTemplate(definition), await savedTimeZone(services.prisma, actor)),
+      build: async () => {
+        const built = templatePlan(
+          asTemplate(definition),
+          await savedTimeZone(services.prisma, actor),
+        );
+        // Titled so no import rule reads the bot's name as a file heading to strip.
+        built.plan.instructions = built.plan.instructions.map((item) => ({
+          ...item,
+          title: "instructions",
+        }));
+        return built;
+      },
     },
     signal,
   );
@@ -219,6 +277,11 @@ export async function cloneBotShare<PreparedKey>(
 
 export function dozoBotShareRoutes(ctx: RouterContext) {
   const { deps, authed, agentImportServices } = ctx;
+  const opens = windowCounter(60_000);
+  const countOpen = (actor: Actor) => {
+    if (opens(`user:${actor.userId}`) > OPENS_PER_USER_PER_MINUTE)
+      throw new BotShareOpenLimitError();
+  };
   return {
     dozoBotShares: {
       preview: authed.dozoBotShares.preview.handler(async ({ context, input }) => {
@@ -242,12 +305,14 @@ export function dozoBotShareRoutes(ctx: RouterContext) {
         await revokeBotShare(deps.prisma, context.actor, input.botId);
         return { revoked: true as const };
       }),
-      open: authed.dozoBotShares.open.handler(({ input }) =>
-        openBotShare(deps.prisma, input.token),
-      ),
-      clone: authed.dozoBotShares.clone.handler(({ context, input }) =>
-        cloneBotShare(agentImportServices, context.actor, input, context.signal),
-      ),
+      open: authed.dozoBotShares.open.handler(async ({ context, input }) => {
+        countOpen(context.actor);
+        return openBotShare(deps.prisma, input.token);
+      }),
+      clone: authed.dozoBotShares.clone.handler(async ({ context, input }) => {
+        countOpen(context.actor);
+        return cloneBotShare(agentImportServices, context.actor, input, context.signal);
+      }),
     },
   };
 }

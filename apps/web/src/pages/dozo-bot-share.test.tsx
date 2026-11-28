@@ -104,7 +104,18 @@ const definition: DozoBotDefinition = {
   avatar: { color: "#22aa55", avatarSet: "organic" },
   instructions: "Water the plants.\n<b>not markup</b>",
   description: "Knows plants",
-  routines: [{ name: "Morning", prompt: "Look", crons: ["0 8 * * *", "0 20 * * *"] }],
+  routines: [{ name: "Morning", prompt: "Look at the garden", crons: ["0 8 * * *", "0 20 * * *"] }],
+};
+/** Every field at its limit, each ending in a mark the screen must still show. */
+const atLimit: DozoBotDefinition = {
+  ...definition,
+  instructions: `${"i".repeat(19_996)}END1`,
+  description: `${"d".repeat(3_996)}END2`,
+  routines: Array.from({ length: 10 }, (_, index) => ({
+    name: `R${index}`,
+    prompt: `${"p".repeat(3_996)}E${index}`.padEnd(4000, "x"),
+    crons: ["0 8 * * *"],
+  })),
 };
 const FINGERPRINT = "f".repeat(64);
 const shown = { definition, fingerprint: FINGERPRINT, hasPicture: false };
@@ -202,8 +213,30 @@ describe("the owner's review", () => {
     expect(text()).toContain("<b>not markup</b>");
     expect(document.querySelector("b")).toBeNull();
     expect(text()).toContain("Knows plants");
-    expect(text()).toContain("Morning0 8 * * *, 0 20 * * *");
+    expect(text()).toContain("Morning0 8 * * *, 0 20 * * *Look at the garden");
     expect(text()).not.toContain("Include picture");
+  });
+
+  it("gives each part its own text direction", async () => {
+    await open();
+    const parts = [...document.querySelectorAll("[dir=auto]")].map((node) => node.textContent);
+    expect(parts).toEqual([
+      "Gardener",
+      definition.instructions,
+      "Knows plants",
+      "Morning",
+      "0 8 * * *, 0 20 * * *",
+      "Look at the garden",
+    ]);
+  });
+
+  it("shows every field whole at its limit, routine prompts included", async () => {
+    api.preview.mockResolvedValue({ ...shown, definition: atLimit });
+    await render(<DozoSurfaceHost />);
+    await act(async () => openDozoSurface("bot-share", { botId: "bot-1" }));
+    await vi.waitFor(() => expect(text()).toContain(atLimit.instructions));
+    expect(text()).toContain(atLimit.description);
+    for (const routine of atLimit.routines) expect(text()).toContain(routine.prompt);
   });
 
   it("publishes what was shown and offers the link to copy", async () => {
@@ -270,6 +303,9 @@ describe("the owner's review", () => {
     await vi.waitFor(() => expect(text()).toContain("Create new link"));
     api.status.mockResolvedValue({ link: null });
     await click("Revoke link");
+    expect(api.revoke).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(text()).toContain("Revoke link?"));
+    await click("Revoke");
     expect(api.revoke).toHaveBeenCalledWith({ botId: "bot-1" });
     await vi.waitFor(() => expect(text()).toContain("Create link"));
   });
@@ -296,9 +332,22 @@ describe("the owner's review", () => {
     await open();
     await vi.waitFor(() => expect(text()).toContain("Revoke link"));
     await click("Revoke link");
+    await vi.waitFor(() => expect(text()).toContain("Revoke link?"));
+    await click("Revoke");
     await vi.waitFor(() =>
       expect(api.toastError).toHaveBeenCalledWith("Could not revoke", expect.any(Error)),
     );
+  });
+
+  it("keeps a link when the person cancels the revoke", async () => {
+    api.status.mockResolvedValue({ link: { id: "l1", expiresAt: "2026-12-28T00:00:00.000Z" } });
+    await open();
+    await vi.waitFor(() => expect(text()).toContain("Revoke link"));
+    await click("Revoke link");
+    await vi.waitFor(() => expect(text()).toContain("Revoke link?"));
+    await click("Cancel");
+    await vi.waitFor(() => expect(text()).not.toContain("Revoke link?"));
+    expect(api.revoke).not.toHaveBeenCalled();
   });
 });
 
@@ -347,6 +396,8 @@ describe("the shared page", () => {
     api.clone.mockResolvedValue({ bot: { id: "copy-1" } });
     await render(<DozoBotSharePage payload={publicPart} />);
     await vi.waitFor(() => expect(text()).toContain("<b>not markup</b>"));
+    // The prompt runs with the reader's tools, so it is on screen before they confirm.
+    expect(text()).toContain("Look at the garden");
     expect(api.open).toHaveBeenCalledWith({ token: TOKEN }, expect.anything());
     expect(document.querySelector("select")).toBeNull();
     await click("Make a copy");
@@ -355,6 +406,14 @@ describe("the shared page", () => {
     expect(input.requestId).toMatch(/^[0-9a-f-]{36}$/);
     await vi.waitFor(() => expect(text()).toContain("opened chat"));
     expect(api.selectSpace).not.toHaveBeenCalled();
+  });
+
+  it("shows a signed-in reader every field whole at its limit", async () => {
+    api.open.mockResolvedValue({ definition: atLimit, fingerprint: FINGERPRINT });
+    await render(<DozoBotSharePage payload={publicPart} />);
+    await vi.waitFor(() => expect(text()).toContain(atLimit.instructions));
+    expect(text()).toContain(atLimit.description);
+    for (const routine of atLimit.routines) expect(text()).toContain(routine.prompt);
   });
 
   it("offers the reader's Spaces when they have several", async () => {

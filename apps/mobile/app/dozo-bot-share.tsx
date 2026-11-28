@@ -43,27 +43,33 @@ export default function DozoBotShare() {
   });
   if (!preview) return null;
   const { definition } = preview;
-  const routines = definition.routines.map(
-    (routine) => `${routine.name}\n${routine.crons.join(", ")}`,
-  );
+  // Every part that is published or copied, whole: a routine's prompt runs with the copier's tools.
+  const routines = definition.routines.map((routine) => [
+    routine.name,
+    routine.crons.join(", "),
+    routine.prompt,
+  ]);
   const sections = [
-    { label: undefined, texts: [definition.name] },
-    { label: t`Instructions`, texts: [definition.instructions] },
-    { label: t`How other bots see it`, texts: [definition.description] },
-    { label: t`Routines`, texts: routines },
-  ].filter((section) => section.texts.some(Boolean));
+    { label: undefined, items: [[definition.name]] },
+    { label: t`Instructions`, items: [[definition.instructions]] },
+    { label: t`How other bots see it`, items: [[definition.description]] },
+    { label: t`Routines`, items: routines },
+  ].filter((section) => section.items.some((parts) => parts.some(Boolean)));
   const busy = publish.pending || revoke.pending;
   const date = link ? i18n.date(new Date(link.expiresAt), { dateStyle: "medium" }) : "";
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       {sections.map((section) => (
         <SettingsGroup key={section.label ?? "name"} label={section.label}>
-          {section.texts.filter(Boolean).map((text, index) => (
+          {section.items.map((parts, index) => (
             // Two routines may read alike; the list never reorders while shown.
             <View key={index} style={styles.text}>
-              <Text selectable style={styles.value}>
-                {text}
-              </Text>
+              {parts.filter(Boolean).map((text, part) => (
+                // Each part takes its own direction, so one cannot reorder the next.
+                <Text key={part} selectable style={styles.value}>
+                  {text}
+                </Text>
+              ))}
             </View>
           ))}
         </SettingsGroup>
@@ -109,7 +115,7 @@ export default function DozoBotShare() {
 function createStyles() {
   return StyleSheet.create({
     content: { padding: 20, paddingBottom: 40, gap: 16 },
-    text: { paddingHorizontal: 16, paddingVertical: 12 },
-    value: { color: native.label, fontSize: 17 },
+    text: { paddingHorizontal: 16, paddingVertical: 12, gap: 4 },
+    value: { color: native.label, fontSize: 17, writingDirection: "auto" },
   });
 }

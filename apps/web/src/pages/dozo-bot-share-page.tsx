@@ -10,7 +10,7 @@ import { SectionLoadFailed } from "../components/ErrorBoundary";
 import { toastError } from "../lib/dozo-error-text";
 import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query/query";
 import { selectedSpaceId, selectSpace } from "../lib/query/rpc";
-import { DozoBotDefinition } from "./dozo-bot-definition";
+import { DozoBotDefinition, dozoBotShown } from "./dozo-bot-definition";
 
 /**
  * A shared bot's page. Signed out it shows what the link shows: the avatar, name, first lines of
@@ -75,19 +75,9 @@ function Copyable({ token }: { token: string }) {
   const shown = opened.data;
   if (opened.isError) return <SectionLoadFailed />;
   if (!shown) return <Spinner />;
-  const { definition } = shown;
   return (
     <>
-      <DozoBotDefinition
-        bot={{
-          ...definition,
-          color: definition.avatar.color,
-          routines: definition.routines.map((routine) => ({
-            name: routine.name,
-            schedule: routine.crons.join(", "),
-          })),
-        }}
-      />
+      <DozoBotDefinition bot={dozoBotShown(shown.definition)} />
       {spaces.length > 1 ? (
         <FieldGroup>
           <Field>

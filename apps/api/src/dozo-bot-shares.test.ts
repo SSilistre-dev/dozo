@@ -18,6 +18,10 @@ import { DOZO_SHARE_KINDS } from "./dozo-share-kinds.js";
 import type { RouterContext } from "./routes/context.js";
 
 const writeImportedBot = vi.hoisted(() => vi.fn());
+const REENCODED = "data:image/webp;base64,BBBB";
+vi.mock("./dozo-avatar-upload.js", () => ({
+  dozoAvatarForSave: async (value: string) => (value.startsWith("data:image/") ? REENCODED : value),
+}));
 vi.mock("./bots/agent-import.js", async (load) => ({
   ...(await load<typeof import("./bots/agent-import.js")>()),
   writeImportedBot,
@@ -102,7 +106,30 @@ describe("what publishing makes public", () => {
     expect(left.hasPicture).toBe(true);
     expect(left.definition.avatar.color).toBeNull();
     const kept = await botShareDefinition(prisma, actor, "bot-1", true);
-    expect(kept.definition.avatar.color).toBe(PICTURE);
+    expect(kept.definition.avatar.color).toBe(REENCODED);
+  });
+
+  it("shows every routine's whole prompt, which publishing carries", async () => {
+    const prompt = "p".repeat(DOZO_BOT_SHARE_LIMITS.routinePrompt);
+    const routines = [{ name: "Long", prompt, crons: ["0 8 * * *"] }];
+    const shown = await botShareDefinition(fakeDb({ routines }).prisma, actor, "bot-1", false);
+    expect(shown.definition.routines[0]!.prompt).toBe(prompt);
+  });
+
+  it("holds every text in one form: NFC, newlines for line ends, instructions trimmed as a copy stores them", async () => {
+    const { prisma } = fakeDb({
+      bot: {
+        name: "Cafe\u0301",
+        instructions: "\n\nLine one\r\nLine two  \n",
+        description: "a\rb",
+      },
+      routines: [{ name: "R", prompt: "e\u0301", crons: ["0 8 * * *"] }],
+    });
+    const { definition: shown } = await botShareDefinition(prisma, actor, "bot-1", false);
+    expect(shown.name).toBe("Caf\u00e9");
+    expect(shown.instructions).toBe("Line one\nLine two");
+    expect(shown.description).toBe("a\nb");
+    expect(shown.routines[0]!.prompt).toBe("\u00e9");
   });
 
   it("shows no avatar value it does not recognise, and the default set for an unknown one", async () => {
@@ -141,6 +168,49 @@ describe("what publishing makes public", () => {
   });
 });
 
+describe("hidden text", () => {
+  const hidden = {
+    zeroWidth: "\u200b",
+    bidi: "\u202e",
+    isolate: "\u2066",
+    tag: "\u{E0041}",
+    control: "\u0007",
+  };
+  const fields: [string, Parameters<typeof fakeDb>[0]][] = [
+    ["name", { bot: { name: "Gar%dener" } }],
+    ["instructions", { bot: { instructions: "Water%" } }],
+    ["description", { bot: { description: "Kno%ws" } }],
+    ["routine name", { routines: [{ name: "Mor%ning", prompt: "p", crons: ["0 8 * * *"] }] }],
+    ["routine prompt", { routines: [{ name: "M", prompt: "Lo%ok", crons: ["0 8 * * *"] }] }],
+    ["routine schedule", { routines: [{ name: "M", prompt: "p", crons: ["0 8 * * *%"] }] }],
+  ];
+  const place = (options: Parameters<typeof fakeDb>[0], char: string) =>
+    JSON.parse(
+      JSON.stringify(options).replace("%", JSON.stringify(char).slice(1, -1)),
+    ) as Parameters<typeof fakeDb>[0];
+
+  for (const [field, options] of fields) {
+    it.each(Object.entries(hidden))(
+      `refuses %s in the ${field}, naming it`,
+      async (_kind, char) => {
+        await expect(
+          botShareDefinition(fakeDb(place(options, char)).prisma, actor, "bot-1", false),
+        ).rejects.toMatchObject({
+          kind: "BAD_REQUEST",
+          code: "BOT_SHARE_HIDDEN_TEXT",
+          message: `The bot's ${field} has characters a reader cannot see`,
+        });
+      },
+    );
+  }
+
+  it("keeps newlines and tabs", async () => {
+    const { prisma } = fakeDb({ bot: { instructions: "a\n\tb" } });
+    const { definition: shown } = await botShareDefinition(prisma, actor, "bot-1", false);
+    expect(shown.instructions).toBe("a\n\tb");
+  });
+});
+
 describe("fingerprint", () => {
   it("is the same whatever order a stored copy keeps the keys in", () => {
     const reordered = JSON.parse(
@@ -171,23 +241,47 @@ describe("publishing", () => {
     expect(statements).toEqual([]);
   });
 
-  it("stores the snapshot, revokes the bot's earlier links only, then makes a link", async () => {
+  it("makes the link first, then stores the snapshot and revokes the bot's other links only", async () => {
     const { prisma, statements } = fakeDb({
       answers: [
-        [{ botId: "bot-1" }],
-        [linkRow("bot", "bot-1"), linkRow("bot", "bot-2"), linkRow("replay", "bot-1")],
-        [{ id: "link-bot-1" }],
         [linkRow("bot", "bot-1", "link-new")],
+        [{ botId: "bot-1" }],
+        [
+          linkRow("bot", "bot-1", "link-new"),
+          linkRow("bot", "bot-1"),
+          linkRow("bot", "bot-2"),
+          linkRow("replay", "bot-1"),
+        ],
+        [{ id: "link-bot-1" }],
       ],
     });
     const made = await publishBotShare(prisma, actor, input);
     expect(made.link.id).toBe("link-new");
-    expect(statements[0]!.text).toContain("INSERT INTO dozo_bot_shares");
-    expect(JSON.parse(String(statements[0]!.values[3]))).toEqual(definition);
+    expect(statements[0]!.text).toContain("INSERT INTO dozo_share_links");
+    expect(statements[0]!.values).toEqual(expect.arrayContaining(["bot", "bot-1"]));
+    expect(statements[1]!.text).toContain("INSERT INTO dozo_bot_shares");
+    expect(JSON.parse(String(statements[1]!.values[3]))).toEqual(definition);
     const revokes = statements.filter((sql) => sql.text.startsWith("UPDATE dozo_share_links"));
     expect(revokes.map((sql) => sql.values[0])).toEqual(["link-bot-1"]);
-    expect(statements.at(-1)!.text).toContain("INSERT INTO dozo_share_links");
-    expect(statements.at(-1)!.values).toEqual(expect.arrayContaining(["bot", "bot-1"]));
+  });
+
+  it("changes nothing when the link limit refuses", async () => {
+    const { prisma, statements } = fakeDb({ answers: [[]] });
+    await expect(publishBotShare(prisma, actor, input)).rejects.toMatchObject({
+      code: "SHARE_LINK_LIMIT",
+    });
+    expect(statements.map((sql) => sql.text.split(" ")[0])).toEqual(["INSERT"]);
+    expect(statements[0]!.text).toContain("dozo_share_links");
+  });
+
+  it("revokes the new link when the snapshot cannot be stored", async () => {
+    const { prisma, raw, statements } = fakeDb({
+      answers: [[linkRow("bot", "bot-1", "link-new")], [{ id: "link-new" }]],
+    });
+    raw.$transaction.mockRejectedValueOnce(new Error("database down"));
+    await expect(publishBotShare(prisma, actor, input)).rejects.toThrow("database down");
+    expect(statements[1]!.text).toContain("UPDATE dozo_share_links");
+    expect(statements[1]!.values[0]).toBe("link-new");
   });
 });
 
@@ -211,13 +305,12 @@ describe("status and revoking", () => {
   });
 
   it("revokes the bot's links and deletes the snapshot", async () => {
-    const { prisma, statements } = fakeDb({
-      answers: [[linkRow("bot", "bot-1")], [{ id: "link-bot-1" }], [{ botId: "bot-1" }]],
-    });
+    const { prisma, statements } = fakeDb({});
     await revokeBotShare(prisma, actor, "bot-1");
-    expect(statements[1]!.text).toContain("UPDATE dozo_share_links");
-    expect(statements[2]!.text).toContain("DELETE FROM dozo_bot_shares");
-    expect(statements[2]!.values).toEqual(["bot-1", "owner", "space-1"]);
+    expect(statements[0]!.text).toContain("UPDATE dozo_share_links");
+    expect(statements[0]!.values).toEqual(["bot", "bot-1", "owner", "space-1"]);
+    expect(statements[1]!.text).toContain("DELETE FROM dozo_bot_shares");
+    expect(statements[1]!.values).toEqual(["bot-1", "owner", "space-1"]);
   });
 });
 
@@ -244,14 +337,26 @@ describe("the bot kind", () => {
     expect(await botShareKind.load(broken.prisma, link)).toBeNull();
   });
 
-  it("lets only the owner of a bot that is not archived share it", async () => {
-    const { prisma, raw } = fakeDb({});
+  it("lets only the owner share their bot", async () => {
+    const { prisma, raw, statements } = fakeDb({});
     expect(await botShareKind.canShare(prisma, actor, "bot-1")).toBe(true);
     expect(raw.bot.findFirst).toHaveBeenCalledWith({
-      where: { id: "bot-1", spaceId: "space-1", userId: "owner", archivedAt: null },
-      select: { id: true },
+      where: { id: "bot-1", spaceId: "space-1", userId: "owner" },
+      select: { archivedAt: true },
     });
+    expect(statements).toEqual([]);
     expect(await botShareKind.canShare(fakeDb({ bot: null }).prisma, actor, "bot-1")).toBe(false);
+  });
+
+  it("closes the share of an archived bot for good at the first read that finds it", async () => {
+    const { prisma, statements } = fakeDb({ bot: { archivedAt: new Date() } });
+    expect(await botShareKind.canShare(prisma, actor, "bot-1")).toBe(false);
+    expect(statements[0]!.text).toContain("UPDATE dozo_share_links");
+    expect(statements[1]!.text).toContain("DELETE FROM dozo_bot_shares");
+  });
+
+  it("is made only by its own reviewed publish", () => {
+    expect(botShareKind.featureOnly).toBe(true);
   });
 });
 
@@ -274,6 +379,13 @@ describe("opening and copying", () => {
     await expect(openBotShare(fakeDb({ answers: [other] }).prisma, TOKEN)).rejects.toBeInstanceOf(
       IsolationError,
     );
+  });
+
+  it("refuses a stored definition with hidden text as a bad link is refused", async () => {
+    const hidden = { ...definition, instructions: "Water\u202e" };
+    await expect(
+      openBotShare(fakeDb({ answers: [liveLink, [{ definition: hidden }]] }).prisma, TOKEN),
+    ).rejects.toBeInstanceOf(IsolationError);
   });
 
   it("refuses a copy of a definition other than the one shown", async () => {
@@ -308,12 +420,31 @@ describe("opening and copying", () => {
     expect(JSON.stringify(request)).not.toContain("bot-1");
     const built = await request.build();
     expect(built.plan.instructions[0].content).toBe(definition.instructions);
+    // Not the bot's name, which an import would strip as a heading when it ends in ".md".
+    expect(built.plan.instructions[0].title).toBe("instructions");
     expect(built.plan.skills).toEqual([]);
     expect(built.routineInputs.get("routine-0")).toMatchObject({
       name: "Morning",
       active: false,
       timezone: "Europe/Istanbul",
     });
+  });
+
+  it("keys the same request with another link differently, so it cannot return the first copy", async () => {
+    writeImportedBot.mockResolvedValue({ bot: { id: "copy-1" }, created: true });
+    const requestId = "3b241101-e2bb-4255-8caf-4136c566a962";
+    const fingerprint = botShareFingerprint(definition);
+    for (const token of [TOKEN, "D".repeat(43)]) {
+      await cloneBotShare(services([liveLink, [{ definition }]]), reader, {
+        token,
+        fingerprint,
+        requestId,
+      });
+    }
+    const [first, second] = writeImportedBot.mock.calls.map((call) => call[2]);
+    expect(first.importKey).toBe(second.importKey);
+    expect(first.digest).not.toBe(second.digest);
+    expect(JSON.stringify(first)).not.toContain(TOKEN);
   });
 
   it("keeps the owner's colour out when the definition has none", async () => {
@@ -363,7 +494,7 @@ describe("procedures", () => {
 
   it("answers a publish with the link's web address and expiry", async () => {
     const { prisma } = fakeDb({
-      answers: [[{ botId: "bot-1" }], [], [linkRow("bot", "bot-1")]],
+      answers: [[linkRow("bot", "bot-1")], [{ botId: "bot-1" }], []],
     });
     const made = (await routes(prisma).publish({
       context: { actor },
@@ -404,5 +535,29 @@ describe("procedures", () => {
         },
       }),
     ).toEqual({ bot: { id: "copy-3" } });
+  });
+
+  it("limits how many links one person opens or copies a minute", async () => {
+    const shares = routes(fakeDb({}).prisma);
+    for (let call = 0; call < 60; call++) {
+      await expect(
+        shares.open({ context: { actor }, input: { token: TOKEN } }),
+      ).rejects.toBeInstanceOf(IsolationError);
+    }
+    await expect(
+      shares.open({ context: { actor }, input: { token: TOKEN } }),
+    ).rejects.toMatchObject({
+      kind: "TOO_MANY_REQUESTS",
+    });
+    await expect(
+      shares.clone({
+        context: { actor },
+        input: { token: TOKEN, fingerprint: "0".repeat(64), requestId: "x" },
+      }),
+    ).rejects.toMatchObject({ kind: "TOO_MANY_REQUESTS" });
+    const other = { ...actor, userId: "someone-else" };
+    await expect(
+      shares.open({ context: { actor: other }, input: { token: TOKEN } }),
+    ).rejects.toBeInstanceOf(IsolationError);
   });
 });

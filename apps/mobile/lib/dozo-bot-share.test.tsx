@@ -41,7 +41,9 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: <T,>(styles: T) => styles },
   ScrollView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
+  Text: ({ children, style }: { children?: ReactNode; style?: { writingDirection?: string } }) => (
+    <p dir={style?.writingDirection}>{children}</p>
+  ),
 }));
 vi.mock("./api/user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
@@ -205,7 +207,9 @@ describe("bot share screen", () => {
       "How other bots see it",
       "Helpful",
       "Routines",
-      "Morning\n0 8 * * *, 0 9 * * 1",
+      "Morning",
+      "0 8 * * *, 0 9 * * 1",
+      "Hi",
       "Anyone with the link can see this and make their own copy.",
       "Create link",
     ])
@@ -220,6 +224,38 @@ describe("bot share screen", () => {
     await render();
     expect(container.textContent).not.toContain("How other bots see it");
     expect(container.textContent).not.toContain("Routines");
+  });
+
+  it("shows each part apart, in its own text direction, the routine prompt included", async () => {
+    await render();
+    const parts = [...container.querySelectorAll("p[dir=auto]")].map((node) => node.textContent);
+    expect(parts).toEqual([
+      "Ada",
+      "Be kind.\nBe brief.",
+      "Helpful",
+      "Morning",
+      "0 8 * * *, 0 9 * * 1",
+      "Hi",
+    ]);
+  });
+
+  it("shows every field whole at its limit", async () => {
+    const long = {
+      ...definition,
+      instructions: `${"i".repeat(19_996)}END1`,
+      description: `${"d".repeat(3_996)}END2`,
+      routines: Array.from({ length: 10 }, (_, index) => ({
+        name: `R${index}`,
+        prompt: `${"p".repeat(3_997)}E${index}`.padEnd(4000, "x"),
+        crons: ["0 8 * * *"],
+      })),
+    };
+    api.preview = { definition: long, fingerprint: "f".repeat(64), hasPicture: false };
+    await render();
+    const parts = [...container.querySelectorAll("p[dir=auto]")].map((node) => node.textContent);
+    expect(parts).toContain(long.instructions);
+    expect(parts).toContain(long.description);
+    for (const routine of long.routines) expect(parts).toContain(routine.prompt);
   });
 
   it("shows nothing until the preview is read", async () => {

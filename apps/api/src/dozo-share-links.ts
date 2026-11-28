@@ -26,6 +26,11 @@ export type DozoShareTarget = { userId: string; spaceId: string; targetId: strin
  * link: put in it only what the link is meant to show.
  */
 export interface DozoShareKind {
+  /**
+   * Made only by its own feature's procedure, which reviews what the link shows first; the
+   * generic `dozoShareLinks.create` refuses it as not found.
+   */
+  featureOnly?: true;
   canShare(prisma: PrismaClient, actor: Actor, targetId: string): Promise<boolean>;
   /** Null when there is nothing to show any more; the reader gets the same refusal as a bad token. */
   load(prisma: PrismaClient, link: DozoShareTarget): Promise<unknown | null>;
@@ -177,6 +182,7 @@ export function dozoShareLinkRoutes(ctx: RouterContext, kinds: DozoShareKinds = 
   return {
     dozoShareLinks: {
       create: authed.dozoShareLinks.create.handler(async ({ context, input }) => {
+        if (kindOf(kinds, input.kind)?.featureOnly) throw new IsolationError();
         const { link, token } = await createShareLink(deps.prisma, context.actor, input, kinds);
         const url = new URL(`${DOZO_SHARE_LINK_WEB_PREFIX}${token}`, deps.env.webOrigin).href;
         return { link, url };

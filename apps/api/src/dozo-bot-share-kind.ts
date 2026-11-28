@@ -1,8 +1,20 @@
 import type { Actor, DozoBotDefinition } from "@rakazo/contracts";
-import { DozoBotDefinitionSchema, dozoBotSharePublic } from "@rakazo/contracts";
+import {
+  DOZO_BOT_SHARE_KIND,
+  DozoBotDefinitionSchema,
+  dozoBotSharePublic,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { readJsonColumn } from "@rakazo/db";
 import type { DozoShareKind, DozoShareTarget } from "./dozo-share-links.js";
+
+/** The owner's bot, archived or not; null for anyone else's or one that is gone. */
+async function ownBot(prisma: Pick<PrismaClient, "bot">, actor: Actor, botId: string) {
+  return prisma.bot.findFirst({
+    where: { id: botId, spaceId: actor.spaceId, userId: actor.userId },
+    select: { archivedAt: true },
+  });
+}
 
 /** Only the bot's owner shares it, and only while it is not archived unless `archived` says so. */
 export async function ownsBot(
@@ -11,16 +23,25 @@ export async function ownsBot(
   botId: string,
   options: { archived?: boolean } = {},
 ): Promise<boolean> {
-  const bot = await prisma.bot.findFirst({
-    where: {
-      id: botId,
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      ...(options.archived ? {} : { archivedAt: null }),
-    },
-    select: { id: true },
-  });
-  return Boolean(bot);
+  const bot = await ownBot(prisma, actor, botId);
+  return Boolean(bot && (options.archived || !bot.archivedAt));
+}
+
+/** Revokes every link the owner made to the bot and deletes what they published for it. */
+export async function closeBotShare(
+  db: Pick<PrismaClient, "$queryRaw">,
+  actor: Actor,
+  botId: string,
+): Promise<void> {
+  await db.$queryRaw`
+    UPDATE dozo_share_links SET "revokedAt" = CURRENT_TIMESTAMP
+    WHERE "kind" = ${DOZO_BOT_SHARE_KIND} AND "targetId" = ${botId} AND "userId" = ${actor.userId}
+      AND "spaceId" = ${actor.spaceId} AND "revokedAt" IS NULL
+    RETURNING "id"`;
+  await db.$queryRaw`
+    DELETE FROM dozo_bot_shares
+    WHERE "botId" = ${botId} AND "userId" = ${actor.userId} AND "spaceId" = ${actor.spaceId}
+    RETURNING "botId"`;
 }
 
 /**
@@ -45,7 +66,17 @@ export async function readBotShare(
  * instructions and the routine names.
  */
 export const botShareKind: DozoShareKind = {
-  canShare: (prisma, actor, targetId) => ownsBot(prisma, actor, targetId),
+  // Only the feature's reviewed publish makes one: the generic create would skip the review.
+  featureOnly: true,
+  /**
+   * Archiving is upstream's own route, which no fork code sees, so the first read that finds the
+   * bot archived closes its share for good: un-archiving never reopens a forgotten link.
+   */
+  canShare: async (prisma, actor, targetId) => {
+    const bot = await ownBot(prisma, actor, targetId);
+    if (bot?.archivedAt) await closeBotShare(prisma, actor, targetId);
+    return Boolean(bot && !bot.archivedAt);
+  },
   load: async (prisma, link) => {
     const definition = await readBotShare(prisma, link);
     return definition && dozoBotSharePublic(definition);
