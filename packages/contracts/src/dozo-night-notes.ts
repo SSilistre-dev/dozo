@@ -8,11 +8,20 @@ export { DOZO_NIGHT_NOTES_ROUTINE_NAME, DOZO_NIGHT_NOTES_ROUTINE_PROMPT };
 /** Every night at three, in the routine's own zone. Quiet hours hold the run until they end. */
 export const DOZO_NIGHT_NOTES_CRONS = ["0 3 * * *"];
 
-/** The bot's nightly tidy-up among its routines: the one that still has the fork's prompt. */
-export function findDozoNightNotes<Row extends { prompt: string }>(
+/**
+ * The bot's nightly tidy-up among its routines. A routine row carries no origin or key, so it is
+ * the one with the fork's prompt or the fork's name, which survives editing either but not both.
+ * With several, the one running wins, so a switch never makes a second.
+ */
+export function findDozoNightNotes<Row extends { name: string; prompt: string; active?: boolean }>(
   routines: readonly Row[],
 ): Row | undefined {
-  return routines.find((routine) => routine.prompt === DOZO_NIGHT_NOTES_ROUTINE_PROMPT);
+  const ours = routines.filter(
+    (routine) =>
+      routine.prompt === DOZO_NIGHT_NOTES_ROUTINE_PROMPT ||
+      routine.name === DOZO_NIGHT_NOTES_ROUTINE_NAME,
+  );
+  return ours.find((routine) => routine.active) ?? ours[0];
 }
 
 /** The routine switching the tidy-up on creates: running, in the zone the person's app uses. */
@@ -29,7 +38,7 @@ export function dozoNightNotesRoutine(botId: string, timezone: string) {
 
 /** What switching it on or off sends for the bot's routines as they are now. */
 export function dozoNightNotesChange(
-  routines: readonly { id: string; prompt: string; active: boolean }[],
+  routines: readonly { id: string; name: string; prompt: string; active: boolean }[],
   botId: string,
   timezone: string,
   on: boolean,

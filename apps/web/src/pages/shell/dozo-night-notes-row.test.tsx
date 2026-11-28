@@ -117,7 +117,7 @@ describe("DozoNightNotesRow", () => {
 
   it("shows a running routine as on and switching off pauses that routine", async () => {
     api.list.mockResolvedValue([
-      { id: "r1", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true },
+      { id: "r1", name: "Night notes", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true },
     ]);
     await render();
     expect(toggle().getAttribute("aria-checked")).toBe("true");

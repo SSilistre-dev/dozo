@@ -118,7 +118,9 @@ describe("DozoNightNotesRow on mobile", () => {
   });
 
   it("shows a running routine as on and switching off pauses it", async () => {
-    api.routines = [{ id: "r1", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true }];
+    api.routines = [
+      { id: "r1", name: "Night notes", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true },
+    ];
     await render();
     expect(toggle()?.getAttribute("aria-checked")).toBe("true");
     await act(async () => toggle()?.click());
@@ -143,7 +145,7 @@ describe("DozoNightNotesRow on mobile", () => {
   it("sends nothing when another device already switched it as asked, and falls back to the device zone before the account is known", async () => {
     await render();
     api.send.mockResolvedValueOnce([
-      { id: "r1", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true },
+      { id: "r1", name: "Night notes", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true },
     ]);
     await act(async () => toggle()?.click());
     expect(api.send.mock.calls.map(([proc]) => proc)).toEqual(["routines/list"]);
