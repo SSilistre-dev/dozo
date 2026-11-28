@@ -8,8 +8,10 @@ import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
 export const FEATURE_EXEMPTIONS: readonly IsolationExemption[] = [
   {
     path: "dozoShareLinks/create",
-    kind: "no-target",
-    fields: ["targetId"],
-    reason: "What a link shows depends on its kind; none ships yet, so no create succeeds.",
+    kind: "unreached",
+    verifiedByCode:
+      'apps/api/src/dozo-share-links.ts:96 "if (!kind || !(await kind.canShare(prisma, actor, input.targetId))) throw new IsolationError();" — the kind decides for the caller\'s own actor',
+    reason:
+      "No kind of share link ships yet, so every create is refused; the first bot kind makes the owner's call get through, and this entry must then go.",
   },
 ];

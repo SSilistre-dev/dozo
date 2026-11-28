@@ -1,13 +1,14 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Actor, DozoShared, DozoShareLink } from "@rakazo/contracts";
 import {
   DOZO_SHARE_LINK_API_PREFIX,
   DOZO_SHARE_LINK_WEB_PREFIX,
-  DOZO_SHARE_LINKS_LISTED,
+  DOZO_SHARE_LINKS_LIVE_MAX,
   looksLikeDozoShareToken,
 } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, Prisma, runAsSystem } from "@rakazo/db";
+import { IsolationError, Prisma, runAsSystem, runAsTenant } from "@rakazo/db";
 import type { Context, Hono } from "hono";
 import { DOZO_SHARE_KINDS } from "./dozo-share-kinds.js";
 import { throttleKey, windowCounter } from "./http/window-counter.js";
@@ -19,9 +20,10 @@ type Db = Pick<PrismaClient, "$queryRaw">;
 export type DozoShareTarget = { userId: string; spaceId: string; targetId: string };
 
 /**
- * One kind of link. `canShare` runs as the signed-in maker; `load` runs as the system for a
- * signed-out reader, so it reads only the target it is given and checks the maker still reaches it.
- * Its payload goes to anyone holding the link: put in it only what the link is meant to show.
+ * One kind of link. `canShare` runs as the maker, both when the link is made and again each time it
+ * is read, so a maker who lost the target, or a target that is gone, closes the link. `load` then
+ * runs as the system and reads only the target it is given. Its payload goes to anyone holding the
+ * link: put in it only what the link is meant to show.
  */
 export interface DozoShareKind {
   canShare(prisma: PrismaClient, actor: Actor, targetId: string): Promise<boolean>;
@@ -67,6 +69,19 @@ function linkDto(row: Row): DozoShareLink {
   };
 }
 
+const LIVE = Prisma.sql`"revokedAt" IS NULL AND "expiresAt" > CURRENT_TIMESTAMP`;
+
+/** A member holds at most this many live links in a Space, so their list always shows them all. */
+export class ShareLinkLimitError extends ClientError {
+  constructor() {
+    super(
+      "CONFLICT",
+      `You can have ${DOZO_SHARE_LINKS_LIVE_MAX} live links; revoke one first`,
+      "SHARE_LINK_LIMIT",
+    );
+  }
+}
+
 const COLUMNS = Prisma.sql`"id", "kind", "targetId", "createdAt" AT TIME ZONE 'UTC' AS "createdAt",
   "expiresAt" AT TIME ZONE 'UTC' AS "expiresAt", "revokedAt" AT TIME ZONE 'UTC' AS "revokedAt"`;
 
@@ -83,19 +98,22 @@ export async function createShareLink(
   const expiresAt = new Date(Date.now() + input.days * DAY_MS);
   const [row] = await prisma.$queryRaw<Row[]>`
     INSERT INTO dozo_share_links ("id", "userId", "spaceId", "kind", "targetId", "tokenHash", "expiresAt")
-    VALUES (${randomUUID()}, ${actor.userId}, ${actor.spaceId}, ${input.kind}, ${input.targetId},
-      ${hashToken(token)}, ${expiresAt.toISOString()}::timestamptz)
+    SELECT ${randomUUID()}, ${actor.userId}, ${actor.spaceId}, ${input.kind}, ${input.targetId},
+      ${hashToken(token)}, ${expiresAt.toISOString()}::timestamptz
+    WHERE (SELECT count(*) FROM dozo_share_links
+      WHERE "userId" = ${actor.userId} AND "spaceId" = ${actor.spaceId} AND ${LIVE})
+      < ${DOZO_SHARE_LINKS_LIVE_MAX}
     RETURNING ${COLUMNS}`;
-  if (!row) throw new Error("share link insert returned no row");
+  if (!row) throw new ShareLinkLimitError();
   return { link: linkDto(row), token };
 }
 
-/** The member's own links in the Space, newest first, expired and revoked ones included. */
+/** Every live link of the member's in the Space, newest first; expired and revoked ones are done. */
 export async function listShareLinks(prisma: Db, actor: Actor): Promise<DozoShareLink[]> {
   const rows = await prisma.$queryRaw<Row[]>`
     SELECT ${COLUMNS} FROM dozo_share_links
-    WHERE "userId" = ${actor.userId} AND "spaceId" = ${actor.spaceId}
-    ORDER BY "createdAt" DESC, "id" DESC LIMIT ${DOZO_SHARE_LINKS_LISTED}`;
+    WHERE "userId" = ${actor.userId} AND "spaceId" = ${actor.spaceId} AND ${LIVE}
+    ORDER BY "createdAt" DESC, "id" DESC LIMIT ${DOZO_SHARE_LINKS_LIVE_MAX}`;
   return rows.map(linkDto);
 }
 
@@ -110,7 +128,8 @@ export async function revokeShareLink(prisma: Db, actor: Actor, id: string): Pro
 
 /**
  * What a live link shows, or null for every token that does not open one: malformed, unknown,
- * expired, revoked, of a kind this server does not have, or pointing at nothing any more.
+ * expired, revoked, of a kind this server does not have, a target its maker no longer reaches, or
+ * pointing at nothing any more. The token is found by its hash's unique index; nothing compares it.
  */
 export async function readSharedLink(
   prisma: PrismaClient,
@@ -122,17 +141,19 @@ export async function readSharedLink(
   const [row] = await runAsSystem(
     "share link read",
     () =>
-      prisma.$queryRaw<
-        Array<DozoShareTarget & { kind: string; tokenHash: string }>
-      >`SELECT "userId", "spaceId", "kind", "targetId", "tokenHash" FROM dozo_share_links
-      WHERE "tokenHash" = ${hash} AND "revokedAt" IS NULL AND "expiresAt" > CURRENT_TIMESTAMP`,
+      prisma.$queryRaw<Array<DozoShareTarget & { kind: string }>>`
+        SELECT "userId", "spaceId", "kind", "targetId" FROM dozo_share_links
+        WHERE "tokenHash" = ${hash} AND ${LIVE}`,
   );
-  if (!row || !timingSafeEqual(Buffer.from(row.tokenHash, "hex"), Buffer.from(hash, "hex"))) {
-    return null;
-  }
-  const kind = kindOf(kinds, row.kind);
-  if (!kind) return null;
+  const kind = row && kindOf(kinds, row.kind);
+  if (!row || !kind) return null;
   const { userId, spaceId, targetId } = row;
+  const maker = await runAsSystem("share link maker", () =>
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
+  );
+  if (!maker) return null;
+  const actor: Actor = { userId, spaceId, email: maker.email, isDeploymentOwner: false };
+  if (!(await runAsTenant(actor, () => kind.canShare(prisma, actor, targetId)))) return null;
   const payload = await runAsSystem("share link read", () =>
     kind.load(prisma, { userId, spaceId, targetId }),
   );

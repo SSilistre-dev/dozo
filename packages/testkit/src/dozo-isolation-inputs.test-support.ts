@@ -80,6 +80,8 @@ const FIELD_KEYS: Record<string, PoolKey> = {
 };
 /** Fields that name another kind of thing in one procedure than everywhere else. */
 const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
+  // A share link to the target's bot, as the bot kinds (clone, stats) take it.
+  "dozoShareLinks/create": { targetId: "botId" },
   "threads/declineCall": { callId: "declineCallId" },
   "notifications/declineIncomingCall": { callId: "incomingCallId" },
   // Not the canary's own document: a member's edit replaces its content, and the read that shows
@@ -124,6 +126,8 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
 const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
   // An agent a paired computer can run, so the owner's own call connects it.
   "dozoCliAccounts/connect": { provider: "codex-agent" },
+  // The bot clone kind: once it ships, the owner's own create gets through and the exemption goes.
+  "dozoShareLinks/create": { kind: "bot" },
 };
 /** A field whose name says it names something; each one must be filled from the target's things. */
 const ID_FIELD = /Id$|Ids$|^id$/;

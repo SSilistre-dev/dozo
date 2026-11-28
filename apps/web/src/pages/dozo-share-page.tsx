@@ -70,8 +70,9 @@ export function DozoSharePage({
     );
   return (
     <>
-      {/* The link is its only key, so nothing behind it belongs in search results. */}
+      {/* The link is its only key: no search result, and no request from the page names it. */}
       <meta name="robots" content="noindex, nofollow" />
+      <meta name="referrer" content="no-referrer" />
       {body}
     </>
   );

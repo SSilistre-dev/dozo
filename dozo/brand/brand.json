@@ -8523,6 +8523,15 @@
       "reason": "fork feature routes: the hub's procedures join the router"
     },
     {
+      "file": "packages/logging/src/redaction.ts",
+      "find": "  `${slash}(?:api${slash}v1${slash}pages${slash}shared|p)${slash}`;",
+      "replace": "  `${slash}(?:api${slash}v1${slash}(?:pages|dozo)${slash}shared|p|s)${slash}`;",
+      "requires": [
+        "packages/logging/src/dozo-redaction.test.ts"
+      ],
+      "reason": "share links: a link's token after /s/ (web page) or /api/v1/dozo/shared/ (API) is its only credential, so logs and monitoring scrub it as they scrub a shared page's"
+    },
+    {
       "file": "scripts/checks/ratchets/no-json-column-cast.mjs",
       "find": "const names = new Set([...schema.matchAll(/^\\s+(\\w+)\\s+Json\\b/gm)].map((match) => match[1]));",
       "replace": "// Dozo: `data` is left out. The fork's catalog snapshot has a Json column of that name, and `data`\n  // is also the body of every HTTP answer the adapters read, so with it the check flags those.\n  const names = new Set(\n    [...schema.matchAll(/^\\s+(?!data\\b)(\\w+)\\s+Json\\b/gm)].map((match) => match[1]),\n  );",

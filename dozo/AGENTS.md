@@ -79,8 +79,8 @@ Add a file and one line in a hub below; a new anchored rule needs a reason none 
 - Web: a surface over the shell in `apps/web/src/pages/dozo-surfaces.tsx` (open it with
   `openDozoSurface`); a bot's menu item or settings row in
   `apps/web/src/pages/shell/dozo-bot-extensions.tsx`. Every entry loads lazily.
-- Mobile: a General settings row, a bot settings row or a bot action hook in
-  `apps/mobile/components/dozo-extensions.tsx`; a new screen is a file under `apps/mobile/app/`.
+- Mobile: a bot settings row or a bot action hook in `apps/mobile/components/dozo-extensions.tsx`;
+  a new screen is a file under `apps/mobile/app/`.
 
 ## Commands
 
