@@ -1,0 +1,8 @@
+#!/bin/sh
+# Paints the computer's empty desktop once: the Dozo watermark, or the plain dark colour when the
+# picture is missing. Fluxbox runs this as its root command; nothing stays running. display paints the
+# root window and still exits 1, so its status says nothing.
+picture=/usr/share/pixmaps/dozo-computer-background.png
+[ -r "$picture" ] || exec xsetroot -solid "#111113"
+display -window root "$picture" >/dev/null 2>&1
+exit 0
