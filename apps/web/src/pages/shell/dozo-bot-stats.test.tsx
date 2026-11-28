@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -62,6 +63,9 @@ async function draw() {
       </QueryClientProvider>,
     ),
   );
+  // The numbers, then the links that wait for them.
+  await act(flush);
+  await act(flush);
 }
 const click = (label: string) =>
   act(async () => {
