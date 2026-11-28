@@ -13,7 +13,9 @@ import { SettingsGroup, SettingsRow } from "./settings/settings-group";
  */
 export function DozoBotStatsRow({ botId }: { botId: string }) {
   const { t } = useLingui();
-  const stats = useScreenQuery(rpcQuery("dozoBotStats/get", { botId })).data;
+  const read = useScreenQuery(rpcQuery("dozoBotStats/get", { botId })).data;
+  // Upstream's screen tests answer a procedure they do not know with an empty list.
+  const stats = typeof read?.tasksFinished === "number" ? read : undefined;
   const linksRead = rpcQuery("dozoShareLinks/list");
   const links = useScreenQuery(linksRead, { enabled: Boolean(stats) }).data?.links;
   const live = links?.filter(

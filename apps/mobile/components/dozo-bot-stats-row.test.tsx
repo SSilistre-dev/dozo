@@ -86,6 +86,12 @@ describe("the bot's stats row", () => {
     expect(container.textContent).toBe("");
   });
 
+  it("shows nothing for an answer that is not the numbers", async () => {
+    ui.reads = { "dozoBotStats/get": [] };
+    await draw();
+    expect(container.textContent).toBe("");
+  });
+
   it("shows the four numbers and shares the card through the system sheet", async () => {
     ui.reads = { "dozoBotStats/get": STATS, "dozoShareLinks/list": { links: [] } };
     ui.send.mockResolvedValue({ url: "https://app.example.test/s/token" });
