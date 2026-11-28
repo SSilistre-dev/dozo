@@ -14,11 +14,18 @@ export function dozoSiteChanged(client = queryClient): Promise<void> {
   });
 }
 
-/** Reads every open chat's pins again; the roster signal carries a pin change. */
+/**
+ * Fork reads the roster signal carries, each named by the end of its query path: a pin change, and
+ * a computer starting or going to sleep (its event lands in a chat every member's roster follows).
+ * A feature whose data changes with that signal adds one entry here.
+ */
+const ROSTER_READS: readonly string[] = ["dozoMessages.pins", "dozoComputerWall.list"];
+
+/** Reads again every fork read the roster signal carries; only mounted screens refetch. */
 export function dozoPinsChanged(client = queryClient): Promise<void> {
   return client.invalidateQueries({
     predicate: ({ queryKey: [path] }) =>
-      Array.isArray(path) && path.slice(-2).join(".") === "dozoMessages.pins",
+      Array.isArray(path) && ROSTER_READS.includes(path.slice(-2).join(".")),
   });
 }
 

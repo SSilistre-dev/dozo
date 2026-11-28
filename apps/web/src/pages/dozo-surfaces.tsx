@@ -12,6 +12,8 @@ type Surfaces = Readonly<Record<string, () => Promise<ComponentType<DozoSurfaceP
  * and opens it with `openDozoSurface(<key>, params)` from a menu item or row.
  */
 const SURFACES: Surfaces = {
+  computers: () =>
+    import("./shell/computers/dozo-computer-wall").then((module) => module.DozoComputerWall),
   replay: () => import("./shell/dozo-replay-surface").then((module) => module.DozoReplaySurface),
 };
 

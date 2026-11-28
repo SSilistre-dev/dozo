@@ -8,6 +8,9 @@ vi.mock("./shell/dozo-replay-surface", () => ({
     <p>replay {params.messageId}</p>
   ),
 }));
+vi.mock("./shell/computers/dozo-computer-wall", () => ({
+  DozoComputerWall: () => <p>computers wall</p>,
+}));
 
 import type { DozoSurfaceProps } from "./dozo-surfaces";
 import { DozoSurfaceHost, openDozoSurface } from "./dozo-surfaces";
@@ -59,4 +62,10 @@ it("opens the replay review from the shell's own surfaces", async () => {
   await act(async () => root.render(<DozoSurfaceHost />));
   await act(async () => openDozoSurface("replay", { messageId: "m-1" }));
   await vi.waitFor(() => expect(host.textContent).toBe("replay m-1"));
+});
+
+it("opens the computers wall from its key", async () => {
+  await act(async () => root.render(<DozoSurfaceHost />));
+  await act(async () => openDozoSurface("computers"));
+  await vi.waitFor(() => expect(host.textContent).toBe("computers wall"));
 });
