@@ -477,5 +477,10 @@
  "Renew for {price}": "Odnów za {price}",
  "{name}, {price} / month": "{name}, {price} / miesiąc",
  "{name}, {price} / year": "{name}, {price} / rok",
+ "Share replay": "Udostępnij powtórkę",
+ "Create link": "Utwórz link",
+ "Previous": "Wstecz",
+ "Screenshot": "Zrzut ekranu",
+ "Anyone with the link can see what stays checked.": "Każdy, kto ma link, zobaczy to, co pozostanie zaznaczone.",
  "Can call me": "Może do mnie dzwonić"
 }

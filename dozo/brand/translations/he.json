@@ -477,5 +477,10 @@
  "Renew for {price}": "חידוש תמורת {price}",
  "{name}, {price} / month": "{name}, {price} / חודש",
  "{name}, {price} / year": "{name}, {price} / שנה",
+ "Share replay": "שיתוף הפעלה חוזרת",
+ "Create link": "יצירת קישור",
+ "Previous": "הקודם",
+ "Screenshot": "צילום מסך",
+ "Anyone with the link can see what stays checked.": "כל מי שיש לו את הקישור יראה את מה שנשאר מסומן.",
  "Can call me": "יכול להתקשר אליי"
 }

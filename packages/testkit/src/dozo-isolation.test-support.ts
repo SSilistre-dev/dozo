@@ -91,6 +91,8 @@ export type PoolKey =
   | "approvalRuleId"
   | "commandRuleId"
   | "shareLinkId"
+  | "replayId"
+  | "replyMessageId"
   | "learningChangeId"
   | "externalConversationId"
   | "soloOrganizationId"

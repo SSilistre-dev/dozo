@@ -476,5 +476,10 @@
  "Renew for {price}": "{price}에 갱신",
  "{name}, {price} / month": "{name}, {price} / 월",
  "{name}, {price} / year": "{name}, {price} / 년",
+ "Share replay": "리플레이 공유",
+ "Create link": "링크 만들기",
+ "Previous": "이전",
+ "Screenshot": "스크린샷",
+ "Anyone with the link can see what stays checked.": "링크가 있는 사람은 누구나 체크된 항목을 볼 수 있습니다.",
  "Can call me": "전화 허용"
 }

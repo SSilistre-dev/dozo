@@ -554,5 +554,10 @@
  "Renew for {price}": "Verlengen voor {price}",
  "{name}, {price} / month": "{name}, {price} / maand",
  "{name}, {price} / year": "{name}, {price} / jaar",
+ "Share replay": "Replay delen",
+ "Create link": "Link maken",
+ "Previous": "Vorige",
+ "Screenshot": "Schermafbeelding",
+ "Anyone with the link can see what stays checked.": "Iedereen met de link ziet wat aangevinkt blijft.",
  "Can call me": "Mag me bellen"
 }
