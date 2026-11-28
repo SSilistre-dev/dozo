@@ -94,6 +94,15 @@ export async function seedTarget(
     orderBy: { createdAt: "desc" },
   });
   if (lastRun) ids.runId = lastRun.id;
+  // The save_page reply: a finished reply to the owner's own run, with a tool step to replay.
+  const reply = await db.message.findFirst({
+    where: { threadId: thread.id, role: "bot", runId: { not: null } },
+    orderBy: { seq: "desc" },
+    select: { id: true, blocks: true },
+  });
+  if (reply && JSON.stringify(reply.blocks).includes('"kind":"steps"'))
+    ids.replyMessageId = reply.id;
+  else notes.push("replay: the scripted save_page turn left no reply with a tool step");
   const memory = await db.memoryDocument.findFirst({ where: { spaceId, botId: bot.id } });
   if (memory) ids.documentId = memory.id;
   else notes.push("memory: the scripted 'remember' turn left no memory document");
@@ -713,6 +722,15 @@ export async function seedExtras(
       INSERT INTO dozo_share_links (id, "userId", "spaceId", kind, "targetId", "tokenHash", "expiresAt")
       VALUES (${id}, ${owner.userId}, ${spaceId}, 'iso', ${botId}, ${randomUUID()}, ${expiresAt}::timestamptz)`;
     ids.shareLinkId = id;
+  });
+  // A replay of that reply, published by the owner without its screenshot.
+  await step("replay", async () => {
+    const id = randomUUID();
+    await system.$executeRaw`
+      INSERT INTO dozo_replays (id, "userId", "spaceId", "botId", "messageId", steps, fingerprint)
+      VALUES (${id}, ${owner.userId}, ${spaceId}, ${botId}, ${ids.replyMessageId!},
+        '[{"index":0,"frame":false}]'::jsonb, 'iso')`;
+    ids.replayId = id;
   });
   // A line a review added to the bot's notes, already undone: the owner's undo answers it as it
   // is and writes nothing, so the owner's control call does not change the notes mid-sweep. Its

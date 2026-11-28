@@ -474,5 +474,10 @@
  "Memory provider": "記憶供應商",
  "Renew for {price}": "以 {price} 續訂",
  "{name}, {price} / month": "{name}，{price} / 月",
- "{name}, {price} / year": "{name}，{price} / 年"
+ "{name}, {price} / year": "{name}，{price} / 年",
+ "Share replay": "分享重播",
+ "Create link": "建立連結",
+ "Previous": "上一個",
+ "Screenshot": "螢幕截圖",
+ "Anyone with the link can see what stays checked.": "任何擁有連結的人都能看到仍勾選的內容。"
 }

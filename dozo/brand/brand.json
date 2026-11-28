@@ -4256,7 +4256,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  mountScriptAssets(app);\n  mountSharedPages(",
-      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp);\n  mountSharedPages(",
+      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp, artifacts);\n  mountSharedPages(",
       "requires": [
         "apps/api/src/dozo-public-routes.ts",
         "apps/api/src/dozo-plugin-catalog.ts"
@@ -15999,6 +15999,12 @@
       "reason": "Turkish copy for the settings section upstream left in English"
     },
     {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Paylaş\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
+      "replace": "msgstr \"Paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Share replay\"\nmsgstr \"Tekrarı paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Previous\"\nmsgstr \"Önceki\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Screenshot\"\nmsgstr \"Ekran görüntüsü\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Anyone with the link can see what stays checked.\"\nmsgstr \"Bağlantıya sahip olan herkes işaretli kalanları görebilir.\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
+      "reason": "Turkish copy for the task replay review and its signed-out player (dozo-replay-surface.tsx, dozo-replay-player.tsx, mobile dozo-replay.tsx)"
+    },
+    {
       "file": "apps/web/src/components/models/SubscriptionSignInSteps.tsx",
       "find": "import { Button, buttonVariants, Input, Stepper } from \"@rakazo/ui-web\";\nimport { ArrowUpRight",
       "replace": "import { Button, buttonVariants, Input, Stepper } from \"@rakazo/ui-web\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\nimport { ArrowUpRight",
@@ -16164,6 +16170,42 @@
         "apps/mobile/components/dozo-bot-stats-row.tsx"
       ],
       "reason": "bot stats: the Turkish copy of its labels and share buttons, which no hub carries"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { useComputerControls, useComputerState } from \"./shell/computers/use-computer\";",
+      "replace": "import { useComputerState } from \"./shell/computers/use-computer\";\nimport { useComputerControls } from \"./shell/computers/dozo-use-computer-controls\";",
+      "requires": [
+        "apps/web/src/pages/shell/computers/dozo-use-computer-controls.ts"
+      ],
+      "reason": "computers wall: the wall is a surface outside the shell, and opening a tile's full view is the shell's own openComputer, which only this hook holds; the wrapper hands it and the shell's bots over"
+    },
+    {
+      "file": "apps/web/src/pages/shell/sidebar/sidebar-header.tsx",
+      "find": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { WindowChrome }",
+      "replace": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { DozoComputersButton } from \"./dozo-computers-button\";\nimport { WindowChrome }",
+      "requires": [
+        "apps/web/src/pages/shell/sidebar/dozo-computers-button.tsx"
+      ],
+      "reason": "computers wall: its entry point is an icon among the sidebar header's own (Search, Activity, Create), the one place every screen of the shell shows; no fork component sits in that row"
+    },
+    {
+      "file": "apps/web/src/pages/shell/sidebar/sidebar-header.tsx",
+      "find": "        ) : null}\n        {mini ? null : (\n          <IconTooltip label={t`Activity`} side={labelSide}>",
+      "replace": "        ) : null}\n        {mini ? null : <DozoComputersButton />}\n        {mini ? null : (\n          <IconTooltip label={t`Activity`} side={labelSide}>",
+      "requires": [
+        "apps/web/src/pages/shell/sidebar/dozo-computers-button.tsx"
+      ],
+      "reason": "computers wall: the icon stands before Activity and, like it, only in the full sidebar"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./computers/screens/computer-control.js\";\nexport * from \"./computers/screens/computer-screens.js\";",
+      "replace": "export * from \"./computers/screens/computer-control.js\";\nexport * from \"./computers/dozo-screen-watch.js\";\nexport * from \"./computers/screens/computer-screens.js\";",
+      "requires": [
+        "packages/adapters/src/computers/dozo-screen-watch.ts"
+      ],
+      "reason": "computers wall: which sandbox kinds can show a screen without waking it is declared beside the providers, and the API reads it through the package's one entry point"
     }
   ],
   "assets": {

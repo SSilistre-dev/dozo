@@ -1,7 +1,11 @@
 import type { ComponentType } from "react";
 
-/** A kind's signed-out page; it checks the payload's shape itself, the server sends it as is. */
-export type DozoShareRenderer = ComponentType<{ payload: unknown }>;
+/**
+ * A kind's signed-out page; it checks the payload's shape itself, the server sends it as is. The
+ * token is for a kind that reads more under its link (a replay's screenshots).
+ */
+export type DozoShareRendererProps = { payload: unknown; token: string };
+export type DozoShareRenderer = ComponentType<DozoShareRendererProps>;
 
 /**
  * How each kind of share link draws, loaded only when a link of that kind is opened. A feature adds
@@ -10,4 +14,5 @@ export type DozoShareRenderer = ComponentType<{ payload: unknown }>;
  */
 export const DOZO_SHARE_RENDERERS: Readonly<Record<string, () => Promise<DozoShareRenderer>>> = {
   stats: () => import("./dozo-stats-card").then((module) => module.DozoStatsCard),
+  replay: () => import("./dozo-replay-player").then((module) => module.DozoReplayPlayer),
 };

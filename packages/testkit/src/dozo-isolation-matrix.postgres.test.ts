@@ -5,6 +5,7 @@
 // Inputs: dozo-isolation-inputs.test-support.ts; the sweep and its reports:
 // dozo-isolation-sweep.test-support.ts.
 import { callRequestClientNonce } from "@rakazo/core";
+import { DOZO_SHARE_KINDS } from "../../../apps/api/src/dozo-share-kinds.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationApp, IsolationWorld, Target } from "./dozo-isolation.test-support.js";
 import { findCanaries, ISOLATION_LOGINS, readAnswer } from "./dozo-isolation.test-support.js";
@@ -17,6 +18,7 @@ import {
   idFields,
   namesKey,
   namesTarget,
+  SHARE_KIND_TARGETS,
 } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
 import { DESIGNED_SHARING, DESIGNED_SHARING_SOMETIMES } from "./dozo-isolation-sharing.js";
@@ -156,6 +158,10 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
 
     afterAll(async () => {
       await world?.stop();
+    });
+
+    it("tries every registered share link kind, each against the target's own thing", () => {
+      expect(Object.keys(SHARE_KIND_TARGETS).sort()).toEqual(Object.keys(DOZO_SHARE_KINDS).sort());
     });
 
     it("plants canaries the designed readers see (the matrix is not vacuous)", async () => {

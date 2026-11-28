@@ -38,6 +38,7 @@ const loadSkillDraftCard = () => import("../components/teach/dozo-skill-draft-ca
 const loadTeachCaptureOverlay = () => import("../components/teach/dozo-teach-capture-overlay");
 const loadAnnouncementLines = () => import("../components/dozo-announcement-lines");
 const loadMessagePins = () => import("../pages/shell/dozo-message-pins");
+const loadMessageExtensions = () => import("../pages/shell/dozo-message-extensions");
 
 const LazyDozoAvatarGeneratePanel = lazyComponent(() =>
   loadAvatarPanel().then((module) => module.DozoAvatarGeneratePanel),
@@ -70,6 +71,9 @@ const LazyAnnouncementLines = lazyComponent(() =>
 const LazyPinMenuItem = lazyComponent(() =>
   loadMessagePins().then((module) => module.DozoPinMenuItem),
 );
+const LazyMessageMenuItems = lazyComponent(() =>
+  loadMessageExtensions().then((module) => module.DozoMessageMenuItems),
+);
 const LazyPinnedMessages = lazyComponent(() =>
   loadMessagePins().then((module) => module.DozoPinnedMessages),
 );
@@ -98,6 +102,7 @@ export function preloadDozoSurfaces() {
     loadTeachCaptureOverlay(),
     loadAnnouncementLines(),
     loadMessagePins(),
+    loadMessageExtensions(),
   ]);
 }
 
@@ -237,12 +242,20 @@ export function DozoAnnouncementLines() {
   );
 }
 
-/** Pin or Unpin in a message's More menu; the item joins the menu once its code is there. */
+/**
+ * Pin or Unpin in a message's More menu, then the fork's other message items
+ * (dozo-message-extensions.tsx); each joins the menu once its code is there.
+ */
 export function DozoPinMenuItem(props: ComponentProps<typeof LoadedDozoPinMenuItem>) {
   return (
-    <Held failed={null}>
-      <LazyPinMenuItem {...props} />
-    </Held>
+    <>
+      <Held failed={null}>
+        <LazyPinMenuItem {...props} />
+      </Held>
+      <Held failed={null}>
+        <LazyMessageMenuItems {...props} />
+      </Held>
+    </>
   );
 }
 
