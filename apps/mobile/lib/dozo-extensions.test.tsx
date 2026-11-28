@@ -6,6 +6,7 @@ import { DozoBotSettingsRows } from "../components/dozo-extensions";
 
 vi.mock("../components/dozo-night-notes-row", () => ({ DozoNightNotesRow: () => null }));
 vi.mock("../components/dozo-bot-stats-row", () => ({ DozoBotStatsRow: () => null }));
+vi.mock("../components/dozo-bot-calls-row", () => ({ DozoBotCallsRow: () => null }));
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;

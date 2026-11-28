@@ -20,6 +20,7 @@ const BOT_MENU_ITEMS: DozoLazyLoader<DozoBotMenuItemProps>[] = [];
 const BOT_SETTINGS_ROWS: DozoLazyLoader<DozoBotSettingsRowProps>[] = [
   () => import("./dozo-bot-stats").then((module) => module.default),
   () => import("./dozo-night-notes-row").then((module) => module.DozoNightNotesRow),
+  () => import("./dozo-bot-calls-row").then((module) => module.DozoBotCallsRow),
 ];
 
 const menuItems = dozoLazyEntries(BOT_MENU_ITEMS);

@@ -128,6 +128,7 @@ vi.mock("./query/screen-query", () => ({
 }));
 vi.mock("../components/dozo-night-notes-row", () => ({ DozoNightNotesRow: () => null }));
 vi.mock("../components/dozo-bot-stats-row", () => ({ DozoBotStatsRow: () => null }));
+vi.mock("../components/dozo-bot-calls-row", () => ({ DozoBotCallsRow: () => null }));
 vi.mock("../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children: ReactNode }) => <section>{children}</section>,
