@@ -15998,8 +15998,8 @@
     },
     {
       "file": "packages/i18n/locales/tr/messages.po",
-      "find": "msgid \"Share\"\nmsgstr \"Paylaş\"",
-      "replace": "msgid \"Share\"\nmsgstr \"Paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Share replay\"\nmsgstr \"Tekrarı paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Previous\"\nmsgstr \"Önceki\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Screenshot\"\nmsgstr \"Ekran görüntüsü\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Anyone with the link can see what stays checked.\"\nmsgstr \"Bağlantıya sahip olan herkes işaretli kalanları görebilir.\"",
+      "find": "msgstr \"Paylaş\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
+      "replace": "msgstr \"Paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Share replay\"\nmsgstr \"Tekrarı paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Previous\"\nmsgstr \"Önceki\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Screenshot\"\nmsgstr \"Ekran görüntüsü\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Anyone with the link can see what stays checked.\"\nmsgstr \"Bağlantıya sahip olan herkes işaretli kalanları görebilir.\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
       "reason": "Turkish copy for the task replay review and its signed-out player (dozo-replay-surface.tsx, dozo-replay-player.tsx, mobile dozo-replay.tsx)"
     },
     {
