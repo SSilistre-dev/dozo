@@ -487,5 +487,6 @@
  "Memory provider": "Provedor de memória",
  "Renew for {price}": "Renovar por {price}",
  "{name}, {price} / month": "{name}, {price} / mês",
- "{name}, {price} / year": "{name}, {price} / ano"
+ "{name}, {price} / year": "{name}, {price} / ano",
+ "Can call me": "Pode me ligar"
 }

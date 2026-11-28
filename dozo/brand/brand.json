@@ -16207,6 +16207,12 @@
         "packages/adapters/src/dozo-direct-handoff.prompt.ts"
       ],
       "reason": "one-to-one handoff: when a run has no owner words, the approval reviewer reads its task as what the user asked; the chat a handoff copied into the next bot's task is left out of it, so quoted text cannot pass for the user's request"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Arama sesleri\"\n\n#. placeholder {0}: call.botName",
+      "replace": "msgstr \"Arama sesleri\"\n\n#: apps/web/src/pages/shell/dozo-bot-calls-row.tsx\n#: apps/mobile/components/dozo-bot-calls-row.tsx\nmsgid \"Can call me\"\nmsgstr \"Beni arayabilir\"\n\n#. placeholder {0}: call.botName",
+      "reason": "bot calls: the Turkish copy of the one new line, the switch that lets a bot call from its routines"
     }
   ],
   "assets": {

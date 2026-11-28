@@ -464,5 +464,6 @@
  "Memory provider": "Поставщик памяти",
  "Renew for {price}": "Продлить за {price}",
  "{name}, {price} / month": "{name}, {price} / месяц",
- "{name}, {price} / year": "{name}, {price} / год"
+ "{name}, {price} / year": "{name}, {price} / год",
+ "Can call me": "Может мне звонить"
 }

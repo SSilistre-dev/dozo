@@ -476,5 +476,6 @@
  "Memory provider": "Dostawca pamięci",
  "Renew for {price}": "Odnów za {price}",
  "{name}, {price} / month": "{name}, {price} / miesiąc",
- "{name}, {price} / year": "{name}, {price} / rok"
+ "{name}, {price} / year": "{name}, {price} / rok",
+ "Can call me": "Może do mnie dzwonić"
 }

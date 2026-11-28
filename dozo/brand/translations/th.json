@@ -488,5 +488,6 @@
  "Memory provider": "ผู้ให้บริการความจำ",
  "Renew for {price}": "ต่ออายุในราคา {price}",
  "{name}, {price} / month": "{name}, {price} / เดือน",
- "{name}, {price} / year": "{name}, {price} / ปี"
+ "{name}, {price} / year": "{name}, {price} / ปี",
+ "Can call me": "โทรหาฉันได้"
 }

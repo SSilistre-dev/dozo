@@ -476,5 +476,6 @@
  "Memory provider": "मेमोरी प्रोवाइडर",
  "Renew for {price}": "{price} में नवीनीकरण करें",
  "{name}, {price} / month": "{name}, {price} / महीना",
- "{name}, {price} / year": "{name}, {price} / वर्ष"
+ "{name}, {price} / year": "{name}, {price} / वर्ष",
+ "Can call me": "मुझे कॉल कर सकता है"
 }

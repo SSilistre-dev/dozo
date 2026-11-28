@@ -475,5 +475,6 @@
  "Memory provider": "记忆提供商",
  "Renew for {price}": "以 {price} 续订",
  "{name}, {price} / month": "{name}，{price} / 月",
- "{name}, {price} / year": "{name}，{price} / 年"
+ "{name}, {price} / year": "{name}，{price} / 年",
+ "Can call me": "可以给我打电话"
 }
