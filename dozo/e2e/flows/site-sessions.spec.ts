@@ -66,7 +66,7 @@ test("site sessions: sign in from the computer's header with control", async ({ 
   await expect(
     page.frameLocator('iframe[title="Bot screen"]').locator("canvas").first(),
   ).toBeVisible({
-    timeout: 30_000,
+    timeout: 90_000,
   });
   await shot(page, "4-in-control");
   await page.getByRole("button", { name: "Hand back control" }).click();

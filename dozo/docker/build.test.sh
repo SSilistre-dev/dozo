@@ -63,6 +63,7 @@ if [ "$got" != "$want" ]; then
   bad "stage differs from the working tree (< want, > got):"
   diff <(echo "$want") <(echo "$got") | sed 's/^/[build.test]   /'
 fi
+! grep -q '^!' "$STG/src/.dockerignore" || bad "the staged .dockerignore keeps an exception: the build client would walk into src/data"
 # Nothing may land outside the stage: a symlink in the old tree must not be written through.
 [ -f "$R/keepdir/k" ] && [ "$(cat "$R/keepdir/k")" = keepdir/k ] || bad "a file outside the stage was changed through a symlink"
 
