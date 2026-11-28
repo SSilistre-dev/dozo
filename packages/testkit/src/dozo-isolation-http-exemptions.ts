@@ -175,6 +175,33 @@ export const ROUTE_DATA: readonly RouteData[] = [
     reason:
       "public to whoever holds a page's share link, for a picture its current version shows: the image is looked up under the token's own version, so another page's picture is a 404",
   },
+  ...[
+    ["GET /api/v1/page-app", "its page and what the owner approved it to do"],
+    ["GET /api/v1/page-app/images/:imageId", "a picture of its page"],
+    ["PUT /api/v1/page-app/state", "the owner's saved values on its page"],
+    ["PUT /api/v1/page-app/abilities", "what the owner approved it to do"],
+    ["POST /api/v1/page-app/ask", "a question to its page's bot"],
+    ["DELETE /api/v1/page-app", "its own installation"],
+    ["GET /api/v1/page-app/changes", "a stream of changes to its page"],
+  ].map(
+    ([route, what]): RouteData => ({
+      route: route!,
+      kind: "bearer-link",
+      reason: `an installed page app's own token, issued once to its owner when installed: it reaches ${what} only, as the owner, in the Space it was installed from; no session, API key or other token opens it, and the generated request carries none`,
+    }),
+  ),
+  {
+    route: "GET /api/v1/pages/:pageId/app.webmanifest",
+    kind: "owner-data",
+    owner: "session",
+    reason: "the title of the caller's own page, for installing it as an app",
+  },
+  {
+    route: "GET /api/v1/pages/:pageId/app-icon/:file",
+    kind: "nameless",
+    reason:
+      "a picture drawn from the page's icon and colour, named only by its file; the page is looked up under the caller's own tenant, so a foreign page's id is a 404",
+  },
   {
     route: "GET /api/v1/integration-claims/confirm",
     kind: "bearer-link",

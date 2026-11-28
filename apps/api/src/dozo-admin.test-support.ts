@@ -320,6 +320,7 @@ function world(users: User[]) {
     },
     callPushDevice: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    pageApp: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: {
       findMany: vi.fn(async ({ where }: Where) =>
         devices.filter((row) => row.userId === where.userId && !row.revokedAt),

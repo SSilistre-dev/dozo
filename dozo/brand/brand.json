@@ -163,6 +163,7 @@
     "text": [
       { "file": "apps/web/src/pages/settings/AccountSettingsOverlay.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/web/src/pages/shell/bots/avatar-studio-popover.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "packages/contracts/src/clients/desktop.ts", "text": "extends RakazoDesktopPageApp {", "reason": "type name of the desktop bridge (RakazoDesktop is kept), in an extends clause the gate cannot tell from prose" },
       { "file": "packages/contracts/src/bots/bot-avatar.ts", "text": "[\"organic\", \"rakazo\"]", "reason": "stored avatar-set enum values" },
       { "file": "packages/contracts/src/bots/bot-avatar.ts", "text": "value === \"rakazo\" ? \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/core/src/bots/bot-look.ts", "text": "avatarSet === \"rakazo\"", "count": 2, "reason": "stored avatar-set enum value" },
@@ -938,9 +939,9 @@
     },
     {
       "file": "apps/mobile/app.json",
-      "find": "\"version\": \"1.0.21\",",
+      "find": "\"version\": \"1.0.22\",",
       "replace": "\"version\": \"1.0.23\",",
-      "reason": "the iOS app ships as 1.0.23, ahead of upstream's 1.0.21. When upstream bumps its version the anchor stops matching and the gate fails naming this rule: drop it if upstream's version is higher, else bump both numbers"
+      "reason": "the iOS app ships as 1.0.23, ahead of upstream's 1.0.22. When upstream bumps its version the anchor stops matching and the gate fails naming this rule: drop it if upstream's version is higher, else bump both numbers"
     },
     {
       "file": "apps/mobile/app.json",
@@ -2241,8 +2242,8 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "  const router = createRouter({\n    organizationLoginBrowser:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n      ...(dozoBilling ? { planChanged: dozoBilling.afterPlanChange } : {}),\n    }),\n    organizationLoginBrowser:",
+      "find": "  const routerDeps: RouterDeps = {\n    organizationLoginBrowser:",
+      "replace": "  const routerDeps: RouterDeps = {\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n      ...(dozoBilling ? { planChanged: dozoBilling.afterPlanChange } : {}),\n    }),\n    organizationLoginBrowser:",
       "requires": [
         "apps/api/src/dozo-admin.ts",
         "packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts",
@@ -4678,8 +4679,8 @@
     },
     {
       "file": "apps/web/src/components/billing/CreditChoice.tsx",
-      "find": "  const [interval, setByokInterval] = useState<ByokInterval>(\"month\");",
-      "replace": "  // The plans start on the period picked on the landing page, when there is one.\n  const [interval, setByokInterval] = useState<ByokInterval>(\n    () => readPlanIntent()?.period ?? \"month\",\n  );",
+      "find": "  const [chosenInterval, setByokInterval] = useState<ByokInterval>(\"year\");",
+      "replace": "  // The plans start on the period picked on the landing page, when there is one.\n  const [chosenInterval, setByokInterval] = useState<ByokInterval>(\n    () => readPlanIntent()?.period ?? \"year\",\n  );",
       "requires": [
         "apps/web/src/lib/dozo-plan-intent.ts"
       ],
@@ -6741,8 +6742,8 @@
     },
     {
       "file": "apps/web/src/App.tsx",
-      "find": "<Route path=\"/p/:slugToken\" element={<SharedPagePage />} />\n              <Route\n                path=\"/review/:pageId?\"",
-      "replace": "<Route path=\"/p/:slugToken\" element={<SharedPagePage />} />\n              <Route\n                path=\"/dozo/hosted-login\"\n                element={\n                  user ? (\n                    <HostedLoginPage />\n                  ) : (\n                    <Navigate\n                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}\n                      replace\n                    />\n                  )\n                }\n              />\n              <Route\n                path=\"/review/:pageId?\"",
+      "find": "<Route path=\"/p/:slugToken\" element={<SharedPagePage />} />\n              {[\"/page/:pageId\", \"/page/:pageId/email\"].map(",
+      "replace": "<Route path=\"/p/:slugToken\" element={<SharedPagePage />} />\n              <Route\n                path=\"/dozo/hosted-login\"\n                element={\n                  user ? (\n                    <HostedLoginPage />\n                  ) : (\n                    <Navigate\n                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}\n                      replace\n                    />\n                  )\n                }\n              />\n              {[\"/page/:pageId\", \"/page/:pageId/email\"].map(",
       "requires": [
         "apps/web/src/pages/dozo-hosted-login.tsx"
       ],
@@ -6919,7 +6920,7 @@
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
       "find": "  return { scripted, backups, runModelProvider, runModelId, credential, thinkingLevel, resolved };\n",
-      "replace": "  return {\n    scripted,\n    backups,\n    runModelProvider,\n    runModelId,\n    credential,\n    thinkingLevel,\n    resolved,\n    pool,\n  };\n",
+      "replace": "  return { scripted, backups, runModelProvider, runModelId, credential, thinkingLevel, resolved, pool };\n",
       "reason": "model pool: the started model carries its pool to the backup chain and the runtime"
     },
     {
@@ -7367,8 +7368,8 @@
     },
     {
       "file": "packages/core/src/threads/thread-snapshot-events.ts",
-      "find": "import { payloadAuthor, replyMetadata } from \"../messages/message-replies.js\";\nimport {\n  BACKGROUND_HELPER_TRIGGER,",
-      "replace": "import { payloadAuthor, replyMetadata } from \"../messages/message-replies.js\";\nimport { dozoRemovedMessageId } from \"../dozo-removed-message.js\";\nimport {\n  BACKGROUND_HELPER_TRIGGER,",
+      "find": "import { payloadAuthor, replyMetadata } from \"../messages/message-replies.js\";\nimport { isFeedbackReceiptMessage }",
+      "replace": "import { payloadAuthor, replyMetadata } from \"../messages/message-replies.js\";\nimport { dozoRemovedMessageId } from \"../dozo-removed-message.js\";\nimport { isFeedbackReceiptMessage }",
       "requires": [
         "packages/core/src/dozo-removed-message.ts"
       ],
@@ -10769,8 +10770,8 @@
     },
     {
       "file": "apps/api/src/routes/threads.ts",
-      "find": "import { isStopMessage, stopThreadRuns } from \"../threads/thread-stop.js\";\nimport type { ThreadTarget } from \"../threads/thread-target.js\";\n",
-      "replace": "import { isStopMessage, stopThreadRuns } from \"../threads/thread-stop.js\";\nimport { dozoMainChatOnly } from \"../dozo-chat-target.js\";\nimport type { ThreadTarget } from \"../threads/thread-target.js\";\n",
+      "find": "import { takeoverReleaser } from \"../threads/thread-takeover.js\";\nimport type { ThreadTarget } from \"../threads/thread-target.js\";\n",
+      "replace": "import { takeoverReleaser } from \"../threads/thread-takeover.js\";\nimport { dozoMainChatOnly } from \"../dozo-chat-target.js\";\nimport type { ThreadTarget } from \"../threads/thread-target.js\";\n",
       "requires": [
         "apps/api/src/dozo-chat-target.ts"
       ],
@@ -10831,13 +10832,22 @@
       "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person ends it; for anyone else the card, the hang-up note and the follow-up turn stay untouched and the answer is the one an unknown call gets"
     },
     {
-      "file": "apps/api/src/routes/threads.ts",
-      "find": "    const target = await resolveThreadTarget(deps.prisma, actor, input);\n    // A bot with its own runnable model needs no main model, and stopping work needs none.\n",
-      "replace": "    const target = await resolveThreadTarget(deps.prisma, actor, input);\n    // Dozo: a call's nonce adds to that call's conversation, so only its person sends one.\n    await dozoAssertOwnCallNonce(deps.prisma, actor, target.threadId, input.clientNonce);\n    // A bot with its own runnable model needs no main model, and stopping work needs none.\n",
+      "file": "apps/api/src/threads/thread-send.ts",
+      "find": "import { assertTeachingSendAllowed } from \"../bots/taught-skills.js\";\nimport type { RouterDeps } from \"../router.js\";\n",
+      "replace": "import { assertTeachingSendAllowed } from \"../bots/taught-skills.js\";\nimport { dozoAssertOwnCallNonce } from \"../dozo-call-recipient.js\";\nimport type { RouterDeps } from \"../router.js\";\n",
       "requires": [
         "apps/api/src/dozo-call-recipient.ts"
       ],
-      "reason": "call nonce: a message whose nonce names a call joins that call's conversation (its transcript card, its spoken replies and the after-call turn), so only the person on the call may send one; anyone else in the Space gets the not-found answer. Covers send and sendWithRoutines"
+      "reason": "call nonce: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/threads/thread-send.ts",
+      "find": "  const target = await resolveThreadTarget(deps.prisma, actor, input);\n  // A bot with its own runnable model needs no main model, and stopping work needs none.\n",
+      "replace": "  const target = await resolveThreadTarget(deps.prisma, actor, input);\n  // Dozo: a call's nonce adds to that call's conversation, so only its person sends one.\n  await dozoAssertOwnCallNonce(deps.prisma, actor, target.threadId, input.clientNonce);\n  // A bot with its own runnable model needs no main model, and stopping work needs none.\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call nonce: a message whose nonce names a call joins that call's conversation (its transcript card, its spoken replies and the after-call turn), so only the person on the call may send one; anyone else in the Space gets the not-found answer. Covers send and sendWithRoutines, and every other send a person makes through sendAsUser"
     },
     {
       "file": "apps/api/src/routes/threads.ts",
@@ -13556,8 +13566,8 @@
     },
     {
       "file": "apps/mobile/components/thread/message-bubble.tsx",
-      "find": "    block.kind === \"app\" ||\n    block.kind === \"tool_question\"",
-      "replace": "    block.kind === \"app\" ||\n    block.kind === \"skill_draft\" ||\n    block.kind === \"tool_question\"",
+      "find": "    block.kind === \"app\" ||\n    block.kind === \"feedback_receipt\" ||\n    block.kind === \"tool_question\"",
+      "replace": "    block.kind === \"app\" ||\n    block.kind === \"feedback_receipt\" ||\n    block.kind === \"skill_draft\" ||\n    block.kind === \"tool_question\"",
       "requires": [
         "apps/mobile/components/thread/dozo-skill-draft-card.tsx"
       ],
