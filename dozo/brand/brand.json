@@ -16153,6 +16153,17 @@
         "packages/adapters/src/dozo-direct-handoff.prompt.ts"
       ],
       "reason": "one-to-one handoff: when a run has no owner words, the approval reviewer reads its task as what the user asked; the chat a handoff copied into the next bot's task is left out of it, so quoted text cannot pass for the user's request"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Kaydedilemedi\"\n\n#. placeholder {0}: nameOf(config?.provider)",
+      "replace": "msgstr \"Kaydedilemedi\"\n\n#: apps/web/src/pages/dozo-stats-card.tsx\n#: apps/web/src/pages/shell/dozo-bot-stats.tsx\n#: apps/mobile/components/dozo-bot-stats-row.tsx\nmsgid \"Tasks\"\nmsgstr \"Görevler\"\n\n#: apps/web/src/pages/dozo-stats-card.tsx\n#: apps/web/src/pages/shell/dozo-bot-stats.tsx\n#: apps/mobile/components/dozo-bot-stats-row.tsx\nmsgid \"Routine runs\"\nmsgstr \"Rutin çalıştırmaları\"\n\n#: apps/web/src/pages/dozo-stats-card.tsx\n#: apps/web/src/pages/shell/dozo-bot-stats.tsx\n#: apps/mobile/components/dozo-bot-stats-row.tsx\nmsgid \"Days active\"\nmsgstr \"Etkin gün\"\n\n#: apps/web/src/pages/dozo-stats-card.tsx\n#: apps/web/src/pages/shell/dozo-bot-stats.tsx\n#: apps/mobile/components/dozo-bot-stats-row.tsx\nmsgid \"Share card\"\nmsgstr \"Kartı paylaş\"\n\n#: apps/web/src/pages/dozo-stats-card.tsx\n#: apps/web/src/pages/shell/dozo-bot-stats.tsx\n#: apps/mobile/components/dozo-bot-stats-row.tsx\nmsgid \"Stop sharing\"\nmsgstr \"Paylaşımı durdur\"\n\n#: apps/web/src/pages/dozo-stats-card.tsx\n#: apps/web/src/pages/shell/dozo-bot-stats.tsx\n#: apps/mobile/components/dozo-bot-stats-row.tsx\nmsgid \"Could not share\"\nmsgstr \"Paylaşılamadı\"\n\n#. placeholder {0}: nameOf(config?.provider)",
+      "requires": [
+        "apps/web/src/pages/dozo-stats-card.tsx",
+        "apps/web/src/pages/shell/dozo-bot-stats.tsx",
+        "apps/mobile/components/dozo-bot-stats-row.tsx"
+      ],
+      "reason": "bot stats: the Turkish copy of its labels and share buttons, which no hub carries"
     }
   ],
   "assets": {
