@@ -16063,6 +16063,60 @@
       "find": "      {portal.error || error ? (\n        <p role=\"alert\" className=\"mt-3 text-body text-destructive\">\n          {portal.error ? t`Could not open billing` : t`Could not load billing`}\n        </p>\n      ) : null}\n",
       "replace": "      {portal.error ? (\n        <p role=\"alert\" className=\"mt-3 text-body text-destructive\">\n          {t`Could not open billing`}\n        </p>\n      ) : error ? (\n        <div role=\"alert\" className=\"mt-3 flex items-center gap-3 text-body text-muted-foreground\">\n          {t`Could not load billing`}\n          <Button variant=\"secondary\" size=\"sm\" onClick={() => void statusRead.refetch()}>\n            <Trans>Retry</Trans>\n          </Button>\n        </div>\n      ) : null}\n",
       "reason": "billing: a read that failed is not a refusal of the person's action, so it is neutral text with a way to read again, not a red line with no way on"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./providers/voice/xai/xai-voice.js\";\nexport * from \"./providers/web/fake/fake-web.js\";",
+      "replace": "export * from \"./providers/voice/xai/xai-voice.js\";\nexport * from \"./dozo-bot-calls.js\";\nexport * from \"./providers/web/fake/fake-web.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: the package exports a bot's permission to call, which the API reads and saves"
+    },
+    {
+      "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
+      "find": "import { backgroundHelpersAllowed } from \"../../tasks/background-helpers.js\";\nimport { TASK_CATALOG_GUIDANCE }",
+      "replace": "import { backgroundHelpersAllowed } from \"../../tasks/background-helpers.js\";\nimport { dozoCallToolFor, dozoMayOfferCall } from \"../../dozo-bot-calls.js\";\nimport { TASK_CATALOG_GUIDANCE }",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
+      "find": "          }),\n        ),\n      historyRetrievalEnabled:",
+      "replace": "          }),\n        ) &&\n        (await dozoMayOfferCall(deps, run, bot)),\n      historyRetrievalEnabled:",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: a routine is offered call_user only when its owner allowed this bot to call, and a webhook or bot message never is; a person's own turn is offered it as before"
+    },
+    {
+      "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
+      "find": "      (tool) => tool.name !== \"run_subagent\" || backgroundHelpersAllowed({ trigger: run.trigger }),\n    ),\n",
+      "replace": "      (tool) => tool.name !== \"run_subagent\" || backgroundHelpersAllowed({ trigger: run.trigger }),\n    ).map(dozoCallToolFor(run.trigger)),\n",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: in a routine's run call_user carries the guidance for when to call"
+    },
+    {
+      "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
+      "find": "import { endCallFromTool, requestUserCall } from \"../../calls/call-request.js\";\n",
+      "replace": "import { endCallFromTool } from \"../../calls/call-request.js\";\nimport { dozoRequestUserCall } from \"../../dozo-bot-calls.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
+      "find": "await requestUserCall(deps, run, {",
+      "replace": "await dozoRequestUserCall(ctx, {",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: a call from a routine is checked against its owner's permission, outside content, quiet hours and the daily cap before it rings; the refusal is the tool's answer"
     }
   ],
   "assets": {

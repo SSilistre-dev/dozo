@@ -1,5 +1,7 @@
+import { dozoBotCallsContract } from "./dozo-bot-calls.js";
 import { dozoShareLinksContract } from "./dozo-share-links.js";
 
+export * from "./dozo-bot-calls.js";
 export * from "./dozo-share-links.js";
 
 /**
@@ -8,5 +10,6 @@ export * from "./dozo-share-links.js";
  * same key in `apps/api/src/dozo-features.ts`.
  */
 export const dozoFeaturesContract = /* @__PURE__ */ (() => ({
+  dozoBotCalls: dozoBotCallsContract,
   dozoShareLinks: dozoShareLinksContract,
 }))();
