@@ -32,7 +32,8 @@ export function dozoBotShown(definition: Definition): DozoBotShown {
  * so one part's right-to-left text cannot reorder the next. Empty parts are left out.
  */
 export function DozoBotDefinition({ bot }: { bot: DozoBotShown }) {
-  const labels = cronLabels(useLingui().i18n.locale);
+  const { i18n } = useLingui();
+  const labels = cronLabels(i18n.locale);
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <div className="flex items-center gap-3">
