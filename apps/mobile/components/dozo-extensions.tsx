@@ -1,10 +1,15 @@
 import type { ComponentType } from "react";
 import type { BotProfileAction } from "./bots/bot-profile-menu";
 import { DozoBotCallsRow } from "./dozo-bot-calls-row";
+import { DozoBotStatsRow } from "./dozo-bot-stats-row";
 import { DozoNightNotesRow } from "./dozo-night-notes-row";
 
 /** Rows in a bot's settings after its model backups (dozo-bot-backups.tsx); one line each. */
-const BOT_SETTINGS_ROWS: ComponentType<{ botId: string }>[] = [DozoNightNotesRow, DozoBotCallsRow];
+const BOT_SETTINGS_ROWS: ComponentType<{ botId: string }>[] = [
+  DozoBotStatsRow,
+  DozoNightNotesRow,
+  DozoBotCallsRow,
+];
 
 export function DozoBotSettingsRows({
   botId,

@@ -1,3 +1,4 @@
+import { dozoBotStatsRoutes } from "./dozo-bot-stats.js";
 import { dozoBotCallsRoutes } from "./dozo-bot-calls.js";
 import { dozoComputerWallRoutes } from "./dozo-computer-wall.js";
 import { dozoReplayRoutes } from "./dozo-replays.js";
@@ -11,6 +12,7 @@ import type { RouterContext } from "./routes/context.js";
  */
 export function dozoFeatureRoutes(ctx: RouterContext) {
   return {
+    ...dozoBotStatsRoutes(ctx),
     ...dozoBotCallsRoutes(ctx),
     ...dozoComputerWallRoutes(ctx),
     ...dozoShareLinkRoutes(ctx),

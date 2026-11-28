@@ -1,3 +1,5 @@
+import { DOZO_STATS_SHARE_KIND } from "@rakazo/contracts";
+import { dozoStatsShareKind } from "./dozo-bot-stats.js";
 import { dozoReplayKind } from "./dozo-replay-kind.js";
 import type { DozoShareKinds } from "./dozo-share-links.js";
 
@@ -7,5 +9,6 @@ import type { DozoShareKinds } from "./dozo-share-links.js";
  * missing here is refused when a link is made and when one is read.
  */
 export const DOZO_SHARE_KINDS: DozoShareKinds = Object.freeze({
+  [DOZO_STATS_SHARE_KIND]: dozoStatsShareKind,
   replay: dozoReplayKind,
 });
