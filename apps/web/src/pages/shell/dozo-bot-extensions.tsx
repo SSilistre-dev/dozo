@@ -17,7 +17,9 @@ export type DozoBotSettingsRowProps = { botId: string; spaceId: string };
 const BOT_MENU_ITEMS: DozoLazyLoader<DozoBotMenuItemProps>[] = [];
 
 /** Rows in a bot's settings panel, after its model backups. A feature adds one line, as above. */
-const BOT_SETTINGS_ROWS: DozoLazyLoader<DozoBotSettingsRowProps>[] = [];
+const BOT_SETTINGS_ROWS: DozoLazyLoader<DozoBotSettingsRowProps>[] = [
+  () => import("./dozo-night-notes-row").then((module) => module.DozoNightNotesRow),
+];
 
 const menuItems = dozoLazyEntries(BOT_MENU_ITEMS);
 const settingsRows = dozoLazyEntries(BOT_SETTINGS_ROWS);

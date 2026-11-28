@@ -126,6 +126,7 @@ vi.mock("./query/screen-query", () => ({
     return { data: api.catalog };
   },
 }));
+vi.mock("../components/dozo-night-notes-row", () => ({ DozoNightNotesRow: () => null }));
 vi.mock("../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children: ReactNode }) => <section>{children}</section>,

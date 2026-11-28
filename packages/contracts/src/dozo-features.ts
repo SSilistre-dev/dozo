@@ -1,5 +1,6 @@
 import { dozoShareLinksContract } from "./dozo-share-links.js";
 
+export * from "./dozo-night-notes.js";
 export * from "./dozo-share-links.js";
 
 /**
