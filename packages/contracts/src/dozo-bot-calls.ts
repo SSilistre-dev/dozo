@@ -16,6 +16,6 @@ export type DozoBotCalls = z.infer<typeof DozoBotCallsSchema>;
 
 export const dozoBotCallsContract = /* @__PURE__ */ (() => ({
   get: oc.input(z.object({ botId: Id })).output(DozoBotCallsSchema),
-  /** Refused as a conflict while calls are not available. */
+  /** Refused as a conflict for anyone but the bot's own person. */
   set: oc.input(z.object({ botId: Id, allowed: z.boolean() })).output(DozoBotCallsSchema),
 }))();

@@ -61,11 +61,12 @@ describe("a bot's permission to call", () => {
     expect(fake.write).not.toHaveBeenCalled();
   });
 
-  it("refuses a change where calls are not available", async () => {
+  it("saves where calls are not available yet, which only keeps the setting hidden", async () => {
     fake.available.mockResolvedValue(false);
-    await expect(client("ada").set({ botId: "bot-1", allowed: true })).rejects.toMatchObject({
-      code: "CONFLICT",
+    expect(await client("ada").set({ botId: "bot-1", allowed: true })).toEqual({
+      allowed: true,
+      available: false,
     });
-    expect(fake.write).not.toHaveBeenCalled();
+    expect(fake.write).toHaveBeenCalledOnce();
   });
 });

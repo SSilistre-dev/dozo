@@ -5,7 +5,8 @@ import type { RouterContext } from "./routes/context.js";
 
 /**
  * Whether a bot may ring its person from a routine. Only the bot's own person reads or changes
- * it, and only where calls are available (the server has them on and a voice is connected).
+ * it. `available` (the server has calls on and a voice is connected) only decides whether the
+ * setting is shown; saving it never depends on it.
  */
 export function dozoBotCallsRoutes(ctx: RouterContext) {
   const { deps, authed, repos } = ctx;
@@ -16,6 +17,7 @@ export function dozoBotCallsRoutes(ctx: RouterContext) {
     const available = own && (await botCallsAvailable(deps, actor.userId));
     return {
       bot,
+      own,
       available,
       allowed: own && (await readBotCallPermission(deps.prisma, actor.userId, bot.id)),
     };
@@ -28,8 +30,8 @@ export function dozoBotCallsRoutes(ctx: RouterContext) {
         return { available, allowed };
       }),
       set: authed.dozoBotCalls.set.handler(async ({ context, input }) => {
-        const { bot, available } = await state(context.actor, input.botId);
-        if (!available) throw new ClientError("CONFLICT", "Calls are not available for this bot");
+        const { bot, own, available } = await state(context.actor, input.botId);
+        if (!own) throw new ClientError("CONFLICT", "Only the bot's own person can change this");
         await writeBotCallPermission(deps.prisma, {
           userId: context.actor.userId,
           botId: bot.id,
