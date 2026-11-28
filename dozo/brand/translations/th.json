@@ -488,5 +488,10 @@
  "Memory provider": "ผู้ให้บริการความจำ",
  "Renew for {price}": "ต่ออายุในราคา {price}",
  "{name}, {price} / month": "{name}, {price} / เดือน",
- "{name}, {price} / year": "{name}, {price} / ปี"
+ "{name}, {price} / year": "{name}, {price} / ปี",
+ "Share replay": "แชร์รีเพลย์",
+ "Create link": "สร้างลิงก์",
+ "Previous": "ก่อนหน้า",
+ "Screenshot": "ภาพหน้าจอ",
+ "Anyone with the link can see what stays checked.": "ทุกคนที่มีลิงก์จะเห็นสิ่งที่ยังเลือกไว้"
 }

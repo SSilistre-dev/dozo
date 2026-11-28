@@ -15997,6 +15997,12 @@
       "reason": "Turkish copy for the settings section upstream left in English"
     },
     {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Share\"\nmsgstr \"Paylaş\"",
+      "replace": "msgid \"Share\"\nmsgstr \"Paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Share replay\"\nmsgstr \"Tekrarı paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Previous\"\nmsgstr \"Önceki\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Screenshot\"\nmsgstr \"Ekran görüntüsü\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Anyone with the link can see what stays checked.\"\nmsgstr \"Bağlantıya sahip olan herkes işaretli kalanları görebilir.\"",
+      "reason": "Turkish copy for the task replay review and its signed-out player (dozo-replay-surface.tsx, dozo-replay-player.tsx, mobile dozo-replay.tsx)"
+    },
+    {
       "file": "apps/web/src/components/models/SubscriptionSignInSteps.tsx",
       "find": "import { Button, buttonVariants, Input, Stepper } from \"@rakazo/ui-web\";\nimport { ArrowUpRight",
       "replace": "import { Button, buttonVariants, Input, Stepper } from \"@rakazo/ui-web\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\nimport { ArrowUpRight",

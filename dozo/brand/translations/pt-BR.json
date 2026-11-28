@@ -487,5 +487,10 @@
  "Memory provider": "Provedor de memória",
  "Renew for {price}": "Renovar por {price}",
  "{name}, {price} / month": "{name}, {price} / mês",
- "{name}, {price} / year": "{name}, {price} / ano"
+ "{name}, {price} / year": "{name}, {price} / ano",
+ "Share replay": "Compartilhar replay",
+ "Create link": "Criar link",
+ "Previous": "Anterior",
+ "Screenshot": "Captura de tela",
+ "Anyone with the link can see what stays checked.": "Quem tiver o link verá o que continuar marcado."
 }

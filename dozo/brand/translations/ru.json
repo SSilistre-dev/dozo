@@ -464,5 +464,10 @@
  "Memory provider": "Поставщик памяти",
  "Renew for {price}": "Продлить за {price}",
  "{name}, {price} / month": "{name}, {price} / месяц",
- "{name}, {price} / year": "{name}, {price} / год"
+ "{name}, {price} / year": "{name}, {price} / год",
+ "Share replay": "Поделиться повтором",
+ "Create link": "Создать ссылку",
+ "Previous": "Назад",
+ "Screenshot": "Снимок экрана",
+ "Anyone with the link can see what stays checked.": "Все, у кого есть ссылка, увидят то, что останется отмеченным."
 }
