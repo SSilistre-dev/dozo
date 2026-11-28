@@ -80,7 +80,9 @@
 }
 
 /* Seigaiha: concentric-wave scales behind the wordmark, strongest at the top and gone by the bot
-   list. The tile is a mask (its strokes are the only opaque part), so the ink is a token mix. */
+   list. The tile is a mask (its strokes are the only opaque part), so the ink is a token mix. It is
+   plain arc paths (only the visible arcs of each scale): an SVG that uses <mask> inside the tile is
+   painted without it by some engines, which turns the pattern into a flat fill. */
 [data-slot="sidebar-inner"]::before {
   content: "";
   position: absolute;
@@ -91,7 +93,7 @@
   background: var(--dozo-seigaiha-ink);
   opacity: var(--dozo-seigaiha);
   mask-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cdefs%3E%3Cg id='s'%3E%3Ccircle r='20'/%3E%3Ccircle r='14'/%3E%3Ccircle r='8'/%3E%3C/g%3E%3Cmask id='m'%3E%3Cg fill='black' stroke='white' stroke-width='1.2'%3E%3Cuse href='%23s' x='20' y='-10'/%3E%3Cuse href='%23s'/%3E%3Cuse href='%23s' x='40'/%3E%3Cuse href='%23s' x='20' y='10'/%3E%3Cuse href='%23s' y='20'/%3E%3Cuse href='%23s' x='40' y='20'/%3E%3Cuse href='%23s' x='20' y='30'/%3E%3C/g%3E%3C/mask%3E%3C/defs%3E%3Crect width='40' height='20' mask='url(%23m)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cpath fill='none' stroke='black' stroke-width='1.2' d='M2.58 0.17A20 20 0 0 1 37.42 0.17M8.56 1.92A14 14 0 0 1 31.44 1.92M13.54 5.28A8 8 0 0 1 26.46 5.28M-17.42 10.17A20 20 0 0 1 17.42 10.17M-11.44 11.92A14 14 0 0 1 11.44 11.92M-6.46 15.28A8 8 0 0 1 6.46 15.28M22.58 10.17A20 20 0 0 1 57.42 10.17M28.56 11.92A14 14 0 0 1 51.44 11.92M33.54 15.28A8 8 0 0 1 46.46 15.28M2.58 20.17A20 20 0 0 1 37.42 20.17M8.56 21.92A14 14 0 0 1 31.44 21.92'/%3E%3C/svg%3E"),
     linear-gradient(black 25%, transparent);
   mask-size:
     40px 20px,
