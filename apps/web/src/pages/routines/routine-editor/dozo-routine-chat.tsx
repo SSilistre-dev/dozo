@@ -3,13 +3,31 @@ import { OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { toastError } from "../../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
+import { DozoRoutineBriefing } from "./dozo-routine-briefing";
+
+/**
+ * The fork's settings of a saved routine, under its instruction: the chat it posts in, and the
+ * spoken briefing of its results. Each saves on its own and shows only when it has a choice.
+ */
+export function DozoRoutineChat(props: {
+  bot: { id: string; name: string };
+  routineId: string;
+  fieldId: string;
+}) {
+  return (
+    <>
+      <RoutineChatPicker {...props} />
+      <DozoRoutineBriefing routineId={props.routineId} fieldId={props.fieldId} />
+    </>
+  );
+}
 
 /**
  * Which of the bot's chats a saved routine posts in. Shown only once the bot has an open extra
  * chat (or the routine already posts in one); otherwise every routine posts in the main chat and
  * there is nothing to pick. A change is saved at once, as it is no part of the routine's draft.
  */
-export function DozoRoutineChat({
+function RoutineChatPicker({
   bot,
   routineId,
   fieldId,

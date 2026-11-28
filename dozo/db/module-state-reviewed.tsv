@@ -143,6 +143,7 @@ packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const sockets = n
 packages/adapters/src/dozo-relay-dev-relay.ts	fn startDevRelay	const server = createServer((request, response) => {	device	test relay only (never in the server)
 packages/adapters/src/dozo-send-limit.ts	module	const SENDING_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["send_email", "message_agent"]);	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-send-limit.ts	module	const limitAsks = new WeakMap<Record<string, unknown>, number>();	request	count keyed by a tool-call object's identity
+packages/adapters/src/dozo-spoken-briefing.ts	fn make	let seq: number | undefined;	local	per-call local: the event number of the one briefing message this call posts, read once after the post
 packages/adapters/src/dozo-token-run.ts	module	const tokenRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-token-run.ts	module	const MAKING_TOOLS = new Set([	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-token-run.ts	module	const ASKING_READS = new Set(["list_secrets"]);	global-safe	constant set of fixed words, never changed after load

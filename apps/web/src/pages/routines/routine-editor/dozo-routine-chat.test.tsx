@@ -9,11 +9,16 @@ const api = vi.hoisted(() => ({
   list: vi.fn(),
   routineChat: vi.fn(),
   setRoutineChat: vi.fn(),
+  briefing: vi.fn(),
+  setBriefing: vi.fn(),
   toastError: vi.fn(),
 }));
 
 vi.mock("../../../lib/query/rpc", () => {
-  const rpc = { dozoChats: { setRoutineChat: api.setRoutineChat } };
+  const rpc = {
+    dozoChats: { setRoutineChat: api.setRoutineChat },
+    dozoSpokenBriefings: { set: api.setBriefing },
+  };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
 vi.mock("../../../lib/query/query", async (importOriginal) => ({
@@ -31,6 +36,15 @@ vi.mock("../../../lib/query/query", async (importOriginal) => ({
         queryOptions: ({ input }: { input: unknown }) => ({
           queryKey: [["dozoChats", "routineChat"], input],
           queryFn: () => api.routineChat(input),
+        }),
+      },
+    },
+    dozoSpokenBriefings: {
+      get: {
+        key: ({ input }: { input: unknown }) => [["dozoSpokenBriefings", "get"], input],
+        queryOptions: ({ input }: { input: unknown }) => ({
+          queryKey: [["dozoSpokenBriefings", "get"], input],
+          queryFn: () => api.briefing(input),
         }),
       },
     },
@@ -97,6 +111,7 @@ beforeEach(() => {
   root = createRoot(container);
   api.list.mockResolvedValue({ chats: [garden] });
   api.routineChat.mockResolvedValue({ chatId: null, editable: true });
+  api.briefing.mockResolvedValue({ available: false, coHostBotId: null, coHosts: [] });
 });
 
 afterEach(() => {
@@ -174,5 +189,70 @@ describe("the chat a routine posts in", () => {
     });
     await vi.waitFor(() => expect(api.toastError).toHaveBeenCalled());
     await vi.waitFor(() => expect(select()!.value).toBe(""));
+  });
+});
+
+describe("the spoken briefing of a routine's results", () => {
+  const briefingSelect = () => container.querySelector<HTMLSelectElement>("#f-briefing");
+  const nova = { id: "bot-2", name: "Nova" };
+
+  beforeEach(() => {
+    api.list.mockResolvedValue({ chats: [] });
+  });
+
+  it("shows nothing while a briefing cannot be spoken and none is set", async () => {
+    await render();
+    await vi.waitFor(() => expect(api.briefing).toHaveBeenCalledWith({ routineId: "routine-1" }));
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("offers Off and the owner's other voiced bots, and saves a pick at once", async () => {
+    api.briefing.mockResolvedValue({ available: true, coHostBotId: null, coHosts: [nova] });
+    await render();
+    await vi.waitFor(() => expect(briefingSelect()).not.toBeNull());
+    expect(container.textContent).toContain("Spoken briefing");
+    expect([...briefingSelect()!.options].map((option) => [option.value, option.text])).toEqual([
+      ["", "Off"],
+      ["bot-2", "Nova"],
+    ]);
+    api.setBriefing.mockResolvedValue({ available: true, coHostBotId: "bot-2", coHosts: [nova] });
+    api.briefing.mockResolvedValue({ available: true, coHostBotId: "bot-2", coHosts: [nova] });
+    await act(async () => {
+      briefingSelect()!.value = "bot-2";
+      briefingSelect()!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(api.setBriefing).toHaveBeenCalledWith({
+        routineId: "routine-1",
+        coHostBotId: "bot-2",
+      }),
+    );
+    await vi.waitFor(() => expect(briefingSelect()!.value).toBe("bot-2"));
+  });
+
+  it("still lets a set briefing be turned off once it can no longer be spoken", async () => {
+    api.briefing.mockResolvedValue({ available: false, coHostBotId: "bot-2", coHosts: [nova] });
+    api.setBriefing.mockResolvedValue({ available: false, coHostBotId: null, coHosts: [nova] });
+    await render();
+    await vi.waitFor(() => expect(briefingSelect()).not.toBeNull());
+    await act(async () => {
+      briefingSelect()!.value = "";
+      briefingSelect()!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(api.setBriefing).toHaveBeenCalledWith({ routineId: "routine-1", coHostBotId: null }),
+    );
+  });
+
+  it("says a failed save", async () => {
+    api.briefing.mockResolvedValue({ available: true, coHostBotId: null, coHosts: [nova] });
+    api.setBriefing.mockRejectedValue(new Error("Not found"));
+    await render();
+    await vi.waitFor(() => expect(briefingSelect()).not.toBeNull());
+    await act(async () => {
+      briefingSelect()!.value = "bot-2";
+      briefingSelect()!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(api.toastError).toHaveBeenCalled());
   });
 });
