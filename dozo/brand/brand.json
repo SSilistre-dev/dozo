@@ -16399,6 +16399,24 @@
         "apps/mobile/components/dozo-routine-briefing.tsx"
       ],
       "reason": "spoken briefing: this test's fakes stub every row of the routine screen, so it stubs the fork's briefing row too (it reads the server); its expectations are unchanged"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-routine-list.ts",
+      "find": "import { routineNeedsOneShotArm } from \"../../lib/routines/routine-draft\";\nimport type { RoutineList }",
+      "replace": "import { routineNeedsOneShotArm } from \"../../lib/routines/routine-draft\";\nimport { useDozoRoutineSync } from \"./dozo-routine-sync\";\nimport type { RoutineList }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-routine-sync.ts"
+      ],
+      "reason": "routine list sync: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-routine-list.ts",
+      "find": "  const { snapshot } = thread;\n  return {\n",
+      "replace": "  const { snapshot } = thread;\n  useDozoRoutineSync(\n    queries,\n    inGroup ? undefined : active?.id,\n    thread.routinesBotId,\n    thread.setRoutines,\n  );\n  return {\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-routine-sync.ts"
+      ],
+      "reason": "routine list sync: the panel list is shell state that no routines signal reaches, so a routine a settings row switches stayed shown as before; no fork hub reaches the shell's list, so this one call makes it follow the routines read"
     }
   ],
   "assets": {
