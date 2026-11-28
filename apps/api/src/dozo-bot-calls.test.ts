@@ -4,22 +4,26 @@ import { dozoBotCallsRoutes } from "./dozo-bot-calls.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
-const fake = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), available: vi.fn() }));
-vi.mock("@rakazo/adapters", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/adapters")>()),
-  readBotCallPermission: fake.read,
-  writeBotCallPermission: fake.write,
-  botCallsAvailable: fake.available,
-}));
-
 const getBot = vi.fn();
+const publishRosterChange = vi.fn(async () => undefined);
+const stored = { allowed: false, voice: true };
+const prisma = {
+  userVoiceCredential: { findFirst: vi.fn(async () => (stored.voice ? { id: "voice-1" } : null)) },
+  $queryRaw: vi.fn(async () => (stored.allowed ? [{ botId: "bot-1" }] : [])),
+  $executeRaw: vi.fn(async (strings: TemplateStringsArray) => {
+    stored.allowed = strings.join("?").includes("INSERT");
+    return 1;
+  }),
+  space: { findUnique: async () => null },
+};
 
-function client(userId: string) {
+/** The router's real deps shape: whether calls are on lives under `env`, as the server sets it. */
+function client(userId: string, env: Record<string, unknown> = { phoneCallsEnabled: true }) {
   const ctx = createRouterContext({
-    prisma: {},
+    prisma,
     secrets: { load: vi.fn() },
-    events: { notify: () => undefined, publishSpaceChange: () => undefined },
-    env: {},
+    events: { notify: () => undefined, publishSpaceChange: () => undefined, publishRosterChange },
+    env,
   } as unknown as RouterDeps);
   return createRouterClient(dozoBotCallsRoutes({ ...ctx, repos: { ...ctx.repos, getBot } }), {
     context: {
@@ -30,43 +34,46 @@ function client(userId: string) {
 
 describe("a bot's permission to call", () => {
   beforeEach(() => {
-    fake.read.mockReset().mockResolvedValue(true);
-    fake.write.mockReset().mockResolvedValue(undefined);
-    fake.available.mockReset().mockResolvedValue(true);
+    stored.allowed = false;
+    stored.voice = true;
+    prisma.$executeRaw.mockClear();
+    publishRosterChange.mockClear();
     getBot.mockReset().mockResolvedValue({ id: "bot-1", userId: "ada" });
   });
 
-  it("reads and saves for the bot's own person", async () => {
-    expect(await client("ada").get({ botId: "bot-1" })).toEqual({ allowed: true, available: true });
-    expect(await client("ada").set({ botId: "bot-1", allowed: false })).toEqual({
-      allowed: false,
-      available: true,
-    });
-    expect(fake.write).toHaveBeenCalledWith(expect.anything(), {
-      userId: "ada",
-      botId: "bot-1",
-      spaceId: "space-1",
-      allowed: false,
-    });
+  it("is shown to the bot's own person when the server has calls on and a voice is connected", async () => {
+    expect(await client("ada").get({ botId: "bot-1" })).toEqual({ allowed: false, available: true });
   });
 
-  it("shows another member nothing and refuses their change", async () => {
-    expect(await client("bea").get({ botId: "bot-1" })).toEqual({
-      allowed: false,
-      available: false,
+  it("is hidden when the server has calls off or no voice is connected", async () => {
+    expect((await client("ada", {}).get({ botId: "bot-1" })).available).toBe(false);
+    stored.voice = false;
+    expect((await client("ada").get({ botId: "bot-1" })).available).toBe(false);
+  });
+
+  it("saves, reads back, and tells the person's other devices", async () => {
+    expect(await client("ada").set({ botId: "bot-1", allowed: true })).toEqual({
+      allowed: true,
+      available: true,
     });
-    await expect(client("bea").set({ botId: "bot-1", allowed: true })).rejects.toMatchObject({
-      code: "CONFLICT",
-    });
-    expect(fake.write).not.toHaveBeenCalled();
+    expect((await client("ada").get({ botId: "bot-1" })).allowed).toBe(true);
+    expect(publishRosterChange).toHaveBeenCalledWith({ userIds: ["ada"] });
   });
 
   it("saves where calls are not available yet, which only keeps the setting hidden", async () => {
-    fake.available.mockResolvedValue(false);
-    expect(await client("ada").set({ botId: "bot-1", allowed: true })).toEqual({
+    expect(await client("ada", {}).set({ botId: "bot-1", allowed: true })).toEqual({
       allowed: true,
       available: false,
     });
-    expect(fake.write).toHaveBeenCalledOnce();
+    expect(prisma.$executeRaw).toHaveBeenCalledOnce();
+  });
+
+  it("shows another member nothing and forbids their change", async () => {
+    expect(await client("bea").get({ botId: "bot-1" })).toEqual({ allowed: false, available: false });
+    await expect(client("bea").set({ botId: "bot-1", allowed: true })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(publishRosterChange).not.toHaveBeenCalled();
   });
 });

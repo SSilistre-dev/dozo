@@ -13,6 +13,8 @@ const api = vi.hoisted(() => ({
   send: vi.fn(),
   alert: vi.fn(),
   pending: undefined as boolean | undefined,
+  signals: [] as Array<() => unknown>,
+  invalidate: vi.fn(),
 }));
 
 vi.mock("@lingui/react/macro", () => ({
@@ -22,7 +24,13 @@ vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
 vi.mock("./api/user-error", () => ({
   errorText: (error: Error, fallback: string) => error.message || fallback,
 }));
+vi.mock("./api/roster-signals", () => ({
+  useRosterSignals: (read: () => unknown) => {
+    api.signals.push(read);
+  },
+}));
 vi.mock("./query/query", () => ({
+  queryClient: { invalidateQueries: api.invalidate },
   rpcQuery: (proc: string, input?: unknown) => ({ queryKey: [proc, input] }),
   useSave: (options: Save) => ({
     pending: api.pending !== undefined,
@@ -57,6 +65,8 @@ beforeEach(() => {
   api.pending = undefined;
   api.send.mockReset().mockResolvedValue({});
   api.alert.mockReset();
+  api.invalidate.mockReset();
+  api.signals = [];
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -75,6 +85,12 @@ describe("DozoBotCallsRow", () => {
     expect(container.textContent).toBe("Can call me: off");
     await act(async () => container.querySelector("button")?.click());
     expect(api.send).toHaveBeenCalledWith("dozoBotCalls/set", { botId: "bot-1", allowed: true });
+  });
+
+  it("reads again on a roster signal, which another of your devices sends", async () => {
+    await render();
+    api.signals.at(-1)?.();
+    expect(api.invalidate).toHaveBeenCalledWith({ queryKey: ["dozoBotCalls/get", { botId: "bot-1" }] });
   });
 
   it("shows what a save in flight sends", async () => {

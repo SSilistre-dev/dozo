@@ -3,7 +3,12 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createRepos, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readBotCallPermission, writeBotCallPermission } from "./dozo-bot-calls.js";
+import { DOZO_BOT_CALLS_PER_DAY } from "@rakazo/contracts";
+import {
+  readBotCallPermission,
+  takeRoutineCall,
+  writeBotCallPermission,
+} from "./dozo-bot-calls.js";
 
 // Runs against a migrated database only (dozo/docker/postgres-tests.sh, which also runs it with the
 // database in other time zones than UTC). The fork's unit gate has no database and skips it.
@@ -103,5 +108,21 @@ describePostgres("a bot's permission to call (PostgreSQL)", () => {
     expect(await runAsTenant(bea, () => readBotCallPermission(prisma, ada.userId, bot.id))).toBe(
       false,
     );
+  });
+
+  it("lets routines take the day's calls one at a time, however many ask at once", async () => {
+    const ada = await person();
+    const bot = await botOf(ada);
+    const run = { id: "run-1", userId: ada.userId, botId: bot.id, threadId: "t", trigger: "routine" };
+    const now = new Date();
+    const asked = await Promise.all(
+      Array.from({ length: DOZO_BOT_CALLS_PER_DAY + 3 }, () => takeRoutineCall(prisma, run, now)),
+    );
+    const taken = asked.filter((answer) => "slot" in answer);
+    expect(taken).toHaveLength(DOZO_BOT_CALLS_PER_DAY);
+    expect(asked.filter((answer) => "error" in answer)).toHaveLength(3);
+    // A day later the same bot may call again.
+    const tomorrow = new Date(now.getTime() + 25 * 60 * 60_000);
+    expect(await takeRoutineCall(prisma, run, tomorrow)).toHaveProperty("slot");
   });
 });

@@ -16087,12 +16087,12 @@
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
-      "find": "          }),\n        ),\n      historyRetrievalEnabled:",
-      "replace": "          }),\n        ) &&\n        (await dozoMayOfferCall(deps, run, bot)),\n      historyRetrievalEnabled:",
+      "find": "        !conversationThread.externalConversationId &&\n        Boolean(",
+      "replace": "        !conversationThread.externalConversationId &&\n        (await dozoMayOfferCall(deps, run)) &&\n        Boolean(",
       "requires": [
         "packages/adapters/src/dozo-bot-calls.ts"
       ],
-      "reason": "bot calls: a routine is offered call_user only when its owner allowed this bot to call, and a webhook or bot message never is; a person's own turn is offered it as before"
+      "reason": "bot calls: call_user is offered only in a person's own turn or a routine or watch run of its owner with the owner's permission; every other run kind is not offered it"
     },
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
@@ -16106,20 +16106,11 @@
     {
       "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
       "find": "import { endCallFromTool, requestUserCall } from \"../../calls/call-request.js\";\n",
-      "replace": "import { endCallFromTool } from \"../../calls/call-request.js\";\nimport { dozoRequestUserCall } from \"../../dozo-bot-calls.js\";\n",
+      "replace": "import { endCallFromTool } from \"../../calls/call-request.js\";\nimport { dozoRequestUserCall as requestUserCall } from \"../../dozo-bot-calls.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-bot-calls.ts"
       ],
-      "reason": "bot calls: the import of the rule below"
-    },
-    {
-      "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
-      "find": "await requestUserCall(deps, run, {",
-      "replace": "await dozoRequestUserCall(ctx, {",
-      "requires": [
-        "packages/adapters/src/dozo-bot-calls.ts"
-      ],
-      "reason": "bot calls: a call from a routine is checked against its owner's permission, outside content, quiet hours and the daily cap before it rings; the refusal is the tool's answer"
+      "reason": "bot calls: call_user goes through the fork's policy (who started the run, the owner's permission, quiet hours, the daily cap) before it rings; the call site and the tool's answer are unchanged"
     },
     {
       "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",

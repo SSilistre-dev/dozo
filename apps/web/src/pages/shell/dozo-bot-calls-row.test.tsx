@@ -58,7 +58,7 @@ async function render() {
     root.render(
       <QueryClientProvider client={client}>
         <QueryUserProvider value="user-1">
-          <DozoBotCallsRow botId="bot-1" />
+          <DozoBotCallsRow botId="bot-1" spaceId="space-1" />
         </QueryUserProvider>
       </QueryClientProvider>,
     );

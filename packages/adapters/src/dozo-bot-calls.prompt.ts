@@ -1,5 +1,5 @@
 /**
- * Added to `call_user` in a routine's or watch's run, where the person is not in the chat.
+ * Added to `call_user` in a run a routine or watch started, where the person is not in the chat.
  * The limits (quiet hours, cooldown, daily cap) are enforced in code and arrive as refusals.
  */
 export const ROUTINE_CALL_GUIDANCE =

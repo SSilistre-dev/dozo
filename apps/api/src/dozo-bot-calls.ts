@@ -6,7 +6,7 @@ import type { RouterContext } from "./routes/context.js";
 /**
  * Whether a bot may ring its person from a routine. Only the bot's own person reads or changes
  * it. `available` (the server has calls on and a voice is connected) only decides whether the
- * setting is shown; saving it never depends on it.
+ * setting is shown; saving it never depends on it. A save signals the person's other devices.
  */
 export function dozoBotCallsRoutes(ctx: RouterContext) {
   const { deps, authed, repos } = ctx;
@@ -14,11 +14,10 @@ export function dozoBotCallsRoutes(ctx: RouterContext) {
   async function state(actor: Actor, botId: string) {
     const bot = await repos.getBot(actor, botId);
     const own = bot.userId === actor.userId;
-    const available = own && (await botCallsAvailable(deps, actor.userId));
     return {
       bot,
       own,
-      available,
+      available: own && (await botCallsAvailable(deps, actor.userId)),
       allowed: own && (await readBotCallPermission(deps.prisma, actor.userId, bot.id)),
     };
   }
@@ -31,13 +30,14 @@ export function dozoBotCallsRoutes(ctx: RouterContext) {
       }),
       set: authed.dozoBotCalls.set.handler(async ({ context, input }) => {
         const { bot, own, available } = await state(context.actor, input.botId);
-        if (!own) throw new ClientError("CONFLICT", "Only the bot's own person can change this");
+        if (!own) throw new ClientError("FORBIDDEN", "Only the bot's own person can change this");
         await writeBotCallPermission(deps.prisma, {
           userId: context.actor.userId,
           botId: bot.id,
           spaceId: context.actor.spaceId,
           allowed: input.allowed,
         });
+        void deps.events?.publishRosterChange?.({ userIds: [context.actor.userId] });
         return { available, allowed: input.allowed };
       }),
     },
