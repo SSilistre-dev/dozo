@@ -159,6 +159,12 @@ export const ROUTE_DATA: readonly RouteData[] = [
     reason: "a one-time export token issued to the signed-in user; the export test uses real ones",
   },
   {
+    route: "GET /api/v1/dozo/shared/:token",
+    kind: "bearer-link",
+    reason:
+      "public to whoever holds a share link, by design: only the token's hash is looked up, and every refusal is the same 404",
+  },
+  {
     route: "GET /api/v1/pages/shared/:token",
     kind: "bearer-link",
     reason: "public to whoever holds a page's share link, by design",

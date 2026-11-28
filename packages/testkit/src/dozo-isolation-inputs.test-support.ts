@@ -138,6 +138,7 @@ const ID_BY_NAMESPACE: Record<string, PoolKey> = {
   capabilities: "capabilityId",
   approvalRules: "approvalRuleId",
   dozoCommandRules: "commandRuleId",
+  dozoShareLinks: "shareLinkId",
   mcp: "mcpServerId",
   meetings: "meetingId",
 };
