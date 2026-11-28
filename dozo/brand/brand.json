@@ -6918,7 +6918,7 @@
     {
       "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
       "find": "  return { scripted, backups, runModelProvider, runModelId, credential, thinkingLevel, resolved };\n",
-      "replace": "  return {\n    scripted,\n    backups,\n    runModelProvider,\n    runModelId,\n    credential,\n    thinkingLevel,\n    resolved,\n    pool,\n  };\n",
+      "replace": "  return { scripted, backups, runModelProvider, runModelId, credential, thinkingLevel, resolved, pool };\n",
       "reason": "model pool: the started model carries its pool to the backup chain and the runtime"
     },
     {
