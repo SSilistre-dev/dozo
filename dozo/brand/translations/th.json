@@ -113,6 +113,8 @@
  "Space limit reached. Delete a Space to add another.": "ถึงขีดจำกัดสเปซแล้ว ลบสเปซเพื่อเพิ่มสเปซอื่น",
  "This plan is free. Choose a paid plan to upgrade.": "แผนนี้ฟรี เลือกแผนแบบชำระเงินเพื่ออัปเกรด",
  "This plan isn't on sale yet.": "แผนนี้ยังไม่เปิดขาย",
+ "Coming soon": "เร็ว ๆ นี้",
+ "Not on sale": "ไม่เปิดขาย",
  "Upgrade to {plan}": "อัปเกรดเป็น {plan}",
  "Cached input": "อินพุตที่แคช",
  "Read from cache": "อ่านจากแคช",

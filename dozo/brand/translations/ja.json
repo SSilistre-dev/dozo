@@ -101,6 +101,8 @@
  "Space limit reached. Delete a Space to add another.": "スペースの上限に達しました。別のスペースを追加するには、スペースを削除してください。",
  "This plan is free. Choose a paid plan to upgrade.": "このプランは無料です。アップグレードするには有料プランを選んでください。",
  "This plan isn't on sale yet.": "このプランはまだ販売されていません。",
+ "Coming soon": "近日提供",
+ "Not on sale": "販売していません",
  "Upgrade to {plan}": "{plan}にアップグレード",
  "Cached input": "キャッシュ済み入力",
  "Read from cache": "キャッシュから読み取り",

@@ -274,9 +274,12 @@ it("shows Free a plan that is coming soon on a button that cannot be pressed", a
     .map((offer) => ({ ...offer, comingSoon: true as const }));
   await render({ ...free, byokTiers: soonOffers });
   const dollars = (BYOK_TIERS.pro.monthlyPriceCents ?? 0) / 100;
-  const soon = button(/Coming soon$/);
-  expect(soon?.textContent).toBe(`Premium · $${dollars} / month · Coming soon`);
+  const soon = button(/^Coming soon$/);
   expect(soon?.disabled).toBe(true);
+  // The plan and its price stand beside it, each on its own, not joined into the button.
+  const plan = container.querySelector('[data-testid="plan-card"]')?.textContent ?? "";
+  expect(plan).toContain(`Premium$${dollars} / monthComing soon`);
+  expect(plan).not.toContain("·");
   expect(button(/^Subscribe for /)).toBeUndefined();
   expect(button(/^Yearly/)).toBeUndefined();
   for (const node of [...container.querySelectorAll("button")]) await act(async () => node.click());

@@ -1,16 +1,24 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { formatBillingPrice } from "@rakazo/i18n/billing";
 import { Button } from "@rakazo/ui-web";
 
 /**
- * Where Free would subscribe, a paid plan that is not on sale yet: its name and monthly price on a
- * button that cannot be pressed. The server refuses its checkout too.
+ * Where Free would subscribe, a paid plan that is not on sale yet: its name and monthly price,
+ * muted, beside a button that cannot be pressed. The server refuses its checkout too.
  */
-export function DozoPlanComingSoon({ plan, price }: { plan: string; price: string }) {
+export function DozoPlanComingSoon({ plan, monthlyCents }: { plan: string; monthlyCents: number }) {
+  const { i18n } = useLingui();
+  const price = formatBillingPrice(
+    { amount: monthlyCents, currency: "usd", interval: "month", intervalCount: 1 },
+    i18n.locale,
+  );
   return (
-    <Button disabled>
-      <Trans>
-        {plan} · {price} / month · Coming soon
-      </Trans>
-    </Button>
+    <>
+      <span className="text-body text-muted-foreground">{plan}</span>
+      <span className="text-body tabular-nums text-muted-foreground">{price}</span>
+      <Button disabled>
+        <Trans>Coming soon</Trans>
+      </Button>
+    </>
   );
 }

@@ -151,6 +151,8 @@
  "Space limit reached. Delete a Space to add another.": "Limite d’espaces atteinte. Supprimez un espace pour en ajouter un autre.",
  "This plan is free. Choose a paid plan to upgrade.": "Ce forfait est gratuit. Choisissez un forfait payant pour passer à un forfait supérieur.",
  "This plan isn't on sale yet.": "Ce forfait n’est pas encore en vente.",
+ "Coming soon": "Bientôt disponible",
+ "Not on sale": "Pas en vente",
  "Upgrade to {plan}": "Passer à {plan}",
  "Cached input": "Entrée en cache",
  "Read from cache": "Lu depuis le cache",

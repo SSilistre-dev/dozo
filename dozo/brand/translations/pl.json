@@ -110,6 +110,8 @@
  "Space limit reached. Delete a Space to add another.": "Osiągnięto limit przestrzeni. Usuń przestrzeń, aby dodać kolejną.",
  "This plan is free. Choose a paid plan to upgrade.": "Ten plan jest bezpłatny. Wybierz plan płatny, aby go zmienić na wyższy.",
  "This plan isn't on sale yet.": "Ten plan nie jest jeszcze w sprzedaży.",
+ "Coming soon": "Wkrótce",
+ "Not on sale": "Niedostępny w sprzedaży",
  "Upgrade to {plan}": "Przejdź na plan {plan}",
  "Cached input": "Wejście z cache",
  "Read from cache": "Odczyt z pamięci podręcznej",

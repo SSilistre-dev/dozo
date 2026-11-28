@@ -101,6 +101,8 @@
  "Space limit reached. Delete a Space to add another.": "स्पेस की सीमा पूरी हो गई है। नया जोड़ने के लिए कोई स्पेस डिलीट करें।",
  "This plan is free. Choose a paid plan to upgrade.": "यह प्लान मुफ़्त है। अपग्रेड करने के लिए कोई सशुल्क प्लान चुनें।",
  "This plan isn't on sale yet.": "यह प्लान अभी बिक्री के लिए उपलब्ध नहीं है।",
+ "Coming soon": "जल्द आ रहा है",
+ "Not on sale": "बिक्री के लिए नहीं",
  "Upgrade to {plan}": "{plan} में अपग्रेड करें",
  "Cached input": "कैश्ड इनपुट",
  "Read from cache": "कैश से पढ़ा गया",

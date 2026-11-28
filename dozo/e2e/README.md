@@ -232,10 +232,10 @@ the features below: 39 surfaces in the table, 37 checked, 2 not (each row is one
 | Skills, templates, MCP overlays | opened | crawl |
 | Settings: each section | general, models, approvals, vault, memory, voice, labs, usage, organization open without error | flow; crawl (every popup) |
 | Settings: Models | model roles, provider list, connection forms; live: responses counted | crawl; live |
-| Settings: billing | Premium at the server's price, coming soon on a disabled line; no Subscribe, no Premium Plus | flow (faked); live |
-| Billing: landing plan pick | an older `?plan=premium&period=year` link → Billing opens on the coming soon line, no checkout | flow (faked) |
+| Settings: billing | Premium's name and the server's price beside a disabled Coming soon; no Subscribe, no Premium Plus | flow (faked); live |
+| Billing: landing plan pick | an older `?plan=premium&period=year` link → Billing opens on Premium coming soon, no checkout | flow (faked) |
 | Billing: `?billing=canceled` | Billing opens again, the address is cleaned | flow (faked); live |
-| Billing: Premium coming soon | the Turkish disabled line with the server's price; a checkout asked for directly is refused (`plan_coming_soon`), no payment page | live |
+| Billing: Premium coming soon | the disabled Turkish "Yakında" beside the plan's name and the server's price; a checkout asked for directly is refused (`plan_coming_soon`), no payment page | live |
 | Plan limit: Free computer | waking is refused, the plan line and Upgrade | live |
 | Plan limit: shared space | a full space refuses the upload with its line | flow (faked) |
 | Waiting line | a member's long answer keeps a bot busy; the caller's routine runs and a message wait behind it: the line and its place, the list (others' work only "Queued"), stopping one's own wait by signal and from the list, another's refused, the line following the live signal with no reload and no timed read | flow |

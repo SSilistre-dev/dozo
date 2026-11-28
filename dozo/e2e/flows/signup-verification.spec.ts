@@ -292,10 +292,11 @@ test("kodla kayıt: seçilen plan ve kayıt başlangıcı kaybolmaz", async ({ p
   );
   // Premium is not on sale: Billing shows it as coming soon, with nothing to subscribe to.
   const settings = page.getByTestId("user-settings");
+  await expect(settings.getByRole("button", { name: "Coming soon", exact: true })).toBeDisabled();
   await expect(
-    settings.getByRole("button", {
-      name: `${premium?.name} · ${dollars(premium?.monthlyPriceCents ?? null)} / month · Coming soon`,
-    }),
-  ).toBeDisabled();
+    settings
+      .getByTestId("plan-card")
+      .getByText(`${dollars(premium?.monthlyPriceCents ?? null)} / month`, { exact: true }),
+  ).toBeVisible();
   await expect(settings.getByRole("button", { name: /^Subscribe for/ })).toHaveCount(0);
 });

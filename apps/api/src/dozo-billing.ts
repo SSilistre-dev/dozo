@@ -33,17 +33,22 @@ export class PlanComingSoonError extends ClientError {
 }
 
 /**
- * Refuses to bill `tier` unless it is on sale and has a price: Free is told it is free, any other
- * plan (coming soon, or not offered at all) that it is not on sale yet.
+ * The price a checkout of `tier` bills, refused unless the plan is on sale and has a price: Free is
+ * told it is free, any other plan (coming soon, or not offered at all) that it is not on sale yet.
  */
-export function refuseUnsoldPlan(
-  tier: ByokTier,
-  amountCents: number | null,
-): asserts amountCents is number {
-  if (amountCents !== null && planOnSale(tier)) return;
+export function soldPrice(tier: ByokTier, amountCents: number | null): number {
+  if (amountCents !== null && planOnSale(tier)) return amountCents;
   throw BYOK_TIERS[tier].computerAllowanceCents === 0
     ? new PlanNotOfferedError()
     : new PlanComingSoonError();
+}
+
+/** The plan a plan change moves to, refused as `soldPrice` refuses it; null when there is none. */
+export function soldPlan<Plan extends { tier: ByokTier; amountCents: number }>(
+  plan: Plan | null,
+): Plan | null {
+  if (plan) soldPrice(plan.tier, plan.amountCents);
+  return plan;
 }
 
 /**

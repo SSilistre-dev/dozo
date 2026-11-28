@@ -84,9 +84,9 @@ Free and Premium, and sells none yet:
   new organization starts here, and one whose subscription ends returns here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
-- Premium keeps its price ($49 a month) and is coming soon: Billing shows Free's owner one disabled
-  line, "Premium · $49 / month · Coming soon" (the price read from the code), where Subscribe would
-  be. Premium Plus keeps its price but is not offered at all (only `pro` is in `DOZO_PLANS_OFFERED`);
+- Premium keeps its price ($49 a month) and is coming soon: Billing shows Free's owner, where Subscribe
+  would be, the plan's name and monthly price in muted text (read from the code) beside a disabled
+  "Coming soon" button. Premium Plus keeps its price but is not offered at all (only `pro` is in `DOZO_PLANS_OFFERED`);
   an admin can still grant it, with every term upstream derives from its price (a free period's
   speech allowance, for one). An offered plan is sold only once it is in `DOZO_PLANS_ON_SALE` in
   that file, the one switch. Until then
@@ -192,7 +192,7 @@ while none is sold; a sign-up link may carry `?plan=premium&period=month|year`, 
 page keeps a valid pick for the tab and drops both parameters from the address (anything else,
 Free and Premium Plus included, is ignored). When the app opens after setup,
 `apps/web/src/pages/dozo-shell.tsx` opens Billing with that plan and period selected, once (while
-Premium is coming soon, Billing shows its disabled line): closing Billing forgets the pick and the
+Premium is coming soon, Billing shows it as coming soon): closing Billing forgets the pick and the
 account stays on Free. The server still prices and refuses the tier and period itself, so a link
 cannot open a price that is not offered. A plan checkout left unpaid returns to
 `/app?billing=canceled`, which reopens Billing quietly.
@@ -204,7 +204,7 @@ both paid plans keep upstream's amounts. Known limits:
   changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
   one: an Upgrade from Free on mobile opens the web app's Billing in the system browser. Store
   rules on buying a digital subscription outside the app have not been checked. While no plan is
-  sold, an Upgrade from Free on the web opens Billing on the coming soon line.
+  sold, an Upgrade from Free on the web opens Billing on Premium coming soon.
 - What a refused limit says and offers (Free's missing computer, spent hours, a full shared space,
   busy computers, the computer and Space counts, a checkout of Free) is one table,
   `packages/contracts/src/dozo-plan-limits.ts`, in English and Turkish only (the fork's sentences

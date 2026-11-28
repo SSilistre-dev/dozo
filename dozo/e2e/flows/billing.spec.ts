@@ -1,3 +1,4 @@
+import type { Locator } from "@playwright/test";
 import { readWorld } from "../fixtures";
 import { openBot } from "../ui";
 import { dollars, fakeBilling, newAccount, serverPlans } from "./accounts";
@@ -12,9 +13,20 @@ import { expect, test } from "./flow";
  * which a browser fake cannot give faithfully: `make canli` checks it on a real Free account.
  */
 
-/** The one line Free sees where a plan that is not on sale would be subscribed to. */
-function comingSoonLine(plan: { name: string; monthlyPriceCents: number | null } | undefined) {
-  return `${plan?.name} · ${dollars(plan?.monthlyPriceCents ?? null)} / month · Coming soon`;
+/**
+ * What Free sees where a plan that is not on sale would be subscribed to: the plan's name and
+ * monthly price, each on its own, beside a disabled Coming soon.
+ */
+async function expectComingSoon(
+  settings: Locator,
+  plan: { name: string; monthlyPriceCents: number | null } | undefined,
+) {
+  await expect(settings.getByRole("button", { name: "Coming soon", exact: true })).toBeDisabled();
+  const card = settings.getByTestId("plan-card");
+  await expect(card.getByText(plan?.name as string, { exact: true })).toBeVisible();
+  await expect(
+    card.getByText(`${dollars(plan?.monthlyPriceCents ?? null)} / month`, { exact: true }),
+  ).toBeVisible();
 }
 
 test("plan screen: Premium at the server's price, coming soon, and nothing to subscribe to", async ({
@@ -29,8 +41,7 @@ test("plan screen: Premium at the server's price, coming soon, and nothing to su
   await openBot(page, readWorld().chiefId, "Chief");
   await page.goto("/app?settings=billing");
   const settings = page.getByTestId("user-settings");
-  const soon = settings.getByRole("button", { name: comingSoonLine(premium) });
-  await expect(soon).toBeDisabled();
+  await expectComingSoon(settings, premium);
   await expect(settings.getByRole("button", { name: /^Subscribe for/ })).toHaveCount(0);
   await expect(settings.getByRole("button", { name: /^Yearly/ })).toHaveCount(0);
   await expect(settings.getByText("Premium Plus")).toHaveCount(0);
@@ -54,7 +65,7 @@ test("plan picked on an older landing link: Billing opens on it, coming soon, no
   await expect(page).toHaveURL(/settings=billing/);
   const settings = page.getByTestId("user-settings");
   const premium = plans.find((p) => p.tier === "pro");
-  await expect(settings.getByRole("button", { name: comingSoonLine(premium) })).toBeDisabled();
+  await expectComingSoon(settings, premium);
   await expect(settings.getByRole("button", { name: /^Subscribe for/ })).toHaveCount(0);
   expect(billing.checkouts).toEqual([]);
 });

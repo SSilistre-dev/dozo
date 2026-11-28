@@ -270,7 +270,7 @@ test("Faturalandırma ekranı ve ödemeden dönüş (?billing=canceled)", async 
   await expect(page).not.toHaveURL(/billing=canceled/);
 });
 
-test("Premium yakında: ekranda devre dışı satır, sunucu ödemeyi açmaz", async ({ page }) => {
+test("Premium yakında: ekranda devre dışı düğme, sunucu ödemeyi açmaz", async ({ page }) => {
   await openApp(page);
   test.skip(!(await billingOn(page)), "this server does not bill");
   const status = page.waitForResponse((r) => r.url().includes("/rpc/billing/status"));
@@ -296,11 +296,12 @@ test("Premium yakında: ekranda devre dışı satır, sunucu ödemeyi açmaz", a
   ).toEqual(["pro"]);
   const settings = page.getByTestId("user-settings");
   const amount = ((premium?.monthlyPriceCents ?? 0) / 100).toFixed(0);
-  // The disabled line in Turkish, with the server's price; nothing to subscribe to.
-  const soon = settings.getByRole("button", { name: /Yakında$/ });
-  await expect(soon).toBeDisabled();
-  await expect(soon).toContainText(premium?.name as string);
-  await expect(soon).toContainText(amount);
+  // The disabled button in Turkish, beside the plan's name and the server's price; nothing to
+  // subscribe to.
+  await expect(settings.getByRole("button", { name: "Yakında", exact: true })).toBeDisabled();
+  const card = settings.getByTestId("plan-card");
+  await expect(card.getByText(premium?.name as string, { exact: true })).toBeVisible();
+  await expect(card).toContainText(amount);
   await expect(settings.getByRole("button", { name: /abone ol$/ })).toHaveCount(0);
   // Asked directly, the server refuses the checkout and opens no payment page.
   for (const interval of ["month", "year"]) {
