@@ -16288,6 +16288,15 @@
         "packages/adapters/src/computers/dozo-screen-watch.ts"
       ],
       "reason": "computers wall: which sandbox kinds can show a screen without waking it is declared beside the providers, and the API reads it through the package's one entry point"
+    },
+    {
+      "file": "apps/mobile/lib/routines/routine-detail-status.test.tsx",
+      "find": "vi.mock(\"../../components/routines/routine-run-history\", () => ({ RoutineRunHistory: () => null }));\nvi.mock(\"expo-router\"",
+      "replace": "vi.mock(\"../../components/routines/routine-run-history\", () => ({ RoutineRunHistory: () => null }));\nvi.mock(\"../../components/dozo-routine-briefing\", () => ({ DozoRoutineBriefing: () => null }));\nvi.mock(\"expo-router\"",
+      "requires": [
+        "apps/mobile/components/dozo-routine-briefing.tsx"
+      ],
+      "reason": "spoken briefing: this test's fakes stub every row of the routine screen, so it stubs the fork's briefing row too (it reads the server); its expectations are unchanged"
     }
   ],
   "assets": {
