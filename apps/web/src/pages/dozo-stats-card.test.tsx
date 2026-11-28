@@ -14,6 +14,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 
 import { DozoStatsCard } from "./dozo-stats-card";
+import { DOZO_SHARE_RENDERERS } from "./dozo-share-renderers";
 
 const card = {
   name: "<b>Pip</b>",
@@ -33,6 +34,10 @@ async function draw(payload: unknown) {
 afterEach(() => act(async () => root?.unmount()));
 
 describe("the stats card", () => {
+  it("is what a stats link draws", async () => {
+    expect(await DOZO_SHARE_RENDERERS.stats?.()).toBe(DozoStatsCard);
+  });
+
   it("shows the face, the name as text and the four numbers", async () => {
     const page = await draw(card);
     expect(page.querySelector("h1")?.textContent).toBe("<b>Pip</b>");
