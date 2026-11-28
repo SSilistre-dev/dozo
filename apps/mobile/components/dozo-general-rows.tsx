@@ -20,12 +20,13 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Alert } from "react-native";
+import { errorText } from "../lib/api/user-error";
 import { useDozoActivity } from "../lib/dozo-activity";
 import { useFeedbackStatus } from "../lib/dozo-feedback";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
 import { useResolvedAppearance } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
-import { errorText } from "../lib/api/user-error";
+import { DozoSettingsRows } from "./dozo-extensions";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "./settings/settings-group";
 
 const HOUR_MINUTES = Array.from({ length: 24 }, (_, hour) => hour * 60);
@@ -43,6 +44,7 @@ export function DozoGeneralRows() {
       <DozoDailyDigestRows />
       <DozoActivityRow />
       <DozoTokensAndFeedbackRows />
+      <DozoSettingsRows />
     </>
   );
 }

@@ -13,6 +13,7 @@ import {
   savePlanIntent,
 } from "../lib/dozo-plan-intent";
 import { rpc } from "../lib/query/rpc";
+import { DozoSurfaceHost } from "./dozo-surfaces";
 import { ShellPage as UpstreamShellPage } from "./Shell";
 import { DozoChatAddress, useDozoOpenChat } from "./shell/dozo-bot-chats";
 import { DozoTrustBotHost } from "./shell/dozo-trust-bot";
@@ -43,6 +44,7 @@ export function ShellPage() {
     <>
       <UpstreamShellPage key={chatId ?? ""} />
       <DozoTrustBotHost />
+      <DozoSurfaceHost />
     </>
   );
   return chatId ? <DozoChatAddress chatId={chatId}>{shell}</DozoChatAddress> : shell;

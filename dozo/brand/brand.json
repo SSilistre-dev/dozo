@@ -4245,17 +4245,19 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "import { cspReportRoutes } from \"./telemetry/csp-report.js\";\nimport { monitoringRoutes }",
-      "replace": "import { cspReportRoutes } from \"./telemetry/csp-report.js\";\nimport { mountDozoCatalogImages } from \"./dozo-plugin-catalog.js\";\nimport { monitoringRoutes }",
+      "replace": "import { cspReportRoutes } from \"./telemetry/csp-report.js\";\nimport { mountDozoPublicRoutes } from \"./dozo-public-routes.js\";\nimport { monitoringRoutes }",
       "requires": [
+        "apps/api/src/dozo-public-routes.ts",
         "apps/api/src/dozo-plugin-catalog.ts"
       ],
-      "reason": "plugin catalog: the API serves the stored logos"
+      "reason": "fork signed-out HTTP routes (dozo-public-routes.ts): the plugin catalog's stored logos, share links; a feature adds a line there, not a rule here"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "  mountScriptAssets(app);\n  mountSharedPages(",
-      "replace": "  mountScriptAssets(app);\n  mountDozoCatalogImages(app, prisma);\n  mountSharedPages(",
+      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp);\n  mountSharedPages(",
       "requires": [
+        "apps/api/src/dozo-public-routes.ts",
         "apps/api/src/dozo-plugin-catalog.ts"
       ],
       "reason": "plugin catalog: logos and site icons are served by content hash from our own domain with a year-long immutable cache"
@@ -8486,8 +8488,38 @@
     {
       "file": "packages/contracts/src/rpc/app-contract.ts",
       "find": "  ...runsRpc,\n};\n\nexport type AppContract",
-      "replace": "  ...runsRpc,\n}))();\n\nexport type AppContract",
-      "reason": "startup size: closes the call the rule above opens"
+      "replace": "  ...runsRpc,\n  ...dozoFeaturesContract,\n}))();\n\nexport type AppContract",
+      "requires": [
+        "packages/contracts/src/dozo-features.ts"
+      ],
+      "reason": "startup size: closes the call the rule above opens; it also spreads the fork's feature contracts (dozo-features.ts), where a feature adds its key instead of a rule here"
+    },
+    {
+      "file": "packages/contracts/src/rpc/app-contract.ts",
+      "find": "threads-rpc.js\";\n\nexport const appContract",
+      "replace": "threads-rpc.js\";\nexport * from \"../dozo-features.js\";\nimport { dozoFeaturesContract } from \"../dozo-features.js\";\n\nexport const appContract",
+      "requires": [
+        "packages/contracts/src/dozo-features.ts"
+      ],
+      "reason": "fork feature contracts: one hub (dozo-features.ts) so a feature's procedures need no rule of their own here"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { onboardingRoutes } from \"./routes/onboarding.js\";\nimport { organizationsRoutes }",
+      "replace": "import { onboardingRoutes } from \"./routes/onboarding.js\";\nimport { dozoFeatureRoutes } from \"./dozo-features.js\";\nimport { organizationsRoutes }",
+      "requires": [
+        "apps/api/src/dozo-features.ts"
+      ],
+      "reason": "fork feature routes: one hub (dozo-features.ts) so a feature's procedures need no rule of their own here"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...onboardingRoutes(ctx),\n    ...availabilityRoutes(ctx),",
+      "replace": "    ...onboardingRoutes(ctx),\n    ...dozoFeatureRoutes(ctx),\n    ...availabilityRoutes(ctx),",
+      "requires": [
+        "apps/api/src/dozo-features.ts"
+      ],
+      "reason": "fork feature routes: the hub's procedures join the router"
     },
     {
       "file": "scripts/checks/ratchets/no-json-column-cast.mjs",
