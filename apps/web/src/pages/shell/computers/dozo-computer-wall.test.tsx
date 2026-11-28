@@ -156,9 +156,9 @@ it("forgets a dropped screen once the list shows it without one, and keeps it be
   expect(stillDropped(dropped, [tile("a", "running", true), tile("b", "running", true)])).toBe(
     dropped,
   );
-  expect([...stillDropped(dropped, [tile("a", "running", true), tile("b", "suspended")])]).toEqual(
-    ["a"],
-  );
+  expect([...stillDropped(dropped, [tile("a", "running", true), tile("b", "suspended")])]).toEqual([
+    "a",
+  ]);
 });
 
 it("lets a wall frame run its page but never take the pointer", () => {
@@ -257,7 +257,10 @@ it("streams a screen again that dropped, once its computer slept and runs again"
   });
   await act(async () => {
     window.dispatchEvent(
-      new MessageEvent("message", { data: { rakazoScreen: "disconnected" }, source: frame.contentWindow }),
+      new MessageEvent("message", {
+        data: { rakazoScreen: "disconnected" },
+        source: frame.contentWindow,
+      }),
     );
   });
   await vi.waitFor(() => expect(container.querySelector("iframe")).toBeNull());

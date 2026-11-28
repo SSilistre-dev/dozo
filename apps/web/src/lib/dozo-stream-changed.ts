@@ -33,4 +33,3 @@ export function dozoPinsChanged(client = queryClient): Promise<void> {
 export function dozoModelPoolChanged(client = queryClient): Promise<void> {
   return client.invalidateQueries({ queryKey: ["dozoModelPool"] });
 }
-

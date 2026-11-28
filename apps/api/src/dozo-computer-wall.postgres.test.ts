@@ -82,7 +82,12 @@ describePostgres("computers wall (PostgreSQL)", () => {
     const { computerId } = await system.bot.findUniqueOrThrow({ where: { id: bot.id } });
     await system.computer.update({
       where: { id: computerId! },
-      data: { kind: "fake", state: "running", providerRef: `ref-${bot.id}`, runningSince: new Date() },
+      data: {
+        kind: "fake",
+        state: "running",
+        providerRef: `ref-${bot.id}`,
+        runningSince: new Date(),
+      },
     });
     return bot.id;
   }

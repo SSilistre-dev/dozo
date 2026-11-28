@@ -44,5 +44,9 @@ export async function watchScreen(
   context: AdapterContext,
 ): Promise<ScreenSession | null> {
   if (!watchesScreenWithoutWake(computer.kind) || !computer.providerRef) return null;
-  return sandbox.connectScreen(toComputerRef(computer), { view: "stream", interactive: false }, context);
+  return sandbox.connectScreen(
+    toComputerRef(computer),
+    { view: "stream", interactive: false },
+    context,
+  );
 }

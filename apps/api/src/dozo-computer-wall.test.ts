@@ -142,7 +142,7 @@ it("answers both procedures for the signed-in caller", async () => {
   await expect(routes.list({ context: { actor } })).resolves.toEqual([
     { botId: "bot-1", state: "running", screen: true },
   ]);
-  await expect(
-    routes.screen({ context: { actor }, input: { botId: "bot-1" } }),
-  ).resolves.toEqual({ url: expect.stringContaining("/novnc/session/view/") });
+  await expect(routes.screen({ context: { actor }, input: { botId: "bot-1" } })).resolves.toEqual({
+    url: expect.stringContaining("/novnc/session/view/"),
+  });
 });
