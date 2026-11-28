@@ -336,8 +336,17 @@ rewritten since, deleted, or a bot gone or no longer the owner's closes the link
 and are revoked in the same review. The signed-out page shows the logo, the frame, the line and
 previous and next.
 
-Known limit: a reply keeps one screenshot, the last one its calls took, so a replay has at most one
-frame. A screenshot can still show private data; the owner's review is the control.
+A reply in the owner's own chat with their own bot keeps up to 24 of the screenshots its calls
+already took for the model, at an even spread with the first and the last
+(`packages/adapters/src/runs/turn/dozo-step-frames.ts`, three import redirects in the run loop; the
+budget in `packages/db/src/dozo-step-frames.ts`). The extra ones (all but the last, which was kept
+before) are written one at a time beside the run as pending rows of the same hidden step screenshot
+type, never listed or served to a client, and kept when the reply finishes linking them. They count
+against the shared space, never take its last 10%, and have a budget of 50 MB per bot: past it the
+oldest replies' extra frames go first, never a reply with a live replay link. A reply whose last
+screenshot could not be kept keeps none of the others, as before. A run that ends any other way
+leaves pending frames that the bot's next frame write removes. There is no setting for this. A
+screenshot can still show private data; the owner's review is the control.
 
 ## A bot's extra chats
 

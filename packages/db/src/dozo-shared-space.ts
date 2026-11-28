@@ -2,11 +2,11 @@ import { BYOK_TIERS, PLAN_LIMIT_CODES, SHARED_SPACE_FULL_MESSAGE } from "@rakazo
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "./database/client.js";
 import { Prisma } from "./database/client.js";
+import { runAsSystem, runAsSystemInTransaction } from "./database/row-security.js";
 import type { PlanGrant } from "./dozo-plan-grant.js";
 import { DOZO_PLAN_GRANT_SELECT, paidTierOf, tierInForce } from "./dozo-plan-grant.js";
 import type { PlanLimitsByTier } from "./dozo-plan-quotas.js";
 import { readPlanLimits } from "./dozo-plan-quotas.js";
-import { runAsSystem, runAsSystemInTransaction } from "./database/row-security.js";
 
 /** The organization's files already fill its plan's shared space, so a new one is refused. */
 export class SharedSpaceFullError extends ClientError {
@@ -44,7 +44,7 @@ async function serverBills(tx: Pick<PrismaClient, "deploymentSettings">) {
 }
 
 /** The bytes of files the Space's organization may keep, or null without a limit. */
-async function sharedSpaceLimit(
+export async function sharedSpaceLimit(
   tx: Pick<PrismaClient, "deploymentSettings" | "space" | "dozoPlanQuota">,
   spaceId: string,
 ): Promise<{ organizationId: string; bytes: number } | null> {
@@ -73,7 +73,7 @@ async function sharedSpaceLimit(
 }
 
 /** The recorded bytes of every file the organization keeps. Runs across its Spaces. */
-async function usedBytes(db: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
+export async function usedBytes(db: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
   // ponytail: sums every file row of the organization on each write; keep a running total per
   // organization when one holds enough files for this to show.
   const [{ used }] = await db.$queryRaw<[{ used: string }]>(Prisma.sql`
@@ -133,12 +133,17 @@ export async function holdSharedSpace(tx: Prisma.TransactionClient, spaceId: str
   const limit = await sharedSpaceLimit(tx, spaceId);
   if (!limit) return;
   await runAsSystemInTransaction(tx, "an organization's files span its Spaces", async () => {
-    await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-shared-space:${limit.organizationId}`}, 0))::text AS "lock"
-    `);
+    await lockSharedSpace(tx, limit.organizationId);
     if ((await usedBytes(tx, limit.organizationId)) > BigInt(limit.bytes))
       throw new SharedSpaceFullError();
   });
+}
+
+/** Waits for the organization's other file writes to commit; held until this transaction ends. */
+export async function lockSharedSpace(tx: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-shared-space:${organizationId}`}, 0))::text AS "lock"
+  `);
 }
 
 /**

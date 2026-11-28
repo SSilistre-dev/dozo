@@ -15,7 +15,7 @@ import { useScreenQuery } from "../lib/query/screen-query";
 
 /** Every step starts kept; a screenshot starts kept unless the server says it starts left out. */
 function startingFrames(steps: readonly DozoReplayDraftStep[]): number[] {
-  return steps.flatMap((step, index) => (step.frame !== null && !step.sensitive ? [index] : []));
+  return steps.flatMap((step, index) => (step.frame && !step.sensitive ? [index] : []));
 }
 
 /**
@@ -96,13 +96,12 @@ export default function DozoReplay() {
               })}
             </SettingsGroup>
             {steps.map((step, index) =>
-              step.frame !== null && !omit.includes(index) ? (
+              step.frame && !omit.includes(index) ? (
                 <SettingsGroup key={index} label={step.line}>
-                  <Image
-                    source={{ uri: step.frame }}
-                    resizeMode="contain"
-                    accessibilityIgnoresInvertColors
-                    style={[styles.frame, !frames.includes(index) && styles.frameLeftOut]}
+                  <ReviewFrame
+                    messageId={messageId}
+                    index={index}
+                    chosen={frames.includes(index)}
                   />
                   <SettingsSwitch
                     label={t`Screenshot`}
@@ -138,6 +137,31 @@ export default function DozoReplay() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** One step's screenshot, read on its own when the review shows it; nothing when it is gone. */
+function ReviewFrame({
+  messageId,
+  index,
+  chosen,
+}: {
+  messageId: string;
+  index: number;
+  chosen: boolean;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const frame = useScreenQuery(rpcQuery("dozoReplays/frame", { messageId, index }), {
+    onForeground: false,
+  }).data?.frame;
+  if (!frame) return null;
+  return (
+    <Image
+      source={{ uri: frame }}
+      resizeMode="contain"
+      accessibilityIgnoresInvertColors
+      style={[styles.frame, !chosen && styles.frameLeftOut]}
+    />
   );
 }
 

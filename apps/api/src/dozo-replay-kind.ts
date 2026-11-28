@@ -2,6 +2,7 @@ import type { Actor, DozoReplayPayload } from "@rakazo/contracts";
 import { isStepScreenshotMimeType } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  dozoReplayableChat,
   JsonColumnMismatchError,
   mayBeChannelMessage,
   readJsonColumn,
@@ -65,26 +66,25 @@ export async function findOwnReply(
       },
     }),
   );
-  if (
-    !thread ||
-    thread.groupId ||
-    thread.helperBotId ||
-    thread.externalConversationId ||
-    thread.userId !== actor.userId ||
-    thread.botId !== message.botId
-  )
-    return null;
+  if (!thread) return null;
   const [bot, run] = await Promise.all([
     prisma.bot.findFirst({
-      where: { id: message.botId, spaceId: actor.spaceId, userId: actor.userId },
-      select: { id: true },
+      where: { id: message.botId, spaceId: actor.spaceId },
+      select: { id: true, userId: true },
     }),
     prisma.run.findFirst({
       where: { id: message.runId, spaceId: actor.spaceId },
       select: { userId: true, status: true },
     }),
   ]);
-  if (!bot || run?.userId !== actor.userId || !FINISHED_RUN.includes(run.status)) return null;
+  if (
+    !bot ||
+    !run ||
+    bot.userId !== actor.userId ||
+    !dozoReplayableChat(thread, bot, run.userId) ||
+    !FINISHED_RUN.includes(run.status)
+  )
+    return null;
   return {
     id: message.id,
     botId: message.botId,

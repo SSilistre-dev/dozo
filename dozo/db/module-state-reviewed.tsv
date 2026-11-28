@@ -156,6 +156,8 @@ packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoS
 packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const creditIntents = new Set(	local	per-call local, dies with the call
 packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const ourIntents = new Set([...creditIntents, ...invoices.filter(isOurs).flatMap(intentsOf)]);	local	per-call local, dies with the call
 packages/adapters/src/providers/billing/stripe/dozo-stripe-ledger.ts	class DozoStripeLedger > fn readCustomer	const entries: DozoLedgerEntry[] = [];	local	per-call local, dies with the call
+packages/adapters/src/runs/turn/dozo-step-frames.ts	module	const replies = new WeakMap<object, Frames>();	run	one entry per reply object of a run in this process: its candidate step frames, keyed by the reply itself, gone with it
+packages/adapters/src/runs/turn/dozo-step-frames.ts	fn noteScreenshot	const frame: Frame = { executionId: shot.executionId, ordinal, dropped: false };	run	one candidate frame of the reply being written, held by that reply's own entry and its writer, gone with it
 packages/auth/src/dozo-hosted-login.ts	module	const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);	global-safe	constant set of fixed words, never changed after load
 packages/auth/src/dozo-hosted-login.ts	module	const CLOSED_PATHS = new Set([	global-safe	constant set of fixed words, never changed after load
 packages/auth/src/dozo-hosted-login.ts	fn issuerKeys	let keys = new Map<string, KeyObject>();	global-safe	the issuer's public signing keys by key id; public data

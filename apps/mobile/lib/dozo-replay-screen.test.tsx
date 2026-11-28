@@ -118,13 +118,9 @@ import DozoReplay from "../app/dozo-replay";
 import { queryClient } from "./query/query";
 
 const steps = [
-  {
-    line: "Browser navigate · shop.example.test",
-    frame: "data:image/png;base64,AA==",
-    sensitive: false,
-  },
-  { line: "Browser act", frame: null, sensitive: true },
-  { line: "Screenshot", frame: "data:image/png;base64,BB==", sensitive: true },
+  { line: "Browser navigate · shop.example.com", frame: true, sensitive: false },
+  { line: "Browser act", frame: false, sensitive: true },
+  { line: "Screenshot", frame: true, sensitive: true },
 ];
 const link = {
   id: "l-1",
@@ -155,6 +151,7 @@ beforeEach(() => {
   preview = { steps, links: [] };
   ui.rpc.mockReset().mockImplementation(async (path: string) => {
     if (path === "dozoReplays/preview") return preview;
+    if (path === "dozoReplays/frame") return { frame: "data:image/png;base64,AA==" };
     if (path === "dozoReplays/publish") return { link, url: "https://app.example.test/s/token" };
     return { revoked: true };
   });
@@ -171,6 +168,7 @@ afterEach(() => {
 it("reviews every step and screenshot, publishes what stays on, and offers the link to share", async () => {
   await render();
   await vi.waitFor(() => expect(switches()).toHaveLength(5));
+  await vi.waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(2));
   expect(ui.header?.title).toBe("Share replay");
   // Three steps, then the two screenshots: the second one starts off after a sensitive step.
   expect(switches().map((box) => box.checked)).toEqual([true, true, true, true, false]);

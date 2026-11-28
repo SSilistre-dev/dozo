@@ -2495,11 +2495,12 @@
     {
       "file": "packages/db/src/artifacts/artifact-versions.ts",
       "find": "import { Prisma } from \"../database/client.js\";\nimport { isUniqueViolation } from \"../database/prisma-errors.js\";\n",
-      "replace": "import { Prisma } from \"../database/client.js\";\nimport { holdSharedSpace, isReplayedUpload } from \"../dozo-shared-space.js\";\nimport { isUniqueViolation } from \"../database/prisma-errors.js\";\n\nexport * from \"../dozo-shared-space.js\";\n",
+      "replace": "import { Prisma } from \"../database/client.js\";\nimport { holdSharedSpace, isReplayedUpload } from \"../dozo-shared-space.js\";\nimport { isUniqueViolation } from \"../database/prisma-errors.js\";\n\nexport * from \"../dozo-shared-space.js\";\nexport * from \"../dozo-step-frames.js\";\n",
       "requires": [
-        "packages/db/src/dozo-shared-space.ts"
+        "packages/db/src/dozo-shared-space.ts",
+        "packages/db/src/dozo-step-frames.ts"
       ],
-      "reason": "plans: the import of the check above, and the package's export of it for the two writers below"
+      "reason": "plans: the import of the check above, and the package's export of it for the two writers below and of the replay frames' budget (dozo-step-frames.ts)"
     },
     {
       "file": "packages/adapters/src/storage/thread-artifacts.ts",
@@ -15997,6 +15998,33 @@
       "find": "msgid \"Labs\"\nmsgstr \"Labs\"",
       "replace": "msgid \"Labs\"\nmsgstr \"Deneysel\"",
       "reason": "Turkish copy for the settings section upstream left in English"
+    },
+    {
+      "file": "packages/adapters/src/runs/turn/run-turn.ts",
+      "find": "import { onToolCalled } from \"./run-turn-tools.js\";",
+      "replace": "import { onToolCalled } from \"./dozo-step-frames-call.js\";",
+      "requires": [
+        "packages/adapters/src/runs/turn/dozo-step-frames-call.ts"
+      ],
+      "reason": "replay frames: each screenshot a reply already took for the model is noted when the next call starts, and up to 24 are kept at an even spread beside the run (dozo-step-frames.ts)"
+    },
+    {
+      "file": "packages/adapters/src/runs/lifecycle/run-complete.ts",
+      "find": "import { keptTurnTranscript, saveLatestStepScreenshot } from \"../turn/tool-step-calls.js\";",
+      "replace": "import { keptTurnTranscript, saveLatestStepScreenshot } from \"../turn/dozo-step-frames.js\";",
+      "requires": [
+        "packages/adapters/src/runs/turn/dozo-step-frames.ts"
+      ],
+      "reason": "replay frames: the reply's last screenshot is saved as before, then the frames already kept join their calls, or none when the last one could not be kept"
+    },
+    {
+      "file": "packages/adapters/src/runs/turn/run-turn-tools.ts",
+      "find": "  keptToolArguments,\n  saveLatestStepScreenshot,\n} from \"./tool-step-calls.js\";",
+      "replace": "  keptToolArguments,\n  saveLatestStepScreenshot,\n} from \"./dozo-step-frames.js\";",
+      "requires": [
+        "packages/adapters/src/runs/turn/dozo-step-frames.ts"
+      ],
+      "reason": "replay frames: a run stopped in a tool loop saves its last screenshot through the same wrapper, so its frames are capped, dropped with a lost last screenshot and settled like a finished reply's"
     },
     {
       "file": "packages/i18n/locales/tr/messages.po",
