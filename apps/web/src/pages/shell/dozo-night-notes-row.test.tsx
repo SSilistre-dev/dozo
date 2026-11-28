@@ -125,4 +125,19 @@ describe("DozoNightNotesRow", () => {
     expect(api.update).toHaveBeenCalledWith({ routineId: "r1", active: false });
     expect(api.create).not.toHaveBeenCalled();
   });
+
+  it("uses the browser's zone for an account without one, and says when the save fails", async () => {
+    api.me.mockResolvedValue({ userId: "user-1", timezone: null });
+    await render();
+    await act(async () => toggle().click());
+    expect(api.create).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+    );
+    await vi.waitFor(() => expect(toggle().disabled).toBe(false));
+    api.create.mockRejectedValue(new Error("Nope"));
+    await act(async () => toggle().click());
+    await vi.waitFor(() =>
+      expect(api.toastError).toHaveBeenCalledWith("Could not save", expect.any(Error)),
+    );
+  });
 });
