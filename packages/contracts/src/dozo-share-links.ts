@@ -4,8 +4,8 @@ import { Id, IsoDate } from "./ids.js";
 
 /** No link lives longer than this; its maker picks a shorter life or this one. */
 export const DOZO_SHARE_LINK_MAX_DAYS = 30;
-/** How many of a member's links the list returns, newest first. */
-export const DOZO_SHARE_LINKS_LISTED = 200;
+/** A member holds at most this many live links in a Space; the list returns all of them. */
+export const DOZO_SHARE_LINKS_LIVE_MAX = 100;
 
 /** The web address a link opens: `<web origin>/s/<token>`, read signed out. */
 export const DOZO_SHARE_LINK_WEB_PREFIX = "/s/";
@@ -43,7 +43,10 @@ export type DozoShared = z.infer<typeof DozoSharedSchema>;
 
 /** Links the signed-in member makes, lists and revokes in the current Space. */
 export const dozoShareLinksContract = /* @__PURE__ */ (() => ({
-  /** Refused as not found when the kind is unknown or the member may not share the target. */
+  /**
+   * Refused as not found when the kind is unknown or the member may not share the target, and as a
+   * conflict (`SHARE_LINK_LIMIT`) at the most live links a member holds.
+   */
   create: oc
     .input(
       z.object({
@@ -53,7 +56,8 @@ export const dozoShareLinksContract = /* @__PURE__ */ (() => ({
       }),
     )
     .output(z.object({ link: DozoShareLinkSchema, url: z.string().url() })),
-  list: oc.output(z.object({ links: z.array(DozoShareLinkSchema).max(DOZO_SHARE_LINKS_LISTED) })),
+  /** The member's live links, newest first. */
+  list: oc.output(z.object({ links: z.array(DozoShareLinkSchema).max(DOZO_SHARE_LINKS_LIVE_MAX) })),
   /** Revoking a revoked link succeeds; another member's link is not found. */
   revoke: oc.input(z.object({ id: Id })).output(z.object({ revoked: z.literal(true) })),
 }))();

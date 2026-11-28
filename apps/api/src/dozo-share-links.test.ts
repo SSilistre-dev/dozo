@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
 import { appContract, DOZO_SHARE_LINK_API_PREFIX, dozoFeaturesContract } from "@rakazo/contracts";
 import { IsolationError } from "@rakazo/db";
@@ -17,7 +16,6 @@ import type { RouterContext } from "./routes/context.js";
 
 const actor = { userId: "user-1", spaceId: "space-1", email: "a@example.test" } as Actor;
 const TOKEN = "A".repeat(43);
-const HASH_OF_TOKEN = "a".repeat(64);
 
 type Sql = { text: string; values: unknown[] };
 
@@ -29,6 +27,7 @@ function fakeDb(...answers: unknown[][]) {
       statements.push({ text: strings.join("?").replace(/\s+/g, " ").trim(), values });
       return answers.shift() ?? [];
     }),
+    user: { findUnique: vi.fn(async () => ({ email: "maker@example.test" })) },
   };
   return { prisma: prisma as never, statements };
 }
@@ -81,6 +80,15 @@ describe("createShareLink", () => {
       createShareLink(prisma, actor, { kind, targetId: "t", days: 1 }, map),
     ).rejects.toBeInstanceOf(IsolationError);
     expect(statements).toEqual([]);
+  });
+});
+
+describe("the live link cap", () => {
+  it("refuses a new link once the member holds the most live links, as a conflict", async () => {
+    const { prisma, statements } = fakeDb([]);
+    const made = createShareLink(prisma, actor, { kind: "note", targetId: "t", days: 1 }, kinds());
+    await expect(made).rejects.toMatchObject({ kind: "CONFLICT", code: "SHARE_LINK_LIMIT" });
+    expect(statements[0]!.text).toContain("count(*)");
   });
 });
 
@@ -142,31 +150,48 @@ describe("readSharedLink", () => {
   it("asks only for live links, by the token's hash", async () => {
     const { prisma, statements } = fakeDb([]);
     expect(await readSharedLink(prisma, TOKEN, kinds())).toBeNull();
-    expect(statements[0]!.text).toContain(
+    expect(JSON.stringify(statements[0]).replaceAll("\\", "")).toContain(
       '"revokedAt" IS NULL AND "expiresAt" > CURRENT_TIMESTAMP',
     );
     expect(statements[0]!.values).not.toContain(TOKEN);
   });
 
-  it("refuses a row whose hash is not the token's", async () => {
-    const { prisma } = fakeDb([{ ...live, tokenHash: HASH_OF_TOKEN }]);
-    expect(await readSharedLink(prisma, TOKEN, kinds())).toBeNull();
-  });
-
-  const tokenHash = createHash("sha256").update(TOKEN).digest("hex");
-
   it("refuses a link whose kind this server lacks", async () => {
-    expect(await readSharedLink(fakeDb([{ ...live, tokenHash }]).prisma, TOKEN, {})).toBeNull();
+    expect(await readSharedLink(fakeDb([live]).prisma, TOKEN, {})).toBeNull();
   });
 
   it("refuses a link whose target has nothing to show", async () => {
-    const { prisma } = fakeDb([{ ...live, tokenHash }]);
+    const { prisma } = fakeDb([live]);
     expect(await readSharedLink(prisma, TOKEN, kinds(null))).toBeNull();
+  });
+
+  it("refuses a link whose maker no longer may share its target, without loading it", async () => {
+    const map = kinds({ shown: 1 }, false);
+    expect(await readSharedLink(fakeDb([live]).prisma, TOKEN, map)).toBeNull();
+    expect(map.note!.canShare).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        userId: "user-1",
+        spaceId: "space-1",
+        email: "maker@example.test",
+        isDeploymentOwner: false,
+      },
+      "t",
+    );
+    expect(map.note!.load).not.toHaveBeenCalled();
+  });
+
+  it("refuses a link whose maker's account is gone", async () => {
+    const { prisma } = fakeDb([live]);
+    (
+      prisma as { user: { findUnique: ReturnType<typeof vi.fn> } }
+    ).user.findUnique.mockResolvedValue(null);
+    expect(await readSharedLink(prisma, TOKEN, kinds())).toBeNull();
   });
 
   it("gives the kind's payload for the link's own target and maker", async () => {
     const map = kinds({ shown: 1 });
-    expect(await readSharedLink(fakeDb([{ ...live, tokenHash }]).prisma, TOKEN, map)).toEqual({
+    expect(await readSharedLink(fakeDb([live]).prisma, TOKEN, map)).toEqual({
       kind: "note",
       payload: { shown: 1 },
     });
@@ -199,8 +224,7 @@ describe("signed-out route", () => {
   });
 
   it("serves a live link's kind and payload, unindexed", async () => {
-    const tokenHash = createHash("sha256").update(TOKEN).digest("hex");
-    const live = { userId: "user-1", spaceId: "space-1", kind: "note", targetId: "t", tokenHash };
+    const live = { userId: "user-1", spaceId: "space-1", kind: "note", targetId: "t" };
     const response = await server(fakeDb([live]).prisma, kinds({ shown: 1 })).request(
       `${DOZO_SHARE_LINK_API_PREFIX}${TOKEN}`,
     );
