@@ -74,21 +74,24 @@ Closed pre-release state (lifted):
   creates it as a draft; the server bundles never become latest).
   The "not signed yet" note (Windows and Linux; macOS is signed) is in the one `<p>` in that block,
   once per language: edit that line when a package is signed.
-- Plans: the "Hosted plans." section shows the three hosted plans as cards, one under the other on a
-  phone, equal in weight (no frame, badge or larger type for any of them). Each card holds both the monthly and the yearly
-  price; the Monthly / Yearly switch (`landing.js`, yearly first) shows one and sets `period=` on the
-  paid cards' sign-up links, which also carry `plan=premium` or `plan=premium_plus`. Without the
-  script both prices show. The prices, the yearly saving, computer
-  hours, file storage and each computer's vCPUs and memory are read from the code by
+- Plans: the "Hosted plans." section shows the two hosted plans the server offers as cards, side
+  by side and one under the other on a phone, equal in weight (no frame, badge or larger type for
+  either). Free shows its monthly price and links sign-up. Premium shows its monthly price, and
+  where its sign-up link would be a plain "Coming soon" pill (`.pill.soon`, the outlined style of
+  `.pill.ok`; a `span`, not a link), since no plan is on sale yet; its JSON-LD offer says
+  `PreOrder`. Premium Plus is not offered and has no card. Premium has no line under its price; the
+  pill and the list keep their grid rows (`landing.css`), so both cards' pills stay level. There is no Monthly / Yearly switch and
+  no yearly price, and no link names a plan. The prices, computer hours, file storage, each
+  computer's vCPUs and memory and whether Premium is on sale are read from the code by
   `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing/billing.ts`,
-  `dozo-plans.ts`, and the default `RAKAZO_COMPUTER_SIZES` in `dozo/deploy/compose.deploy.yml`), and
-  it fails when a page disagrees. No discount, tax line or other number: write one only once the
-  owner has set it and the code enforces it.
+  `dozo-plans.ts` with `DOZO_PLANS_OFFERED` and `DOZO_PLANS_ON_SALE`, and the default `RAKAZO_COMPUTER_SIZES` in
+  `dozo/deploy/compose.deploy.yml`), and it fails when a page disagrees: once Premium is on sale
+  the card must link sign-up. No discount, tax line or other number: write one only once the owner
+  has set it and the code enforces it.
 - The dragon behind the plans (`.scales`) is decoration, drawn once per language page: the logo
   mark as its head, in the mark's red, kept faint. Its body path is generated, not hand-drawn:
   redraw it whole if the shape changes. The plan cards are slightly translucent so it shows
-  through; keep text contrast at 4.5 or more when changing either opacity. The "Save 20%" saving
-  is plain text beside the period switch, not inside it.
+  through; keep text contrast at 4.5 or more when changing either opacity.
 - Download buttons (`.dlb`, hero row and the "Apps." block) are outlined in the muted ink, with
   a generic platform glyph and a download arrow; `landing.js` fills the visitor's own system
   (`.w`). Light theme: white pills and hairline card borders get an edge from `--draft-line`.

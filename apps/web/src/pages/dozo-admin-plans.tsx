@@ -143,16 +143,23 @@ function Plan({
         </span>
       </div>
       <Row label={<Trans>Price</Trans>}>
-        {plan.monthlyPriceCents === null ? (
+        {plan.monthlyPriceCents === null && !plan.computerHoursEditable ? (
           <Trans>Free</Trans>
         ) : (
           <>
-            <span className="tabular-nums">
-              <Trans>{money(plan.monthlyPriceCents)} / month</Trans>
-            </span>
+            {plan.monthlyPriceCents === null ? null : (
+              <span className="tabular-nums">
+                <Trans>{money(plan.monthlyPriceCents)} / month</Trans>
+              </span>
+            )}
             {plan.annualPriceCents === null ? null : (
               <span className="tabular-nums text-muted-foreground">
                 <Trans>{money(plan.annualPriceCents)} / year</Trans>
+              </span>
+            )}
+            {plan.onSale ? null : (
+              <span className="text-muted-foreground">
+                <Trans>Not on sale</Trans>
               </span>
             )}
           </>

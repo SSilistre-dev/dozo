@@ -19,24 +19,6 @@ const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 addEventListener("DOMContentLoaded", () => {
   $("#sym").innerHTML = SYMBOLS;
-  // plans: the cards hold both prices (both show without the script); the switch shows one and
-  // carries the period to the sign-up links. Yearly first.
-  const period = $(".period");
-  const setPeriod = (p) => {
-    root.dataset.period = p;
-    $$("button", period).forEach((b) => b.setAttribute("aria-pressed", b.dataset.period === p));
-    $$('.tier a[href*="period="]').forEach((a) => {
-      const u = new URL(a.href);
-      u.searchParams.set("period", p);
-      a.href = u.href;
-    });
-  };
-  period.hidden = false;
-  period.addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (b) setPeriod(b.dataset.period);
-  });
-  setPeriod("year");
   // download: the main buttons go straight to this system's build (the App Store on iPhone and
   // iPad, which reports itself as a Mac with touch); on Android, an unknown system or without the
   // script they scroll to the list of builds

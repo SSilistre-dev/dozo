@@ -146,10 +146,12 @@ describe("the plans procedures", () => {
       ),
     };
     const { plans } = await setup([], ledger).as("admin").plans.list();
-    const [free, premium] = plans;
+    const [free, premium, plus] = plans;
     expect(free).toMatchObject({
       name: "Free",
       monthlyPriceCents: null,
+      offered: false,
+      onSale: false,
       priceKeys: { month: null, year: null },
       computer: null,
       computerHoursEditable: false,
@@ -167,6 +169,16 @@ describe("the plans procedures", () => {
       },
       computerHoursEditable: true,
       computers: { value: 1, terms: 1, set: false },
+      // Its price is set and it is offered, but it is not sold yet.
+      offered: true,
+      onSale: false,
+    });
+    // Premium Plus keeps its price but is not offered or sold; an admin may still grant it.
+    expect(plus).toMatchObject({
+      monthlyPriceCents: BYOK_TIERS.max.monthlyPriceCents,
+      offered: false,
+      onSale: false,
+      computerHoursEditable: true,
     });
     expect(premium?.computer).toEqual({
       vcpus: expect.any(Number),

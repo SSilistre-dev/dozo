@@ -1,20 +1,29 @@
 import type { BillingSubscriptionSnapshot, SandboxProvider } from "@rakazo/adapter-kit";
 import { BillingEmulator, sandboxAllowanceUsedUp } from "@rakazo/adapters";
+import type * as Contracts from "@rakazo/contracts";
 import type { Actor, ByokTier } from "@rakazo/contracts";
 import {
   appContract,
   BYOK_TIERS,
   byokTierPriceCents,
+  DOZO_PLANS_OFFERED,
+  DOZO_PLANS_ON_SALE,
+  SPEECH_ALLOWANCE_PERCENT,
   sandboxAllowanceHours,
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
-import { hasModelAccess, memberHasModelAccess, planComputerSize } from "@rakazo/db";
+import {
+  hasModelAccess,
+  memberHasModelAccess,
+  planComputerSize,
+  speechAllowancePlan,
+} from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing/billing.js";
-import { PlanNotOfferedError } from "./dozo-billing.js";
 import { createReferrals } from "./billing/referrals.js";
+import { PlanComingSoonError, PlanNotOfferedError } from "./dozo-billing.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
 
@@ -89,6 +98,16 @@ vi.mock("@rakazo/db", async (original) => ({
     return { expiresAt: new Date() };
   },
 }));
+// Which paid plans are on sale: none, as `DOZO_PLANS_ON_SALE` ships. A test that needs a plan
+// on sale (what selling it would do) adds its tier here.
+const onSale = vi.hoisted(() => new Set<string>());
+vi.mock("@rakazo/contracts", async (original) => {
+  const contracts = await original<typeof Contracts>();
+  return {
+    ...contracts,
+    planOnSale: (tier: ByokTier) => onSale.has(tier) || contracts.planOnSale(tier),
+  };
+});
 // The lease is a row in the database; here the one organization has no other checkout to wait for.
 vi.mock("./billing/checkout-lease.js", async (original) => ({
   ...(await original<typeof import("./billing/checkout-lease.js")>()),
@@ -196,16 +215,132 @@ function setup() {
   return { provider, billing };
 }
 
-async function subscribe(
+/**
+ * A subscription bought before the plan stopped being sold, at the price it had then: opened with
+ * the payment provider directly, since the server sells neither plan now.
+ */
+async function subscribedEarlier(
   { provider, billing }: ReturnType<typeof setup>,
-  tier: "pro" | "max" = "pro",
+  tier: "pro" | "max",
+  amountCents = BYOK_TIERS[tier].monthlyPriceCents ?? 0,
 ) {
-  await billing.checkout(actor, undefined, "month", tier);
-  const checkout = provider.byokCheckouts.get(store.account!.customerId);
-  provider.completeByokCheckout(store.account!.customerId);
+  const { customerId } = await provider.createCustomer({
+    email: actor.email,
+    organizationId: "org-1",
+  });
+  store.account = { organizationId: "org-1", customerId, status: null, subscribedAt: null };
+  await provider.createByokCheckout({
+    customerId,
+    amountCents,
+    interval: "month",
+    tier,
+    successUrl: "https://app.example.test/app",
+    cancelUrl: "https://app.example.test/app",
+  });
+  provider.completeByokCheckout(customerId);
   await billing.syncForActor(actor);
-  return checkout;
 }
+
+describe("plans that are not on sale", () => {
+  it("offers Premium alone and sells no paid plan yet", () => {
+    expect(DOZO_PLANS_OFFERED).toEqual(["pro"]);
+    expect(DOZO_PLANS_ON_SALE).toEqual([]);
+  });
+
+  it("refuses Free a checkout of Premium or Premium Plus and opens nothing", async () => {
+    const { billing, provider } = setup();
+    for (const tier of ["pro", "max"] as const) {
+      for (const interval of ["month", "year"] as const) {
+        const refusal = await billing
+          .checkout(actor, undefined, interval, tier)
+          .catch((error) => error);
+        expect(refusal).toBeInstanceOf(PlanComingSoonError);
+        expect(refusal).toBeInstanceOf(ClientError);
+        expect(refusal).toMatchObject({ kind: "BAD_REQUEST", code: "plan_coming_soon" });
+      }
+    }
+    expect(store.account).toBeNull();
+    expect(provider.byokCheckouts.size).toBe(0);
+  });
+
+  it("opens no checkout when Free picks its own key and names a paid plan", async () => {
+    const { billing, provider } = setup();
+    for (const tier of ["pro", "max"] as const) {
+      const chosen = await billing.selectFunding(actor, "byok", undefined, "year", tier);
+      expect(chosen).toEqual({ ok: true });
+    }
+    expect(provider.byokCheckouts.size).toBe(0);
+    expect(provider.subscriptions).toHaveLength(0);
+  });
+
+  it("shows Free the price of Premium as coming soon, and no Premium Plus", async () => {
+    const { byokTiers } = await setup().billing.status(actor);
+    expect(byokTiers).toEqual([
+      expect.objectContaining({
+        tier: "pro",
+        name: "Premium",
+        monthlyPriceCents: BYOK_TIERS.pro.monthlyPriceCents,
+        comingSoon: true,
+      }),
+    ]);
+  });
+
+  it("drops the coming soon mark once a plan is on sale", async () => {
+    onSale.add("pro");
+    const { byokTiers } = await setup().billing.status(actor);
+    expect(byokTiers?.[0]).not.toHaveProperty("comingSoon");
+  });
+
+  it("refuses an earlier subscriber a move to a plan that is not sold, and bills nothing", async () => {
+    const plus = setup();
+    await subscribedEarlier(plus, "max");
+    const toPremium = await plus.billing.changeTier(actor, "pro").catch((error) => error);
+    expect(toPremium).toBeInstanceOf(PlanComingSoonError);
+    expect(toPremium).toMatchObject({ code: "plan_coming_soon" });
+    expect(plus.provider.subscriptions[0]).toMatchObject({
+      byokTier: "max",
+      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
+    });
+
+    store.account = null;
+    const premium = setup();
+    await subscribedEarlier(premium, "pro");
+    await expect(premium.billing.changeTier(actor, "max")).rejects.toMatchObject({
+      code: "plan_coming_soon",
+    });
+    expect(premium.provider.subscriptions[0]).toMatchObject({ byokTier: "pro" });
+  });
+
+  it("refuses an earlier monthly subscriber the switch to yearly", async () => {
+    const premium = setup();
+    await subscribedEarlier(premium, "pro");
+    const refusal = await premium.billing.switchToYearly(actor).catch((error) => error);
+    expect(refusal).toBeInstanceOf(PlanComingSoonError);
+    expect(premium.provider.subscriptions[0]).toMatchObject({ byokInterval: "month" });
+
+    store.account = null;
+    const plus = setup();
+    await subscribedEarlier(plus, "max");
+    await expect(plus.billing.switchToYearly(actor)).rejects.toMatchObject({
+      code: "plan_coming_soon",
+    });
+    expect(plus.provider.subscriptions[0]).toMatchObject({ byokInterval: "month" });
+  });
+
+  it("keeps an earlier Premium Plus subscriber's plan, price, hours and size through a sync", async () => {
+    const context = setup();
+    await subscribedEarlier(context, "max");
+    await context.billing.syncForActor(actor);
+    await expect(context.billing.status(actor)).resolves.toMatchObject({
+      state: "active",
+      byokTier: "max",
+      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
+      computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.max.computerAllowanceCents),
+      sharedSpace: { plan: "Premium Plus", limitBytes: sharedSpaceBytes("max") },
+    });
+    await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("xlarge");
+  });
+});
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -218,6 +353,7 @@ beforeEach(() => {
   store.fileBytes = 0;
   store.quotas = [];
   runs.length = 0;
+  onSale.clear();
 });
 
 describe("Dozo plans", () => {
@@ -252,7 +388,7 @@ describe("Dozo plans", () => {
     expect(byokTierPriceCents("standard", "month")).toBeNull();
   });
 
-  it("still sells the paid plans, with a computer allowance each", () => {
+  it("keeps both paid plans' prices and computer allowances, though neither is sold", () => {
     for (const tier of ["pro", "max"] as const) {
       expect(byokTierPriceCents(tier, "month")).toBe(BYOK_TIERS[tier].monthlyPriceCents);
       expect(byokTierPriceCents(tier, "month")).toBeGreaterThan(0);
@@ -281,13 +417,10 @@ describe("an organization on Free", () => {
     expect(store.account).toBeNull();
   });
 
-  it("is offered Premium and Premium Plus, not Free, as plans to buy", async () => {
+  it("is shown Premium, not Premium Plus or Free, with its hours", async () => {
     const { billing } = setup();
     const { byokTiers } = await billing.status(actor);
-    expect(byokTiers?.map((offer) => [offer.tier, offer.name])).toEqual([
-      ["pro", "Premium"],
-      ["max", "Premium Plus"],
-    ]);
+    expect(byokTiers?.map((offer) => [offer.tier, offer.name])).toEqual([["pro", "Premium"]]);
     expect(byokTiers?.[0]?.computerHours).toBe(
       sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents),
     );
@@ -345,9 +478,13 @@ describe("an organization on Free", () => {
 });
 
 describe("a Premium subscriber", () => {
-  it("pays the plan's price from the first day, without a trial", async () => {
+  it("once Premium is on sale, pays its price from the first day, without a trial", async () => {
+    onSale.add("pro");
     const context = setup();
-    const checkout = await subscribe(context);
+    await context.billing.checkout(actor, undefined, "month", "pro");
+    const checkout = context.provider.byokCheckouts.get(store.account!.customerId);
+    context.provider.completeByokCheckout(store.account!.customerId);
+    await context.billing.syncForActor(actor);
     expect(checkout).toMatchObject({
       tier: "pro",
       interval: "month",
@@ -367,7 +504,7 @@ describe("a Premium subscriber", () => {
 
   it("sees its own plan's name and shared space", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     store.fileBytes = 1024 ** 3;
     await expect(context.billing.status(actor)).resolves.toMatchObject({
       sharedSpace: {
@@ -380,7 +517,7 @@ describe("a Premium subscriber", () => {
 
   it("is not ended because Free exists", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     await context.billing.syncForActor(actor);
     expect(context.provider.subscriptions).toHaveLength(1);
     expect(context.provider.subscriptions[0]).toMatchObject({
@@ -391,7 +528,7 @@ describe("a Premium subscriber", () => {
 
   it("uses up its hours on the operator's own host too", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     const hours = sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents);
     runs.push({ kind: "docker", hours: hours - 1 });
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
@@ -402,7 +539,7 @@ describe("a Premium subscriber", () => {
 
   it("gets the plan's computer hours and size", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     const status = await context.billing.status(actor);
     expect(status.computerHoursLeft).toBe(
       sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents),
@@ -414,38 +551,40 @@ describe("a Premium subscriber", () => {
   it("is shown the vCPUs and memory the host starts each plan's computer with", async () => {
     vi.stubEnv("RAKAZO_COMPUTER_SIZES", "large=2:2,xlarge=4:4");
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     const status = await context.billing.status(actor);
     expect(status.byokTiers?.map((offer) => [offer.name, offer.computerSpec])).toEqual([
       ["Premium", { vcpus: 2, memoryGb: 2 }],
-      ["Premium Plus", { vcpus: 4, memoryGb: 4 }],
     ]);
   });
 
   it("starts its computer at the size of the plan it is on now", async () => {
-    const context = setup();
-    await subscribe(context);
+    const premium = setup();
+    await subscribedEarlier(premium, "pro");
     await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("large");
-    await context.billing.changeTier(actor, "max");
+    store.account = null;
+    await subscribedEarlier(setup(), "max");
     await expect(planComputerSize(prisma, "computer-1")).resolves.toBe("xlarge");
   });
 
-  it("can move to Premium Plus but not to Free, which is cancelling", async () => {
+  it("moves up only to a plan on sale, and never to Free, which is cancelling", async () => {
     const context = setup();
-    await subscribe(context);
-    await context.billing.changeTier(actor, "max");
-    await expect(context.billing.status(actor)).resolves.toMatchObject({
-      byokTier: "max",
-      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
+    await subscribedEarlier(context, "pro");
+    // Premium Plus is not offered, even while Premium is on sale.
+    onSale.add("pro");
+    await expect(context.billing.changeTier(actor, "max")).rejects.toMatchObject({
+      code: "plan_coming_soon",
     });
     await expect(context.billing.changeTier(actor, "standard")).rejects.toMatchObject({
       code: "CONFLICT",
     });
+    await expect(context.billing.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
   });
 
   it("moves down only when this month's use fits the hours an admin set for the smaller plan", async () => {
+    onSale.add("pro");
     const context = setup();
-    await subscribe(context, "max");
+    await subscribedEarlier(context, "max");
     runs.push({ kind: "docker", hours: 50 });
     // Premium's hours lowered below what was used: refused, whatever the plan's terms say.
     store.quotas = [{ tier: "pro", sharedSpaceMb: null, computerHours: 10 }];
@@ -464,7 +603,7 @@ describe("a Premium subscriber", () => {
 
   it("falls back to Free when the subscription ends: bots run, the computer does not", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     await context.provider.cancelCustomerSubscriptions(store.account!.customerId);
     await context.billing.syncForActor(actor);
     const status = await context.billing.status(actor);
@@ -545,7 +684,7 @@ describe("a plan an admin granted", () => {
 
   it("raises a lower subscription and leaves a higher one alone", async () => {
     const context = setup();
-    await subscribe(context, "pro");
+    await subscribedEarlier(context, "pro");
     store.grant = grant("max", 30);
     await expect(context.billing.status(actor)).resolves.toMatchObject({
       byokTier: "max",
@@ -554,9 +693,28 @@ describe("a plan an admin granted", () => {
       computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.max.computerAllowanceCents),
     });
     await expect(planComputerSize(prisma, "computer-1")).resolves.toBe(BYOK_TIERS.max.computerSize);
+    store.account = null;
+    await subscribedEarlier(setup(), "max");
     store.grant = grant("pro", 30);
-    await context.billing.changeTier(actor, "max");
-    await expect(context.billing.status(actor)).resolves.toMatchObject({ byokTier: "max" });
+    await expect(context.billing.status(actor)).resolves.toMatchObject({
+      byokTier: "max",
+      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
+    });
+  });
+});
+
+describe("an admin's free access to a paid plan", () => {
+  it("still gives speech from the plan's price, Premium Plus included, though neither is sold", async () => {
+    for (const tier of ["pro", "max"] as const) {
+      const price = BYOK_TIERS[tier].monthlyPriceCents ?? 0;
+      expect(price, `${tier} keeps a price`).toBeGreaterThan(0);
+      Object.assign(store.credits, {
+        mode: "byok",
+        freeByokTiers: [{ tier, expiresAt: new Date(Date.now() + 30 * DAY) }],
+      });
+      const plan = await speechAllowancePlan(prisma, "org-1");
+      expect(plan?.limitMicros, tier).toBe(BigInt(price) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n);
+    }
   });
 });
 
@@ -607,7 +765,7 @@ describe("the end of the plan in force, in the status", () => {
 
   it("renews a subscription at the end of its period", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     const periodEnd = store.account!.currentPeriodEndsAt as Date;
     expect(periodEnd).toBeInstanceOf(Date);
     await expect(context.billing.status(actor)).resolves.toMatchObject({
@@ -629,7 +787,7 @@ describe("the end of the plan in force, in the status", () => {
 
   it("ends a grant above the subscription and names the plan that follows", async () => {
     const context = setup();
-    await subscribe(context, "pro");
+    await subscribedEarlier(context, "pro");
     store.grant = grant("max", 5);
     await expect(context.billing.status(actor)).resolves.toMatchObject({
       byokTier: "max",
@@ -643,7 +801,7 @@ describe("the end of the plan in force, in the status", () => {
 
   it("has none once the subscription's period is past and no webhook moved it", async () => {
     const context = setup();
-    await subscribe(context);
+    await subscribedEarlier(context, "pro");
     store.account!.currentPeriodEndsAt = new Date(Date.now() - DAY);
     const status = await context.billing.status(actor);
     expect(status.planEnd).toBeUndefined();

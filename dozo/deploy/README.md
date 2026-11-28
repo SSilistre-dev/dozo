@@ -139,7 +139,8 @@ Keep `ENCRYPTION_KEY` and the two database passwords for the life of the data: s
 are encrypted with the first, and Postgres takes its passwords only when its volume is first
 created. Every other upstream setting (`docs/self-host-configuration.md`) can be added the same
 way. Model keys, sign-in providers and email are deliberately not set: the owner connects a model
-in the app. Billing is live on the hosted version.
+in the app. Billing is on in the hosted version: it offers Free, and Premium as coming soon
+(`dozo/README.md`, Hosted plans).
 
 Mobile app ids (optional; each is left out until the owner has it). Without them the server
 answers 404 for the association files and the app offers no passkey, as today:
@@ -638,7 +639,7 @@ team computer outside the compose project. What bounds them:
   is `docker network prune` for networks nothing uses, or more pools (`default-address-pools` in
   the daemon's settings, which needs a Docker restart).
 - `RAKAZO_COMPUTER_SIZES` is what each plan's computer gets, as `size=vCPUs:GB`: `large` is
-  Premium, `xlarge` is Premium Plus, and `standard` is a computer without a paid plan's size,
+  Premium, `xlarge` is Premium Plus (now only an admin's grant), and `standard` is a computer without a paid plan's size,
   which is not sold here (Free has no hosted computer). The default, set in `compose.deploy.yml`,
   is `standard=2:1.5,large=2:2,xlarge=4:4`. The api and the worker read
   it: Billing shows these numbers and every start sends them to the supervisor, so what is shown

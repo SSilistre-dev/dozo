@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { dozoNightNotesChange, findDozoNightNotes } from "@rakazo/contracts";
+import { localTimezone } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { toastError } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -21,7 +22,7 @@ export function DozoNightNotesRow({ botId }: { botId: string }) {
       const change = dozoNightNotesChange(
         await client.routines.list({ botId }),
         botId,
-        me?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        me?.timezone ?? localTimezone(),
         on,
       );
       if (change && "create" in change) await client.routines.create(change.create);

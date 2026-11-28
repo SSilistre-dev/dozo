@@ -148,14 +148,11 @@ for (const lang of ["en", ...languages]) {
         ]),
         file,
       );
-      // The app opens in the language of the page that linked it; a paid plan's card also names
-      // the plan and the period the page shows first.
+      // The app opens in the language of the page that linked it, and names no plan: none is sold.
       for (const link of find(page, "a", (a) => a.href?.startsWith("https://app.dozo.bot/"))) {
         assert.match(
           link.attrs.href,
-          new RegExp(
-            `^https://app\\.dozo\\.bot/sign-(in|up)\\?lang=${lang}(&plan=(premium|premium_plus)&period=year)?$`,
-          ),
+          new RegExp(`^https://app\\.dozo\\.bot/sign-(in|up)\\?lang=${lang}$`),
           file,
         );
       }
@@ -169,7 +166,7 @@ for (const lang of ["en", ...languages]) {
 }
 
 // The plan cards are written by hand on each page; the code that charges and limits them is the source.
-test("every language shows the plans the code sells and links sign-up from each one", () => {
+test("every language shows the plans the code offers, and links sign-up only where one is sold", () => {
   const source = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
   const billing = source("packages/contracts/src/billing/billing.ts");
   const plans = source("packages/contracts/src/dozo-plans.ts");
@@ -181,71 +178,59 @@ test("every language shows the plans the code sells and links sign-up from each 
   );
   const tier = (id) => billing.match(new RegExp(`\\b${id}: \\{([^}]*)\\}`))[1];
   const number = (terms, key) => Number(terms.match(new RegExp(`${key}: (\\d+)`))[1]);
+  const terms = (name) => plans.match(new RegExp(`const ${name} = \\{([^}]*)\\}`))[1];
   const space = (name) => {
-    const [, size, unit] = plans.match(
-      new RegExp(`const ${name} = \\{[^}]*?sharedSpaceBytes: (\\d+) \\* (1024 \\* )?MB`),
-    );
+    const [, size, unit] = terms(name).match(/sharedSpaceBytes: (\d+) \* (1024 \* )?MB/);
     return unit ? `${size} GB` : `${size} MB`;
   };
   // How many computers a plan allows one person: the first line of a paid card, and Free has none.
-  const computers = (name) =>
-    Number(plans.match(new RegExp(`const ${name} = \\{[^}]*?computers: (\\d+)`))[1]);
-  const paid = (id, plan) => {
-    const terms = tier(id);
-    const [month, year] = [
-      number(terms, "monthlyPriceCents") / 100,
-      number(terms, "annualPriceCents") / 100,
-    ];
-    const [, cpus, memory] = sizes.match(
-      new RegExp(`\\b${terms.match(/computerSize: "(\w+)"/)[1]}=(\\d+):(\\d+)`),
-    );
-    const hours = (number(terms, "computerAllowanceCents") * 10_000) / hourly;
-    return {
-      prices: [month, year / 12, year],
-      computers: computers(plan),
-      facts: [`${cpus} vCPU`, `${memory} GB RAM`, String(hours), space(plan)],
-    };
-  };
-  const expected = [paid("pro", "premium"), paid("max", "premiumPlus")];
-  // The yearly saving the switch names: the smaller of the two, rounded down.
-  const saving = Math.min(
-    ...expected.map(({ prices: [month, , year] }) => Math.floor((1 - year / (month * 12)) * 100)),
+  const computers = (name) => Number(terms(name).match(/computers: (\d+)/)[1]);
+  const list = (name) => plans.match(new RegExp(`${name}: readonly ByokTier\\[\\] = \\[([^\\]]*)\\]`))[1];
+  const onSale = list("DOZO_PLANS_ON_SALE");
+  // Only Premium is offered, so the page has no card for Premium Plus.
+  assert.equal(list("DOZO_PLANS_OFFERED"), '"pro"');
+  assert.doesNotMatch(terms("premium"), /PriceCents/, "Premium keeps upstream's price");
+  const premium = tier("pro");
+  const [, cpus, memory] = sizes.match(
+    new RegExp(`\\b${premium.match(/computerSize: "(\w+)"/)[1]}=(\\d+):(\\d+)`),
   );
+  const expected = {
+    month: number(premium, "monthlyPriceCents") / 100,
+    computers: computers("premium"),
+    facts: [
+      `${cpus} vCPU`,
+      `${memory} GB RAM`,
+      String((number(premium, "computerAllowanceCents") * 10_000) / hourly),
+      space("premium"),
+    ],
+    sold: onSale.includes('"pro"'),
+  };
   for (const lang of ["en", ...languages]) {
     const file = `${lang === "en" ? "" : `${lang}/`}index.html`;
     const html = read(file);
-    assert.match(
-      html.match(/<span class="save">(.*?)<\/span>/)[1],
-      new RegExp(`\\b${saving}\\b`),
-      file,
-    );
-    const [free, ...cards] = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
+    assert.doesNotMatch(html, /Premium Plus/, file);
+    const cards = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
+    assert.equal(cards.length, 2, `${file}: Free and Premium`);
+    const [free, paid] = cards;
     assert.match(free, new RegExp(`href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}"`), file);
     assert.ok(free.includes(space("free")), file);
     // Free has no hosted computer: its card names no size.
     assert.equal(computers("free"), 0);
     assert.doesNotMatch(free, /vCPU/, file);
-    cards.forEach((card, index) => {
-      const prices = card
-        .match(/<p class="price">.*?<p class="bill">.*?<\/p>/)[0]
-        .match(/\d+/g)
-        .map(Number);
-      assert.deepEqual(prices, expected[index].prices, file);
-      // The card's first line leads with the number of computers the plan allows.
-      assert.equal(
-        Number(card.match(/<ul><li>(\d+) /)?.[1]),
-        expected[index].computers,
-        `${file}: computers`,
-      );
-      for (const fact of expected[index].facts) assert.ok(card.includes(fact), `${file}: ${fact}`);
-      assert.match(
-        card,
-        new RegExp(
-          `href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}&plan=${["premium", "premium_plus"][index]}&period=year"`,
-        ),
-        file,
-      );
-    });
+    const prices = paid
+      .match(/<p class="price">.*?<\/p>/)[0]
+      .match(/\d+/g)
+      .map(Number);
+    assert.deepEqual(prices, [expected.month], file);
+    // The card's first line leads with the number of computers the plan allows.
+    assert.equal(Number(paid.match(/<ul><li>(\d+) /)?.[1]), expected.computers, `${file}: computers`);
+    for (const fact of expected.facts) assert.ok(paid.includes(fact), `${file}: ${fact}`);
+    // Not on sale: the pill's place says so and is no link; sold, it links sign-up.
+    if (expected.sold) assert.match(paid, /<a class="pill sm" href="https:\/\/app\.dozo\.bot\/sign-up/, file);
+    else {
+      assert.doesNotMatch(paid, /<a\b/, `${file}: a plan that is not sold has no link`);
+      assert.match(paid, /<span class="pill sm soon">[^<]+<\/span>/, file);
+    }
   }
 });
 

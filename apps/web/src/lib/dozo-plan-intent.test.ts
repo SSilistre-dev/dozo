@@ -23,8 +23,7 @@ const store = (value: unknown, expiresAt = Date.now() + PLAN_INTENT_TTL_MS / 2) 
 it.each([
   ["premium", "month", { tier: "pro", period: "month" }],
   ["premium", "year", { tier: "pro", period: "year" }],
-  ["premium_plus", "year", { tier: "max", period: "year" }],
-  ["premium_plus", null, { tier: "max", period: "month" }],
+  ["premium", null, { tier: "pro", period: "month" }],
   ["premium", "weekly", { tier: "pro", period: "month" }],
   ["premium", "YEAR", { tier: "pro", period: "month" }],
 ])("reads plan %j and period %j as a paid pick", (plan, period, intent) => {
@@ -38,6 +37,8 @@ it.each([
   "standard",
   "pro",
   "max",
+  // Premium Plus is not offered: a link that still names it is no pick.
+  "premium_plus",
   "Premium",
   "premium ",
   "__proto__",
@@ -49,9 +50,9 @@ it.each([
 
 it("keeps a pick for this browser until it is cleared", () => {
   expect(readPlanIntent()).toBeNull();
-  savePlanIntent({ tier: "max", period: "year" });
-  expect(readPlanIntent()).toEqual({ tier: "max", period: "year" });
-  expect(readPlanIntent("anyone")).toEqual({ tier: "max", period: "year" });
+  savePlanIntent({ tier: "pro", period: "year" });
+  expect(readPlanIntent()).toEqual({ tier: "pro", period: "year" });
+  expect(readPlanIntent("anyone")).toEqual({ tier: "pro", period: "year" });
   clearPlanIntent();
   expect(readPlanIntent()).toBeNull();
 });
@@ -67,10 +68,10 @@ it("gives an unclaimed pick to the first account and hides it from every other",
 });
 
 it("keeps a pick for another tab of the same browser", () => {
-  savePlanIntent({ tier: "max", period: "year" });
+  savePlanIntent({ tier: "pro", period: "year" });
   // A new tab starts with its own empty session storage; the pick is not kept there.
   window.sessionStorage.clear();
-  expect(bindPlanIntent("user-a")).toEqual({ tier: "max", period: "year" });
+  expect(bindPlanIntent("user-a")).toEqual({ tier: "pro", period: "year" });
 });
 
 it("removes a pick older than an hour when it is read", () => {

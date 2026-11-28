@@ -1,5 +1,11 @@
 import type { ByokTier, ComputerSize } from "@rakazo/contracts";
-import { PLAN_LIMIT_CODES, sandboxAllowanceHours } from "@rakazo/contracts";
+import {
+  BYOK_TIERS,
+  PLAN_LIMIT_CODES,
+  planOffered,
+  planOnSale,
+  sandboxAllowanceHours,
+} from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readPlanLimits, sharedSpaceUsage } from "@rakazo/db";
@@ -16,6 +22,33 @@ export class PlanNotOfferedError extends ClientError {
     );
     this.name = "PlanNotOfferedError";
   }
+}
+
+/** A checkout or plan change named a paid plan that is not on sale (`DOZO_PLANS_ON_SALE`). */
+export class PlanComingSoonError extends ClientError {
+  constructor() {
+    super("BAD_REQUEST", "This plan isn't on sale yet.", PLAN_LIMIT_CODES.planComingSoon);
+    this.name = "PlanComingSoonError";
+  }
+}
+
+/**
+ * The price a checkout of `tier` bills, refused unless the plan is on sale and has a price: Free is
+ * told it is free, any other plan (coming soon, or not offered at all) that it is not on sale yet.
+ */
+export function soldPrice(tier: ByokTier, amountCents: number | null): number {
+  if (amountCents !== null && planOnSale(tier)) return amountCents;
+  throw BYOK_TIERS[tier].computerAllowanceCents === 0
+    ? new PlanNotOfferedError()
+    : new PlanComingSoonError();
+}
+
+/** The plan a plan change moves to, refused as `soldPrice` refuses it; null when there is none. */
+export function soldPlan<Plan extends { tier: ByokTier; amountCents: number }>(
+  plan: Plan | null,
+): Plan | null {
+  if (plan) soldPrice(plan.tier, plan.amountCents);
+  return plan;
 }
 
 /**
@@ -42,7 +75,10 @@ export async function withPlanHours<Offer extends { tier: ByokTier; computerHour
   }));
 }
 
-/** `withPlanHours` over offers that also carry the machine this server's computer provider starts. */
+/**
+ * `withPlanHours` over the offered plans (`DOZO_PLANS_OFFERED`), each with the machine this server's
+ * computer provider starts, and a plan that is not on sale yet marked coming soon.
+ */
 export async function withPlanOffers<
   Offer extends { tier: ByokTier; computerHours: number; computerSize: ComputerSize },
 >(
@@ -51,5 +87,9 @@ export async function withPlanOffers<
   offers: Offer[],
   hourMicros?: number,
 ) {
-  return withPlanHours(prisma, withComputerSpecs(offers, sandbox), hourMicros);
+  const offered = offers.filter((offer) => planOffered(offer.tier));
+  const sized = await withPlanHours(prisma, withComputerSpecs(offered, sandbox), hourMicros);
+  return sized.map((offer) =>
+    planOnSale(offer.tier) ? offer : { ...offer, comingSoon: true as const },
+  );
 }
