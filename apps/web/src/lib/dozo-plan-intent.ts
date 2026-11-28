@@ -3,7 +3,8 @@ import { forgetKept, KEPT_FOR_MS, keepForAnHour, readKept } from "./dozo-kept-fo
 
 /**
  * A paid plan picked on the landing page before the visitor has an account. Its links to sign-up
- * carry `?plan=premium|premium_plus&period=month|year`; the sign-up page keeps the pick in this
+ * may carry `?plan=premium&period=month|year` (none does while Premium is coming soon, and Premium
+ * Plus is not offered); the sign-up page keeps the pick in this
  * browser (`dozo-kept-for-an-hour`), so the tab the confirmation mail opens has it too, and once the
  * app opens Billing offers it, preselected. Free, or anything that is not one of these values, is
  * no pick. Prices are never read from here: the server prices the tier and period it is sent.
@@ -16,7 +17,7 @@ type StoredIntent = PlanIntent & { expiresAt: number; userId?: string };
 
 const KEY = "dozo:plan-intent";
 export const PLAN_INTENT_TTL_MS = KEPT_FOR_MS;
-const PLANS: Record<string, ByokTier> = { premium: "pro", premium_plus: "max" };
+const PLANS: Record<string, ByokTier> = { premium: "pro" };
 const PERIODS: readonly ByokInterval[] = ["month", "year"];
 
 /** The pick the address names; a missing or unknown period is monthly. */

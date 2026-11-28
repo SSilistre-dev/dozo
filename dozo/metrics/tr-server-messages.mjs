@@ -29,10 +29,12 @@ const TRANSLATED_CODES = new Set([
   "computer_limit_reached",
   "space_limit_reached",
   "plan_not_offered",
+  "plan_coming_soon",
   "PLAN_LIMIT_CODES.sharedSpaceFull",
   "PLAN_LIMIT_CODES.computerLimit",
   "PLAN_LIMIT_CODES.spaceLimit",
   "PLAN_LIMIT_CODES.planNotOffered",
+  "PLAN_LIMIT_CODES.planComingSoon",
   "COMPUTERS_BUSY_CODE",
 ]);
 

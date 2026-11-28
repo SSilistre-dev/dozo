@@ -8,8 +8,14 @@ import type { ByokTier, ByokTierTerms } from "./billing/billing.js";
  * no hosted computer. Premium and Premium Plus keep upstream's Pro and Max terms.
  *
  * This is the one place a price changes: add `monthlyPriceCents` and `annualPriceCents` to
- * `premium` or `premiumPlus` below. Until then they keep upstream's amounts. Existing subscribers
+ * `premium` or `premiumPlus` below. Until then they keep upstream's amounts, which upstream also
+ * reads for what a plan includes (a free period's speech allowance, for one). Existing subscribers
  * keep the price they signed up at.
+ *
+ * Only the plans in `DOZO_PLANS_OFFERED` are offered: Premium Plus is not, though an admin can still
+ * grant it with all its terms. An offered plan is sold only once it is also in
+ * `DOZO_PLANS_ON_SALE`; until then it is shown as coming soon and the server refuses every checkout
+ * and plan change that would bill it.
  *
  * The shared space (`sharedSpaceBytes`, the bytes of files an organization may keep on a server
  * that bills) and the computer allowance set here are each plan's terms: what the landing page
@@ -41,6 +47,22 @@ const premiumPlus = {
   sharedSpaceBytes: 5 * 1024 * MB,
   computers: 3,
 } satisfies DozoTerms;
+
+/** The paid plans offered, in Billing and on the landing page. */
+export const DOZO_PLANS_OFFERED: readonly ByokTier[] = ["pro"] as const;
+
+/** The offered plans on sale. Selling Premium is adding `"pro"` here. */
+export const DOZO_PLANS_ON_SALE: readonly ByokTier[] = [] as const;
+
+/** Whether Billing offers `tier`, as on sale or coming soon. */
+export function planOffered(tier: ByokTier): boolean {
+  return DOZO_PLANS_OFFERED.includes(tier);
+}
+
+/** Whether a checkout or plan change may bill `tier`. */
+export function planOnSale(tier: ByokTier): boolean {
+  return planOffered(tier) && DOZO_PLANS_ON_SALE.includes(tier);
+}
 
 /** Rewrites upstream's tiers in place, before anything reads them. */
 export function applyDozoPlans(tiers: Record<ByokTier, ByokTierTerms>): void {

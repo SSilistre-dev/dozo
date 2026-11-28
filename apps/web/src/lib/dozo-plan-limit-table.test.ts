@@ -261,6 +261,13 @@ describe("the other limits", () => {
     expect(planLimitText({ code: "plan_not_offered" }, copy("tr"))).toBe(
       "Bu plan ücretsiz. Yükseltmek için ücretli bir plan seçin.",
     );
+    expect(planLimitText({ code: "plan_coming_soon" }, copy("tr"))).toBe(
+      "Bu plan henüz satışta değil.",
+    );
+    // Text that kept no code is still known by the sentence the table wrote.
+    expect(planLimitText("This plan isn't on sale yet.", copy("en"))).toBe(
+      "This plan isn't on sale yet.",
+    );
     expect(planLimitText({ code: "OTHER" }, copy("en"))).toBeNull();
   });
 

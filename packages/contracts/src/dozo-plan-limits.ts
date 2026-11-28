@@ -22,6 +22,8 @@ export const PLAN_LIMIT_CODES = {
   computerLimitShared: "computer_limit_shared",
   spaceLimit: "space_limit_reached",
   planNotOffered: "plan_not_offered",
+  /** A paid plan that is shown but not on sale yet. */
+  planComingSoon: "plan_coming_soon",
 } as const;
 export type PlanLimitCode = (typeof PLAN_LIMIT_CODES)[keyof typeof PLAN_LIMIT_CODES];
 
@@ -59,6 +61,7 @@ export type PlanLimitCopy = {
   computerLimitShared: string;
   spaceLimit: string;
   planNotOffered: string;
+  planComingSoon: string;
   upgrade: string;
   upgradeTo: (plan: string) => string;
   retry: string;
@@ -74,6 +77,7 @@ const SERVER_CODES = new Set<string>([
   PLAN_LIMIT_CODES.computerLimitShared,
   PLAN_LIMIT_CODES.spaceLimit,
   PLAN_LIMIT_CODES.planNotOffered,
+  PLAN_LIMIT_CODES.planComingSoon,
 ]);
 
 /** Text that names a limit: the server's own sentences, and the copy's when the client has it. */
@@ -88,6 +92,7 @@ function sentenceLimit(text: string, copy: PlanLimitCopy | undefined): PlanLimit
     [copy.computerLimitShared, PLAN_LIMIT_CODES.computerLimitShared],
     [copy.spaceLimit, PLAN_LIMIT_CODES.spaceLimit],
     [copy.planNotOffered, PLAN_LIMIT_CODES.planNotOffered],
+    [copy.planComingSoon, PLAN_LIMIT_CODES.planComingSoon],
   ];
   return sentences.find(([sentence]) => sentence === text)?.[1] ?? null;
 }
@@ -199,6 +204,8 @@ export function planLimitNotice(
       return notice(limit, copy.spaceLimit);
     case PLAN_LIMIT_CODES.planNotOffered:
       return notice(limit, copy.planNotOffered);
+    case PLAN_LIMIT_CODES.planComingSoon:
+      return notice(limit, copy.planComingSoon);
   }
 }
 

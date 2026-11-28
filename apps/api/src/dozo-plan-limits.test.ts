@@ -3,7 +3,7 @@ import type { PlanLimitBilling, PlanLimitCopy } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, planLimitNotice, planLimitOf } from "@rakazo/contracts";
 import { ComputerLimitError, SharedSpaceFullError, SpaceLimitError } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
-import { PlanNotOfferedError } from "./dozo-billing.js";
+import { PlanComingSoonError, PlanNotOfferedError } from "./dozo-billing.js";
 import { handleRpcError } from "./rpc-errors.js";
 
 // Runs on the branded tree only: the codes and the table exist once the brand rules are applied.
@@ -99,6 +99,17 @@ describe("a server refusal reaches the client with its stable code and maps to a
     expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, copy)).toEqual({
       code: "plan_not_offered",
       text: "planNotOffered",
+      action: null,
+    });
+  });
+
+  it("a checkout or plan change of a plan not on sale: a plain sentence, no action", () => {
+    const sent = answer(new PlanComingSoonError());
+    expect(sent.code).toBe(PLAN_LIMIT_CODES.planComingSoon);
+    expect(sent.status).toBe(400);
+    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, copy)).toEqual({
+      code: "plan_coming_soon",
+      text: "planComingSoon",
       action: null,
     });
   });
