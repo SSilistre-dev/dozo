@@ -201,8 +201,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "dozoShareLinks/create",
     kind: "no-target",
     fields: ["targetId"],
-    reason:
-      "What a share link points at depends on its kind, and no kind ships yet, so every create is refused before the target is read; each kind's `canShare` checks the maker reaches it, and the kind that ships maps the field here.",
+    reason: "What a link shows depends on its kind; none ships yet, so no create succeeds.",
   },
   {
     path: "dozoTeach/removeTarget",
