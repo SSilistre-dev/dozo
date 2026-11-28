@@ -14,6 +14,8 @@ type Surfaces = Readonly<Record<string, () => Promise<ComponentType<DozoSurfaceP
 const SURFACES: Surfaces = {
   "bot-share": () =>
     import("./shell/dozo-bot-share-dialog").then((module) => module.DozoBotShareDialog),
+  computers: () =>
+    import("./shell/computers/dozo-computer-wall").then((module) => module.DozoComputerWall),
 };
 
 type Opened = { key: string; params: Readonly<Record<string, string>> };

@@ -16159,6 +16159,42 @@
       "find": "msgstr \"Bağlantıyı kopyala\"\n\n#: apps/web/src/pages/shell/bots/agent-import.tsx\nmsgid \"Copy prompt\"",
       "replace": "msgstr \"Bağlantıyı kopyala\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Include picture\"\nmsgstr \"Resmi ekle\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Anyone with the link can see this and make their own copy.\"\nmsgstr \"Bağlantıya sahip olan herkes bunu görebilir ve kendi kopyasını oluşturabilir.\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\nmsgid \"This bot is too large to share.\"\nmsgstr \"Bu bot paylaşılamayacak kadar büyük.\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Link expires {date}\"\nmsgstr \"Bağlantının süresi {date} tarihinde doluyor\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Revoke link\"\nmsgstr \"Bağlantıyı iptal et\"\n\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Revoke link?\"\nmsgstr \"Bağlantı iptal edilsin mi?\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Create new link\"\nmsgstr \"Yeni bağlantı oluştur\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Could not share\"\nmsgstr \"Paylaşılamadı\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\nmsgid \"Could not revoke\"\nmsgstr \"İptal edilemedi\"\n\n#: apps/web/src/pages/dozo-bot-share-page.tsx\nmsgid \"Sign in to make a copy\"\nmsgstr \"Kopya oluşturmak için oturum açın\"\n\n#: apps/web/src/pages/dozo-bot-share-page.tsx\nmsgid \"Could not make a copy\"\nmsgstr \"Kopya oluşturulamadı\"\n\n#: apps/web/src/pages/shell/bots/agent-import.tsx\nmsgid \"Copy prompt\"",
       "reason": "bot share links: the Turkish of the strings the owner's review, the shared page and the mobile share screen add"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { useComputerControls, useComputerState } from \"./shell/computers/use-computer\";",
+      "replace": "import { useComputerState } from \"./shell/computers/use-computer\";\nimport { useComputerControls } from \"./shell/computers/dozo-use-computer-controls\";",
+      "requires": [
+        "apps/web/src/pages/shell/computers/dozo-use-computer-controls.ts"
+      ],
+      "reason": "computers wall: the wall is a surface outside the shell, and opening a tile's full view is the shell's own openComputer, which only this hook holds; the wrapper hands it and the shell's bots over"
+    },
+    {
+      "file": "apps/web/src/pages/shell/sidebar/sidebar-header.tsx",
+      "find": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { WindowChrome }",
+      "replace": "import { IconTooltip } from \"../../../components/IconTooltip\";\nimport { DozoComputersButton } from \"./dozo-computers-button\";\nimport { WindowChrome }",
+      "requires": [
+        "apps/web/src/pages/shell/sidebar/dozo-computers-button.tsx"
+      ],
+      "reason": "computers wall: its entry point is an icon among the sidebar header's own (Search, Activity, Create), the one place every screen of the shell shows; no fork component sits in that row"
+    },
+    {
+      "file": "apps/web/src/pages/shell/sidebar/sidebar-header.tsx",
+      "find": "        ) : null}\n        {mini ? null : (\n          <IconTooltip label={t`Activity`} side={labelSide}>",
+      "replace": "        ) : null}\n        {mini ? null : <DozoComputersButton />}\n        {mini ? null : (\n          <IconTooltip label={t`Activity`} side={labelSide}>",
+      "requires": [
+        "apps/web/src/pages/shell/sidebar/dozo-computers-button.tsx"
+      ],
+      "reason": "computers wall: the icon stands before Activity and, like it, only in the full sidebar"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./computers/screens/computer-control.js\";\nexport * from \"./computers/screens/computer-screens.js\";",
+      "replace": "export * from \"./computers/screens/computer-control.js\";\nexport * from \"./computers/dozo-screen-watch.js\";\nexport * from \"./computers/screens/computer-screens.js\";",
+      "requires": [
+        "packages/adapters/src/computers/dozo-screen-watch.ts"
+      ],
+      "reason": "computers wall: which sandbox kinds can show a screen without waking it is declared beside the providers, and the API reads it through the package's one entry point"
     }
   ],
   "assets": {
