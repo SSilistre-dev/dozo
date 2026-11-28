@@ -272,6 +272,8 @@ export async function seedTarget(
     notifyOnFinish: false,
   });
   ids.secondBotId = second.id;
+  // A voice of its own, so the owner may pick it as a routine's briefing co-host.
+  await call("bots/update", { botId: second.id, voiceId: "isolation-voice" });
   const group = await call<{ id: string }>("groups/create", {
     name: mark("group").slice(0, 40),
     botIds: [bot.id, second.id],

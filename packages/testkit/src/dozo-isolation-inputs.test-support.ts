@@ -85,6 +85,8 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   // A finished reply of the owner's with tool steps: their first message is their own words.
   "dozoReplays/preview": { messageId: "replyMessageId" },
   "dozoReplays/publish": { messageId: "replyMessageId" },
+  // The routine's co-host: another of the target's bots than the routine's own.
+  "dozoSpokenBriefings/set": { coHostBotId: "secondBotId" },
   "threads/declineCall": { callId: "declineCallId" },
   "notifications/declineIncomingCall": { callId: "incomingCallId" },
   // Not the canary's own document: a member's edit replaces its content, and the read that shows
