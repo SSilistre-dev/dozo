@@ -31,7 +31,7 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
     (link) => link.kind === DOZO_STATS_SHARE_KIND && link.targetId === botId,
   );
   const share = useSave({
-    save: (_: void, client) =>
+    save: (_input: undefined, client) =>
       client.dozoShareLinks.create({
         kind: DOZO_STATS_SHARE_KIND,
         targetId: botId,
@@ -89,7 +89,7 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
           size="sm"
           className="self-start text-muted-foreground"
           disabled={share.pending || links === undefined}
-          onClick={() => share.run()}
+          onClick={() => share.run(undefined)}
         >
           <Trans>Share card</Trans>
         </Button>

@@ -56,8 +56,10 @@ let root: ReturnType<typeof createRoot>;
 async function draw() {
   await act(async () =>
     root.render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <QueryUserProvider userId="user-1">
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <QueryUserProvider value="user-1">
           <DozoBotStats botId="bot-1" spaceId="space-1" />
         </QueryUserProvider>
       </QueryClientProvider>,

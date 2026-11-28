@@ -114,7 +114,11 @@ describe("the bot's stats row", () => {
     ui.reads = {
       "dozoBotStats/get": STATS,
       "dozoShareLinks/list": {
-        links: [link("a", "stats", "bot-1"), link("b", "stats", "bot-2"), link("c", "other", "bot-1")],
+        links: [
+          link("a", "stats", "bot-1"),
+          link("b", "stats", "bot-2"),
+          link("c", "other", "bot-1"),
+        ],
       },
     };
     ui.send.mockResolvedValue({ revoked: true });

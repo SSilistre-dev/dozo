@@ -20,7 +20,7 @@ export function DozoBotStatsRow({ botId }: { botId: string }) {
     (link) => link.kind === DOZO_STATS_SHARE_KIND && link.targetId === botId,
   );
   const share = useSave({
-    save: (_: void, send) =>
+    save: (_input: undefined, send) =>
       send("dozoShareLinks/create", {
         kind: DOZO_STATS_SHARE_KIND,
         targetId: botId,
@@ -57,7 +57,7 @@ export function DozoBotStatsRow({ botId }: { botId: string }) {
           accessibilityRole="button"
           title={t`Share card`}
           disabled={share.pending || links === undefined}
-          onPress={() => share.run()}
+          onPress={() => share.run(undefined)}
         />
       )}
     </SettingsGroup>
