@@ -218,7 +218,9 @@ export function mountDozoReplayFrames(
     const opened = FRAME_INDEX.test(n) ? await openSharedLink(prisma, c.req.param("token")) : null;
     const frame =
       opened?.kind === DOZO_REPLAY_KIND
-        ? await runAsSystem("replay frame read", () => replayFrame(prisma, opened.target, Number(n)))
+        ? await runAsSystem("replay frame read", () =>
+            replayFrame(prisma, opened.target, Number(n)),
+          )
         : null;
     const mimeType = frame && storedImageMimeType(frame.mimeType);
     if (!frame || !mimeType || !opened) return c.json({ error: "Not found" }, 404, HEADERS);

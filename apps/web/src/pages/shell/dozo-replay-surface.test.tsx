@@ -63,7 +63,11 @@ vi.mock("@rakazo/ui-web", () => {
       checked: boolean;
       onCheckedChange: (checked: boolean) => void;
     }) => (
-      <input type="checkbox" checked={checked} onChange={(e) => onCheckedChange(e.target.checked)} />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onCheckedChange(e.target.checked)}
+      />
     ),
     Dialog: Pass,
     DialogContent: Pass,
@@ -80,7 +84,11 @@ import type * as Query from "../../lib/query/query";
 import { DozoReplaySurface, startingChoice } from "./dozo-replay-surface";
 
 const steps = [
-  { line: "Browser navigate · shop.example.test", frame: "data:image/png;base64,AA==", sensitive: false },
+  {
+    line: "Browser navigate · shop.example.test",
+    frame: "data:image/png;base64,AA==",
+    sensitive: false,
+  },
   { line: "Browser act", frame: null, sensitive: true },
   { line: "Screenshot", frame: "data:image/png;base64,BB==", sensitive: true },
 ];

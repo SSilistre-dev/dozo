@@ -61,7 +61,12 @@ export const dozoReplaysContract = /* @__PURE__ */ (() => ({
       ReplayMessage.extend({
         omit: StepPositions,
         frames: StepPositions,
-        days: z.number().int().min(1).max(DOZO_SHARE_LINK_MAX_DAYS).default(DOZO_REPLAY_DEFAULT_DAYS),
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(DOZO_SHARE_LINK_MAX_DAYS)
+          .default(DOZO_REPLAY_DEFAULT_DAYS),
       }),
     )
     .output(z.object({ link: DozoShareLinkSchema, url: z.string().url() })),

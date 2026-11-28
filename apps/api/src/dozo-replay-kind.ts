@@ -132,7 +132,9 @@ async function publishedSteps(prisma: PrismaClient, link: DozoShareTarget) {
     runId: reply.runId,
     steps: selection.flatMap(({ index, frame }) => {
       const step = steps[index];
-      return step ? [{ line: step.line, frameArtifactId: frame ? step.frameArtifactId : undefined }] : [];
+      return step
+        ? [{ line: step.line, frameArtifactId: frame ? step.frameArtifactId : undefined }]
+        : [];
     }),
   };
 }

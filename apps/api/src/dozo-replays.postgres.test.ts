@@ -223,11 +223,7 @@ describePostgres("replays (PostgreSQL)", () => {
     const bob = await person();
     const { messageId } = await reply(ada);
     expect((await call(bob, "dozoReplays/preview", { messageId })).status).toBe(404);
-    expect(
-      (
-        await call(bob, "dozoReplays/publish", { messageId })
-      ).status,
-    ).toBe(404);
+    expect((await call(bob, "dozoReplays/publish", { messageId })).status).toBe(404);
     expect((await call(ada, "dozoReplays/publish", { messageId, omit: [0, 1] })).status).toBe(404);
     const running = await reply(ada, "running");
     expect((await call(ada, "dozoReplays/preview", { messageId: running.messageId })).status).toBe(
@@ -253,9 +249,7 @@ describePostgres("replays (PostgreSQL)", () => {
     const first = await reply(ada);
     const second = await reply(ada);
     const publish = async (messageId: string) =>
-      tokenOf(
-        (await call(ada, "dozoReplays/publish", { messageId })).json.url,
-      );
+      tokenOf((await call(ada, "dozoReplays/publish", { messageId })).json.url);
     const byMessage = await publish(first.messageId);
     const byBot = await publish(second.messageId);
     await system.message.delete({ where: { id: first.messageId } });

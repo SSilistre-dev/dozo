@@ -100,7 +100,8 @@ export async function seedTarget(
     orderBy: { seq: "desc" },
     select: { id: true, blocks: true },
   });
-  if (reply && JSON.stringify(reply.blocks).includes('"kind":"steps"')) ids.replyMessageId = reply.id;
+  if (reply && JSON.stringify(reply.blocks).includes('"kind":"steps"'))
+    ids.replyMessageId = reply.id;
   else notes.push("replay: the scripted save_page turn left no reply with a tool step");
   const memory = await db.memoryDocument.findFirst({ where: { spaceId, botId: bot.id } });
   if (memory) ids.documentId = memory.id;

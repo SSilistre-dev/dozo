@@ -15,7 +15,7 @@ import {
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PageLoading } from "../../components/PageLoading";
 import { errorText, toastError } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -97,11 +97,12 @@ function Review({
   stale: QueryKey;
 }) {
   const { t } = useLingui();
+  const ids = useId();
   const [choice, setChoice] = useState(() => startingChoice(steps));
   const [url, setUrl] = useState<string | null>(null);
   const [copied, copy] = useCopyText();
   const publish = useSave({
-    save: (_input: void, rpc) =>
+    save: (_input: undefined, rpc) =>
       rpc.dozoReplays.publish({
         messageId,
         omit: [...choice.omit],
@@ -122,26 +123,32 @@ function Review({
           return (
             // The list never changes while the review is open, so a step's place is its key.
             <li key={index} className="flex flex-col gap-2">
-              <label className="flex items-center gap-2.5 text-body">
+              <div className="flex items-center gap-2.5 text-body">
                 <Checkbox
+                  id={`${ids}-step-${index}`}
                   checked={on}
                   onCheckedChange={(checked) =>
                     setChoice({ ...choice, omit: toggled(choice.omit, index, !checked) })
                   }
                 />
-                <span className="min-w-0 break-words">{step.line}</span>
-              </label>
+                <label htmlFor={`${ids}-step-${index}`} className="min-w-0 break-words">
+                  {step.line}
+                </label>
+              </div>
               {step.frame !== null && on ? (
-                <label className="ms-6.5 flex flex-col gap-1.5 text-body-sm text-muted-foreground">
-                  <span className="flex items-center gap-2.5">
+                <div className="ms-6.5 flex flex-col gap-1.5 text-body-sm text-muted-foreground">
+                  <div className="flex items-center gap-2.5">
                     <Checkbox
+                      id={`${ids}-frame-${index}`}
                       checked={choice.frames.has(index)}
                       onCheckedChange={(checked) =>
                         setChoice({ ...choice, frames: toggled(choice.frames, index, checked) })
                       }
                     />
-                    <Trans>Screenshot</Trans>
-                  </span>
+                    <label htmlFor={`${ids}-frame-${index}`}>
+                      <Trans>Screenshot</Trans>
+                    </label>
+                  </div>
                   <img
                     src={step.frame}
                     alt=""
@@ -149,7 +156,7 @@ function Review({
                       choice.frames.has(index) ? "" : "opacity-40"
                     }`}
                   />
-                </label>
+                </div>
               ) : null}
             </li>
           );
@@ -162,7 +169,12 @@ function Review({
       ) : null}
       {url ? (
         <div className="flex items-center gap-2">
-          <Input readOnly value={url} aria-label={t`Link`} onFocus={(event) => event.target.select()} />
+          <Input
+            readOnly
+            value={url}
+            aria-label={t`Link`}
+            onFocus={(event) => event.target.select()}
+          />
           <Button variant="outline" aria-label={t`Copy`} onClick={() => void copy(url)}>
             {copied ? <Check /> : <Copy />}
           </Button>
@@ -170,7 +182,7 @@ function Review({
       ) : null}
       <LiveLinks links={links} stale={stale} />
       <DialogFooter>
-        <Button disabled={kept === 0 || publish.pending} onClick={() => publish.run()}>
+        <Button disabled={kept === 0 || publish.pending} onClick={() => publish.run(undefined)}>
           <Trans>Create link</Trans>
         </Button>
       </DialogFooter>

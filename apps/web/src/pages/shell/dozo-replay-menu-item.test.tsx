@@ -78,7 +78,11 @@ it("offers Share replay on the bot's reply with steps in its own chat, and opens
 });
 
 it.each([
-  ["a reply without steps", { ...reply, blocks: [{ kind: "text" as const, text: "Hi" }] }, "/app/b-1"],
+  [
+    "a reply without steps",
+    { ...reply, blocks: [{ kind: "text" as const, text: "Hi" }] },
+    "/app/b-1",
+  ],
   ["the person's own message", { ...reply, role: "user" as const }, "/app/b-1"],
   ["another bot's chat", reply, "/app/b-2"],
   ["a group chat", reply, "/app/g/g-1"],

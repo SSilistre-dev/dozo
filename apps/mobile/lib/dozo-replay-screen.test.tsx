@@ -80,7 +80,15 @@ vi.mock("../components/settings/settings-group", () => ({
       {footer}
     </ul>
   ),
-  SettingsRow: ({ title, value, onPress }: { title: string; value: string; onPress: () => void }) => (
+  SettingsRow: ({
+    title,
+    value,
+    onPress,
+  }: {
+    title: string;
+    value: string;
+    onPress: () => void;
+  }) => (
     <li>
       <button type="button" onClick={onPress}>
         {title} {value}
@@ -109,7 +117,11 @@ import DozoReplay from "../app/dozo-replay";
 import { queryClient } from "./query/query";
 
 const steps = [
-  { line: "Browser navigate · shop.example.test", frame: "data:image/png;base64,AA==", sensitive: false },
+  {
+    line: "Browser navigate · shop.example.test",
+    frame: "data:image/png;base64,AA==",
+    sensitive: false,
+  },
   { line: "Browser act", frame: null, sensitive: true },
   { line: "Screenshot", frame: "data:image/png;base64,BB==", sensitive: true },
 ];
@@ -188,7 +200,8 @@ it("cannot publish with every step left out", async () => {
 it("revokes one of the reply's live links", async () => {
   preview = { steps, links: [link] };
   await render();
-  const row = () => [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Expires"));
+  const row = () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Expires"));
   await vi.waitFor(() => expect(row()?.textContent).toBe("Expires 2026-11-27 Revoke"));
   await click(row());
   await vi.waitFor(() =>

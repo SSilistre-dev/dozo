@@ -5,8 +5,8 @@ import { useState } from "react";
 import { ActivityIndicator, Alert, Image, ScrollView, Share, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "../components/settings/settings-group";
-import { mobileTokens } from "../lib/appearance/appearance";
 import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { useScreenHeader } from "../lib/navigation/screen-header";
@@ -38,7 +38,7 @@ export default function DozoReplay() {
   const choose = (next: Partial<{ omit: number[]; frames: number[] }>) =>
     setChoice({ omit, frames, ...next });
   const publish = useSave({
-    save: (_input: void, send) =>
+    save: (_input: undefined, send) =>
       send("dozoReplays/publish", {
         messageId,
         omit,
@@ -60,7 +60,7 @@ export default function DozoReplay() {
           label: t`Create link`,
           disabled: kept === 0,
           busy: publish.pending,
-          onPress: () => publish.run(),
+          onPress: () => publish.run(undefined),
         }
       : null,
   });

@@ -44,7 +44,10 @@ describe("replaySteps", () => {
     ["a saved login typed in", { tool: "browser_act", arguments: '{"kind":"fill_secret"}' }],
     ["a card typed in", { tool: "browser_act", arguments: '{"kind":"fill_card"}' }],
     ["a sign-in page", { tool: "browser_navigate", arguments: '{"url":"https://x.test/login"}' }],
-    ["a checkout page", { tool: "browser_navigate", arguments: '{"url":"https://x.test/checkout"}' }],
+    [
+      "a checkout page",
+      { tool: "browser_navigate", arguments: '{"url":"https://x.test/checkout"}' },
+    ],
     ["a secret tool", { tool: "request_secret" }],
   ])("marks %s as sensitive", (_name, call) => {
     expect(replaySteps(steps("Step"), history(call))[0]?.sensitive).toBe(true);
