@@ -18,6 +18,12 @@ vi.mock("./dozo-result", () => ({
   ),
 }));
 
+vi.mock("./dozo-share-page", () => ({
+  DozoSharePage: ({ token, notFound }: { token: string; notFound: ReactNode }) => (
+    <section data-token={token}>{notFound}</section>
+  ),
+}));
+
 import { NotFoundPage } from "./dozo-not-found";
 
 let root: ReturnType<typeof createRoot>;
@@ -60,4 +66,13 @@ it("draws from the theme's tokens only, with nothing that moves", () => {
   expect(source).not.toMatch(/animate|<animate|transition/);
   expect(source).toContain('style={{ fill: "var(--dozo-seal)" }}');
   expect(source.match(/fill-background/g)?.length).toBe(2);
+});
+
+it("opens a share link's page at its address, with the 404 for a link it refuses", () => {
+  window.history.pushState(null, "", "/s/some-token");
+  act(() => root.render(<NotFoundPage />));
+  window.history.pushState(null, "", "/");
+  const page = container.querySelector("section");
+  expect(page?.getAttribute("data-token")).toBe("some-token");
+  expect(page?.textContent).toBe("Page not foundGo home");
 });

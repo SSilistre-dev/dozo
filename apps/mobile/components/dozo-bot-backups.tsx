@@ -12,13 +12,14 @@ import { catalogEntryFor, connectionForModelChoice } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Alert, StyleSheet, View } from "react-native";
+import { useRosterSignals } from "../lib/api/roster-signals";
+import { errorText } from "../lib/api/user-error";
 import { useDozoRestNote } from "../lib/dozo-model-rests";
 import { closeModelPicker, openModelPicker } from "../lib/models/model-picker-selection";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
-import { useRosterSignals } from "../lib/api/roster-signals";
 import { useScreenQuery } from "../lib/query/screen-query";
-import { errorText } from "../lib/api/user-error";
+import { DozoBotSettingsRows } from "./dozo-extensions";
 import { NativeSymbol } from "./native/native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 
@@ -40,9 +41,19 @@ const choiceOf = (option: {
  * them: one "Add fallback" line until there is one. They take over from the bot's model in their
  * order; with none, the bot's runs take the runner's own backups. Picked from the models of your
  * own connections. Nothing when the server has no such setting or it cannot be read. Read again
- * on the roster signal a change sends.
+ * on the roster signal a change sends. The fork's other bot settings rows follow
+ * (dozo-extensions.tsx).
  */
 export function DozoBotBackups({ botId }: { botId: string }) {
+  return (
+    <>
+      <ModelBackups botId={botId} />
+      <DozoBotSettingsRows botId={botId} />
+    </>
+  );
+}
+
+function ModelBackups({ botId }: { botId: string }) {
   const { t } = useLingui();
   const router = useRouter();
   const restNote = useDozoRestNote();
