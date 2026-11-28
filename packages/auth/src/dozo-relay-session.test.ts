@@ -130,6 +130,10 @@ function fakePrisma() {
         return { count: before - authData.session.length };
       }),
     },
+    pageApp: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     verification: {
       findFirst: vi.fn(
         async ({ where }: { where: Where }) =>

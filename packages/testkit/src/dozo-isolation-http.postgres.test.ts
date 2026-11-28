@@ -71,10 +71,15 @@ const FILE_ROUTE = /artifact|attachment|avatar|logo|upload|download|file|media|i
 /**
  * File routes reviewed: the plugin catalog's own pictures, the same for every caller, and a shared
  * page's pictures, which only the page's own share token opens and only for a picture the page's
- * current version shows (the token is the bearer link; the image is looked up under that version).
+ * current version shows (the token is the bearer link; the image is looked up under that version),
+ * an installed page app's pictures, which only its own token opens (the page is the token's, the
+ * picture is looked up under it), and a page's app icon, drawn from the page's own icon and colour
+ * for its owner's session only.
  */
 const REVIEWED_FILE_ROUTES = [
   "GET /api/dozo/catalog-images/:file",
+  "GET /api/v1/page-app/images/:imageId",
+  "GET /api/v1/pages/:pageId/app-icon/:file",
   "GET /api/v1/pages/shared/:token/images/:imageId",
 ];
 

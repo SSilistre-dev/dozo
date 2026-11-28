@@ -38,6 +38,7 @@ vi.mock("@rakazo/db", async () => {
     personalOrganizationIds: vi.fn(async () => []),
     clearAccountIdentity: vi.fn(async () => undefined),
     recordSecurityEvent: vi.fn(async () => undefined),
+    runAsSystem: vi.fn(async (_reason: string, run: () => unknown) => run()),
   };
 });
 // The real sender, watched so a test can wait until a mail it started has finished or given up.
