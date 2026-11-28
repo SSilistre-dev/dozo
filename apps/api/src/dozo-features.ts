@@ -1,3 +1,4 @@
+import { dozoComputerWallRoutes } from "./dozo-computer-wall.js";
 import { dozoShareLinkRoutes } from "./dozo-share-links.js";
 import { dozoSpokenBriefingRoutes } from "./dozo-spoken-briefings.js";
 import type { RouterContext } from "./routes/context.js";
@@ -8,6 +9,7 @@ import type { RouterContext } from "./routes/context.js";
  */
 export function dozoFeatureRoutes(ctx: RouterContext) {
   return {
+    ...dozoComputerWallRoutes(ctx),
     ...dozoShareLinkRoutes(ctx),
     ...dozoSpokenBriefingRoutes(ctx),
   };
