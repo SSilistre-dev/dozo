@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient } from "./database/client.js";
 import { createDb } from "./database/client.js";
-import { asSystem } from "./database/row-security.js";
+import { asSystem, runAsSystem } from "./database/row-security.js";
 import { withSharedSpace } from "./dozo-shared-space.js";
 import {
   holdStepFrame,
@@ -82,24 +82,30 @@ describePostgres("replay frames (PostgreSQL)", () => {
 
   /** One extra frame written as the run's frame writer writes it. */
   const write = (who: Owner, runId: string, size: number) =>
-    prisma.$transaction(async (tx) => {
-      const held = await holdStepFrame(tx, { spaceId: who.spaceId, botId: who.botId, bytes: size });
-      if (!held.allowed) return held;
-      await tx.artifact.create({
-        data: {
+    runAsSystem("test: a run writes a frame", () =>
+      prisma.$transaction(async (tx) => {
+        const held = await holdStepFrame(tx, {
           spaceId: who.spaceId,
-          userId: who.userId,
           botId: who.botId,
-          runId,
-          name: STEP_FRAME_PENDING,
-          mimeType: "image/png;profile=step-screenshot",
-          size,
-          hash: `frame:${runId}:${files}`,
-          storageKey: `step-frames-${files++}`,
-        },
-      });
-      return held;
-    });
+          bytes: size,
+        });
+        if (!held.allowed) return held;
+        await tx.artifact.create({
+          data: {
+            spaceId: who.spaceId,
+            userId: who.userId,
+            botId: who.botId,
+            runId,
+            name: STEP_FRAME_PENDING,
+            mimeType: "image/png;profile=step-screenshot",
+            size,
+            hash: `frame:${runId}:${files}`,
+            storageKey: `step-frames-${files++}`,
+          },
+        });
+        return held;
+      }),
+    );
 
   const frames = (who: Owner) =>
     system.artifact.findMany({
@@ -238,12 +244,14 @@ describePostgres("replay frames (PostgreSQL)", () => {
     const kept = await frameRow(ada, mine, MB, STEP_FRAME_PENDING);
     await frameRow(ada, mine, MB, STEP_FRAME_PENDING);
     const same = await frameRow(ada, theirs, MB, STEP_FRAME_PENDING);
-    const removed = await settleStepFrames(prisma, {
-      spaceId: ada.spaceId,
-      botId: ada.botId,
-      runId: mine,
-      linked: [kept.id, same.id],
-    });
+    const removed = await runAsSystem("test: a reply settles", () =>
+      settleStepFrames(prisma, {
+        spaceId: ada.spaceId,
+        botId: ada.botId,
+        runId: mine,
+        linked: [kept.id, same.id],
+      }),
+    );
     expect(removed).toHaveLength(1);
     const rows = await system.artifact.findMany({
       where: { botId: ada.botId },
@@ -265,20 +273,22 @@ describePostgres("replay frames (PostgreSQL)", () => {
       const runId = await run(ada, "running");
       const lastSave = async () => {
         const started = performance.now();
-        await withSharedSpace(prisma, ada.spaceId, (tx: Prisma.TransactionClient) =>
-          tx.artifact.create({
-            data: {
-              spaceId: ada.spaceId,
-              userId: ada.userId,
-              botId: ada.botId,
-              runId,
-              name: "screenshot",
-              mimeType: "image/png;profile=step-screenshot",
-              size: 230 * 1024,
-              hash: `last-${files}`,
-              storageKey: `step-frames-${files++}`,
-            },
-          }),
+        await runAsSystem("test: a run saves its last screenshot", () =>
+          withSharedSpace(prisma, ada.spaceId, (tx: Prisma.TransactionClient) =>
+            tx.artifact.create({
+              data: {
+                spaceId: ada.spaceId,
+                userId: ada.userId,
+                botId: ada.botId,
+                runId,
+                name: "screenshot",
+                mimeType: "image/png;profile=step-screenshot",
+                size: 230 * 1024,
+                hash: `last-${files}`,
+                storageKey: `step-frames-${files++}`,
+              },
+            }),
+          ),
         );
         return performance.now() - started;
       };
