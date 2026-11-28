@@ -6,12 +6,14 @@ import { useDozoChatPins } from "../lib/dozo-message-actions";
 import { useDozoTrustActions } from "../lib/dozo-trust-bot";
 import type { BotProfileAction } from "./bots/bot-profile-menu";
 import { useBotProfileActions as useUpstreamBotProfileActions } from "./bots/bot-profile-menu";
+import { useDozoBotActions } from "./dozo-extensions";
 
 export { botProfileMenuOptions } from "./bots/bot-profile-menu";
 
 /**
  * Upstream's profile actions with New chat and Export first, as the web roster menu has them, then
- * Pinned while the chat has pinned messages, and Trust this bot again while the bot is marked.
+ * Pinned while the chat has pinned messages, Trust this bot again while the bot is marked, then
+ * the fork's feature actions (dozo-extensions.tsx).
  */
 export function useBotProfileActions(botId: string, name: string): BotProfileAction[] {
   const { t } = useLingui();
@@ -21,6 +23,7 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
   const { threadId, pins } = useDozoChatPins({ botId });
   const trust = useDozoTrustActions(botId);
   const newChat = useDozoNewChat(botId, name);
+  const featureActions = useDozoBotActions(botId, name);
   return [
     { id: "newChat", text: t`New chat`, onPress: () => newChat.run(undefined) },
     { id: "export", text: t`Export`, onPress: () => exportChat({ botId }, name) },
@@ -35,6 +38,7 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
         ]
       : []),
     ...trust,
+    ...featureActions,
     ...actions,
   ];
 }

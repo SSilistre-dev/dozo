@@ -1,3 +1,5 @@
+import { FEATURE_EXEMPTIONS } from "./dozo-isolation-feature-exemptions.js";
+
 /**
  * Procedures the isolation matrix does not call, or calls with a known limit, each with the reason.
  * `input`: the generator cannot build a valid input for it, so it is not swept (the matrix fails
@@ -31,6 +33,7 @@ export type IsolationExemption = {
 };
 
 export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
+  ...FEATURE_EXEMPTIONS,
   {
     path: "skills/start",
     kind: "reached-409",

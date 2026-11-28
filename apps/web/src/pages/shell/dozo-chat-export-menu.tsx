@@ -15,9 +15,10 @@ import {
 } from "@rakazo/ui-web";
 import { Copy, Download, FileText } from "lucide-react";
 import { useState } from "react";
-import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { toastError } from "../../lib/dozo-error-text";
+import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import type { createSpaceRpc } from "../../lib/query/rpc";
+import { DozoBotMenuItems } from "./dozo-bot-extensions";
 
 export { chatExportSince };
 export type ChatExportTarget =
@@ -40,9 +41,21 @@ export type DozoChatExportMenuProps = {
 
 /**
  * The roster menu's Export item: the server renders the chat as Markdown, as the caller may read
- * it, and the client copies or saves the answer.
+ * it, and the client copies or saves the answer. A bot's menu then has the fork's bot items.
  */
-export function DozoChatExportMenu({ rpc, target, name, onClose }: DozoChatExportMenuProps) {
+export function DozoChatExportMenu(props: DozoChatExportMenuProps) {
+  const { rpc, target, name, onClose } = props;
+  return (
+    <>
+      <ExportMenu {...props} />
+      {"botId" in target ? (
+        <DozoBotMenuItems rpc={rpc} botId={target.botId} name={name} onClose={onClose} />
+      ) : null}
+    </>
+  );
+}
+
+function ExportMenu({ rpc, target, name, onClose }: DozoChatExportMenuProps) {
   const { t } = useLingui();
   const [range, setRange] = useState<ChatExportRange>("all");
 

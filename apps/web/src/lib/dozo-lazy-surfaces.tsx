@@ -6,6 +6,7 @@ import type { TeachCaptureOverlay as LoadedTeachCaptureOverlay } from "../compon
 import type { DozoOrganizationLibrarySwitch as LoadedDozoOrganizationLibrarySwitch } from "../pages/dozo-organization-library-switch";
 import type { DozoAvatarGeneratePanel as LoadedDozoAvatarGeneratePanel } from "../pages/shell/dozo-avatar-generate-panel";
 import type { DozoBotBackups as LoadedDozoBotBackups } from "../pages/shell/dozo-bot-backups";
+import { DozoBotSettingsRows } from "../pages/shell/dozo-bot-extensions";
 import type { DozoBotSkillsSection as LoadedDozoBotSkillsSection } from "../pages/shell/dozo-bot-skills-section";
 import type {
   DozoPinMenuItem as LoadedDozoPinMenuItem,
@@ -193,12 +194,18 @@ export function DozoHiddenLibrarySkills() {
   );
 }
 
-/** Nothing while it loads, and nothing if it cannot: the bot keeps the runner's backups. */
+/**
+ * Nothing while it loads, and nothing if it cannot: the bot keeps the runner's backups. The fork's
+ * other bot settings rows follow (dozo-bot-extensions.tsx).
+ */
 export function DozoBotBackups(props: ComponentProps<typeof LoadedDozoBotBackups>) {
   return (
-    <Held failed={null}>
-      <LazyDozoBotBackups {...props} />
-    </Held>
+    <>
+      <Held failed={null}>
+        <LazyDozoBotBackups {...props} />
+      </Held>
+      <DozoBotSettingsRows botId={props.botId} spaceId={props.spaceId} />
+    </>
   );
 }
 
