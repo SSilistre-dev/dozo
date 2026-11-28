@@ -6,13 +6,20 @@ import {
   appContract,
   BYOK_TIERS,
   byokTierPriceCents,
+  DOZO_PLANS_OFFERED,
   DOZO_PLANS_ON_SALE,
+  SPEECH_ALLOWANCE_PERCENT,
   sandboxAllowanceHours,
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
-import { hasModelAccess, memberHasModelAccess, planComputerSize } from "@rakazo/db";
+import {
+  hasModelAccess,
+  memberHasModelAccess,
+  planComputerSize,
+  speechAllowancePlan,
+} from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing/billing.js";
 import { createReferrals } from "./billing/referrals.js";
@@ -208,9 +215,6 @@ function setup() {
   return { provider, billing };
 }
 
-/** What Premium Plus cost before it was taken off sale: a subscriber from then keeps paying it. */
-const EARLIER_PLUS_CENTS = 9900;
-
 /**
  * A subscription bought before the plan stopped being sold, at the price it had then: opened with
  * the payment provider directly, since the server sells neither plan now.
@@ -218,7 +222,7 @@ const EARLIER_PLUS_CENTS = 9900;
 async function subscribedEarlier(
   { provider, billing }: ReturnType<typeof setup>,
   tier: "pro" | "max",
-  amountCents = tier === "pro" ? (BYOK_TIERS.pro.monthlyPriceCents ?? 0) : EARLIER_PLUS_CENTS,
+  amountCents = BYOK_TIERS[tier].monthlyPriceCents ?? 0,
 ) {
   const { customerId } = await provider.createCustomer({
     email: actor.email,
@@ -238,7 +242,8 @@ async function subscribedEarlier(
 }
 
 describe("plans that are not on sale", () => {
-  it("sells no paid plan yet", () => {
+  it("offers Premium alone and sells no paid plan yet", () => {
+    expect(DOZO_PLANS_OFFERED).toEqual(["pro"]);
     expect(DOZO_PLANS_ON_SALE).toEqual([]);
   });
 
@@ -294,14 +299,14 @@ describe("plans that are not on sale", () => {
     expect(toPremium).toMatchObject({ code: "plan_coming_soon" });
     expect(plus.provider.subscriptions[0]).toMatchObject({
       byokTier: "max",
-      byokPriceCents: EARLIER_PLUS_CENTS,
+      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
     });
 
     store.account = null;
     const premium = setup();
     await subscribedEarlier(premium, "pro");
     await expect(premium.billing.changeTier(actor, "max")).rejects.toMatchObject({
-      code: "CONFLICT",
+      code: "plan_coming_soon",
     });
     expect(premium.provider.subscriptions[0]).toMatchObject({ byokTier: "pro" });
   });
@@ -316,7 +321,9 @@ describe("plans that are not on sale", () => {
     store.account = null;
     const plus = setup();
     await subscribedEarlier(plus, "max");
-    await expect(plus.billing.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(plus.billing.switchToYearly(actor)).rejects.toMatchObject({
+      code: "plan_coming_soon",
+    });
     expect(plus.provider.subscriptions[0]).toMatchObject({ byokInterval: "month" });
   });
 
@@ -327,7 +334,7 @@ describe("plans that are not on sale", () => {
     await expect(context.billing.status(actor)).resolves.toMatchObject({
       state: "active",
       byokTier: "max",
-      byokPriceCents: EARLIER_PLUS_CENTS,
+      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
       computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.max.computerAllowanceCents),
       sharedSpace: { plan: "Premium Plus", limitBytes: sharedSpaceBytes("max") },
     });
@@ -381,13 +388,12 @@ describe("Dozo plans", () => {
     expect(byokTierPriceCents("standard", "month")).toBeNull();
   });
 
-  it("prices Premium, not Premium Plus, and keeps a computer allowance for each", () => {
-    expect(byokTierPriceCents("pro", "month")).toBe(BYOK_TIERS.pro.monthlyPriceCents);
-    expect(byokTierPriceCents("pro", "month")).toBeGreaterThan(0);
-    expect(byokTierPriceCents("max", "month")).toBeNull();
-    expect(byokTierPriceCents("max", "year")).toBeNull();
-    for (const tier of ["pro", "max"] as const)
+  it("keeps both paid plans' prices and computer allowances, though neither is sold", () => {
+    for (const tier of ["pro", "max"] as const) {
+      expect(byokTierPriceCents(tier, "month")).toBe(BYOK_TIERS[tier].monthlyPriceCents);
+      expect(byokTierPriceCents(tier, "month")).toBeGreaterThan(0);
       expect(BYOK_TIERS[tier].computerAllowanceCents).toBeGreaterThan(0);
+    }
     expect(BYOK_TIERS.max.computerAllowanceCents).toBeGreaterThan(
       BYOK_TIERS.pro.computerAllowanceCents,
     );
@@ -564,10 +570,10 @@ describe("a Premium subscriber", () => {
   it("moves up only to a plan on sale, and never to Free, which is cancelling", async () => {
     const context = setup();
     await subscribedEarlier(context, "pro");
-    // Premium Plus has no price, even while Premium is on sale.
+    // Premium Plus is not offered, even while Premium is on sale.
     onSale.add("pro");
     await expect(context.billing.changeTier(actor, "max")).rejects.toMatchObject({
-      code: "CONFLICT",
+      code: "plan_coming_soon",
     });
     await expect(context.billing.changeTier(actor, "standard")).rejects.toMatchObject({
       code: "CONFLICT",
@@ -692,8 +698,23 @@ describe("a plan an admin granted", () => {
     store.grant = grant("pro", 30);
     await expect(context.billing.status(actor)).resolves.toMatchObject({
       byokTier: "max",
-      byokPriceCents: EARLIER_PLUS_CENTS,
+      byokPriceCents: BYOK_TIERS.max.monthlyPriceCents,
     });
+  });
+});
+
+describe("an admin's free access to a paid plan", () => {
+  it("still gives speech from the plan's price, Premium Plus included, though neither is sold", async () => {
+    for (const tier of ["pro", "max"] as const) {
+      const price = BYOK_TIERS[tier].monthlyPriceCents ?? 0;
+      expect(price, `${tier} keeps a price`).toBeGreaterThan(0);
+      Object.assign(store.credits, {
+        mode: "byok",
+        freeByokTiers: [{ tier, expiresAt: new Date(Date.now() + 30 * DAY) }],
+      });
+      const plan = await speechAllowancePlan(prisma, "org-1");
+      expect(plan?.limitMicros, tier).toBe(BigInt(price) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n);
+    }
   });
 });
 

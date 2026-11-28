@@ -1,5 +1,11 @@
 import type { ByokTier, ComputerSize } from "@rakazo/contracts";
-import { BYOK_TIERS, PLAN_LIMIT_CODES, planOnSale, sandboxAllowanceHours } from "@rakazo/contracts";
+import {
+  BYOK_TIERS,
+  PLAN_LIMIT_CODES,
+  planOffered,
+  planOnSale,
+  sandboxAllowanceHours,
+} from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readPlanLimits, sharedSpaceUsage } from "@rakazo/db";
@@ -27,8 +33,8 @@ export class PlanComingSoonError extends ClientError {
 }
 
 /**
- * Refuses to bill `tier` unless it is on sale and has a price: Free is told it is free, a paid
- * plan that is not sold yet (or has no price) that it is not on sale yet.
+ * Refuses to bill `tier` unless it is on sale and has a price: Free is told it is free, any other
+ * plan (coming soon, or not offered at all) that it is not on sale yet.
  */
 export function refuseUnsoldPlan(
   tier: ByokTier,
@@ -65,8 +71,8 @@ export async function withPlanHours<Offer extends { tier: ByokTier; computerHour
 }
 
 /**
- * `withPlanHours` over offers that also carry the machine this server's computer provider starts,
- * with a plan that is not on sale yet marked coming soon.
+ * `withPlanHours` over the offered plans (`DOZO_PLANS_OFFERED`), each with the machine this server's
+ * computer provider starts, and a plan that is not on sale yet marked coming soon.
  */
 export async function withPlanOffers<
   Offer extends { tier: ByokTier; computerHours: number; computerSize: ComputerSize },
@@ -76,8 +82,9 @@ export async function withPlanOffers<
   offers: Offer[],
   hourMicros?: number,
 ) {
-  const offered = await withPlanHours(prisma, withComputerSpecs(offers, sandbox), hourMicros);
-  return offered.map((offer) =>
+  const offered = offers.filter((offer) => planOffered(offer.tier));
+  const sized = await withPlanHours(prisma, withComputerSpecs(offered, sandbox), hourMicros);
+  return sized.map((offer) =>
     planOnSale(offer.tier) ? offer : { ...offer, comingSoon: true as const },
   );
 }

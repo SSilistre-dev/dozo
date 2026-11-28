@@ -109,6 +109,7 @@
  "Computer limit reached. This bot can use the Team Computer.": "הגעת למגבלת המחשבים. הבוט הזה יכול להשתמש במחשב הצוות.",
  "Space limit reached. Delete a Space to add another.": "הגעת למגבלת המרחבים. יש למחוק מרחב כדי להוסיף אחר.",
  "This plan is free. Choose a paid plan to upgrade.": "התוכנית הזו חינמית. יש לבחור תוכנית בתשלום כדי לשדרג.",
+ "This plan isn't on sale yet.": "התוכנית הזו עדיין לא זמינה לרכישה.",
  "Upgrade to {plan}": "שדרוג ל-{plan}",
  "Cached input": "קלט במטמון",
  "Read from cache": "נקרא מהמטמון",

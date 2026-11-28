@@ -24,10 +24,7 @@ test("plan screen: Premium at the server's price, coming soon, and nothing to su
   const plans = await serverPlans(browser);
   const premium = plans.find((p) => p.tier === "pro");
   expect(premium?.onSale, "Premium is not on sale yet").toBe(false);
-  expect(
-    plans.find((p) => p.tier === "max")?.monthlyPriceCents,
-    "no Premium Plus offer",
-  ).toBeNull();
+  expect(plans.find((p) => p.tier === "max")?.offered, "no Premium Plus offer").toBe(false);
   const billing = await fakeBilling(page, plans);
   await openBot(page, readWorld().chiefId, "Chief");
   await page.goto("/app?settings=billing");

@@ -133,7 +133,7 @@ test("site settings: an announcement is saved, every member sees it, then it is 
 test("plans: what is not on sale, and a quota changed and put back", async ({ browser, guard }) => {
   const page = await adminAt(browser, "/admin/plans");
   guard.follow(page);
-  // Premium Plus has no price and is not sold: never "Free", which only Free is.
+  // Premium Plus keeps its price but is not offered or sold: never "Free", which only Free is.
   const plus = page.getByTestId("plan-max");
   await expect(plus).toContainText("Not on sale");
   await expect(plus).not.toContainText("Free");

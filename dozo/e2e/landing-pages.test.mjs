@@ -185,9 +185,10 @@ test("every language shows the plans the code offers, and links sign-up only whe
   };
   // How many computers a plan allows one person: the first line of a paid card, and Free has none.
   const computers = (name) => Number(terms(name).match(/computers: (\d+)/)[1]);
-  const onSale = plans.match(/DOZO_PLANS_ON_SALE: readonly ByokTier\[\] = \[([^\]]*)\]/)[1];
-  // A paid plan the fork gives no price is not offered, so the page has no card for it.
-  assert.match(terms("premiumPlus"), /monthlyPriceCents: null/);
+  const list = (name) => plans.match(new RegExp(`${name}: readonly ByokTier\\[\\] = \\[([^\\]]*)\\]`))[1];
+  const onSale = list("DOZO_PLANS_ON_SALE");
+  // Only Premium is offered, so the page has no card for Premium Plus.
+  assert.equal(list("DOZO_PLANS_OFFERED"), '"pro"');
   assert.doesNotMatch(terms("premium"), /PriceCents/, "Premium keeps upstream's price");
   const premium = tier("pro");
   const [, cpus, memory] = sizes.match(

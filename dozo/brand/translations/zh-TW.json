@@ -98,6 +98,7 @@
  "Computer limit reached. This bot can use the Team Computer.": "已達電腦上限。此機器人可使用團隊電腦。",
  "Space limit reached. Delete a Space to add another.": "已達空間上限。請刪除一個空間後再新增。",
  "This plan is free. Choose a paid plan to upgrade.": "此方案為免費方案。請選擇付費方案以升級。",
+ "This plan isn't on sale yet.": "此方案尚未開放購買。",
  "Upgrade to {plan}": "升級至 {plan}",
  "Cached input": "快取輸入",
  "Read from cache": "從快取讀取",

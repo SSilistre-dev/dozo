@@ -86,12 +86,14 @@ Free and Premium, and sells none yet:
   monthly computer allowance and a computer size. They start without a trial.
 - Premium keeps its price ($49 a month) and is coming soon: Billing shows Free's owner one disabled
   line, "Premium · $49 / month · Coming soon" (the price read from the code), where Subscribe would
-  be. Premium Plus has no price, so it is not offered at all; an admin can still grant it. A paid
-  plan is sold only once it is in `DOZO_PLANS_ON_SALE` in that file, the one switch. Until then
+  be. Premium Plus keeps its price but is not offered at all (only `pro` is in `DOZO_PLANS_OFFERED`);
+  an admin can still grant it, with every term upstream derives from its price (a free period's
+  speech allowance, for one). An offered plan is sold only once it is in `DOZO_PLANS_ON_SALE` in
+  that file, the one switch. Until then
   the server refuses every request that would bill it, whatever a client sends: a checkout
   (also reached through choosing one's own key) and a tier change, a switch to yearly or a renewed
-  trial of a subscription, each with `plan_coming_soon` ("This plan isn't on sale yet.", in English
-  and Turkish). The billing status marks such an offer `comingSoon`. A subscription that already
+  trial of a subscription, each with `plan_coming_soon` ("This plan isn't on sale yet.", in every
+  language the app has). The billing status marks such an offer `comingSoon`. A subscription that already
   exists keeps its plan, price and terms through every sync.
 
 Upstream counts computer hours only on a metered cloud provider. Here every computer the server
@@ -196,7 +198,7 @@ cannot open a price that is not offered. A plan checkout left unpaid returns to
 `/app?billing=canceled`, which reopens Billing quietly.
 
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file:
-Premium keeps upstream's amount and Premium Plus has none. Known limits:
+both paid plans keep upstream's amounts. Known limits:
 
 - A paid plan is bought on the web, in Settings > Billing. The mobile app shows the plan and
   changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
@@ -227,8 +229,6 @@ Premium keeps upstream's amount and Premium Plus has none. Known limits:
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
   such subscription exists, since the server has never billed, and Free cannot be checked out: a
   checkout that names no paid plan is refused as `plan_not_offered`.
-- Premium Plus has no price, so the operator's speech allowance, which upstream sizes from a live
-  subscription's tier price, is nothing for a subscription to it made before; none exists.
 - The shared space in use shows in Billing only, read when the screen opens. The files screen
   does not show it: it would need a second read of the billing status.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;

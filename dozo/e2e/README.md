@@ -197,8 +197,8 @@ holds the answer back that long (at most 300), so a bot stays busy while the que
 in line behind it.
 
 There is no payment provider on this stack: billing's server answers are faked in the browser from
-the server's own plans (`fakeBilling`, prices and whether each is on sale read from
-`dozoAdmin/plans/list`, never written in the suite); a plan not on sale is offered as coming soon,
+the server's own plans (`fakeBilling`, prices and whether each is offered and on sale read
+from `dozoAdmin/plans/list`, never written in the suite); a plan not on sale is offered as coming soon,
 as the server marks it, and a checkout is recorded and answered with the `?billing=canceled` return. Free access
 grants exist only on a billing server, so the account reports billing (`reportBilling`) and the four
 calls are answered in the browser too; without billing the admin page does not list the section.

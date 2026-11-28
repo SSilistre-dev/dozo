@@ -79,11 +79,12 @@ Closed pre-release state (lifted):
   either). Free shows its monthly price and links sign-up. Premium shows its monthly price, and
   where its sign-up link would be a plain "Coming soon" pill (`.pill.soon`, the outlined style of
   `.pill.ok`; a `span`, not a link), since no plan is on sale yet; its JSON-LD offer says
-  `PreOrder`. Premium Plus is not offered and has no card. There is no Monthly / Yearly switch and
+  `PreOrder`. Premium Plus is not offered and has no card. Premium has no line under its price; the
+  pill and the list keep their grid rows (`landing.css`), so both cards' pills stay level. There is no Monthly / Yearly switch and
   no yearly price, and no link names a plan. The prices, computer hours, file storage, each
   computer's vCPUs and memory and whether Premium is on sale are read from the code by
   `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing/billing.ts`,
-  `dozo-plans.ts` with `DOZO_PLANS_ON_SALE`, and the default `RAKAZO_COMPUTER_SIZES` in
+  `dozo-plans.ts` with `DOZO_PLANS_OFFERED` and `DOZO_PLANS_ON_SALE`, and the default `RAKAZO_COMPUTER_SIZES` in
   `dozo/deploy/compose.deploy.yml`), and it fails when a page disagrees: once Premium is on sale
   the card must link sign-up. No discount, tax line or other number: write one only once the owner
   has set it and the code enforces it.

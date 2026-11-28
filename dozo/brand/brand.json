@@ -2357,7 +2357,7 @@
     {
       "file": "packages/contracts/src/billing/billing.ts",
       "find": "/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n  if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;\n",
-      "replace": "import { applyDozoPlans } from \"../dozo-plans.js\";\n\nexport { DOZO_PLANS_ON_SALE, planOnSale } from \"../dozo-plans.js\";\n\napplyDozoPlans(BYOK_TIERS);\n\n/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n",
+      "replace": "import { applyDozoPlans } from \"../dozo-plans.js\";\n\nexport { DOZO_PLANS_OFFERED, DOZO_PLANS_ON_SALE, planOffered, planOnSale } from \"../dozo-plans.js\";\n\napplyDozoPlans(BYOK_TIERS);\n\n/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n",
       "requires": [
         "packages/contracts/src/dozo-plans.ts"
       ],

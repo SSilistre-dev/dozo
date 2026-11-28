@@ -160,6 +160,7 @@
  "Computer limit reached. This bot can use the Team Computer.": "Computerlimit erreicht. Dieser Bot kann den Team-Computer nutzen.",
  "Space limit reached. Delete a Space to add another.": "Space-Limit erreicht. Lösche einen Space, um einen weiteren hinzuzufügen.",
  "This plan is free. Choose a paid plan to upgrade.": "Dieser Plan ist kostenlos. Wähle einen kostenpflichtigen Plan zum Upgrade.",
+ "This plan isn't on sale yet.": "Dieser Plan ist noch nicht erhältlich.",
  "Upgrade to {plan}": "Auf {plan} upgraden",
  "Cached input": "Zwischengespeicherte Eingabe",
  "Read from cache": "Aus dem Cache gelesen",

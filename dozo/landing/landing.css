@@ -161,7 +161,8 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .price{margin-top:14px;color:var(--muted);font-size:14.5px;display:grid}
 .price b{font-size:24px;line-height:1.1;font-weight:500;letter-spacing:-.03em;color:var(--text)}
 .bill{min-height:1.6em;font-size:13.5px;color:var(--muted)}
-.tier .pill{margin-top:18px}
+/* the pill and the list keep their rows, so a card with no line under its price stays aligned */
+.tier .pill{margin-top:18px;grid-row:4}.tier ul{grid-row:5}
 .tier ul{list-style:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:14.5px;color:var(--muted);justify-self:stretch}.tier li+li{margin-top:6px}
 .self{display:flex;align-items:center;gap:8px 24px;flex-wrap:wrap;margin-top:12px;padding:18px 24px;border-radius:24px;box-shadow:inset 0 0 0 1px var(--line)}
 .self h3{font-size:16px;font-weight:500}.self p{flex:1 1 24em;font-size:14.5px;color:var(--muted)}

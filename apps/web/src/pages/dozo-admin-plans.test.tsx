@@ -69,6 +69,7 @@ const free: DozoAdminPlanRow = {
   name: "Free",
   monthlyPriceCents: null,
   annualPriceCents: null,
+  offered: false,
   onSale: false,
   currency: "usd",
   priceKeys: { month: null, year: null },
@@ -84,6 +85,7 @@ const premium: DozoAdminPlanRow = {
   name: "Premium",
   monthlyPriceCents: 4900,
   annualPriceCents: 46800,
+  offered: true,
   onSale: true,
   currency: "usd",
   priceKeys: { month: "key_pro_monthly", year: "key_pro_yearly" },
@@ -197,6 +199,7 @@ it("says a paid plan that is not sold is not on sale, with its price where it ha
     name: "Premium Plus",
     monthlyPriceCents: null,
     annualPriceCents: null,
+    offered: false,
     onSale: false,
     priceKeys: { month: null, year: null },
   };

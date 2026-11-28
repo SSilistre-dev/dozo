@@ -150,6 +150,7 @@ describe("the plans procedures", () => {
     expect(free).toMatchObject({
       name: "Free",
       monthlyPriceCents: null,
+      offered: false,
       onSale: false,
       priceKeys: { month: null, year: null },
       computer: null,
@@ -168,14 +169,14 @@ describe("the plans procedures", () => {
       },
       computerHoursEditable: true,
       computers: { value: 1, terms: 1, set: false },
-      // Its price is set, but it is not sold yet.
+      // Its price is set and it is offered, but it is not sold yet.
+      offered: true,
       onSale: false,
     });
-    // Premium Plus has no price and is not sold; an admin may still grant it.
+    // Premium Plus keeps its price but is not offered or sold; an admin may still grant it.
     expect(plus).toMatchObject({
-      monthlyPriceCents: null,
-      annualPriceCents: null,
-      priceKeys: { month: null, year: null },
+      monthlyPriceCents: BYOK_TIERS.max.monthlyPriceCents,
+      offered: false,
       onSale: false,
       computerHoursEditable: true,
     });
