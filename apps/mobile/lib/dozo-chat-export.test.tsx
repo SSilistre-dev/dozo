@@ -33,6 +33,7 @@ vi.mock("./appearance/appearance", () => ({ resolveMobileAppearance: () => "dark
 vi.mock("./messages/message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
 vi.mock("./dozo-message-actions", () => ({ useDozoChatPins: () => api.pins }));
 vi.mock("../components/dozo-night-notes-row", () => ({ DozoNightNotesRow: () => null }));
+vi.mock("../components/dozo-bot-calls-row", () => ({ DozoBotCallsRow: () => null }));
 vi.mock("../components/dozo-bot-share", () => ({ useDozoBotShareActions: () => [] }));
 vi.mock("./dozo-trust-bot", () => ({ useDozoTrustActions: () => api.trust }));
 vi.mock("./dozo-bot-chats", () => ({ useDozoNewChat: () => ({ run: api.newChat }) }));

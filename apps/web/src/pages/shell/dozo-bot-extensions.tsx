@@ -21,6 +21,7 @@ const BOT_MENU_ITEMS: DozoLazyLoader<DozoBotMenuItemProps>[] = [
 /** Rows in a bot's settings panel, after its model backups. A feature adds one line, as above. */
 const BOT_SETTINGS_ROWS: DozoLazyLoader<DozoBotSettingsRowProps>[] = [
   () => import("./dozo-night-notes-row").then((module) => module.DozoNightNotesRow),
+  () => import("./dozo-bot-calls-row").then((module) => module.DozoBotCallsRow),
 ];
 
 const menuItems = dozoLazyEntries(BOT_MENU_ITEMS);

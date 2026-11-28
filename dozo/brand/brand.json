@@ -16074,6 +16074,51 @@
       "reason": "billing: a read that failed is not a refusal of the person's action, so it is neutral text with a way to read again, not a red line with no way on"
     },
     {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./providers/voice/xai/xai-voice.js\";\nexport * from \"./providers/web/fake/fake-web.js\";",
+      "replace": "export * from \"./providers/voice/xai/xai-voice.js\";\nexport * from \"./dozo-bot-calls.js\";\nexport * from \"./providers/web/fake/fake-web.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: the package exports a bot's permission to call, which the API reads and saves"
+    },
+    {
+      "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
+      "find": "import { backgroundHelpersAllowed } from \"../../tasks/background-helpers.js\";\nimport { TASK_CATALOG_GUIDANCE }",
+      "replace": "import { backgroundHelpersAllowed } from \"../../tasks/background-helpers.js\";\nimport { dozoCallToolFor, dozoMayOfferCall } from \"../../dozo-bot-calls.js\";\nimport { TASK_CATALOG_GUIDANCE }",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
+      "find": "        !conversationThread.externalConversationId &&\n        Boolean(",
+      "replace": "        !conversationThread.externalConversationId &&\n        (await dozoMayOfferCall(deps, run)) &&\n        Boolean(",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: call_user is offered only in a person's own turn or a routine or watch run of its owner with the owner's permission; every other run kind is not offered it"
+    },
+    {
+      "file": "packages/adapters/src/runs/assembly/run-assembly-capabilities.ts",
+      "find": "      (tool) => tool.name !== \"run_subagent\" || backgroundHelpersAllowed({ trigger: run.trigger }),\n    ),\n",
+      "replace": "      (tool) => tool.name !== \"run_subagent\" || backgroundHelpersAllowed({ trigger: run.trigger }),\n    ).map(dozoCallToolFor(run.trigger)),\n",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: in a routine's run call_user carries the guidance for when to call"
+    },
+    {
+      "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
+      "find": "import { endCallFromTool, requestUserCall } from \"../../calls/call-request.js\";\n",
+      "replace": "import { endCallFromTool } from \"../../calls/call-request.js\";\nimport { dozoRequestUserCall as requestUserCall } from \"../../dozo-bot-calls.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-bot-calls.ts"
+      ],
+      "reason": "bot calls: call_user goes through the fork's policy (who started the run, the owner's permission, quiet hours, the daily cap) before it rings; the call site and the tool's answer are unchanged"
+    },
+    {
       "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
       "find": "import { messageBot, unresolvedBotError } from \"../../messaging/bot-messages.js\";\nimport { startBackgroundHelper }",
       "replace": "import { messageBot, unresolvedBotError } from \"../../messaging/bot-messages.js\";\nimport { dozoDirectHandoff } from \"../../dozo-direct-handoff.js\";\nimport { startBackgroundHelper }",
@@ -16165,6 +16210,12 @@
       "find": "msgstr \"Bağlantıyı kopyala\"\n\n#: apps/web/src/pages/shell/bots/agent-import.tsx\nmsgid \"Copy prompt\"",
       "replace": "msgstr \"Bağlantıyı kopyala\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Include picture\"\nmsgstr \"Resmi ekle\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Anyone with the link can see this and make their own copy.\"\nmsgstr \"Bağlantıya sahip olan herkes bunu görebilir ve kendi kopyasını oluşturabilir.\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\nmsgid \"This bot is too large to share.\"\nmsgstr \"Bu bot paylaşılamayacak kadar büyük.\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Link expires {date}\"\nmsgstr \"Bağlantının süresi {date} tarihinde doluyor\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Revoke link\"\nmsgstr \"Bağlantıyı iptal et\"\n\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Revoke link?\"\nmsgstr \"Bağlantı iptal edilsin mi?\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Create new link\"\nmsgstr \"Yeni bağlantı oluştur\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\n#: apps/mobile/app/dozo-bot-share.tsx\nmsgid \"Could not share\"\nmsgstr \"Paylaşılamadı\"\n\n#: apps/web/src/pages/shell/dozo-bot-share-dialog.tsx\nmsgid \"Could not revoke\"\nmsgstr \"İptal edilemedi\"\n\n#: apps/web/src/pages/dozo-bot-share-page.tsx\nmsgid \"Sign in to make a copy\"\nmsgstr \"Kopya oluşturmak için oturum açın\"\n\n#: apps/web/src/pages/dozo-bot-share-page.tsx\nmsgid \"Could not make a copy\"\nmsgstr \"Kopya oluşturulamadı\"\n\n#: apps/web/src/pages/shell/bots/agent-import.tsx\nmsgid \"Copy prompt\"",
       "reason": "bot share links: the Turkish of the strings the owner's review, the shared page and the mobile share screen add"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Arama sesleri\"\n\n#. placeholder {0}: call.botName",
+      "replace": "msgstr \"Arama sesleri\"\n\n#: apps/web/src/pages/shell/dozo-bot-calls-row.tsx\n#: apps/mobile/components/dozo-bot-calls-row.tsx\nmsgid \"Can call me\"\nmsgstr \"Beni arayabilir\"\n\n#. placeholder {0}: call.botName",
+      "reason": "bot calls: the Turkish copy of the one new line, the switch that lets a bot call from its routines"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",

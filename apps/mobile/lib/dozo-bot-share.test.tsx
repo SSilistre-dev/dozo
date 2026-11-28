@@ -22,6 +22,8 @@ const api = vi.hoisted(() => ({
   previewInputs: [] as unknown[],
 }));
 
+// The hub's settings rows are other features, tested on their own.
+vi.mock("../components/dozo-bot-calls-row", () => ({ DozoBotCallsRow: () => null }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
