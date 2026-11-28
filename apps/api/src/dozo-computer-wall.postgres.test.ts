@@ -122,9 +122,7 @@ describePostgres("computers wall (PostgreSQL)", () => {
     const other = await person();
     const otherBot = await runningBot(other);
     const listed = await call(other, "dozoComputerWall/list");
-    expect((listed.json as Array<{ botId: string }>).map((tile) => tile.botId)).toEqual([
-      otherBot,
-    ]);
+    expect((listed.json as Array<{ botId: string }>).map((tile) => tile.botId)).toEqual([otherBot]);
     const screen = await call(other, "computer/screenUrl", { botId: ownerBot, preview: true });
     expect(screen.status).toBe(404);
     expect(JSON.stringify(screen.json)).not.toContain("novnc");

@@ -51,7 +51,12 @@ vi.mock("@rakazo/ui-web", () => ({
   BotAvatar: ({ identity }: { identity: string }) => <span data-avatar={identity} />,
 }));
 
-import { DOZO_WALL_LIVE_MAX, DozoComputerWall, dozoWallTiles, wallScreenUrl } from "./dozo-computer-wall";
+import {
+  DOZO_WALL_LIVE_MAX,
+  DozoComputerWall,
+  dozoWallTiles,
+  wallScreenUrl,
+} from "./dozo-computer-wall";
 
 const bot = (id: string): Bot => ({ id, name: id.toUpperCase(), color: "#888888" }) as Bot;
 const tile = (botId: string, state: DozoComputerTile["state"], screen = false) => ({
@@ -278,7 +283,9 @@ it("closes on Escape and from its close button", async () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
   expect(onClose).toHaveBeenCalledOnce();
-  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click(),
+  );
   expect(onClose).toHaveBeenCalledTimes(2);
 });
 

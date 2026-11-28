@@ -75,3 +75,27 @@ it("hands the wall the shell's bots and full view while the shell is open, and n
   await act(async () => root.render(<Wall />));
   expect(seen).toBeNull();
 });
+
+it("keeps the newer shell when an older one goes away", async () => {
+  const older = [{ id: "a" }] as Bot[];
+  const newer = [{ id: "b" }] as Bot[];
+  await act(async () =>
+    root.render(
+      <>
+        <Shell key="older" bots={older} />
+        <Shell key="newer" bots={newer} />
+        <Wall />
+      </>,
+    ),
+  );
+  expect(seen?.bots).toBe(newer);
+  await act(async () =>
+    root.render(
+      <>
+        <Shell key="newer" bots={newer} />
+        <Wall />
+      </>,
+    ),
+  );
+  expect(seen?.bots).toBe(newer);
+});

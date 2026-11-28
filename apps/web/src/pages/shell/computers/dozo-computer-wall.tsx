@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, ComputerStatus, DozoComputerTile } from "@rakazo/contracts";
 import { computerLabel } from "@rakazo/i18n/computer-usage";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
