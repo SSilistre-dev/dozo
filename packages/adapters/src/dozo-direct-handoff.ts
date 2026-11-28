@@ -42,6 +42,8 @@ import {
 export const HANDOFF_CONTEXT_MESSAGES = 20;
 export const HANDOFF_CONTEXT_MESSAGE_CHARS = 1_000;
 export const HANDOFF_CONTEXT_CHARS = 6_000;
+/** Handoffs a chain may take after the user's last turn before one of its bots must stop. */
+export const HANDOFF_CHAIN_MAX = 3;
 /** The handing bot's one line to the user. */
 export const HANDOFF_LINE_CHARS = 280;
 
@@ -64,7 +66,9 @@ export type DirectHandoffKit = {
 
 type HandoffBlock = Extract<MessageBlock, { kind: "handoff" }>;
 type Db = PrismaClient | Prisma.TransactionClient;
-type Source = Awaited<ReturnType<typeof sourceHandoff>>;
+type Chain = Awaited<ReturnType<typeof handoffChain>>;
+
+const DELIVERY_PREFIX = "dozo-handoff:";
 
 const optional = (value: unknown) => (value ? String(value) : undefined);
 
@@ -80,15 +84,15 @@ export async function dozoDirectHandoff(
 ): Promise<unknown> {
   const { deps, run, bot } = ctx;
   const { args } = call;
-  const source = await sourceHandoff(deps.prisma, run.sourceMessageId);
+  const source = await handoffChain(deps.prisma, run.sourceMessageId);
+  if (!source.intact) {
+    return call.finish({ error: "cannot verify the handoff chain; finish the work yourself" });
+  }
   if (!canHandOver(ctx, source)) {
     return call.finish({
       error:
         "group_id is required here: only a turn the user started in their own chat with you in the app, or one a handoff started, can hand the chat to another bot",
     });
-  }
-  if (!source.intact) {
-    return call.finish({ error: "cannot verify the handoff chain; finish the work yourself" });
   }
   const invalid = kit.messageError(ctx, args.message);
   if (invalid) return call.finish({ error: invalid });
@@ -113,9 +117,14 @@ export async function dozoDirectHandoff(
   }
   if (target.id === bot.id) return call.finish({ error: "cannot hand off to yourself" });
   if (!target.thread) return call.finish({ error: `${target.name} has no chat to hand over to` });
-  if (source.fromBotId === target.id) {
+  if (source.bots.includes(target.id)) {
     return call.finish({
-      error: `${target.name} just handed this to you. Finish it yourself or tell the user.`,
+      error: `${target.name} already had this in the current handoff chain. Finish it yourself or tell the user.`,
+    });
+  }
+  if (source.handoffs >= HANDOFF_CHAIN_MAX) {
+    return call.finish({
+      error: `this work was already handed on ${HANDOFF_CHAIN_MAX} times since the user last wrote; finish it yourself or tell the user`,
     });
   }
   if (botMessageHopExhausted(source.hop)) {
@@ -135,7 +144,8 @@ export async function dozoDirectHandoff(
   const handoff = {
     targetId: target.id,
     targetThreadId: target.thread.id,
-    deliveryKey: `dozo-handoff:${call.effectKey}`,
+    // Names the handing run, so the next bot can trace the chain back (handoffChain).
+    deliveryKey: `${DELIVERY_PREFIX}${run.id}:${call.effectKey}`,
   };
   // Checked before any file is copied for the next bot, and again inside the transaction.
   const early = await refusal(deps.prisma, ctx, handoff);
@@ -178,7 +188,7 @@ export async function dozoDirectHandoff(
  * handoff started. Never a routine, a helper or another background run, whose input nobody
  * watches, a chat reached from a messaging app, or a call.
  */
-function canHandOver(ctx: RunContext, source: Source): boolean {
+function canHandOver(ctx: RunContext, source: Chain): boolean {
   const { run, bot, thread } = ctx;
   return (
     !ctx.source.messagingChannelRun &&
@@ -186,28 +196,58 @@ function canHandOver(ctx: RunContext, source: Source): boolean {
     thread.botId === bot.id &&
     bot.userId === run.userId &&
     (run.trigger === "user" || run.trigger === "follow_up") &&
-    (ctx.source.ownerStartedRun || source.fromBotId !== undefined)
+    (ctx.source.ownerStartedRun || source.handoffs > 0)
   );
 }
 
 /**
- * The handoff that started this run, if any: who sent it and the hop the next one takes. A
- * source message that lost entries, or whose handoff does not parse, may hide the chain's hop.
+ * The direct handoffs that led to this run since the user's last turn, traced back through the
+ * runs that wrote them: the bots that handed it on, how many handoffs there were (stopping past
+ * the cap) and the hop the next one takes. A message that lost entries, a handoff that does not
+ * parse, or a link that cannot be followed leaves the chain unverified.
  */
-async function sourceHandoff(prisma: PrismaClient, sourceMessageId: string | null) {
-  const source = sourceMessageId
-    ? await prisma.message.findUnique({
-        where: { id: sourceMessageId },
-        select: { id: true, blocks: true },
-      })
-    : null;
-  const read = source ? readMessageBlocks(source) : { blocks: [], intact: true };
-  const handoff = read.blocks.find((block): block is HandoffBlock => block.kind === "handoff");
-  return {
-    intact: read.intact && (!handoff || MessageBlock.safeParse(handoff).success),
-    fromBotId: handoff?.fromBotId,
-    hop: nextBotMessageHop(handoff?.hop ?? botMessageContext(read.blocks)?.hop),
-  };
+async function handoffChain(prisma: PrismaClient, sourceMessageId: string | null) {
+  const bots: string[] = [];
+  let hop = 1;
+  let sourceId = sourceMessageId;
+  for (let handoffs = 0; ; handoffs++) {
+    const message = sourceId
+      ? await prisma.message.findUnique({
+          where: { id: sourceId },
+          select: { id: true, blocks: true, clientNonce: true },
+        })
+      : null;
+    const read = message ? readMessageBlocks(message) : { blocks: [], intact: true };
+    const handoff = read.blocks.find((block): block is HandoffBlock => block.kind === "handoff");
+    if (handoffs === 0)
+      hop = nextBotMessageHop(handoff?.hop ?? botMessageContext(read.blocks)?.hop);
+    const unverified = { intact: false, bots, handoffs, hop };
+    if (!read.intact || (handoff && !MessageBlock.safeParse(handoff).success)) return unverified;
+    if (!handoff || handoffs >= HANDOFF_CHAIN_MAX) return { intact: true, bots, handoffs, hop };
+    const handingRunId = message?.clientNonce?.startsWith(DELIVERY_PREFIX)
+      ? message.clientNonce.slice(DELIVERY_PREFIX.length).split(":")[0]
+      : undefined;
+    const handing = handingRunId
+      ? await prisma.run.findUnique({
+          where: { id: handingRunId },
+          select: { botId: true, sourceMessageId: true },
+        })
+      : null;
+    if (!handing || handing.botId !== handoff.fromBotId) return unverified;
+    bots.push(handing.botId);
+    sourceId = handing.sourceMessageId;
+  }
+}
+
+/**
+ * Text with zero-width and other format characters dropped, every line break made a newline and
+ * the spaces that open a line made plain, so a label behind any of them reaches the neutralizer.
+ */
+export function plainLineStarts(text: string): string {
+  return text
+    .replace(/\p{Cf}/gu, "")
+    .replace(/\r\n?|[\u0085\u2028\u2029]/g, "\n")
+    .replace(/^[\p{Zs}\t]+/gmu, (lead) => lead.replace(/\p{Zs}/gu, " "));
 }
 
 /**
@@ -230,10 +270,11 @@ export async function recentConversation(
   let used = 0;
   for (const row of rows) {
     if (row.role === "bot" && row.botId !== bot.id) continue;
-    const text = storedMessageBlocks(row)
-      .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-      .join("\n")
-      .trim();
+    const text = plainLineStarts(
+      storedMessageBlocks(row)
+        .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+        .join("\n"),
+    ).trim();
     if (!text) continue;
     const clipped =
       text.length > HANDOFF_CONTEXT_MESSAGE_CHARS
