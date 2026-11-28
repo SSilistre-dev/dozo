@@ -37,6 +37,9 @@ vi.mock("@lingui/react/macro", () => ({
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
+vi.mock("../../components/ErrorBoundary", () => ({
+  SectionLoadFailed: () => <p data-testid="load-failed">failed</p>,
+}));
 vi.mock("@rakazo/ui-web", () => ({
   Button: ({ children, ...props }: Record<string, unknown> & { children: ReactNode }) => (
     <button type="button" {...props}>
@@ -49,7 +52,7 @@ vi.mock("@rakazo/ui-web", () => ({
 import { QueryUserProvider } from "../../lib/query/query";
 import DozoBotStats from "./dozo-bot-stats";
 
-const STATS = { tasksFinished: 1200, routineRuns: 2, skillsLearned: 0, daysActive: 7 };
+const STATS = { tasksFinished: 1200, routineRuns: 2, skillsLearned: 0, daysActive: 7, more: false };
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
@@ -140,5 +143,28 @@ describe("a bot's stats row", () => {
     api.revoke.mockRejectedValue(new Error("x"));
     await click("Stop sharing");
     expect(api.toastError).toHaveBeenCalledWith("Could not save", expect.any(Error));
+  });
+
+  it("shares again by replacing the live link with a fresh one", async () => {
+    api.list.mockResolvedValue({ links: [{ id: "a", kind: "stats", targetId: "bot-1" }] });
+    api.revoke.mockResolvedValue({ revoked: true });
+    api.create.mockResolvedValue({ url: "https://app.example.test/s/new" });
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+    await draw();
+    await click("Share card");
+    expect(api.revoke).toHaveBeenCalledWith({ id: "a" });
+    expect(api.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the error state when the links cannot be read, and a plus when the read stopped short", async () => {
+    api.get.mockResolvedValue({ ...STATS, more: true });
+    api.list.mockRejectedValue(new Error("down"));
+    await draw();
+    expect(container.querySelector('[data-testid="load-failed"]')).not.toBeNull();
+    expect(container.textContent).toContain("1,200+");
+    expect(container.textContent).not.toContain("Share card");
   });
 });

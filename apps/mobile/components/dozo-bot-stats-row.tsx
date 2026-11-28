@@ -1,9 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import { DOZO_SHARE_LINK_MAX_DAYS, DOZO_STATS_SHARE_KIND } from "@rakazo/contracts";
+import { DOZO_SHARE_LINK_MAX_DAYS, DOZO_STATS_SHARE_KIND, formatDozoStat } from "@rakazo/contracts";
 import { Alert, Share } from "react-native";
 import { errorText } from "../lib/api/user-error";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
+import { LoadFailure } from "./ui/load-failure";
 import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 
 /**
@@ -17,17 +18,21 @@ export function DozoBotStatsRow({ botId }: { botId: string }) {
   // Upstream's screen tests answer a procedure they do not know with an empty list.
   const stats = typeof read?.tasksFinished === "number" ? read : undefined;
   const linksRead = rpcQuery("dozoShareLinks/list");
-  const links = useScreenQuery(linksRead, { enabled: Boolean(stats) }).data?.links;
+  const linksQuery = useScreenQuery(linksRead, { enabled: Boolean(stats) });
+  const links = linksQuery.data?.links;
   const live = links?.filter(
     (link) => link.kind === DOZO_STATS_SHARE_KIND && link.targetId === botId,
   );
   const share = useSave({
-    save: (_input: undefined, send) =>
-      send("dozoShareLinks/create", {
+    // A link cannot be shown again, so sharing again replaces the live ones with a fresh link.
+    save: async (replaced: string[], send) => {
+      await Promise.all(replaced.map((id) => send("dozoShareLinks/revoke", { id })));
+      return send("dozoShareLinks/create", {
         kind: DOZO_STATS_SHARE_KIND,
         targetId: botId,
         days: DOZO_SHARE_LINK_MAX_DAYS,
-      }),
+      });
+    },
     stale: [linksRead.queryKey],
     onSaved: ({ url }) => {
       void Share.share({ url });
@@ -43,24 +48,29 @@ export function DozoBotStatsRow({ botId }: { botId: string }) {
   if (!stats) return null;
   return (
     <SettingsGroup>
-      <SettingsRow title={t`Tasks`} value={stats.tasksFinished.toLocaleString()} />
-      <SettingsRow title={t`Routine runs`} value={stats.routineRuns.toLocaleString()} />
-      <SettingsRow title={t`Skills`} value={stats.skillsLearned.toLocaleString()} />
-      <SettingsRow title={t`Days active`} value={stats.daysActive.toLocaleString()} />
-      {live?.length ? (
-        <SettingsRow
-          accessibilityRole="button"
-          title={t`Stop sharing`}
-          disabled={stop.pending}
-          onPress={() => stop.run(live.map((link) => link.id))}
-        />
+      <SettingsRow title={t`Tasks`} value={formatDozoStat(stats.tasksFinished, stats.more)} />
+      <SettingsRow title={t`Routine runs`} value={formatDozoStat(stats.routineRuns, stats.more)} />
+      <SettingsRow title={t`Skills`} value={formatDozoStat(stats.skillsLearned, stats.more)} />
+      <SettingsRow title={t`Days active`} value={formatDozoStat(stats.daysActive, stats.more)} />
+      {linksQuery.isError ? (
+        <LoadFailure message={t`Could not load`} onRetry={() => void linksQuery.refetch()} />
       ) : (
-        <SettingsRow
-          accessibilityRole="button"
-          title={t`Share card`}
-          disabled={share.pending || links === undefined}
-          onPress={() => share.run(undefined)}
-        />
+        <>
+          <SettingsRow
+            accessibilityRole="button"
+            title={t`Share card`}
+            disabled={share.pending || stop.pending || links === undefined}
+            onPress={() => share.run((live ?? []).map((link) => link.id))}
+          />
+          {live?.length ? (
+            <SettingsRow
+              accessibilityRole="button"
+              title={t`Stop sharing`}
+              disabled={share.pending || stop.pending}
+              onPress={() => stop.run(live.map((link) => link.id))}
+            />
+          ) : null}
+        </>
       )}
     </SettingsGroup>
   );

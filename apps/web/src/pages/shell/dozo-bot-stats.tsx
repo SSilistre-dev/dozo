@@ -1,7 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { DOZO_SHARE_LINK_MAX_DAYS, DOZO_STATS_SHARE_KIND } from "@rakazo/contracts";
+import { DOZO_SHARE_LINK_MAX_DAYS, DOZO_STATS_SHARE_KIND, formatDozoStat } from "@rakazo/contracts";
 import { Button, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { SectionLoadFailed } from "../../components/ErrorBoundary";
 import { toastError } from "../../lib/dozo-error-text";
 import { useQueryUserId, useSave } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
@@ -22,21 +23,25 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
     queryFn: () => rpc.dozoBotStats.get({ botId }),
     retry: false,
   }).data;
-  const links = useQuery({
+  const linksRead = useQuery({
     queryKey: linksKey,
     queryFn: () => rpc.dozoShareLinks.list(),
     enabled: Boolean(stats),
-  }).data?.links;
+  });
+  const links = linksRead.data?.links;
   const live = links?.filter(
     (link) => link.kind === DOZO_STATS_SHARE_KIND && link.targetId === botId,
   );
   const share = useSave({
-    save: (_input: undefined, client) =>
-      client.dozoShareLinks.create({
+    // A link cannot be shown again, so sharing again replaces the live ones with a fresh link.
+    save: async (replaced: string[], client) => {
+      await Promise.all(replaced.map((id) => client.dozoShareLinks.revoke({ id })));
+      return client.dozoShareLinks.create({
         kind: DOZO_STATS_SHARE_KIND,
         targetId: botId,
         days: DOZO_SHARE_LINK_MAX_DAYS,
-      }),
+      });
+    },
     stale: [linksKey],
     onSaved: async ({ url }) => {
       try {
@@ -68,31 +73,36 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
           <div key={key} className="flex min-w-0 flex-col-reverse">
             <dt className="truncate text-body-sm text-muted-foreground">{label}</dt>
             <dd className="text-body font-medium tabular-nums text-foreground">
-              {value.toLocaleString()}
+              {formatDozoStat(value, stats.more)}
             </dd>
           </div>
         ))}
       </dl>
-      {live?.length ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start text-muted-foreground"
-          disabled={stop.pending}
-          onClick={() => stop.run(live.map((link) => link.id))}
-        >
-          <Trans>Stop sharing</Trans>
-        </Button>
+      {linksRead.isError ? (
+        <SectionLoadFailed />
       ) : (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start text-muted-foreground"
-          disabled={share.pending || links === undefined}
-          onClick={() => share.run(undefined)}
-        >
-          <Trans>Share card</Trans>
-        </Button>
+        <div className="flex gap-1 self-start">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={share.pending || stop.pending || links === undefined}
+            onClick={() => share.run((live ?? []).map((link) => link.id))}
+          >
+            <Trans>Share card</Trans>
+          </Button>
+          {live?.length ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              disabled={share.pending || stop.pending}
+              onClick={() => stop.run(live.map((link) => link.id))}
+            >
+              <Trans>Stop sharing</Trans>
+            </Button>
+          ) : null}
+        </div>
       )}
     </div>
   );

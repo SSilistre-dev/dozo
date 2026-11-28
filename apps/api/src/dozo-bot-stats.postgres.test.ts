@@ -89,12 +89,12 @@ describePostgres("a bot's stats (PostgreSQL)", () => {
   async function work(
     actor: Actor,
     owner: { id: string; threadId: string },
-    more: { status: string; trigger: string; completedAt?: Date },
+    more: { status: string; trigger: string; completedAt?: Date; by?: Actor },
   ) {
     const task = await system.task.create({
       data: {
         spaceId: actor.spaceId,
-        userId: actor.userId,
+        userId: (more.by ?? actor).userId,
         botId: owner.id,
         threadId: owner.threadId,
         prompt: "Private prompt text",
@@ -104,7 +104,7 @@ describePostgres("a bot's stats (PostgreSQL)", () => {
     await system.run.create({
       data: {
         spaceId: actor.spaceId,
-        userId: actor.userId,
+        userId: (more.by ?? actor).userId,
         botId: owner.id,
         threadId: owner.threadId,
         taskId: task.id,
@@ -115,30 +115,52 @@ describePostgres("a bot's stats (PostgreSQL)", () => {
     });
   }
 
-  it("counts only this bot's finished work, and a day once however many runs it holds", async () => {
+  it("counts the owner's own finished work once: a task or a routine run, never helpers or others", async () => {
     const actor = await person();
+    const member = await addMember(actor);
     const mine = await bot(actor, "Counter");
     const other = await bot(actor, "Other");
     const noon = (day: number) => new Date(Date.UTC(2026, 0, day, 12));
-    await work(actor, mine, { status: "completed", trigger: "user", completedAt: noon(1) });
-    await work(actor, mine, { status: "completed", trigger: "routine", completedAt: noon(1) });
-    await work(actor, mine, { status: "completed", trigger: "routine", completedAt: noon(3) });
-    await work(actor, mine, { status: "failed", trigger: "routine", completedAt: noon(5) });
-    await work(actor, other, { status: "completed", trigger: "routine", completedAt: noon(7) });
+    const done = (trigger: string, day: number, more: { by?: Actor; status?: string } = {}) =>
+      work(actor, mine, {
+        status: more.status ?? "completed",
+        trigger,
+        completedAt: noon(day),
+        by: more.by,
+      });
+    await done("user", 1);
+    await done("user", 1);
+    await done("routine", 1);
+    await done("routine", 3);
+    // A helper and the turn that relays its result belong to the same request.
+    await done("helper", 4);
+    await done("helper_result", 4);
+    await done("tickets", 4);
+    // Cancelled and failed turns, and another member's turns in the shared Space, are not counted.
+    await done("user", 5, { status: "failed" });
+    await done("routine", 6, { status: "cancelled" });
+    await done("user", 7, { by: member });
+    await done("routine", 8, { by: member });
+    await work(actor, other, { status: "completed", trigger: "routine", completedAt: noon(9) });
     await system.taughtSkill.createMany({
-      data: ["saved", "draft", "saved"].map((status) => ({
+      data: [
+        ["saved", actor],
+        ["draft", actor],
+        ["saved", member],
+      ].map(([status, by]) => ({
         spaceId: actor.spaceId,
-        userId: actor.userId,
+        userId: (by as Actor).userId,
         botId: mine.id,
         goal: "Private goal",
-        status,
+        status: status as string,
       })),
     });
-    expect(await readBotStats(system, actor.spaceId, mine.id)).toEqual({
-      tasksFinished: 3,
+    expect(await readBotStats(system, actor, mine.id)).toEqual({
+      tasksFinished: 2,
       routineRuns: 2,
-      skillsLearned: 2,
+      skillsLearned: 1,
       daysActive: 2,
+      more: false,
     });
   });
 

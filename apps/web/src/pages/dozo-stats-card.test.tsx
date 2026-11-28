@@ -20,7 +20,7 @@ const card = {
   name: "<b>Pip</b>",
   character: "mochi",
   color: null,
-  stats: { tasksFinished: 1200, routineRuns: 2, skillsLearned: 0, daysActive: 7 },
+  stats: { tasksFinished: 1200, routineRuns: 2, skillsLearned: 0, daysActive: 7, more: true },
 };
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -43,7 +43,8 @@ describe("the stats card", () => {
     expect(page.querySelector("h1")?.textContent).toBe("<b>Pip</b>");
     expect(page.querySelector("b")).toBeNull();
     expect(page.querySelector("i")?.getAttribute("data-color")).toBe("#ffffff");
-    expect(page.textContent).toContain("1,200");
+    expect(page.textContent).toContain("1,200+");
+    expect(page.querySelector("bdi")?.getAttribute("dir")).toBe("auto");
     expect(page.querySelectorAll("dd")).toHaveLength(4);
   });
 

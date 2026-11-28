@@ -9,6 +9,8 @@ const ui = vi.hoisted(() => ({
   send: vi.fn(),
   share: vi.fn(),
   alert: vi.fn(),
+  refetch: vi.fn(),
+  failed: "",
 }));
 
 vi.mock("react-native", () => ({ Alert: { alert: ui.alert }, Share: { share: ui.share } }));
@@ -35,7 +37,18 @@ vi.mock("../lib/query/query", () => ({
   }),
 }));
 vi.mock("../lib/query/screen-query", () => ({
-  useScreenQuery: (read: { path: string }) => ({ data: ui.reads[read.path] }),
+  useScreenQuery: (read: { path: string }) => ({
+    data: ui.reads[read.path],
+    isError: ui.failed === read.path,
+    refetch: ui.refetch,
+  }),
+}));
+vi.mock("./ui/load-failure", () => ({
+  LoadFailure: ({ onRetry }: { onRetry: () => void }) => (
+    <button type="button" onClick={onRetry}>
+      retry
+    </button>
+  ),
 }));
 vi.mock("./settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <ul>{children}</ul>,
@@ -59,7 +72,7 @@ vi.mock("./settings/settings-group", () => ({
 
 import { DozoBotStatsRow } from "./dozo-bot-stats-row";
 
-const STATS = { tasksFinished: 1200, routineRuns: 2, skillsLearned: 0, daysActive: 7 };
+const STATS = { tasksFinished: 1200, routineRuns: 2, skillsLearned: 0, daysActive: 7, more: false };
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
@@ -74,6 +87,8 @@ beforeEach(() => {
   container = document.createElement("div");
   root = createRoot(container);
   ui.reads = {};
+  ui.failed = "";
+  ui.refetch.mockReset();
   ui.send.mockReset();
   ui.share.mockReset();
   ui.alert.mockReset();
@@ -143,5 +158,27 @@ describe("the bot's stats row", () => {
     await draw();
     await act(async () => button("Stop sharing")?.click());
     expect(ui.alert).toHaveBeenCalledWith("Could not save");
+  });
+
+  it("shares again by replacing the live link with a fresh one", async () => {
+    ui.reads = {
+      "dozoBotStats/get": STATS,
+      "dozoShareLinks/list": { links: [{ id: "a", kind: "stats", targetId: "bot-1" }] },
+    };
+    ui.send.mockResolvedValue({ url: "https://app.example.test/s/new" });
+    await draw();
+    await act(async () => button("Share card")?.click());
+    expect(ui.send).toHaveBeenNthCalledWith(1, "dozoShareLinks/revoke", { id: "a" });
+    expect(ui.send).toHaveBeenNthCalledWith(2, "dozoShareLinks/create", expect.anything());
+  });
+
+  it("offers a retry when the links cannot be read, and a plus when the read stopped short", async () => {
+    ui.reads = { "dozoBotStats/get": { ...STATS, more: true } };
+    ui.failed = "dozoShareLinks/list";
+    await draw();
+    expect(container.textContent).toContain("1,200+");
+    expect(button("Share card")).toBeUndefined();
+    await act(async () => button("retry")?.click());
+    expect(ui.refetch).toHaveBeenCalled();
   });
 });
