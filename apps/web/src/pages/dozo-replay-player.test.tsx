@@ -17,6 +17,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 
 import { DozoReplayPlayer } from "./dozo-replay-player";
+import { DOZO_SHARE_RENDERERS } from "./dozo-share-renderers";
 
 const TOKEN = "A".repeat(43);
 let container: HTMLDivElement;
@@ -70,4 +71,8 @@ it("shows only the logo for a payload it cannot read", async () => {
   await render({ steps: "nope" });
   expect(container.querySelector("[data-logo]")).not.toBeNull();
   expect(container.querySelector("button")).toBeNull();
+});
+
+it("is the page a replay link draws, loaded when one is opened", async () => {
+  expect(await DOZO_SHARE_RENDERERS.replay!()).toBe(DozoReplayPlayer);
 });

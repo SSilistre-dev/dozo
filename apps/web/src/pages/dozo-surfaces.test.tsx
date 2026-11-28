@@ -2,6 +2,13 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+vi.mock("./shell/dozo-replay-surface", () => ({
+  DozoReplaySurface: ({ params }: { params: Record<string, string> }) => (
+    <p>replay {params.messageId}</p>
+  ),
+}));
+
 import type { DozoSurfaceProps } from "./dozo-surfaces";
 import { DozoSurfaceHost, openDozoSurface } from "./dozo-surfaces";
 
@@ -46,4 +53,10 @@ it("opens nothing for a key it does not have", async () => {
 
 it("does nothing when opened with no shell on screen", () => {
   expect(() => openDozoSurface("board")).not.toThrow();
+});
+
+it("opens the replay review from the shell's own surfaces", async () => {
+  await act(async () => root.render(<DozoSurfaceHost />));
+  await act(async () => openDozoSurface("replay", { messageId: "m-1" }));
+  await vi.waitFor(() => expect(host.textContent).toBe("replay m-1"));
 });

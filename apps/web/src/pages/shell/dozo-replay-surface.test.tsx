@@ -153,7 +153,7 @@ it("shows every step and screenshot, then publishes what stays checked and copie
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Browser act"));
   expect(container.querySelectorAll("img")).toHaveLength(2);
-  // Steps 0, 1, 2 and the two screenshots: leave out step 1 and include the last screenshot.
+  // Steps 0, 1, 2 and the two screenshots: leave out step 1, swap which screenshot goes.
   const [first, firstShot, second, third, thirdShot] = boxes();
   expect([first, firstShot, second, third, thirdShot].map((box) => box?.checked)).toEqual([
     true,
@@ -163,15 +163,22 @@ it("shows every step and screenshot, then publishes what stays checked and copie
     false,
   ]);
   await click(second);
+  await click(second);
+  await click(second);
+  await click(firstShot);
   await click(thirdShot);
   await click(button("Create link"));
-  expect(api.publish).toHaveBeenCalledWith({ messageId: "m-1", omit: [1], frames: [0, 2] });
+  expect(api.publish).toHaveBeenCalledWith({ messageId: "m-1", omit: [1], frames: [2] });
   await vi.waitFor(() =>
     expect(container.querySelector<HTMLInputElement>("input[readonly]")?.value).toBe(
       "https://app.example.test/s/token",
     ),
   );
   expect(api.copy).toHaveBeenCalledWith("https://app.example.test/s/token");
+  api.copy.mockClear();
+  await click(container.querySelector('button[aria-label="Copy"]'));
+  expect(api.copy).toHaveBeenCalledWith("https://app.example.test/s/token");
+  await act(async () => container.querySelector<HTMLInputElement>("input[readonly]")!.focus());
 });
 
 it("never sends the screenshot of a step it leaves out, and sends nothing with no step kept", async () => {
@@ -204,5 +211,25 @@ it("says why a reply cannot be shared", async () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       "Only a finished reply can be shared",
     ),
+  );
+});
+
+it("says so when a revoke fails", async () => {
+  api.preview.mockResolvedValue({ steps, links: [link] });
+  api.revoke.mockRejectedValue(new Error("No"));
+  await render();
+  await vi.waitFor(() => expect(button("Revoke")).toBeDefined());
+  await click(button("Revoke"));
+  await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("No"));
+});
+
+it("shows why a publish failed", async () => {
+  api.preview.mockResolvedValue({ steps, links: [] });
+  api.publish.mockRejectedValue(new Error("Too many links"));
+  await render();
+  await vi.waitFor(() => expect(button("Create link")).toBeDefined());
+  await click(button("Create link"));
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Too many links"),
   );
 });

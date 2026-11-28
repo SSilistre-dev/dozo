@@ -113,6 +113,7 @@ vi.mock("../components/settings/settings-group", () => ({
   ),
 }));
 
+import { Alert } from "react-native";
 import DozoReplay from "../app/dozo-replay";
 import { queryClient } from "./query/query";
 
@@ -217,4 +218,20 @@ it("says why a reply cannot be shared", async () => {
       "Only a finished reply can be shared",
     ),
   );
+});
+
+it("says so when a revoke fails, and why a publish failed", async () => {
+  preview = { steps, links: [link] };
+  ui.rpc.mockImplementation(async (path: string) => {
+    if (path === "dozoReplays/preview") return preview;
+    throw new Error(path === "dozoReplays/publish" ? "Too many links" : "No");
+  });
+  await render();
+  const row = () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Expires"));
+  await vi.waitFor(() => expect(row()).toBeDefined());
+  await click(row());
+  await vi.waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("No"));
+  await act(async () => ui.header!.action!.onPress());
+  await vi.waitFor(() => expect(container.textContent).toContain("Too many links"));
 });

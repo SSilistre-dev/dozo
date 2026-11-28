@@ -1,6 +1,6 @@
 import type { MessageBlock, ToolHistory } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { framesLeftOut, replaySteps } from "./dozo-replay-steps.js";
+import { framesLeftOut, parseToolHistory, replaySteps } from "./dozo-replay-steps.js";
 
 const steps = (...labels: string[]): MessageBlock[] => [
   { kind: "steps", steps: labels.map((label) => ({ label, count: 1 })) },
@@ -64,5 +64,24 @@ describe("framesLeftOut", () => {
   it("leaves out every screenshot from the first sensitive step on", () => {
     const step = (sensitive: boolean) => ({ line: "s", sensitive });
     expect(framesLeftOut([step(false), step(true), step(false)])).toEqual([false, true, true]);
+  });
+});
+
+describe("parseToolHistory", () => {
+  it("reads nothing from no history, broken JSON, or another shape", () => {
+    expect(parseToolHistory(null)).toBeUndefined();
+    expect(parseToolHistory("{")).toBeUndefined();
+    expect(parseToolHistory('{"steps":"no"}')).toBeUndefined();
+    expect(parseToolHistory('{"steps":[null]}')).toEqual({ steps: [null] });
+  });
+
+  it("finds no host in arguments that are not JSON or nest too deep", () => {
+    const deep = JSON.stringify({ a: { b: { c: { d: { url: "https://deep.example.test/" } } } } });
+    expect(replaySteps(steps("Step"), history({ tool: "x", arguments: "not json" }))[0]?.line).toBe(
+      "Step",
+    );
+    expect(replaySteps(steps("Step"), history({ tool: "x", arguments: deep }))[0]?.line).toBe(
+      "Step",
+    );
   });
 });
