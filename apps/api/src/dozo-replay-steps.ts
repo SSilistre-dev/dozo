@@ -33,8 +33,8 @@ const SEPARATOR = " · ";
 const GENERIC_LABEL = "Action";
 const BUILT_IN = new Set<string>([...BUILTIN_TOOL_NAMES, ...FLEET_TOOL_NAMES]);
 const BUILT_IN_LABELS = new Map([...BUILT_IN].map((name) => [humanizeToolName(name), name]));
-/** Tools whose `url` argument is the page they open: the only place a host is read from. */
-const NAVIGATION_TOOLS = new Set(["browser_navigate"]);
+/** The tool whose `url` argument is the page it opens: the only place a host is read from. */
+const NAVIGATION_TOOL = "browser_navigate";
 const BROWSER_TOOL = /^(browser|computer|user_computer)_/;
 const SENSITIVE_NAME =
   /secret|password|passkey|credential|log_?in|sign_?in|auth|otp|2fa|vault|payment|checkout|billing|card|wallet|purchase/i;
@@ -82,7 +82,7 @@ function types(value: unknown, depth = 0): boolean {
 
 /** The address a navigation call opened, or none. */
 function openedAddress(tool: string | undefined, args: unknown): URL | undefined {
-  if (!tool || !NAVIGATION_TOOLS.has(tool) || args === null || typeof args !== "object") return;
+  if (tool !== NAVIGATION_TOOL || args === null || typeof args !== "object") return;
   const url = (args as { url?: unknown }).url;
   if (typeof url !== "string" || !URL.canParse(url)) return;
   const parsed = new URL(url);
