@@ -221,7 +221,7 @@ it("offers a picked plan on the chat the app lands on", async () => {
 it("offers a picked plan even when the server answers before the first load", async () => {
   const loaded = deferred<AppBootstrap>();
   state.take.mockReturnValue(loaded.promise);
-  savePlanIntent({ tier: "max", period: "month" });
+  savePlanIntent({ tier: "pro", period: "month" });
   await load("/app");
   // Billing is asked for while the address is still `/app`; the repair lands afterwards.
   await act(async () => loaded.resolve(bootstrap()));

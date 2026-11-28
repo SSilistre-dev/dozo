@@ -251,8 +251,8 @@ test("numaralandırma yok: aynı ileti, aynı kontrol ekranı", async ({ page, g
 
 test("kodla kayıt: seçilen plan ve kayıt başlangıcı kaybolmaz", async ({ page, browser }) => {
   const plans = await serverPlans(browser);
-  const plus = plans.find((p) => p.tier === "max");
-  expect(plus, "the server sells Premium Plus").toBeTruthy();
+  const premium = plans.find((p) => p.tier === "pro");
+  expect(premium, "the server offers Premium").toBeTruthy();
   const email = uniqueEmail("plan");
   await fakeBilling(page, plans);
   // The stack sends no product events on (no analytics provider): the app is told it does, and
@@ -269,8 +269,8 @@ test("kodla kayıt: seçilen plan ve kayıt başlangıcı kaybolmaz", async ({ p
     await route.fulfill({ json: { json: null } });
   });
 
-  // The landing page's Premium Plus card, yearly, leads to sign-up; the code makes the account.
-  await page.goto("/sign-up?plan=premium_plus&period=year");
+  // An older landing link that names Premium, yearly, leads to sign-up; the code makes the account.
+  await page.goto("/sign-up?plan=premium&period=year");
   await expect(page).not.toHaveURL(/plan=/);
   const before = (await mailsTo(page.request, email)).length;
   await page.getByPlaceholder("Your name").fill("E2E Plan");
@@ -290,8 +290,12 @@ test("kodla kayıt: seçilen plan ve kayıt başlangıcı kaybolmaz", async ({ p
   await expect(page, "Billing opened with the plan picked before sign-up").toHaveURL(
     /settings=billing/,
   );
-  const subscribe = page
-    .getByTestId("user-settings")
-    .getByRole("button", { name: /^Subscribe for/ });
-  await expect(subscribe).toContainText(`${dollars(plus?.annualPriceCents ?? null)} / year`);
+  // Premium is not on sale: Billing shows it as coming soon, with nothing to subscribe to.
+  const settings = page.getByTestId("user-settings");
+  await expect(
+    settings.getByRole("button", {
+      name: `${premium?.name} · ${dollars(premium?.monthlyPriceCents ?? null)} / month · Coming soon`,
+    }),
+  ).toBeDisabled();
+  await expect(settings.getByRole("button", { name: /^Subscribe for/ })).toHaveCount(0);
 });

@@ -110,11 +110,20 @@ test("JSON-LD: Organization, WebSite and SoftwareApplication, with the page's ow
     // Nothing the page does not show: no ratings, reviews or FAQ.
     assert.doesNotMatch(JSON.stringify(data), /aggregateRating|"review"|FAQPage/);
     const tiers = [...read(file).matchAll(/<article class="tier[^"]*"><h3>([^<]*)<\/h3>.*?<b>(?:\$(\d+)|(\d+) \$)<\/b>/g)];
-    assert.equal(tiers.length, 3);
+    assert.equal(tiers.length, 2);
+    const offers = byType.SoftwareApplication.offers;
     assert.deepEqual(
-      byType.SoftwareApplication.offers.map((o) => [o.name, o.price, o.priceCurrency]),
+      offers.map((o) => [o.name, o.price, o.priceCurrency]),
       tiers.map(([, name, usd, tr]) => [name, usd ?? tr, "USD"]),
     );
+    // Free is open to all; a plan whose card says it is coming soon is a pre-order, and no link
+    // names a plan.
+    const cards = read(file).match(/<article class="tier[^"]*">.*?<\/article>/g);
+    offers.forEach((offer, index) => {
+      const soon = cards[index].includes('class="pill sm soon"');
+      assert.equal(offer.availability, soon ? "https://schema.org/PreOrder" : undefined, offer.name);
+      assert.equal(offer.url, "https://app.dozo.bot/sign-up", offer.name);
+    });
   }
 });
 
@@ -136,6 +145,8 @@ test("llms.txt states the plans the page shows and calls Dozo source available",
   assert.doesNotMatch(line("Free"), /vCPU/);
   assert.equal(computers("premium"), 1);
   assert.match(line("Premium"), /One shared computer/);
-  assert.match(line("Premium Plus"), new RegExp(`Up to ${computers("premiumPlus")} computers`));
+  // Not on sale, as the page's card says; Premium Plus is not offered at all.
+  assert.match(line("Premium"), /coming soon/);
+  assert.equal(line("Premium Plus"), undefined);
   for (const url of llms.match(/https:\/\/[^\s)]+/g)) assert.doesNotMatch(url, /[.,]$/);
 });

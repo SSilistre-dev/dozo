@@ -395,7 +395,7 @@ const intent = () => readPlanIntent();
 
 it.each([
   ["premium", "year", { tier: "pro", period: "year" }],
-  ["premium_plus", "month", { tier: "max", period: "month" }],
+  ["premium", "month", { tier: "pro", period: "month" }],
 ])(
   "keeps plan %j billed every %j in this browser and drops both from the address",
   async (plan, period, kept) => {
@@ -411,6 +411,8 @@ it.each([
 it.each([
   "plan=free&period=year",
   "plan=pro&period=year",
+  // Premium Plus is not offered: an old link that names it keeps nothing.
+  "plan=premium_plus&period=year",
   "plan=%3Cscript%3E&period=month",
   "period=year",
   "plan=",
@@ -435,9 +437,9 @@ it("keeps the plan and the language together, dropping all three parameters once
 it("keeps the plan when registration is closed and sign-in shows instead", async () => {
   window.localStorage.clear();
   mocks.capabilities.mockResolvedValue({ signupsOpen: false });
-  await open("/sign-up?plan=premium_plus&period=year");
+  await open("/sign-up?plan=premium&period=year");
   expect(where()).toBe("/sign-in");
-  expect(intent()).toEqual({ tier: "max", period: "year" });
+  expect(intent()).toEqual({ tier: "pro", period: "year" });
 });
 
 it("names sign-up and sign-in in the tab's title, and gives the title back on leaving", async () => {

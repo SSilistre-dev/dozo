@@ -66,8 +66,9 @@ persisted ones are renamed on purpose. The list of both is in `dozo/brand/README
 ## Hosted plans
 
 Billing is off unless the server has the payment secrets (`docs/self-host-billing.md`), and a
-server that does not bill behaves as upstream's does. A server that bills offers three plans, laid
-over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
+server that does not bill behaves as upstream's does. A server that bills has three plans, laid
+over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`. It offers two of them,
+Free and Premium, and sells none yet:
 
 - **Free** (tier `standard`): permanent, no card, no trial. Bots run on the member's own model
   connection. No hosted computer: the server refuses to start one, and a computer on the member's
@@ -83,6 +84,15 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
   new organization starts here, and one whose subscription ends returns here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
+- Premium keeps its price ($49 a month) and is coming soon: Billing shows Free's owner one disabled
+  line, "Premium · $49 / month · Coming soon" (the price read from the code), where Subscribe would
+  be. Premium Plus has no price, so it is not offered at all; an admin can still grant it. A paid
+  plan is sold only once it is in `DOZO_PLANS_ON_SALE` in that file, the one switch. Until then
+  the server refuses every request that would bill it, whatever a client sends: a checkout
+  (also reached through choosing one's own key) and a tier change, a switch to yearly or a renewed
+  trial of a subscription, each with `plan_coming_soon` ("This plan isn't on sale yet.", in English
+  and Turkish). The billing status marks such an offer `comingSoon`. A subscription that already
+  exists keeps its plan, price and terms through every sync.
 
 Upstream counts computer hours only on a metered cloud provider. Here every computer the server
 hosts counts, the shipped Docker provider included, so the allowance holds on our own host.
@@ -175,21 +185,24 @@ account email nothing is sent. Receipts are the payment provider's own mails, tu
 settings, so none is written here. While a subscription is past due, web and mobile show the owner
 one line with Manage billing.
 
-A plan picked on the landing page follows the visitor to checkout. Its sign-up links carry
-`?plan=premium|premium_plus&period=month|year`; the web sign-up page keeps a valid pick in session
-storage for the tab and drops both parameters from the address (anything else, Free included, is
-ignored). When the app opens after setup, `apps/web/src/pages/dozo-shell.tsx` opens Billing with that
-plan and period selected, once: closing Billing forgets the pick and the account stays on Free. The
-server still prices the tier and period itself, so a link cannot open a price that is not offered.
-A plan checkout left unpaid returns to `/app?billing=canceled`, which reopens Billing quietly.
+A plan picked on the landing page follows the visitor to checkout. The landing page names no plan
+while none is sold; a sign-up link may carry `?plan=premium&period=month|year`, and the web sign-up
+page keeps a valid pick for the tab and drops both parameters from the address (anything else,
+Free and Premium Plus included, is ignored). When the app opens after setup,
+`apps/web/src/pages/dozo-shell.tsx` opens Billing with that plan and period selected, once (while
+Premium is coming soon, Billing shows its disabled line): closing Billing forgets the pick and the
+account stays on Free. The server still prices and refuses the tier and period itself, so a link
+cannot open a price that is not offered. A plan checkout left unpaid returns to
+`/app?billing=canceled`, which reopens Billing quietly.
 
-Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
-until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
+Tier ids and price lookup keys are upstream's and never change. Prices change in that one file:
+Premium keeps upstream's amount and Premium Plus has none. Known limits:
 
 - A paid plan is bought on the web, in Settings > Billing. The mobile app shows the plan and
   changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
   one: an Upgrade from Free on mobile opens the web app's Billing in the system browser. Store
-  rules on buying a digital subscription outside the app have not been checked.
+  rules on buying a digital subscription outside the app have not been checked. While no plan is
+  sold, an Upgrade from Free on the web opens Billing on the coming soon line.
 - What a refused limit says and offers (Free's missing computer, spent hours, a full shared space,
   busy computers, the computer and Space counts, a checkout of Free) is one table,
   `packages/contracts/src/dozo-plan-limits.ts`, in English and Turkish only (the fork's sentences
@@ -214,6 +227,8 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
   such subscription exists, since the server has never billed, and Free cannot be checked out: a
   checkout that names no paid plan is refused as `plan_not_offered`.
+- Premium Plus has no price, so the operator's speech allowance, which upstream sizes from a live
+  subscription's tier price, is nothing for a subscription to it made before; none exists.
 - The shared space in use shows in Billing only, read when the screen opens. The files screen
   does not show it: it would need a second read of the billing status.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;

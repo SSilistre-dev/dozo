@@ -130,9 +130,14 @@ test("site settings: an announcement is saved, every member sees it, then it is 
   await expect(page.getByText(text)).toHaveCount(0);
 });
 
-test("plans: a quota is changed and put back", async ({ browser, guard }) => {
+test("plans: what is not on sale, and a quota changed and put back", async ({ browser, guard }) => {
   const page = await adminAt(browser, "/admin/plans");
   guard.follow(page);
+  // Premium Plus has no price and is not sold: never "Free", which only Free is.
+  const plus = page.getByTestId("plan-max");
+  await expect(plus).toContainText("Not on sale");
+  await expect(plus).not.toContainText("Free");
+  await expect(page.getByTestId("plan-pro")).toContainText("Not on sale");
   const field = page.getByLabel("Shared space in MB for Premium", { exact: true });
   // An unset quota shows the plan's terms as its placeholder.
   const before = await field.inputValue();

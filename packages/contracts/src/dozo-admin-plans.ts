@@ -30,6 +30,8 @@ export const DozoAdminPlanRowSchema = /* @__PURE__ */ (() =>
     /** In cents of `currency`; null where the plan is free or not sold that way. */
     monthlyPriceCents: z.number().int().nullable(),
     annualPriceCents: z.number().int().nullable(),
+    /** Checkout and plan changes may bill it (`DOZO_PLANS_ON_SALE`); Free and unsold plans are not. */
+    onSale: z.boolean(),
     currency: z.string(),
     /** The payment provider's keys for the plan's prices; null without a provider or a price. */
     priceKeys: z.object({ month: z.string().nullable(), year: z.string().nullable() }),

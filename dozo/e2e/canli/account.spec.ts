@@ -270,35 +270,48 @@ test("Faturalandırma ekranı ve ödemeden dönüş (?billing=canceled)", async 
   await expect(page).not.toHaveURL(/billing=canceled/);
 });
 
-test("ödeme sayfası açılır, doğru plan ve tutar (kart girilmez)", async ({ page, guard }) => {
+test("Premium yakında: ekranda devre dışı satır, sunucu ödemeyi açmaz", async ({ page }) => {
   await openApp(page);
   test.skip(!(await billingOn(page)), "this server does not bill");
   const status = page.waitForResponse((r) => r.url().includes("/rpc/billing/status"));
   await page.goto("/app?settings=billing");
   const tiers = (
     (await (await status).json()) as {
-      json: { byokTiers?: { tier: string; name: string; monthlyPriceCents: number }[] };
+      json: {
+        byokTiers?: {
+          tier: string;
+          name: string;
+          monthlyPriceCents: number;
+          comingSoon?: boolean;
+        }[];
+      };
     }
   ).json.byokTiers;
   const premium = tiers?.find((tier) => tier.tier === "pro");
-  expect(premium, "the server offers Premium").toBeTruthy();
+  expect(premium, "the server shows Premium").toBeTruthy();
+  expect(premium?.comingSoon, "Premium is not on sale yet").toBe(true);
+  expect(
+    tiers?.map((tier) => tier.tier),
+    "no Premium Plus offer",
+  ).toEqual(["pro"]);
   const settings = page.getByTestId("user-settings");
-  // Premium and monthly are what the screen starts on.
-  const subscribe = settings.getByRole("button", { name: /^Aylık .* ile abone ol$/ });
-  await expect(subscribe).toBeVisible();
   const amount = ((premium?.monthlyPriceCents ?? 0) / 100).toFixed(0);
-  await expect(subscribe).toContainText(amount);
-  const app = new URL(page.url()).origin;
-  guard.leaveApp();
-  await subscribe.click();
-  await page.waitForURL((url) => url.origin !== app, { timeout: 45_000 });
-  const host = new URL(page.url()).host;
-  // Stripe shows the plan's product name and the amount with two decimals, in either separator.
-  await expect(page.getByText(new RegExp(`${amount}[.,]00`)).first()).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByText(new RegExp(premium?.name as string)).first()).toBeVisible();
-  note(`ödeme sayfası ${host}: ${premium?.name}, ${amount},00 (kart girilmedi)`);
+  // The disabled line in Turkish, with the server's price; nothing to subscribe to.
+  const soon = settings.getByRole("button", { name: /Yakında$/ });
+  await expect(soon).toBeDisabled();
+  await expect(soon).toContainText(premium?.name as string);
+  await expect(soon).toContainText(amount);
+  await expect(settings.getByRole("button", { name: /abone ol$/ })).toHaveCount(0);
+  // Asked directly, the server refuses the checkout and opens no payment page.
+  for (const interval of ["month", "year"]) {
+    const answer = await page.request.post("/rpc/billing/checkout", {
+      data: { json: { tier: "pro", interval } },
+    });
+    const body = (await answer.json()) as { json?: { code?: string } };
+    expect(answer.status(), `checkout ${interval}`).toBe(400);
+    expect(body.json?.code, `checkout ${interval}`).toBe("plan_coming_soon");
+  }
+  note(`Premium yakında: ${premium?.name}, ${amount} $, ödeme reddedildi (plan_coming_soon)`);
 });
 
 test("Free: bilgisayar uyandırma reddedilir, Türkçe ileti ve Yükselt", async ({ page, guard }) => {

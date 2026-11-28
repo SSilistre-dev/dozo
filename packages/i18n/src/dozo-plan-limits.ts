@@ -32,6 +32,7 @@ export function planLimitCopy() {
     computerLimitShared: say("Computer limit reached. This bot can use the Team Computer."),
     spaceLimit: say("Space limit reached. Delete a Space to add another."),
     planNotOffered: say("This plan is free. Choose a paid plan to upgrade."),
+    planComingSoon: say("This plan isn't on sale yet."),
     upgrade: say("Upgrade"),
     upgradeTo: (plan: string) => say("Upgrade to {plan}", { plan }),
     retry: say("Try again"),

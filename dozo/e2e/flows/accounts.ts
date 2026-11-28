@@ -110,6 +110,8 @@ type PlanRow = {
   name: string;
   monthlyPriceCents: number | null;
   annualPriceCents: number | null;
+  /** Checkout may bill it; a priced plan that is not on sale shows as coming soon. */
+  onSale: boolean;
   computerHours: { value: number | null };
 };
 
@@ -125,9 +127,10 @@ export async function serverPlans(browser: Browser): Promise<PlanRow[]> {
 
 /**
  * The stack has no payment provider, so the billing answers are faked in this browser only: the
- * server's own plans (names and prices read from it, never invented here) on a Free account that
- * may subscribe. A checkout is recorded and answered with the address a person lands on when they
- * leave the payment page without paying (`?billing=canceled`).
+ * server's own plans (names, prices and whether each is on sale read from it, never invented here)
+ * on a Free account that manages billing; a priced plan that is not on sale is offered as coming
+ * soon, as the server marks it. A checkout is recorded and answered with the address a person lands
+ * on when they leave the payment page without paying (`?billing=canceled`).
  */
 /** The account as a server that bills reports it (`billingEnabled`); the rest of `me` is real. */
 export async function reportBilling(page: Page) {
@@ -165,6 +168,7 @@ export async function fakeBilling(page: Page, plans: PlanRow[]) {
               annualPriceCents: plan.annualPriceCents,
               computerSize: sizes[plan.tier],
               computerHours: plan.computerHours.value ?? 0,
+              ...(plan.onSale ? {} : { comingSoon: true }),
             })),
           byokFreeUntil: null,
           access: true,

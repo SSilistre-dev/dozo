@@ -62,9 +62,11 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   six anchored rules in `apps/mobile/app/sign-in.tsx` (no wrapper can reach the screen's own mode
   state): closed means sign-in first and no link to sign-up, re-read when the server changes.
 - Hosted plans: `packages/contracts/src/dozo-plans.ts` renames upstream's own-model tiers to Free,
-  Premium and Premium Plus and makes the first one free with no hosted computer. Tier ids
-  (`standard`, `pro`, `max`) and price lookup keys never change. What the rules around it do and
-  the known limits: `dozo/README.md`, Hosted plans. Never write a price the owner has not set.
+  Premium and Premium Plus and makes the first one free with no hosted computer. Premium Plus has
+  no price and is not offered; Premium is coming soon until `DOZO_PLANS_ON_SALE` lists it, and the
+  server refuses to bill a plan that is not on sale. Tier ids (`standard`, `pro`, `max`) and price
+  lookup keys never change. What the rules around it do and the known limits: `dozo/README.md`,
+  Hosted plans. Never write a price the owner has not set.
 
 ## Adding a fork feature
 

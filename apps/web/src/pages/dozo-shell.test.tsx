@@ -112,11 +112,11 @@ it("is upstream's shell and asks nothing without a picked plan", async () => {
 });
 
 it("reports the landing pick once, when an account claims it", async () => {
-  savePlanIntent({ tier: "max", period: "year" });
+  savePlanIntent({ tier: "pro", period: "year" });
   await open("/app");
   await reopen("/app");
   await vi.waitFor(() => expect(mocks.track).toHaveBeenCalled());
-  expect(mocks.track.mock.calls).toEqual([[{ name: "plan_intent", plan: "max", period: "year" }]]);
+  expect(mocks.track.mock.calls).toEqual([[{ name: "plan_intent", plan: "pro", period: "year" }]]);
 });
 
 it("reports when this tab opened the sign-up form, once the account is signed in", async () => {
@@ -148,7 +148,7 @@ it("offers the picked plan in Billing once setup opens the app, and forgets it w
 });
 
 it("counts moving to another section as the answer, and keeps the app's other parameters", async () => {
-  savePlanIntent({ tier: "max", period: "month" });
+  savePlanIntent({ tier: "pro", period: "month" });
   await open("/app/bot-1?thread=t1");
   expect(where()).toBe("/app/bot-1?thread=t1&settings=billing");
   await navigate("/app/bot-1?thread=t1&settings=general");
@@ -203,7 +203,7 @@ it("opens nothing and keeps the pick when the server cannot say", async () => {
 });
 
 it("never offers one account's pick to the next account in the tab", async () => {
-  savePlanIntent({ tier: "max", period: "year" });
+  savePlanIntent({ tier: "pro", period: "year" });
   await open("/app/bot-1");
   expect(where()).toBe("/app/bot-1?settings=billing");
   // The first account leaves without answering; the next one signs in in the same tab.
@@ -233,10 +233,10 @@ it("reopens Billing quietly after a checkout left unpaid, and drops the paramete
 });
 
 it("keeps the pick through a checkout left unpaid, until Billing is closed", async () => {
-  savePlanIntent({ tier: "max", period: "year" });
+  savePlanIntent({ tier: "pro", period: "year" });
   await open("/app/bot-1?billing=canceled");
   expect(where()).toBe("/app/bot-1?settings=billing");
-  expect(readPlanIntent()).toEqual({ tier: "max", period: "year" });
+  expect(readPlanIntent()).toEqual({ tier: "pro", period: "year" });
   await navigate("/app/bot-1");
   expect(readPlanIntent()).toBeNull();
 });
@@ -247,9 +247,9 @@ it("leaves another billing parameter alone", async () => {
 });
 
 it("keeps the plan a signed-in member's landing link names, then lands where it would", async () => {
-  await open("/sign-up?lang=en&plan=premium_plus&period=year");
+  await open("/sign-up?lang=en&plan=premium&period=year");
   expect(where()).toBe("/onboarding");
-  expect(readPlanIntent()).toEqual({ tier: "max", period: "year" });
+  expect(readPlanIntent()).toEqual({ tier: "pro", period: "year" });
 });
 
 it("keeps nothing from a signed-in member's link without a paid plan", async () => {
@@ -260,7 +260,7 @@ it("keeps nothing from a signed-in member's link without a paid plan", async () 
 
 it("forgets the pick of a paid account even when it comes back from a checkout left unpaid", async () => {
   mocks.status.mockResolvedValue({ ...free, byokPriceCents: 4900, byokTier: "pro" });
-  savePlanIntent({ tier: "max", period: "year" });
+  savePlanIntent({ tier: "pro", period: "year" });
   await open("/app/bot-1?billing=canceled");
   expect(where()).toBe("/app/bot-1?settings=billing");
   expect(readPlanIntent()).toBeNull();

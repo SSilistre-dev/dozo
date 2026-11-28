@@ -197,8 +197,9 @@ holds the answer back that long (at most 300), so a bot stays busy while the que
 in line behind it.
 
 There is no payment provider on this stack: billing's server answers are faked in the browser from
-the server's own plans (`fakeBilling`, prices read from `dozoAdmin/plans/list`, never written in the
-suite); the checkout is recorded and answered with the `?billing=canceled` return. Free access
+the server's own plans (`fakeBilling`, prices and whether each is on sale read from
+`dozoAdmin/plans/list`, never written in the suite); a plan not on sale is offered as coming soon,
+as the server marks it, and a checkout is recorded and answered with the `?billing=canceled` return. Free access
 grants exist only on a billing server, so the account reports billing (`reportBilling`) and the four
 calls are answered in the browser too; without billing the admin page does not list the section.
 
@@ -231,17 +232,17 @@ the features below: 39 surfaces in the table, 37 checked, 2 not (each row is one
 | Skills, templates, MCP overlays | opened | crawl |
 | Settings: each section | general, models, approvals, vault, memory, voice, labs, usage, organization open without error | flow; crawl (every popup) |
 | Settings: Models | model roles, provider list, connection forms; live: responses counted | crawl; live |
-| Settings: billing | the server's plans and prices, monthly and yearly | flow (faked); live |
-| Billing: landing plan pick | `?plan=premium_plus&period=year` → Billing opens with it, checkout asks for it | flow (faked) |
+| Settings: billing | Premium at the server's price, coming soon on a disabled line; no Subscribe, no Premium Plus | flow (faked); live |
+| Billing: landing plan pick | an older `?plan=premium&period=year` link → Billing opens on the coming soon line, no checkout | flow (faked) |
 | Billing: `?billing=canceled` | Billing opens again, the address is cleaned | flow (faked); live |
-| Billing: payment page | opens with the right plan and amount, no card entered | live |
+| Billing: Premium coming soon | the Turkish disabled line with the server's price; a checkout asked for directly is refused (`plan_coming_soon`), no payment page | live |
 | Plan limit: Free computer | waking is refused, the plan line and Upgrade | live |
 | Plan limit: shared space | a full space refuses the upload with its line | flow (faked) |
 | Waiting line | a member's long answer keeps a bot busy; the caller's routine runs and a message wait behind it: the line and its place, the list (others' work only "Queued"), stopping one's own wait by signal and from the list, another's refused, the line following the live signal with no reload and no timed read | flow |
 | Computer | start from the bot panel, stop from the admin list, asleep again | flow; crawl (full window, teach) |
 | Admin: members | search, plan filter, give Premium, take it back, suspend, status filter, delete | flow |
 | Admin: site settings | announcement saved, a member sees the line, cleared | flow |
-| Admin: plans | a quota changed and put back | flow |
+| Admin: plans | Premium and Premium Plus say not on sale (Premium Plus never "Free"); a quota changed and put back | flow |
 | Admin: free access | create, edit, delete | flow (faked) |
 | Admin: billing, funnel | counts shown, the three periods switch | flow |
 | Admin: plugins | opened | crawl |
@@ -289,8 +290,9 @@ trial account:
   through the password form; its first run meets onboarding (survey, "Daha sonra"), later runs go
   straight to the app; the session is saved for the rest. Then, with that session: cold first paint
   of `/app`; the Apps window (time to window and first tile, every logo loaded from our own host);
-  Settings → Models (responses counted); Billing and `?billing=canceled`; the payment page opens
-  with the plan's name and the amount the server's own status gives (no card entered); Free's
+  Settings → Models (responses counted); Billing and `?billing=canceled`; Premium shows as coming
+  soon with the price the server's own status gives, and a checkout asked for directly is refused
+  with `plan_coming_soon` (no payment page opens); Free's
   computer refusal. A failed sign-in skips the later account steps as "giriş yapılamadı", so the
   report shows the one root cause.
 - No account deletion. Earlier versions of this run opened an account, deleted it with its own

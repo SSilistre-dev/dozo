@@ -69,6 +69,7 @@ const free: DozoAdminPlanRow = {
   name: "Free",
   monthlyPriceCents: null,
   annualPriceCents: null,
+  onSale: false,
   currency: "usd",
   priceKeys: { month: null, year: null },
   computer: null,
@@ -83,6 +84,7 @@ const premium: DozoAdminPlanRow = {
   name: "Premium",
   monthlyPriceCents: 4900,
   annualPriceCents: 46800,
+  onSale: true,
   currency: "usd",
   priceKeys: { month: "key_pro_monthly", year: "key_pro_yearly" },
   computer: { vcpus: 2, memoryGb: 4 },
@@ -186,6 +188,28 @@ it("shows each plan's price, keys, machine and members, and Free without a compu
   // Nothing edited, nothing to save, nothing differs from the landing page.
   expect(button("Save")).toBeUndefined();
   expect(container.textContent).not.toContain("Landing says");
+});
+
+it("says a paid plan that is not sold is not on sale, with its price where it has one", async () => {
+  const plus: DozoAdminPlanRow = {
+    ...premium,
+    tier: "max",
+    name: "Premium Plus",
+    monthlyPriceCents: null,
+    annualPriceCents: null,
+    onSale: false,
+    priceKeys: { month: null, year: null },
+  };
+  api.list.mockResolvedValue({ plans: [free, { ...premium, onSale: false }, plus] });
+  await open();
+  const premiumText = plan("pro")?.textContent ?? "";
+  expect(premiumText).toContain("$49 / month");
+  expect(premiumText).toContain("Not on sale");
+  const plusText = plan("max")?.textContent ?? "";
+  expect(plusText).toContain("Not on sale");
+  expect(plusText).not.toContain("Free");
+  expect(plusText).not.toContain("/ month");
+  expect(plan("standard")?.textContent).not.toContain("Not on sale");
 });
 
 it("saves only the quota that was edited", async () => {

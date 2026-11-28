@@ -1,6 +1,6 @@
 import type { DozoPaymentLedger } from "@rakazo/adapters";
 import type { ByokTier, DozoAdminPlanRow } from "@rakazo/contracts";
-import { BYOK_TIERS, ByokTierSchema } from "@rakazo/contracts";
+import { BYOK_TIERS, ByokTierSchema, planOnSale } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PlanQuotas } from "@rakazo/db";
 import {
@@ -57,6 +57,7 @@ export function dozoAdminPlansRoutes(ctx: RouterContext, payments: DozoPaymentLe
       name: terms.name,
       monthlyPriceCents: terms.monthlyPriceCents,
       annualPriceCents: terms.annualPriceCents,
+      onSale: terms.monthlyPriceCents !== null && planOnSale(tier),
       currency: PLAN_CURRENCY,
       priceKeys: {
         month: priceKey("month", terms.monthlyPriceCents),

@@ -243,13 +243,6 @@ it("shows no shared space where the server sends none, as one that does not bill
 
 it("starts on the plan and period picked on the landing page, once, then on the first plan", async () => {
   const { clearPlanIntent, savePlanIntent } = await import("../lib/dozo-plan-intent");
-  savePlanIntent({ tier: "max", period: "month" });
-  await render(free);
-  await act(async () => button(/^Subscribe for /)?.click());
-  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "max" });
-
-  act(() => root.unmount());
-  root = createRoot(container);
   savePlanIntent({ tier: "pro", period: "year" });
   await render(free);
   await act(async () => button(/^Subscribe for /)?.click());
@@ -273,6 +266,21 @@ it("falls back to the first plan when the picked one is not on offer", async () 
   await act(async () => button(/^Subscribe for /)?.click());
   expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "pro" });
   clearPlanIntent();
+});
+
+it("shows Free a plan that is coming soon on a button that cannot be pressed", async () => {
+  const soonOffers = offers
+    .filter((offer) => offer.tier === "pro")
+    .map((offer) => ({ ...offer, comingSoon: true as const }));
+  await render({ ...free, byokTiers: soonOffers });
+  const dollars = (BYOK_TIERS.pro.monthlyPriceCents ?? 0) / 100;
+  const soon = button(/Coming soon$/);
+  expect(soon?.textContent).toBe(`Premium · $${dollars} / month · Coming soon`);
+  expect(soon?.disabled).toBe(true);
+  expect(button(/^Subscribe for /)).toBeUndefined();
+  expect(button(/^Yearly/)).toBeUndefined();
+  for (const node of [...container.querySelectorAll("button")]) await act(async () => node.click());
+  expect(checkout).not.toHaveBeenCalled();
 });
 
 it("shows when the plan renews once, below the plan, not again on the subscription", async () => {
