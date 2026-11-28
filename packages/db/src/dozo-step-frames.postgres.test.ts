@@ -110,7 +110,14 @@ describePostgres("replay frames (PostgreSQL)", () => {
 
   async function liveLink(who: Owner, runId: string) {
     const message = await system.message.create({
-      data: { threadId: who.threadId, seq: files++, role: "bot", botId: who.botId, runId, blocks: [] },
+      data: {
+        threadId: who.threadId,
+        seq: files++,
+        role: "bot",
+        botId: who.botId,
+        runId,
+        blocks: [],
+      },
     });
     const replayId = randomUUID();
     await system.$executeRaw`
@@ -288,6 +295,7 @@ describePostgres("replay frames (PostgreSQL)", () => {
       await writer;
       const writing = performance.now() - started;
       const median = (values: number[]) => [...values].sort((a, b) => a - b)[2]!;
+      // biome-ignore lint/suspicious/noConsole: the measurement the pull request reports
       console.info(
         `STEP_FRAMES_TIMING last save alone ${median(alone).toFixed(1)} ms, beside the frame writer ${median(beside).toFixed(1)} ms; 30 frames written in ${writing.toFixed(0)} ms`,
       );

@@ -57,7 +57,9 @@ export const dozoReplaysContract = /* @__PURE__ */ (() => ({
   ),
   /** One step's screenshot as a data URL, for the review; null when it has none to show. */
   frame: oc
-    .input(ReplayMessage.extend({ index: z.number().int().nonnegative().max(DOZO_REPLAY_STEPS_MAX) }))
+    .input(
+      ReplayMessage.extend({ index: z.number().int().nonnegative().max(DOZO_REPLAY_STEPS_MAX) }),
+    )
     .output(z.object({ frame: z.string().nullable() })),
   /**
    * Publishes the reply's steps but those in `omit`, with the screenshots of the steps in

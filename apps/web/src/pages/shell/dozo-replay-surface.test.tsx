@@ -245,7 +245,7 @@ it("shows a step whose screenshot cannot be read without it", async () => {
     steps: [{ line: "Browser snapshot", frame: true, sensitive: false }, steps[0]!],
     links: [],
   });
-  api.frame.mockImplementationOnce(async () => ({ frame: null }));
+  // The second step's screenshot answers null (api.frame), as a file that is gone does.
   await render();
   await vi.waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(1));
   expect(container.textContent).toContain("Browser snapshot");

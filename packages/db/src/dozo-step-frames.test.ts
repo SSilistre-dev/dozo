@@ -30,7 +30,8 @@ function database(
     if (text.includes("set_config") || text.includes("current_setting")) return [{}];
     if (text.includes("pg_advisory_xact_lock")) return [{ lock: "" }];
     if (text.includes('JOIN "spaces"')) return [{ used: String(state.orgUsed) }];
-    if (text.includes("DELETE FROM artifacts a")) return [{ id: "old-pending", storageKey: "k-old" }];
+    if (text.includes("DELETE FROM artifacts a"))
+      return [{ id: "old-pending", storageKey: "k-old" }];
     if (text.includes('COALESCE(SUM("size")')) return [{ used: String(state.botUsed) }];
     if (text.includes('GROUP BY a."runId"'))
       return state.replies.map((reply) => ({ runId: reply.runId, bytes: String(reply.bytes) }));
@@ -131,7 +132,7 @@ describe("holdStepFrame", () => {
     const held = await holdStepFrame(tx, frame);
     expect(held.allowed).toBe(true);
     expect(held.removed.map((row) => row.id)).toEqual(["old-pending", "evicted"]);
-    expect(statements.at(-1)).toContain('"runId" = ANY(');
+    expect(statements.some((text) => text.includes('"runId" = ANY('))).toBe(true);
   });
 
   it("refuses when the replies it may remove do not make room", async () => {

@@ -28,9 +28,7 @@ type Choice = { omit: Set<number>; frames: Set<number> };
 export function startingChoice(steps: readonly DozoReplayDraftStep[]): Choice {
   return {
     omit: new Set(),
-    frames: new Set(
-      steps.flatMap((step, index) => (step.frame && !step.sensitive ? [index] : [])),
-    ),
+    frames: new Set(steps.flatMap((step, index) => (step.frame && !step.sensitive ? [index] : []))),
   };
 }
 

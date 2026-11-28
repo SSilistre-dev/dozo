@@ -23,8 +23,8 @@ vi.mock("./tool-step-calls.js", () => ({
 }));
 
 import type { RunContext } from "../assembly/run-context.js";
-import { onToolCalled } from "./dozo-step-frames-call.js";
 import { STEP_FRAMES_MAX, saveLatestStepScreenshot } from "./dozo-step-frames.js";
+import { onToolCalled } from "./dozo-step-frames-call.js";
 
 type Call = { arguments?: string; image?: { artifactId: string } };
 const own = {

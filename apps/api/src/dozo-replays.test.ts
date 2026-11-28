@@ -64,10 +64,11 @@ function world() {
       helperBotId: null,
       externalConversationId: null,
     } as Record<string, unknown> | null,
-    bot: { id: "b-1", userId: "user-1", computer: null as Record<string, unknown> | null } as Record<
-      string,
-      unknown
-    > | null,
+    bot: {
+      id: "b-1",
+      userId: "user-1",
+      computer: null as Record<string, unknown> | null,
+    } as Record<string, unknown> | null,
     run: { userId: "user-1", status: "completed" } as Record<string, unknown> | null,
     replay: {
       userId: "user-1",
