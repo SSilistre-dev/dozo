@@ -41,7 +41,9 @@ export function DozoBotDefinition({ bot }: { bot: DozoBotShown }) {
               <li key={index} className="break-words">
                 {routine.name}
                 {routine.schedule ? (
-                  <span className="text-muted-foreground"> · {routine.schedule}</span>
+                  <span className="block text-body-sm text-muted-foreground">
+                    {routine.schedule}
+                  </span>
                 ) : null}
               </li>
             ))}

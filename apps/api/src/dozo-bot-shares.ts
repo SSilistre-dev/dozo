@@ -155,7 +155,8 @@ export async function openBotShare(prisma: PrismaClient, token: string) {
     [DOZO_BOT_SHARE_KIND]: { canShare: botShareKind.canShare, load: readBotShare },
   });
   if (!shared) throw new IsolationError();
-  const definition = shared.payload as DozoBotDefinition;
+  // The bot kind's own load gave it; parsed again rather than cast.
+  const definition = DozoBotDefinitionSchema.parse(shared.payload);
   return { definition, fingerprint: botShareFingerprint(definition) };
 }
 

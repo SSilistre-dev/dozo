@@ -202,7 +202,7 @@ describe("the owner's review", () => {
     expect(text()).toContain("<b>not markup</b>");
     expect(document.querySelector("b")).toBeNull();
     expect(text()).toContain("Knows plants");
-    expect(text()).toContain("Morning · 0 8 * * *, 0 20 * * *");
+    expect(text()).toContain("Morning0 8 * * *, 0 20 * * *");
     expect(text()).not.toContain("Include picture");
   });
 
