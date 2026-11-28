@@ -74,7 +74,8 @@ export async function readBotStats(
     routineRuns: row?.routineRuns ?? 0,
     skillsLearned: skills?.skillsLearned ?? 0,
     daysActive: row?.daysActive ?? 0,
-    more: (row?.scanned ?? 0) > STATS_RUN_WINDOW || (skills?.skillsLearned ?? 0) >= STATS_SKILL_CEILING,
+    more:
+      (row?.scanned ?? 0) > STATS_RUN_WINDOW || (skills?.skillsLearned ?? 0) >= STATS_SKILL_CEILING,
   };
 }
 

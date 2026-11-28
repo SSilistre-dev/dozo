@@ -13,8 +13,8 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 
-import { DozoStatsCard } from "./dozo-stats-card";
 import { DOZO_SHARE_RENDERERS } from "./dozo-share-renderers";
+import { DozoStatsCard } from "./dozo-stats-card";
 
 const card = {
   name: "<b>Pip</b>",
@@ -42,7 +42,7 @@ describe("the stats card", () => {
     const page = await draw(card);
     expect(page.querySelector("h1")?.textContent).toBe("<b>Pip</b>");
     expect(page.querySelector("b")).toBeNull();
-    expect(page.querySelector("i")?.getAttribute("data-color")).toBe("#ffffff");
+    expect(page.querySelector("i")?.getAttribute("data-color")).toBe("white");
     expect(page.textContent).toContain("1,200+");
     expect(page.querySelector("bdi")?.getAttribute("dir")).toBe("auto");
     expect(page.querySelectorAll("dd")).toHaveLength(4);

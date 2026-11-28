@@ -16,7 +16,7 @@ export function DozoStatsCard({ payload }: { payload: unknown }) {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
       <section className="flex w-full max-w-xs flex-col items-center gap-8">
-        <BotAvatar identity={character} color={color ?? "#ffffff"} size={96} />
+        <BotAvatar identity={character} color={color ?? "white"} size={96} />
         <h1 className="max-w-full truncate text-2xl font-medium">
           <bdi dir="auto">{name}</bdi>
         </h1>
@@ -24,7 +24,9 @@ export function DozoStatsCard({ payload }: { payload: unknown }) {
           {numbers.map(({ key, label, value }) => (
             <div key={key} className="flex flex-col-reverse">
               <dt className="text-sm text-muted-foreground">{label}</dt>
-              <dd className="text-3xl font-medium tabular-nums">{formatDozoStat(value, stats.more)}</dd>
+              <dd className="text-3xl font-medium tabular-nums">
+                {formatDozoStat(value, stats.more)}
+              </dd>
             </div>
           ))}
         </dl>

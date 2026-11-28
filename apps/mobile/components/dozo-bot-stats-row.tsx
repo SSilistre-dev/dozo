@@ -4,8 +4,8 @@ import { Alert, Share } from "react-native";
 import { errorText } from "../lib/api/user-error";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
-import { LoadFailure } from "./ui/load-failure";
 import { SettingsGroup, SettingsRow } from "./settings/settings-group";
+import { LoadFailure } from "./ui/load-failure";
 
 /**
  * What the bot has done in four numbers, with a row that shares them as a card (the system share
