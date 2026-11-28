@@ -119,6 +119,10 @@ export function fixture({
     account: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    pageApp: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     userDevice: { updateMany: devices },
     organization: { deleteMany: vi.fn(async () => ({ count: 0 })) },
   };
