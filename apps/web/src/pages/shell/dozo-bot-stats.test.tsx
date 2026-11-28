@@ -145,6 +145,19 @@ describe("a bot's stats row", () => {
     expect(api.toastError).toHaveBeenCalledWith("Could not save", expect.any(Error));
   });
 
+  it("lets every label wrap in two columns instead of cutting it short with an ellipsis", async () => {
+    await draw();
+    const labels = [...container.querySelectorAll("dt")];
+    expect(labels.map((label) => label.textContent)).toEqual([
+      "Tasks",
+      "Routine runs",
+      "Skills",
+      "Days active",
+    ]);
+    for (const label of labels) expect(label.className).not.toMatch(/truncate|overflow|ellipsis/);
+    expect(container.querySelector("dl")?.className).toContain("grid-cols-2");
+  });
+
   it("shares again by replacing the live link with a fresh one", async () => {
     api.list.mockResolvedValue({ links: [{ id: "a", kind: "stats", targetId: "bot-1" }] });
     api.revoke.mockResolvedValue({ revoked: true });

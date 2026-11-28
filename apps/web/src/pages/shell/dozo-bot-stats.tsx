@@ -68,10 +68,10 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
   ];
   return (
     <div className="flex flex-col gap-2 py-2" data-testid="dozo-bot-stats">
-      <dl className="grid grid-cols-4 gap-2">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
         {figures.map(({ key, label, value }) => (
           <div key={key} className="flex min-w-0 flex-col-reverse">
-            <dt className="truncate text-body-sm text-muted-foreground">{label}</dt>
+            <dt className="break-words text-body-sm text-muted-foreground">{label}</dt>
             <dd className="text-body font-medium tabular-nums text-foreground">
               {formatDozoStat(value, stats.more)}
             </dd>
@@ -81,11 +81,10 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
       {linksRead.isError ? (
         <SectionLoadFailed />
       ) : (
-        <div className="flex gap-1 self-start">
+        <div className="flex gap-4 self-start">
           <Button
-            variant="ghost"
+            variant="text"
             size="sm"
-            className="text-muted-foreground"
             disabled={share.pending || stop.pending || links === undefined}
             onClick={() => share.run((live ?? []).map((link) => link.id))}
           >
@@ -93,9 +92,8 @@ export default function DozoBotStats({ botId, spaceId }: { botId: string; spaceI
           </Button>
           {live?.length ? (
             <Button
-              variant="ghost"
+              variant="text"
               size="sm"
-              className="text-muted-foreground"
               disabled={share.pending || stop.pending}
               onClick={() => stop.run(live.map((link) => link.id))}
             >
