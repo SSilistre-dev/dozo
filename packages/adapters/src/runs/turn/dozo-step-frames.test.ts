@@ -65,8 +65,7 @@ function run() {
     await onToolCalled(ctx, { name: "browser_snapshot" } as never);
     await flush();
   };
-  const images = () =>
-    [...calls.entries()].flatMap(([id, call]) => (call.image ? [id] : []));
+  const images = () => [...calls.entries()].flatMap(([id, call]) => (call.image ? [id] : []));
   return { ctx, reply, calls, shoot, images, rows, removed };
 }
 
@@ -108,7 +107,9 @@ describe("a reply's step frames", () => {
     expect(kept.length).toBeGreaterThan(STEP_FRAMES_MAX / 2);
     expect(kept[0]).toBe("e0");
     expect(kept.at(-1)).toBe("e99");
-    const gaps = kept.slice(1, -1).map((id, at) => Number(id.slice(1)) - Number(kept[at]!.slice(1)));
+    const gaps = kept
+      .slice(1, -1)
+      .map((id, at) => Number(id.slice(1)) - Number(kept[at]!.slice(1)));
     expect(new Set(gaps).size).toBe(1);
   });
 
@@ -172,6 +173,18 @@ describe("a reply's step frames", () => {
     reply.latestScreenshot = undefined;
     await onToolCalled(ctx, { name: "x" } as never);
     expect(mocks.store).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds a reply that resumed after a pause to the limit, its first and last frames kept", async () => {
+    const { ctx, calls, shoot, images } = run();
+    for (let at = 0; at < 30; at++)
+      calls.set(`p${at}`, { arguments: "{}", image: { artifactId: `before-${at}` } });
+    await shoot("e1");
+    await saveLatestStepScreenshot(ctx);
+    const kept = images();
+    expect(kept).toHaveLength(STEP_FRAMES_MAX);
+    expect(kept[0]).toBe("p0");
+    expect(kept.at(-1)).toBe("e1");
   });
 
   it("saves as before for a reply that took no screenshot", async () => {

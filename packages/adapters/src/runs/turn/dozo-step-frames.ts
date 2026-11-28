@@ -129,9 +129,9 @@ async function removeUnlinked(ctx: RunContext, state: Frames) {
       call.image ? [call.image.artifactId] : [],
     ),
   );
-  const orphans = [
-    ...new Set(state.frames.flatMap((frame) => frame.artifactId ?? [])),
-  ].filter((id) => !linked.has(id));
+  const orphans = [...new Set(state.frames.flatMap((frame) => frame.artifactId ?? []))].filter(
+    (id) => !linked.has(id),
+  );
   for (const id of orphans) {
     const row = await deps.prisma.artifact.findFirst({
       where: { id, spaceId: run.spaceId, runId },

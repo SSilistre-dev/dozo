@@ -86,8 +86,12 @@ const paid = (byokTier: string, status = "active") => ({ status, byokTier });
 
 describe("sharedSpaceRoom", () => {
   it("says how many bytes the organization may still add, none past full, and null without a limit", async () => {
-    await expect(sharedSpaceRoom(organization({ files: [499 * MB] }).tx as never, "space-1")).resolves.toBe(MB);
-    await expect(sharedSpaceRoom(organization({ files: [501 * MB] }).tx as never, "space-1")).resolves.toBe(-MB);
+    await expect(
+      sharedSpaceRoom(organization({ files: [499 * MB] }).tx as never, "space-1"),
+    ).resolves.toBe(MB);
+    await expect(
+      sharedSpaceRoom(organization({ files: [501 * MB] }).tx as never, "space-1"),
+    ).resolves.toBe(-MB);
     await expect(
       sharedSpaceRoom(organization({ billingOn: false }).tx as never, "space-1"),
     ).resolves.toBeNull();
