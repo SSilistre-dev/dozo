@@ -102,6 +102,23 @@ export async function sharedSpaceFull(
 }
 
 /**
+ * The bytes the Space's organization may still add, or null without a limit. A look without the
+ * lock, for optional files that must leave room for the ones that matter (a reply's extra step
+ * frames before its last one): the write itself is still held to the limit by `holdSharedSpace`.
+ */
+export async function sharedSpaceRoom(
+  prisma: Pick<PrismaClient, "deploymentSettings" | "space" | "dozoPlanQuota" | "$queryRaw">,
+  spaceId: string,
+): Promise<number | null> {
+  const limit = await sharedSpaceLimit(prisma, spaceId);
+  if (!limit) return null;
+  const used = await runAsSystem("an organization's files span its Spaces", () =>
+    usedBytes(prisma, limit.organizationId),
+  );
+  return Number(BigInt(limit.bytes) - used);
+}
+
+/**
  * The organization's plan by name and how much of its shared space its files take, for showing;
  * null where files have no limit. `billing` is the organization's billing account as the caller
  * already read it, and `grant` the organization's granted plan as `planGrantOf` reads it. The same

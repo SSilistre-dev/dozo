@@ -15999,6 +15999,24 @@
       "reason": "Turkish copy for the settings section upstream left in English"
     },
     {
+      "file": "packages/adapters/src/runs/turn/run-turn.ts",
+      "find": "import { onToolCalled } from \"./run-turn-tools.js\";",
+      "replace": "import { onToolCalled } from \"./dozo-step-frames.js\";",
+      "requires": [
+        "packages/adapters/src/runs/turn/dozo-step-frames.ts"
+      ],
+      "reason": "replay frames: each screenshot a reply already took for the model is noted when the next call starts, and up to 24 are kept at an even spread beside the run (dozo-step-frames.ts)"
+    },
+    {
+      "file": "packages/adapters/src/runs/lifecycle/run-complete.ts",
+      "find": "import { keptTurnTranscript, saveLatestStepScreenshot } from \"../turn/tool-step-calls.js\";",
+      "replace": "import { keptTurnTranscript, saveLatestStepScreenshot } from \"../turn/dozo-step-frames.js\";",
+      "requires": [
+        "packages/adapters/src/runs/turn/dozo-step-frames.ts"
+      ],
+      "reason": "replay frames: the reply's last screenshot is saved as before, then the frames already kept join their calls, or none when the last one could not be kept"
+    },
+    {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Paylaş\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
       "replace": "msgstr \"Paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Share replay\"\nmsgstr \"Tekrarı paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Previous\"\nmsgstr \"Önceki\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Screenshot\"\nmsgstr \"Ekran görüntüsü\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Anyone with the link can see what stays checked.\"\nmsgstr \"Bağlantıya sahip olan herkes işaretli kalanları görebilir.\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
