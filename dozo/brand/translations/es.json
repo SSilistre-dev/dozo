@@ -490,5 +490,10 @@
  "Renew for {price}": "Renovar por {price}",
  "{name}, {price} / month": "{name}, {price} al mes",
  "{name}, {price} / year": "{name}, {price} al año",
+ "Share replay": "Compartir repetición",
+ "Create link": "Crear enlace",
+ "Previous": "Anterior",
+ "Screenshot": "Captura de pantalla",
+ "Anyone with the link can see what stays checked.": "Quien tenga el enlace verá lo que quede marcado.",
  "Spoken briefing": "Resumen hablado"
 }

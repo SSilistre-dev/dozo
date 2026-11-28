@@ -53,6 +53,7 @@ import {
   dozoSheetGroups,
   pinLabel,
   setDozoEditOpener,
+  setDozoReplayOpener,
   setDozoReportOpener,
   takeEditDraft,
   useDozoChatPins,
@@ -331,6 +332,32 @@ describe("a message's menu on mobile", () => {
     await render(<Row m={message("m-user")} readOnly />);
     await shows(["Pin"]);
     expect(api.rpc.mock.calls.map(([path]) => path)).toEqual(["dozoMessages/pins"]);
+  });
+});
+
+describe("sharing a replay", () => {
+  const steps = { blocks: [{ kind: "steps", steps: [{ label: "Browse", count: 1 }] }] };
+
+  it("offers Share replay on a bot's reply with steps, and opens its review", async () => {
+    answers["dozoMessages/revisable"] = { editMessageId: null, regenerateMessageId: null };
+    const open = vi.fn();
+    setDozoReplayOpener(open);
+    await render(<Row m={message("m-bot", { role: "bot", runId: "run-1", ...steps } as never)} />);
+    await shows(["Pin", "Share replay"]);
+    expect([actions[1]!.symbol, actions[1]!.icon]).toEqual(["film", "film-outline"]);
+    actions[1]!.onPress();
+    expect(open).toHaveBeenCalledWith("m-bot");
+  });
+
+  it("offers it nowhere else: a reply without steps, a group, a read-only chat", async () => {
+    answers["dozoMessages/revisable"] = { editMessageId: null, regenerateMessageId: null };
+    const reply = message("m-bot", { role: "bot", runId: "run-1", ...steps } as never);
+    await render(<Row m={message("m-bot", { role: "bot", runId: "run-1" })} />);
+    await shows(["Pin"]);
+    await render(<Row m={reply} inGroup />);
+    await shows(["Pin"]);
+    await render(<Row m={reply} readOnly />);
+    await shows(["Pin"]);
   });
 });
 

@@ -477,5 +477,10 @@
  "Renew for {price}": "{price} में नवीनीकरण करें",
  "{name}, {price} / month": "{name}, {price} / महीना",
  "{name}, {price} / year": "{name}, {price} / वर्ष",
+ "Share replay": "रीप्ले साझा करें",
+ "Create link": "लिंक बनाएं",
+ "Previous": "पिछला",
+ "Screenshot": "स्क्रीनशॉट",
+ "Anyone with the link can see what stays checked.": "लिंक वाला कोई भी व्यक्ति चुनी हुई चीज़ें देख सकता है।",
  "Spoken briefing": "बोला गया सारांश"
 }

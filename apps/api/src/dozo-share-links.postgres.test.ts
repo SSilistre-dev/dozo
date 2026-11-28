@@ -15,7 +15,7 @@ import { handleRpcError } from "./rpc-errors.js";
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
-/** A kind only this test has: production's map is empty. */
+/** A kind only this test has. */
 const kinds: DozoShareKinds = {
   note: {
     canShare: async (_prisma, _actor, targetId) => targetId !== "not-mine",

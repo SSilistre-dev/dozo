@@ -38,6 +38,7 @@ vi.mock(
   "../pages/shell/dozo-message-pins",
   loading.module("DozoPinMenuItem", "DozoPinnedMessages"),
 );
+vi.mock("../pages/shell/dozo-message-extensions", loading.module("DozoMessageMenuItems"));
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -131,6 +132,16 @@ describe("the fork's screens that load when first shown", () => {
   }
 });
 
+it("draws the fork's other message items after Pin, with the same props", async () => {
+  await act(async () => root.render(createElement(DozoPinMenuItem, { id: "a" } as never)));
+  await vi.waitFor(() =>
+    expect(
+      [...host.querySelectorAll("[data-stub]")].map((node) => node.getAttribute("data-stub")),
+    ).toEqual(["DozoPinMenuItem", "DozoMessageMenuItems"]),
+  );
+  expect(host.querySelector('[data-stub="DozoMessageMenuItems"]')?.textContent).toBe('{"id":"a"}');
+});
+
 describe("the teaching capture overlay", () => {
   it("is not even fetched while nothing is being recorded", async () => {
     await act(async () =>
@@ -152,5 +163,5 @@ describe("the teaching capture overlay", () => {
 });
 
 it("is fetched ahead, all of them, for the idle moment after the page has drawn", async () => {
-  await expect(preloadDozoSurfaces()).resolves.toHaveLength(11);
+  await expect(preloadDozoSurfaces()).resolves.toHaveLength(12);
 });

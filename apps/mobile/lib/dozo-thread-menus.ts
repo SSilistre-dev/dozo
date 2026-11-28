@@ -2,17 +2,21 @@ import { activeThreadRuns } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
+import type { MobileSnapshot } from "./api/mobile-types";
 import {
   revisableRead,
   setDozoEditOpener,
+  setDozoReplayOpener,
   setDozoReportOpener,
   useDozoPins,
 } from "./dozo-message-actions";
-import type { MobileSnapshot } from "./api/mobile-types";
 import { queryClient } from "./query/query";
 
 setDozoEditOpener((threadId, messageId) =>
   router.push({ pathname: "/dozo-edit-message", params: { threadId, messageId } }),
+);
+setDozoReplayOpener((messageId) =>
+  router.push({ pathname: "/dozo-replay", params: { messageId } }),
 );
 setDozoReportOpener((threadId, messageId) =>
   router.push({ pathname: "/dozo-feedback", params: { threadId, messageId } }),

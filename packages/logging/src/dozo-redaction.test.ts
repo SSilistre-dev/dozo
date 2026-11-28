@@ -28,3 +28,13 @@ describe("share links", () => {
     );
   });
 });
+
+describe("replay frames", () => {
+  it("keeps a link's token out of a frame's reported URL", () => {
+    const url = stripMonitoringUrl(`https://app.example.com/api/v1/dozo/shared/${token}/frames/0`);
+    expect(url).not.toContain(token);
+    expect(scrubMonitoringText(`GET /api/v1/dozo/shared/${token}/frames/0 failed`)).not.toContain(
+      token,
+    );
+  });
+});
