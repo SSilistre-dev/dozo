@@ -13,7 +13,7 @@ import { useScreenHeader } from "../lib/navigation/screen-header";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
-/** Every step starts kept; a screenshot starts kept unless a sign-in or payment came before it. */
+/** Every step starts kept; a screenshot starts kept unless the server says it starts left out. */
 function startingFrames(steps: readonly DozoReplayDraftStep[]): number[] {
   return steps.flatMap((step, index) => (step.frame !== null && !step.sensitive ? [index] : []));
 }

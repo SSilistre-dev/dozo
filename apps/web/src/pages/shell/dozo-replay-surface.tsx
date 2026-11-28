@@ -24,7 +24,7 @@ import type { DozoSurfaceProps } from "../dozo-surfaces";
 /** What the owner keeps: steps left out, and the steps whose screenshot goes with them. */
 type Choice = { omit: Set<number>; frames: Set<number> };
 
-/** Every step starts kept; a screenshot starts kept unless a sign-in or payment came before it. */
+/** Every step starts kept; a screenshot starts kept unless the server says it starts left out. */
 export function startingChoice(steps: readonly DozoReplayDraftStep[]): Choice {
   return {
     omit: new Set(),

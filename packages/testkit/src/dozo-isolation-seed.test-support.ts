@@ -727,9 +727,9 @@ export async function seedExtras(
   await step("replay", async () => {
     const id = randomUUID();
     await system.$executeRaw`
-      INSERT INTO dozo_replays (id, "userId", "spaceId", "botId", "messageId", steps)
+      INSERT INTO dozo_replays (id, "userId", "spaceId", "botId", "messageId", steps, fingerprint)
       VALUES (${id}, ${owner.userId}, ${spaceId}, ${botId}, ${ids.replyMessageId!},
-        '[{"index":0,"frame":false}]'::jsonb)`;
+        '[{"index":0,"frame":false}]'::jsonb, 'iso')`;
     ids.replayId = id;
   });
   // A line a review added to the bot's notes, already undone: the owner's undo answers it as it

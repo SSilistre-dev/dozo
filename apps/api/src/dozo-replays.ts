@@ -8,6 +8,7 @@ import {
   DOZO_SHARE_LINK_API_PREFIX,
   DOZO_SHARE_LINK_WEB_PREFIX,
   DOZO_SHARE_LINKS_LIVE_MAX,
+  isStepScreenshotMimeType,
   storedImageMimeType,
 } from "@rakazo/contracts";
 import { ClientError, deadlineSignal } from "@rakazo/core";
@@ -16,15 +17,16 @@ import { runAsSystem } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import type { OwnReply, ReplaySelection } from "./dozo-replay-kind.js";
-import { findOwnReply, replayFrame, stepsOf } from "./dozo-replay-kind.js";
-import { framesLeftOut } from "./dozo-replay-steps.js";
+import { findOwnReply, replayFrame, selectedSteps, stepsOf } from "./dozo-replay-kind.js";
+import { framesStartLeftOut, replayFingerprint } from "./dozo-replay-steps.js";
 import { createShareLink, openSharedLink } from "./dozo-share-links.js";
 import { throttleKey, windowCounter } from "./http/window-counter.js";
 import type { RouterContext } from "./routes/context.js";
 
 const SITE_SESSIONS_WAIT_MS = 5_000;
 const MINUTE_MS = 60_000;
-const FRAME_READS_PER_IP_PER_MINUTE = 240;
+/** The share link read's own limit: a replay has at most one frame per reply it shows. */
+const FRAME_READS_PER_IP_PER_MINUTE = 120;
 const FRAME_INDEX = /^\d{1,3}$/;
 const HEADERS = {
   "cache-control": "no-store",
@@ -33,6 +35,11 @@ const HEADERS = {
 };
 
 type Deps = RouterContext["deps"];
+
+/** The image type of a kept step screenshot; any other stored file is never shown. */
+function screenshotType(mimeType: string) {
+  return isStepScreenshotMimeType(mimeType) ? storedImageMimeType(mimeType) : undefined;
+}
 
 /**
  * The reply cannot be published by the caller: not theirs, not in their own chat with their own
@@ -55,17 +62,18 @@ async function ownReply(prisma: PrismaClient, actor: Actor, messageId: string): 
 }
 
 /**
- * The sites the bot's browser is signed in to, while its computer runs and can tell; none
- * otherwise. Only the review's starting choices read it, so a slow or failed answer is no answer.
+ * The sites the bot's browser is signed in to, while its computer runs and can tell; null when
+ * they cannot be read (no such computer, stopped, slow, failed), which the review takes as the
+ * restrictive answer.
  */
-async function signedInSites(deps: Deps, actor: Actor, botId: string): Promise<string[]> {
+async function signedInSites(deps: Deps, actor: Actor, botId: string): Promise<string[] | null> {
   const bot = await deps.prisma.bot.findFirst({
     where: { id: botId, spaceId: actor.spaceId },
     select: { computer: true },
   });
   const computer = bot?.computer;
-  if (!computer?.providerRef || computer.state !== "running" || !hasSiteSessions(computer.kind))
-    return [];
+  if (!computer?.providerRef || !hasSiteSessions(computer.kind) || computer.state !== "running")
+    return null;
   const context = {
     ...createAdapterContext(actor, botId, "replay.site-sessions"),
     signal: deadlineSignal(SITE_SESSIONS_WAIT_MS),
@@ -74,7 +82,7 @@ async function signedInSites(deps: Deps, actor: Actor, botId: string): Promise<s
     "read signed-in sites for a replay review",
     listSiteSessions(deps.sandbox, toComputerRef(computer), botId, context),
   );
-  return (sites ?? []).map((session) => session.site.toLowerCase());
+  return sites ? sites.map((session) => session.site.toLowerCase()) : null;
 }
 
 async function frameDataUrl(
@@ -87,7 +95,7 @@ async function frameDataUrl(
     where: { id: artifactId, spaceId: actor.spaceId, runId: reply.runId },
     select: { storageKey: true, mimeType: true },
   });
-  const mimeType = artifact && storedImageMimeType(artifact.mimeType);
+  const mimeType = artifact && screenshotType(artifact.mimeType);
   if (!artifact || !mimeType) return null;
   const bytes = await deps.artifacts.get(
     artifact.storageKey,
@@ -133,14 +141,14 @@ export async function previewReplay(
   const sites = await signedInSites(deps, actor, reply.botId);
   const steps = stepsOf(reply, sites);
   if (steps.length === 0) throw new ReplayUnavailableError();
-  const leftOut = framesLeftOut(steps);
+  const leftOut = framesStartLeftOut(steps);
   const drafts = await Promise.all(
-    steps.map(async (step, index) => ({
+    steps.map(async (step) => ({
       line: step.line,
       frame: step.frameArtifactId
         ? await frameDataUrl(deps, actor, reply, step.frameArtifactId)
         : null,
-      sensitive: leftOut[index] ?? true,
+      sensitive: leftOut,
     })),
   );
   return { steps: drafts, links: await replyLinks(deps.prisma, actor, messageId) };
@@ -159,15 +167,17 @@ export async function publishReplay(
   const reply = await ownReply(prisma, actor, input.messageId);
   const omit = new Set(input.omit);
   const frames = new Set(input.frames);
-  const selection: ReplaySelection = stepsOf(reply).flatMap((step, index) =>
+  const steps = stepsOf(reply);
+  const selection: ReplaySelection = steps.flatMap((step, index) =>
     omit.has(index) ? [] : [{ index, frame: frames.has(index) && Boolean(step.frameArtifactId) }],
   );
-  if (selection.length === 0) throw new ReplayUnavailableError();
+  const published = selectedSteps(steps, selection);
+  if (selection.length === 0 || !published) throw new ReplayUnavailableError();
   const id = randomUUID();
   await prisma.$executeRaw`
-    INSERT INTO dozo_replays ("id", "userId", "spaceId", "botId", "messageId", "steps")
+    INSERT INTO dozo_replays ("id", "userId", "spaceId", "botId", "messageId", "steps", "fingerprint")
     VALUES (${id}, ${actor.userId}, ${actor.spaceId}, ${reply.botId}, ${reply.id},
-      ${JSON.stringify(selection)}::jsonb)`;
+      ${JSON.stringify(selection)}::jsonb, ${replayFingerprint(published)})`;
   try {
     return await createShareLink(prisma, actor, {
       kind: DOZO_REPLAY_KIND,
@@ -222,17 +232,22 @@ export function mountDozoReplayFrames(
             replayFrame(prisma, opened.target, Number(n)),
           )
         : null;
-    const mimeType = frame && storedImageMimeType(frame.mimeType);
+    const mimeType = frame && screenshotType(frame.mimeType);
     if (!frame || !mimeType || !opened) return c.json({ error: "Not found" }, 404, HEADERS);
     const { spaceId, userId } = opened.target;
     const operationId = "replay-frame-read";
-    const bytes = await artifacts.get(frame.storageKey, {
-      operationId,
-      traceId: operationId,
-      spaceId,
-      userId,
-      signal: new AbortController().signal,
-    });
+    // A file gone from storage under a row that is still there is the same 404 as anything else.
+    const bytes = await bestEffort(
+      "read a replay frame",
+      artifacts.get(frame.storageKey, {
+        operationId,
+        traceId: operationId,
+        spaceId,
+        userId,
+        signal: new AbortController().signal,
+      }),
+    );
+    if (!bytes) return c.json({ error: "Not found" }, 404, HEADERS);
     return c.body(new Uint8Array(bytes), 200, {
       ...HEADERS,
       "content-type": mimeType,

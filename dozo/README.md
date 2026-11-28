@@ -324,13 +324,17 @@ A bot's owner can publish one finished reply of their own chat with it as a repl
 (`apps/api/src/dozo-replays.ts`, table `dozo_replays`, share link kind `replay`; web from a reply's
 More menu, mobile from its long-press menu). Only the bot's owner, only for a reply to a run they
 started in their own chat with it (main or extra): never a group, a chat app's conversation or
-another member's bot. The review shows every step as a line (the step's label and, for an address,
-its host only) and the screenshot the reply kept; the owner leaves out any of them before the link
-is made. A screenshot starts left out once a step touched a sign-in, a saved login, a card or pay
-token, a sign-in or checkout address, or a site the bot's browser is signed in to. The table keeps
-positions only, never text; the lines are read from the reply on every open, so deleting the reply
-or the bot, or the owner losing either, closes the link. Links last 7 days and are revoked in the
-same review. The signed-out page shows the logo, the frame, the line and previous and next.
+another member's bot. The review shows every step as a line (the step's label and, for a page the
+bot opened, its public host only: no address literal, single-label or private name; a tool that is
+not built in shows as "Action") and the screenshot the reply kept; the owner leaves out any of them
+before the link is made. Screenshots start left out when any step of the reply typed text, touched a
+saved login, a card or pay token, a sign-in or checkout address (query and fragment included) or a
+site the bot's browser is signed in to, or could not be read; while the signed-in sites cannot be
+read (computer stopped), every browser step counts. The table keeps positions and a SHA-256 of what
+the owner reviewed, never text; the lines are read from the reply on every open, and a reply
+rewritten since, deleted, or a bot gone or no longer the owner's closes the link. Links last 7 days
+and are revoked in the same review. The signed-out page shows the logo, the frame, the line and
+previous and next.
 
 Known limit: a reply keeps one screenshot, the last one its calls took, so a replay has at most one
 frame. A screenshot can still show private data; the owner's review is the control.

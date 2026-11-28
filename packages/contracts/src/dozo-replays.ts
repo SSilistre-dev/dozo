@@ -19,7 +19,10 @@ export const DozoReplayDraftStepSchema = /* @__PURE__ */ (() =>
     line: ReplayLine,
     /** The screenshot kept for this step, as a data URL; null when it has none. */
     frame: z.string().nullable(),
-    /** The step, or one before it, touched a sign-in, a saved value, a payment or a signed-in site. */
+    /**
+     * The screenshot starts left out: some step of the reply touched a sign-in, a saved value, a
+     * payment, typed text or a signed-in site, or could not be read.
+     */
     sensitive: z.boolean(),
   }))();
 export type DozoReplayDraftStep = z.infer<typeof DozoReplayDraftStepSchema>;

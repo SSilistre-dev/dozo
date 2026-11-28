@@ -4,7 +4,7 @@ import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
 import { DOZO_SHARE_LINK_API_PREFIX, stepScreenshotMimeType } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb } from "@rakazo/db";
+import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mountDozoReplayFrames } from "./dozo-replays.js";
@@ -51,6 +51,32 @@ describePostgres("replays (PostgreSQL)", () => {
       data: { id: randomUUID(), spaceId, organizationId: id, userId: id, role: "owner", createdAt },
     });
     return { userId: id, spaceId, email: `${id}@example.test`, isDeploymentOwner: false };
+  }
+
+  /** Another person who joins `owner`'s Space as a member. */
+  async function memberOf(owner: Actor): Promise<Actor> {
+    const guest = await person();
+    const space = await system.space.findUniqueOrThrow({ where: { id: owner.spaceId } });
+    await system.member.create({
+      data: {
+        id: `m2-${guest.userId}`,
+        organizationId: space.organizationId,
+        userId: guest.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId: owner.spaceId,
+        organizationId: space.organizationId,
+        userId: guest.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    return { ...guest, spaceId: owner.spaceId };
   }
 
   /** A finished reply in the actor's own chat with their bot: a sign-in, then a search. */
@@ -104,7 +130,7 @@ describePostgres("replays (PostgreSQL)", () => {
           steps: [
             {
               tool: "browser_navigate",
-              calls: [{ arguments: '{"url":"https://shop.example.test/item?ref=private"}' }],
+              calls: [{ arguments: '{"url":"https://shop.example.com/item?ref=private"}' }],
             },
             {
               tool: "web_search",
@@ -173,11 +199,12 @@ describePostgres("replays (PostgreSQL)", () => {
     const preview = await call(ada, "dozoReplays/preview", { messageId });
     expect(preview.status).toBe(200);
     expect(preview.json.steps).toEqual([
-      { line: "Browser navigate · shop.example.test", frame: null, sensitive: false },
+      // The bot has no computer, so its signed-in sites are unknown: the screenshot starts out.
+      { line: "Browser navigate · shop.example.com", frame: null, sensitive: true },
       {
         line: "Web search",
         frame: `data:image/png;base64,${Buffer.from(PICTURE).toString("base64")}`,
-        sensitive: false,
+        sensitive: true,
       },
     ]);
     expect(JSON.stringify(preview.json)).not.toContain("private");
@@ -209,7 +236,7 @@ describePostgres("replays (PostgreSQL)", () => {
     const token = tokenOf(published.json.url);
     expect((await readSharedLink(prisma, token))?.payload).toEqual({
       steps: [
-        { line: "Browser navigate · shop.example.test", frame: null },
+        { line: "Browser navigate · shop.example.com", frame: null },
         { line: "Web search", frame: null },
       ],
     });
@@ -260,5 +287,68 @@ describePostgres("replays (PostgreSQL)", () => {
       SELECT count(*)::int AS n FROM dozo_replays
       WHERE "messageId" IN (${first.messageId}, ${second.messageId})`;
     expect(left[0]!.n).toBe(0);
+  });
+
+  it("refuses a member of the same Space the owner's reply and their replay link's target", async () => {
+    const ada = await person();
+    const { messageId } = await reply(ada);
+    const published = await call(ada, "dozoReplays/publish", { messageId });
+    const link = published.json.link as { targetId: string };
+    const bob = await memberOf(ada);
+    expect((await call(bob, "dozoReplays/preview", { messageId })).status).toBe(404);
+    expect((await call(bob, "dozoReplays/publish", { messageId })).status).toBe(404);
+    expect(
+      (
+        await call(bob, "dozoShareLinks/create", {
+          kind: "replay",
+          targetId: link.targetId,
+          days: 1,
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it("keeps another member's replay out of their reads and writes by row-level security alone", async () => {
+    const ada = await person();
+    const { messageId } = await reply(ada);
+    await call(ada, "dozoReplays/publish", { messageId });
+    const bob = await memberOf(ada);
+    const seen = await runAsTenant(
+      bob,
+      () =>
+        prisma.$queryRaw<
+          { id: string }[]
+        >`SELECT "id" FROM dozo_replays WHERE "messageId" = ${messageId}`,
+    );
+    expect(seen).toEqual([]);
+    const changed = await runAsTenant(
+      bob,
+      () =>
+        prisma.$executeRaw`UPDATE dozo_replays SET "steps" = '[]'::jsonb WHERE "messageId" = ${messageId}`,
+    );
+    expect(changed).toBe(0);
+  });
+
+  it("closes the link when the reply is rewritten after the owner reviewed it", async () => {
+    const ada = await person();
+    const { messageId } = await reply(ada);
+    const token = tokenOf((await call(ada, "dozoReplays/publish", { messageId })).json.url);
+    expect(await readSharedLink(prisma, token)).not.toBeNull();
+    await system.message.update({
+      where: { id: messageId },
+      data: {
+        blocks: [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Send email", count: 1 },
+              { label: "Browser navigate", count: 1 },
+              { label: "Web search", count: 1 },
+            ],
+          },
+        ],
+      },
+    });
+    expect(await readSharedLink(prisma, token)).toBeNull();
   });
 });

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const adapters = vi.hoisted(() => ({
   hasSiteSessions: vi.fn((_kind: unknown) => true),
-  listSiteSessions: vi.fn(async () => [{ site: "Shop.example.test" }]),
+  listSiteSessions: vi.fn(async () => [{ site: "Shop.example.com" }]),
 }));
 vi.mock("@rakazo/adapters", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -15,6 +15,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 }));
 
 import { dozoReplayKind, findOwnReply, replayFrame } from "./dozo-replay-kind.js";
+import { replayFingerprint } from "./dozo-replay-steps.js";
 import {
   dozoReplayRoutes,
   mountDozoReplayFrames,
@@ -41,7 +42,7 @@ function world() {
           kind: "steps",
           steps: [
             { label: "Browser navigate", count: 1 },
-            { label: "Screenshot", count: 1 },
+            { label: "Browser snapshot", count: 1 },
           ],
         },
       ],
@@ -49,9 +50,9 @@ function world() {
         steps: [
           {
             tool: "browser_navigate",
-            calls: [{ arguments: '{"url":"https://shop.example.test/a?b=c"}' }],
+            calls: [{ arguments: '{"url":"https://shop.example.com/a?b=c"}' }],
           },
-          { tool: "screenshot", calls: [{ image: { artifactId: "art-1" } }] },
+          { tool: "browser_snapshot", calls: [{ image: { artifactId: "art-1" } }] },
         ],
       }),
     } as Record<string, unknown> | null,
@@ -75,6 +76,10 @@ function world() {
         { index: 0, frame: false },
         { index: 1, frame: true },
       ],
+      fingerprint: replayFingerprint([
+        { line: "Browser navigate · shop.example.com", stored: "Browser navigate" },
+        { line: "Browser snapshot", stored: "Browser snapshot", frameArtifactId: "art-1" },
+      ]),
     } as Record<string, unknown> | null,
     artifact: {
       storageKey: "key-1",
@@ -146,6 +151,25 @@ describe("findOwnReply", () => {
     ["another member's bot", (s: ReturnType<typeof world>["state"]) => (s.bot = null)],
     ["a run still going", (s: ReturnType<typeof world>["state"]) => (s.run!.status = "running")],
     ["another member's run", (s: ReturnType<typeof world>["state"]) => (s.run!.userId = "u-2")],
+    ["a helper chat", (s: ReturnType<typeof world>["state"]) => (s.thread!.helperBotId = "b-2")],
+    [
+      "a chat app's conversation",
+      (s: ReturnType<typeof world>["state"]) => (s.thread!.externalConversationId = "x-1"),
+    ],
+    [
+      "a group message delivered into the chat",
+      (s: ReturnType<typeof world>["state"]) =>
+        (s.message!.blocks = [
+          {
+            kind: "channel_message",
+            provider: "p",
+            channelId: "c-1",
+            fromAddress: "a",
+            fromLabel: "A",
+            text: "hi",
+          },
+        ]),
+    ],
   ])("finds nothing for %s", async (_name, change) => {
     const { state, prisma } = world();
     change(state);
@@ -168,8 +192,8 @@ describe("the replay kind", () => {
     const { prisma } = world();
     expect(await dozoReplayKind.load(prisma, link)).toEqual({
       steps: [
-        { line: "Browser navigate · shop.example.test", frame: null },
-        { line: "Screenshot", frame: 0 },
+        { line: "Browser navigate · shop.example.com", frame: null },
+        { line: "Browser snapshot", frame: 0 },
       ],
     });
   });
@@ -182,6 +206,28 @@ describe("the replay kind", () => {
     expect(await dozoReplayKind.load(gone.prisma, link)).toBeNull();
   });
 
+  it("shows nothing once the reply no longer matches what its owner reviewed", async () => {
+    const { state, prisma } = world();
+    state.message!.blocks = [
+      {
+        kind: "steps",
+        steps: [
+          { label: "Web search", count: 1 },
+          { label: "Browser navigate", count: 1 },
+          { label: "Browser snapshot", count: 1 },
+        ],
+      },
+    ];
+    expect(await dozoReplayKind.load(prisma, link)).toBeNull();
+    expect(await replayFrame(prisma, link, 0)).toBeNull();
+  });
+
+  it("shows nothing for a stored selection it cannot read", async () => {
+    const { state, prisma } = world();
+    state.replay!.steps = "broken";
+    expect(await dozoReplayKind.load(prisma, link)).toBeNull();
+  });
+
   it("serves a chosen screenshot of the reply's own run only", async () => {
     const { state, prisma } = world();
     expect(await replayFrame(prisma, link, 0)).toMatchObject({ storageKey: "key-1" });
@@ -192,22 +238,46 @@ describe("the replay kind", () => {
 });
 
 describe("previewReplay", () => {
-  it("shows each step with its screenshot, the reply's links, and no signed-in sites without a computer", async () => {
-    const { deps } = world();
+  const running = { providerRef: "p", state: "running", kind: "k" };
+
+  it("shows each step with its screenshot and the reply's links, all kept with nothing sensitive", async () => {
+    const { state, deps } = world();
+    state.bot = { id: "b-1", computer: running };
+    adapters.listSiteSessions.mockResolvedValueOnce([{ site: "other.com" }]);
     const preview = await previewReplay(deps, actor, "m-1");
     expect(preview.steps).toEqual([
-      { line: "Browser navigate · shop.example.test", frame: null, sensitive: false },
-      { line: "Screenshot", frame: "data:image/png;base64,AQID", sensitive: false },
+      { line: "Browser navigate · shop.example.com", frame: null, sensitive: false },
+      { line: "Browser snapshot", frame: "data:image/png;base64,AQID", sensitive: false },
     ]);
     expect(preview.links.map((row) => row.id)).toEqual(["link-1"]);
-    expect(adapters.listSiteSessions).not.toHaveBeenCalled();
   });
 
-  it("leaves screenshots out from a step on a site the bot's browser is signed in to", async () => {
+  it("leaves the reply's screenshots out after a step on a site the bot is signed in to", async () => {
     const { state, deps } = world();
-    state.bot = { id: "b-1", computer: { providerRef: "p", state: "running", kind: "k" } };
+    state.bot = { id: "b-1", computer: running };
     const preview = await previewReplay(deps, actor, "m-1");
     expect(preview.steps.map((step) => step.sensitive)).toEqual([true, true]);
+  });
+
+  it.each([
+    ["no computer", null],
+    ["a stopped computer", { ...running, state: "stopped" }],
+  ])(
+    "takes the signed-in sites as unknown with %s, leaving the screenshots out",
+    async (_n, computer) => {
+      const { state, deps } = world();
+      state.bot = { id: "b-1", computer };
+      const preview = await previewReplay(deps, actor, "m-1");
+      expect(preview.steps.map((step) => step.sensitive)).toEqual([true, true]);
+      expect(adapters.listSiteSessions).not.toHaveBeenCalled();
+    },
+  );
+
+  it("offers no picture that is not a kept step screenshot", async () => {
+    const { state, deps } = world();
+    state.artifact = { ...state.artifact, mimeType: "image/png" };
+    const preview = await previewReplay(deps, actor, "m-1");
+    expect(preview.steps[1]?.frame).toBeNull();
   });
 
   it("refuses a reply without steps and a reply that is not the caller's", async () => {
@@ -307,6 +377,12 @@ describe("the frame route", () => {
     expect(new Uint8Array(await answer.arrayBuffer())).toEqual(PICTURE);
   });
 
+  it("answers the same 404 when the stored file is gone", async () => {
+    const { hono, artifacts } = app();
+    artifacts.get.mockRejectedValueOnce(new Error("ENOENT"));
+    expect((await hono.request(frame("0"))).status).toBe(404);
+  });
+
   it("answers the same 404 for a frame not chosen and a number it cannot read", async () => {
     const { hono, prisma } = app();
     expect((await hono.request(frame("1"))).status).toBe(404);
@@ -320,7 +396,7 @@ describe("the frame route", () => {
     const { hono, state } = app();
     state.replay = null;
     let last = 0;
-    for (let i = 0; i < 241; i++) last = (await hono.request(frame("x"))).status;
+    for (let i = 0; i < 121; i++) last = (await hono.request(frame("x"))).status;
     expect(last).toBe(429);
   });
 });

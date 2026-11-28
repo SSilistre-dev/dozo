@@ -2,6 +2,7 @@ import type { Actor, DozoReplayPayload } from "@rakazo/contracts";
 import { isStepScreenshotMimeType } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  JsonColumnMismatchError,
   mayBeChannelMessage,
   readJsonColumn,
   storedMessageBlocks,
@@ -9,7 +10,7 @@ import {
 } from "@rakazo/db";
 import * as z from "zod";
 import type { ReplayStep } from "./dozo-replay-steps.js";
-import { parseToolHistory, replaySteps } from "./dozo-replay-steps.js";
+import { parseToolHistory, replayFingerprint, replaySteps } from "./dozo-replay-steps.js";
 import type { DozoShareKind, DozoShareTarget } from "./dozo-share-links.js";
 
 const FINISHED_RUN = ["completed", "failed", "cancelled"];
@@ -95,7 +96,7 @@ export async function findOwnReply(
 
 export function stepsOf(
   reply: Pick<OwnReply, "id" | "blocks" | "toolHistory">,
-  signedInSites?: readonly string[],
+  signedInSites?: readonly string[] | null,
 ): ReplayStep[] {
   return replaySteps(
     storedMessageBlocks(reply),
@@ -104,11 +105,17 @@ export function stepsOf(
   );
 }
 
-type ReplayRow = { userId: string; spaceId: string; messageId: string; steps: unknown };
+type ReplayRow = {
+  userId: string;
+  spaceId: string;
+  messageId: string;
+  steps: unknown;
+  fingerprint: string;
+};
 
 async function replayRow(prisma: PrismaClient, id: string): Promise<ReplayRow | undefined> {
   const [row] = await prisma.$queryRaw<ReplayRow[]>`
-    SELECT "userId", "spaceId", "messageId", "steps" FROM dozo_replays WHERE "id" = ${id}`;
+    SELECT "userId", "spaceId", "messageId", "steps", "fingerprint" FROM dozo_replays WHERE "id" = ${id}`;
   return row;
 }
 
@@ -116,27 +123,44 @@ async function replayRow(prisma: PrismaClient, id: string): Promise<ReplayRow | 
 async function publishedSteps(prisma: PrismaClient, link: DozoShareTarget) {
   const row = await replayRow(prisma, link.targetId);
   if (!row || row.userId !== link.userId || row.spaceId !== link.spaceId) return null;
-  const selection = readJsonColumn(
-    ReplaySelectionSchema,
-    row.steps,
-    { table: "dozo_replays", column: "steps", id: link.targetId },
-    "reject",
-  );
+  let selection: ReplaySelection;
+  try {
+    selection = readJsonColumn(
+      ReplaySelectionSchema,
+      row.steps,
+      { table: "dozo_replays", column: "steps", id: link.targetId },
+      "reject",
+    );
+  } catch (error) {
+    // A row this code cannot read shows nothing, as a gone one does.
+    if (error instanceof JsonColumnMismatchError) return null;
+    throw error;
+  }
   const reply = await prisma.message.findUnique({
     where: { id: row.messageId },
     select: { id: true, runId: true, blocks: true, toolHistory: true },
   });
   if (!reply) return null;
   const steps = stepsOf(reply);
-  return {
-    runId: reply.runId,
-    steps: selection.flatMap(({ index, frame }) => {
-      const step = steps[index];
-      return step
-        ? [{ line: step.line, frameArtifactId: frame ? step.frameArtifactId : undefined }]
-        : [];
-    }),
-  };
+  const published = selectedSteps(steps, selection);
+  if (!published || replayFingerprint(published) !== row.fingerprint) return null;
+  return { runId: reply.runId, steps: published };
+}
+
+/** The chosen steps' lines and chosen screenshots, or null when a position is no longer there. */
+export function selectedSteps(
+  steps: readonly ReplayStep[],
+  selection: ReplaySelection,
+): Array<{ line: string; stored: string; frameArtifactId?: string }> | null {
+  const chosen = selection.map(({ index, frame }) => {
+    const step = steps[index];
+    if (!step) return null;
+    const { line, stored } = step;
+    return frame && step.frameArtifactId
+      ? { line, stored, frameArtifactId: step.frameArtifactId }
+      : { line, stored };
+  });
+  return chosen.every((step) => step !== null) ? chosen : null;
 }
 
 /**
