@@ -1,4 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
+import { errorCode, formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet, Text, View } from "react-native";
@@ -10,6 +12,7 @@ import {
   SettingsSwitch,
 } from "../components/settings/settings-group";
 import { errorText } from "../lib/api/user-error";
+import { useUiLocale } from "../lib/i18n/i18n";
 import { native, useThemedStyles } from "../lib/native/native";
 import { useScreenHeader } from "../lib/navigation/screen-header";
 import { rpcQuery, useSave } from "../lib/query/query";
@@ -26,7 +29,9 @@ export default function DozoBotShare() {
   const [includePicture, setIncludePicture] = useState(false);
   const statusRead = botShareStatusRead(botId);
   const link = useScreenQuery(statusRead).data?.link;
-  const preview = useScreenQuery(rpcQuery("dozoBotShares/preview", { botId, includePicture })).data;
+  const previewRead = useScreenQuery(rpcQuery("dozoBotShares/preview", { botId, includePicture }));
+  const preview = previewRead.data;
+  const labels = cronLabels(useUiLocale());
   useScreenHeader({ title: t`Share link` });
   const failed = (error: Error) => Alert.alert(errorText(error, t`Could not share`));
   const publish = useSave({
@@ -41,12 +46,19 @@ export default function DozoBotShare() {
     stale: [statusRead.queryKey],
     onFailed: failed,
   });
-  if (!preview) return null;
+  if (!preview) {
+    // The server names the field holding hidden text; its message is the only copy that says which.
+    return errorCode(previewRead.error) === "BOT_SHARE_HIDDEN_TEXT" ? (
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+        <SettingsFooter>{previewRead.error?.message ?? ""}</SettingsFooter>
+      </ScrollView>
+    ) : null;
+  }
   const { definition } = preview;
   // Every part that is published or copied, whole: a routine's prompt runs with the copier's tools.
   const routines = definition.routines.map((routine) => [
     routine.name,
-    routine.crons.join(", "),
+    routine.crons.map((cron) => formatCron(cron, labels)).join(", "),
     routine.prompt,
   ]);
   const sections = [

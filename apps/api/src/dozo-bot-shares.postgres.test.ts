@@ -382,7 +382,7 @@ describePostgres("bot shares (PostgreSQL)", () => {
     expect(preview.status).toBe(400);
     expect(preview.json).toMatchObject({
       code: "BOT_SHARE_HIDDEN_TEXT",
-      message: "The bot's description has characters a reader cannot see",
+      message: "Remove hidden characters or joined emoji from the bot's description",
     });
   });
 

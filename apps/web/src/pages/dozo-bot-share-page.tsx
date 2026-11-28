@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { DozoBotSharePublic } from "@rakazo/contracts";
+import type { DozoBotSharePublic, Space } from "@rakazo/contracts";
 import { DOZO_SHARE_LINK_WEB_PREFIX, DozoBotSharePublicSchema } from "@rakazo/contracts";
 import { errorCode } from "@rakazo/core";
 import { Button, Field, FieldGroup, FieldLabel, OptionSelect, Spinner } from "@rakazo/ui-web";
@@ -60,7 +60,11 @@ function Copyable({ token }: { token: string }) {
     retry: false,
   });
   const spaces = useQuery(queries.spaces.list.queryOptions()).data?.spaces ?? [];
-  const [spaceId, setSpaceId] = useState(selectedSpaceId());
+  const [picked, setPicked] = useState<string | null>(null);
+  // The Space in use, else the first, so the picker never starts empty.
+  const stored = selectedSpaceId();
+  const spaceId =
+    picked ?? (spaces.some((space) => space.id === stored) ? stored : spaces[0]?.id) ?? null;
   // One id per page: a second click, or a retry after a lost answer, returns the same bot.
   const [requestId] = useState(() => crypto.randomUUID());
   const copy = useSave({
@@ -87,8 +91,8 @@ function Copyable({ token }: { token: string }) {
             <OptionSelect
               aria-labelledby="bot-share-space"
               value={spaceId}
-              options={spaces.map((space) => ({ value: space.id, label: space.name }))}
-              onValueChange={setSpaceId}
+              options={spaceOptions(spaces)}
+              onValueChange={setPicked}
             />
           </Field>
         </FieldGroup>
@@ -105,4 +109,17 @@ function Copyable({ token }: { token: string }) {
       </Button>
     </>
   );
+}
+
+/** Spaces sharing a name are told apart by their bots, as the sidebar tells them apart. */
+function spaceOptions(spaces: Pick<Space, "id" | "name" | "bots">[]) {
+  return spaces.map((space) => {
+    const same = spaces.filter((other) => other.name === space.name);
+    if (same.length === 1) return { value: space.id, label: space.name };
+    const bots = space.bots
+      .map((bot) => bot.name)
+      .slice(0, 2)
+      .join(", ");
+    return { value: space.id, label: `${space.name} (${bots || same.indexOf(space) + 1})` };
+  });
 }

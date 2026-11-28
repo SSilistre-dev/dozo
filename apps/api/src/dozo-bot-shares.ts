@@ -39,7 +39,7 @@ export class BotShareHiddenTextError extends ClientError {
   constructor(field: string) {
     super(
       "BAD_REQUEST",
-      `The bot's ${field} has characters a reader cannot see`,
+      `Remove hidden characters or joined emoji from the bot's ${field}`,
       "BOT_SHARE_HIDDEN_TEXT",
     );
   }

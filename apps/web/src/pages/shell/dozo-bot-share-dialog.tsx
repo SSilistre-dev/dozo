@@ -63,6 +63,9 @@ export function DozoBotShareDialog({ params, onClose }: DozoSurfaceProps) {
   };
   const shown = preview.data;
   const tooLarge = errorCode(preview.error) === "BOT_SHARE_TOO_LARGE";
+  // The server names the field; its message is the only copy that says which one.
+  const hiddenText =
+    errorCode(preview.error) === "BOT_SHARE_HIDDEN_TEXT" ? preview.error?.message : null;
   const date = link ? i18n.date(new Date(link.expiresAt), { dateStyle: "medium" }) : "";
 
   return (
@@ -91,6 +94,8 @@ export function DozoBotShareDialog({ params, onClose }: DozoSurfaceProps) {
           <p className="text-body">
             <Trans>This bot is too large to share.</Trans>
           </p>
+        ) : hiddenText ? (
+          <p className="text-body">{hiddenText}</p>
         ) : preview.isError ? (
           <SectionLoadFailed />
         ) : (

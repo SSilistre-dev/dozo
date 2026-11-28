@@ -198,7 +198,7 @@ describe("hidden text", () => {
         ).rejects.toMatchObject({
           kind: "BAD_REQUEST",
           code: "BOT_SHARE_HIDDEN_TEXT",
-          message: `The bot's ${field} has characters a reader cannot see`,
+          message: `Remove hidden characters or joined emoji from the bot's ${field}`,
         });
       },
     );
