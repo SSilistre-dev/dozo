@@ -262,6 +262,7 @@ export function requestsFor(route: string, ids: TargetIds): HttpRequest[] {
     deviceId: ids.deviceId,
     id: ids.taskId,
     token: ids.pageId,
+    pageId: ids.pageId,
     file: ids.artifactId,
     surface: "web",
     provider: "fake",

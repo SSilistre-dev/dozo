@@ -705,6 +705,15 @@ export async function seedExtras(
       VALUES (${id}, ${owner.userId}, ${spaceId}, ${botId}, 'hosted', ${[mark("commandrule")]}, '/')`;
     ids.commandRuleId = id;
   });
+  // A live share link to the bot. No kind ships yet, so no procedure can make one: system insert.
+  await step("share link", async () => {
+    const id = randomUUID();
+    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
+    await system.$executeRaw`
+      INSERT INTO dozo_share_links (id, "userId", "spaceId", kind, "targetId", "tokenHash", "expiresAt")
+      VALUES (${id}, ${owner.userId}, ${spaceId}, 'iso', ${botId}, ${randomUUID()}, ${expiresAt}::timestamptz)`;
+    ids.shareLinkId = id;
+  });
   // A line a review added to the bot's notes, already undone: the owner's undo answers it as it
   // is and writes nothing, so the owner's control call does not change the notes mid-sweep. Its
   // review needs a model: system insert.

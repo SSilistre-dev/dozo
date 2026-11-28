@@ -14,6 +14,10 @@ import { signedOut } from "./surfaces/signed-out";
 
 /** Inventory keys deliberately not visited, each with the reason. Printed in the coverage report. */
 export const SKIPS: Record<string, string> = {
+  "route:/page/:pageId":
+    "a page installed as an app on a computer or phone: the window opens only from an installed page's own address with a page the person made, and this stack's offline model makes none",
+  "route:/page/:pageId/email":
+    "the sign-in step of the installed page app above, reached only from it",
   "settings:updates":
     "desktop app only: the section needs the Electron update bridge (desktopBridge().update), which a browser never has",
 };

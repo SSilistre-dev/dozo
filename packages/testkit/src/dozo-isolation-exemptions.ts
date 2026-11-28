@@ -1,3 +1,5 @@
+import { FEATURE_EXEMPTIONS } from "./dozo-isolation-feature-exemptions.js";
+
 /**
  * Procedures the isolation matrix does not call, or calls with a known limit, each with the reason.
  * `input`: the generator cannot build a valid input for it, so it is not swept (the matrix fails
@@ -31,6 +33,7 @@ export type IsolationExemption = {
 };
 
 export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
+  ...FEATURE_EXEMPTIONS,
   {
     path: "skills/start",
     kind: "reached-409",
@@ -196,6 +199,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     reason:
       "A plugin submission to the server's marketplace: a server-wide record only a server admin reviews, owned by no Space or person in the world.",
   },
+  { path: "pageApps/remove", kind: "no-target", fields: ["appId"], reason: "An installed page app, which exists only once its owner's device holds the token issued at install, so no record of the target's fills it. The delete is filtered by the caller's own user id and answers the same for any id, so a foreign id removes nothing and tells nothing." },
   {
     path: "dozoTeach/removeTarget",
     kind: "no-target",
