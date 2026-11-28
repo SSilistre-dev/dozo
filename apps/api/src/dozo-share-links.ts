@@ -127,15 +127,16 @@ export async function revokeShareLink(prisma: Db, actor: Actor, id: string): Pro
 }
 
 /**
- * What a live link shows, or null for every token that does not open one: malformed, unknown,
- * expired, revoked, of a kind this server does not have, a target its maker no longer reaches, or
- * pointing at nothing any more. The token is found by its hash's unique index; nothing compares it.
+ * The live link a token opens, once its maker is found to still reach the target, or null for
+ * every token that does not open one: malformed, unknown, expired, revoked, of a kind this server
+ * does not have, or a target its maker no longer reaches. The token is found by its hash's unique
+ * index; nothing compares it. A kind that serves more than its payload (a picture) opens it here.
  */
-export async function readSharedLink(
+export async function openSharedLink(
   prisma: PrismaClient,
   token: string,
   kinds: DozoShareKinds = DOZO_SHARE_KINDS,
-): Promise<DozoShared | null> {
+): Promise<{ kind: string; target: DozoShareTarget; shareKind: DozoShareKind } | null> {
   if (!looksLikeDozoShareToken(token)) return null;
   const hash = hashToken(token);
   const [row] = await runAsSystem(
@@ -145,19 +146,30 @@ export async function readSharedLink(
         SELECT "userId", "spaceId", "kind", "targetId" FROM dozo_share_links
         WHERE "tokenHash" = ${hash} AND ${LIVE}`,
   );
-  const kind = row && kindOf(kinds, row.kind);
-  if (!row || !kind) return null;
+  const shareKind = row && kindOf(kinds, row.kind);
+  if (!row || !shareKind) return null;
   const { userId, spaceId, targetId } = row;
   const maker = await runAsSystem("share link maker", () =>
     prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
   );
   if (!maker) return null;
   const actor: Actor = { userId, spaceId, email: maker.email, isDeploymentOwner: false };
-  if (!(await runAsTenant(actor, () => kind.canShare(prisma, actor, targetId)))) return null;
+  if (!(await runAsTenant(actor, () => shareKind.canShare(prisma, actor, targetId)))) return null;
+  return { kind: row.kind, target: { userId, spaceId, targetId }, shareKind };
+}
+
+/** What a live link shows, or null for every token `openSharedLink` refuses and a gone target. */
+export async function readSharedLink(
+  prisma: PrismaClient,
+  token: string,
+  kinds: DozoShareKinds = DOZO_SHARE_KINDS,
+): Promise<DozoShared | null> {
+  const opened = await openSharedLink(prisma, token, kinds);
+  if (!opened) return null;
   const payload = await runAsSystem("share link read", () =>
-    kind.load(prisma, { userId, spaceId, targetId }),
+    opened.shareKind.load(prisma, opened.target),
   );
-  return payload === null || payload === undefined ? null : { kind: row.kind, payload };
+  return payload === null || payload === undefined ? null : { kind: opened.kind, payload };
 }
 
 export function dozoShareLinkRoutes(ctx: RouterContext, kinds: DozoShareKinds = DOZO_SHARE_KINDS) {
