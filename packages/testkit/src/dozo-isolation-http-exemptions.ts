@@ -165,6 +165,12 @@ export const ROUTE_DATA: readonly RouteData[] = [
       "public to whoever holds a share link, by design: only the token's hash is looked up, and every refusal is the same 404",
   },
   {
+    route: "GET /api/v1/dozo/shared/:token/frames/:n",
+    kind: "bearer-link",
+    reason:
+      "public to whoever holds a replay link, for a screenshot its owner chose to publish: the frame is looked up under the token's own replay, and every refusal is the same 404",
+  },
+  {
     route: "GET /api/v1/pages/shared/:token",
     kind: "bearer-link",
     reason: "public to whoever holds a page's share link, by design",

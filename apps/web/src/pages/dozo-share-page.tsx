@@ -64,7 +64,7 @@ export function DozoSharePage({
     ) : (
       <ErrorBoundary fallback={<SectionLoadFailed />}>
         <Suspense fallback={<PageLoading />}>
-          <Renderer payload={shared.data.payload} />
+          <Renderer payload={shared.data.payload} token={token} />
         </Suspense>
       </ErrorBoundary>
     );

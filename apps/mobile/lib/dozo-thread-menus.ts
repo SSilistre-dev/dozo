@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import {
   revisableRead,
   setDozoEditOpener,
+  setDozoReplayOpener,
   setDozoReportOpener,
   useDozoPins,
 } from "./dozo-message-actions";
@@ -14,6 +15,7 @@ import { queryClient } from "./query/query";
 setDozoEditOpener((threadId, messageId) =>
   router.push({ pathname: "/dozo-edit-message", params: { threadId, messageId } }),
 );
+setDozoReplayOpener((messageId) => router.push({ pathname: "/dozo-replay", params: { messageId } }));
 setDozoReportOpener((threadId, messageId) =>
   router.push({ pathname: "/dozo-feedback", params: { threadId, messageId } }),
 );

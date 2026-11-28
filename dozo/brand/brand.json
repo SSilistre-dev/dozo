@@ -4256,7 +4256,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  mountScriptAssets(app);\n  mountSharedPages(",
-      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp);\n  mountSharedPages(",
+      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp, artifacts);\n  mountSharedPages(",
       "requires": [
         "apps/api/src/dozo-public-routes.ts",
         "apps/api/src/dozo-plugin-catalog.ts"
