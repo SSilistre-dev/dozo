@@ -16012,6 +16012,72 @@
       "find": "      {portal.error || error ? (\n        <p role=\"alert\" className=\"mt-3 text-body text-destructive\">\n          {portal.error ? t`Could not open billing` : t`Could not load billing`}\n        </p>\n      ) : null}\n",
       "replace": "      {portal.error ? (\n        <p role=\"alert\" className=\"mt-3 text-body text-destructive\">\n          {t`Could not open billing`}\n        </p>\n      ) : error ? (\n        <div role=\"alert\" className=\"mt-3 flex items-center gap-3 text-body text-muted-foreground\">\n          {t`Could not load billing`}\n          <Button variant=\"secondary\" size=\"sm\" onClick={() => void statusRead.refetch()}>\n            <Trans>Retry</Trans>\n          </Button>\n        </div>\n      ) : null}\n",
       "reason": "billing: a read that failed is not a refusal of the person's action, so it is neutral text with a way to read again, not a red line with no way on"
+    },
+    {
+      "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
+      "find": "import { messageBot, unresolvedBotError } from \"../../messaging/bot-messages.js\";\nimport { startBackgroundHelper }",
+      "replace": "import { messageBot, unresolvedBotError } from \"../../messaging/bot-messages.js\";\nimport { dozoDirectHandoff } from \"../../dozo-direct-handoff.js\";\nimport { startBackgroundHelper }",
+      "requires": [
+        "packages/adapters/src/dozo-direct-handoff.ts"
+      ],
+      "reason": "one-to-one handoff: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/runs/tools/run-tools-messaging.ts",
+      "find": "    if (!groupId) return call.finish({ error: \"group_id is required outside a group chat\" });\n    const invalid = messageError(ctx, args.message);",
+      "replace": "    // Outside a group and with no group_id, another of the user's bots takes this chat over.\n    if (!groupId)\n      return dozoDirectHandoff(ctx, call, { messageError, prepareSentFiles, deliveredMessage });\n    const invalid = messageError(ctx, args.message);",
+      "requires": [
+        "packages/adapters/src/dozo-direct-handoff.ts"
+      ],
+      "reason": "one-to-one handoff: handoff_to_bot in a one-to-one chat with no group_id hands the conversation to another of the user's own bots, which carries on in its own chat, with the same message and file checks; a group handoff is unchanged"
+    },
+    {
+      "file": "packages/adapters/src/tools/builtin-fleet.tool-definition.ts",
+      "find": "Outside a group, supply group_id from your groups list to coordinate there. Appends a visible handoff and starts that bot asynchronously. Never hand back unfinished work; otherwise post results in the shared thread.\",\n    inputSchema: {\n      type: \"object\",\n      properties: {\n        group_id: {\n          type: \"string\",\n          description:\n            \"Explicit destination from your groups list; required outside a group, omitted in a group.\",",
+      "replace": "Outside a group, supply group_id from your groups list to coordinate there, or omit it to hand this one-to-one chat to another of the user's own bots when the user asks or that bot fits the work better; it carries on in its own chat with the user. Appends a visible handoff and starts that bot asynchronously. Never hand back unfinished work; otherwise post results in the shared thread.\",\n    inputSchema: {\n      type: \"object\",\n      properties: {\n        group_id: {\n          type: \"string\",\n          description:\n            \"Destination from your groups list. Omit it in a group, or outside one to hand this chat over.\",",
+      "reason": "one-to-one handoff: the model learns that handoff_to_bot without group_id hands a one-to-one chat to another of the user's bots"
+    },
+    {
+      "file": "apps/web/src/pages/shell/chat/message-view.tsx",
+      "find": "import { ReplyLine } from \"./chat-context\";\nimport { FALLBACK_BOT_COLOR, previewMessageText }",
+      "replace": "import { ReplyLine } from \"./chat-context\";\nimport { DozoHandoffMarker } from \"../dozo-handoff-marker-lazy\";\nimport { FALLBACK_BOT_COLOR, previewMessageText }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-handoff-marker-lazy.tsx"
+      ],
+      "reason": "one-to-one handoff: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/chat/message-view.tsx",
+      "find": "          if (isToolActivityBlock(block)) return null;\n          if (block.kind === \"handoff\") {",
+      "replace": "          if (isToolActivityBlock(block)) return null;\n          // A one-to-one chat names no members: its handoff links to the other bot's chat.\n          if (block.kind === \"handoff\" && memberName?.(block.toBotId) === undefined) {\n            return (\n              <DozoHandoffMarker\n                key={i}\n                block={block}\n                botId={message.botId}\n                peerBot={peerBot}\n                onOpenBot={onOpenBot}\n              />\n            );\n          }\n          if (block.kind === \"handoff\") {",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-handoff-marker-lazy.tsx"
+      ],
+      "reason": "one-to-one handoff: in both chats the handoff shows the other bot as a button to its chat, with the note; a group's handoff row is unchanged"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "import { PeerReceiptLine } from \"./peer-receipt-line\";\nimport { RoutineEventRows }",
+      "replace": "import { PeerReceiptLine } from \"./peer-receipt-line\";\nimport { DozoHandoffMarker } from \"./dozo-handoff-marker\";\nimport { RoutineEventRows }",
+      "requires": [
+        "apps/mobile/components/thread/dozo-handoff-marker.tsx"
+      ],
+      "reason": "one-to-one handoff: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "  onAnswer,\n  onOpenComputer,\n  onChoiceDismissed,\n",
+      "replace": "  onAnswer,\n  onOpenBot,\n  onOpenComputer,\n  onChoiceDismissed,\n",
+      "reason": "one-to-one handoff: the message reads the chat's own way to open a bot's chat, which its props already carry, for the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "  const handoff = message.blocks.find((block) => block.kind === \"handoff\");\n  if (handoff) {",
+      "replace": "  const handoff = message.blocks.find((block) => block.kind === \"handoff\");\n  if (handoff && !groupId)\n    return <DozoHandoffMarker {...{ handoff, bots, onOpenBot, actionProps }} botId={message.botId} />;\n  if (handoff) {",
+      "requires": [
+        "apps/mobile/components/thread/dozo-handoff-marker.tsx"
+      ],
+      "reason": "one-to-one handoff: on the phone too, both chats show the other bot as a button to its chat, with the note; a group's handoff line is unchanged. Two lines, so the file stays under the 1000-line limit of scripts/checks"
     }
   ],
   "assets": {
