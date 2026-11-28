@@ -15,7 +15,7 @@ import { handleRpcError } from "./rpc-errors.js";
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
-/** A kind only this test has, so the hub is tested apart from any feature. */
+/** A kind only this test has. */
 const kinds: DozoShareKinds = {
   note: {
     canShare: async (_prisma, _actor, targetId) => targetId !== "not-mine",

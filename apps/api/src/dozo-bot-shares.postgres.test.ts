@@ -243,5 +243,11 @@ describePostgres("bot shares (PostgreSQL)", () => {
     const refused = await call(bob, "dozoBotShares/preview", { botId, includePicture: false });
     expect(refused.status).toBe(404);
     expect((await call(bob, "dozoBotShares/revoke", { botId })).status).toBe(404);
+    const link = await call(bob, "dozoShareLinks/create", {
+      kind: "bot",
+      targetId: botId,
+      days: 1,
+    });
+    expect(link.status).toBe(404);
   });
 });

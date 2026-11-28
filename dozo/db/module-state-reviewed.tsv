@@ -20,6 +20,8 @@ apps/api/src/dozo-message-revision.ts	module	const TERMINAL_RUN_STATUSES = new S
 apps/api/src/dozo-message-revision.ts	fn reviseInTransaction	let seq = -1;	local	per-call local, dies with the call
 apps/api/src/dozo-queue-plan.ts	fn planQueue	const line: Array<{ run: QueueRun; reason: DozoQueueItem["reason"]; ahead: QueueRun | null }> =	local	per-call local, dies with the call
 apps/api/src/dozo-relay-session.ts	module	const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);	global-safe	constant set of fixed words, never changed after load
+apps/api/src/dozo-replay-steps.ts	module	const BUILT_IN = new Set<string>([...BUILTIN_TOOL_NAMES, ...FLEET_TOOL_NAMES]);	global-safe	constant set of the built-in tool names, never changed after load
+apps/api/src/dozo-replay-steps.ts	module	const BUILT_IN_LABELS = new Map([...BUILT_IN].map((name) => [humanizeToolName(name), name]));	global-safe	constant map of the built-in tools' labels to their names, never changed after load
 apps/api/src/dozo-site-sessions.ts	fn dozoSiteSessionsRoutes	const repos = createRepos(deps.prisma);	global-safe	route wiring: repository handles over the pool, no data
 apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let checked: T[] = [];	request	one open stream's frames that passed its last check, held by that stream's own iterator and dropped with it
 apps/api/src/dozo-stream-membership.ts	fn dozoWhileAllowed	let ended: IteratorResult<T> | undefined;	request	one open stream's end, held by that stream's own iterator and dropped with it

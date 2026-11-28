@@ -1,5 +1,6 @@
 import { dozoBotShareRoutes } from "./dozo-bot-shares.js";
 import { dozoComputerWallRoutes } from "./dozo-computer-wall.js";
+import { dozoReplayRoutes } from "./dozo-replays.js";
 import { dozoShareLinkRoutes } from "./dozo-share-links.js";
 import type { RouterContext } from "./routes/context.js";
 
@@ -12,5 +13,6 @@ export function dozoFeatureRoutes(ctx: RouterContext) {
     ...dozoComputerWallRoutes(ctx),
     ...dozoShareLinkRoutes(ctx),
     ...dozoBotShareRoutes(ctx),
+    ...dozoReplayRoutes(ctx),
   };
 }

@@ -1,4 +1,5 @@
 import { botShareKind } from "./dozo-bot-share-kind.js";
+import { dozoReplayKind } from "./dozo-replay-kind.js";
 import type { DozoShareKinds } from "./dozo-share-links.js";
 
 /**
@@ -8,4 +9,5 @@ import type { DozoShareKinds } from "./dozo-share-links.js";
  */
 export const DOZO_SHARE_KINDS: DozoShareKinds = Object.freeze({
   bot: botShareKind,
+  replay: dozoReplayKind,
 });

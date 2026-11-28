@@ -16,6 +16,7 @@ const SURFACES: Surfaces = {
     import("./shell/dozo-bot-share-dialog").then((module) => module.DozoBotShareDialog),
   computers: () =>
     import("./shell/computers/dozo-computer-wall").then((module) => module.DozoComputerWall),
+  replay: () => import("./shell/dozo-replay-surface").then((module) => module.DozoReplaySurface),
 };
 
 type Opened = { key: string; params: Readonly<Record<string, string>> };

@@ -9,20 +9,27 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { Alert } from "react-native";
-import { blockPerson } from "./dozo-blocked-people";
 import type { MobileMessage } from "./api/mobile-types";
-import { queryClient, rpcQuery, useSave } from "./query/query";
 import { useRosterSignals } from "./api/roster-signals";
 import { errorText } from "./api/user-error";
+import { blockPerson } from "./dozo-blocked-people";
+import { queryClient, rpcQuery, useSave } from "./query/query";
 
 /**
- * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the messages Edit
- * and Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
- * current (`useDozoThreadMenus`) and each message only reads it. An earlier message removes every
- * later one, so it is confirmed first.
+ * Edit, Regenerate, Pin, Share replay, Report and Block in a message's menu. The server names the
+ * messages Edit and Regenerate apply to; the iOS menu is built before it opens, so the chat keeps
+ * that answer current (`useDozoThreadMenus`) and each message only reads it. An earlier message
+ * removes every later one, so it is confirmed first.
  */
 export type DozoMessageAction = {
-  name: "dozoBackup" | "dozoEdit" | "dozoRegenerate" | "dozoPin" | "dozoReport" | "dozoBlock";
+  name:
+    | "dozoBackup"
+    | "dozoEdit"
+    | "dozoRegenerate"
+    | "dozoPin"
+    | "dozoReplay"
+    | "dozoReport"
+    | "dozoBlock";
   text: string;
   /** SF Symbol for the iOS menu. */
   symbol:
@@ -31,6 +38,7 @@ export type DozoMessageAction = {
     | "arrow.clockwise"
     | "pin"
     | "pin.slash"
+    | "film"
     | "exclamationmark.bubble"
     | "hand.raised";
   /** Ionicons name for the Android menu. */
@@ -40,6 +48,7 @@ export type DozoMessageAction = {
     | "refresh-outline"
     | "pin-outline"
     | "pin"
+    | "film-outline"
     | "flag-outline"
     | "hand-left-outline";
   onPress: () => void;
@@ -183,6 +192,13 @@ export function setDozoReportOpener(open: (threadId: string, messageId: string) 
   openReport = open;
 }
 
+/** How Share replay opens its review, set the same way as Edit's opener. */
+let openReplay: ((messageId: string) => void) | null = null;
+
+export function setDozoReplayOpener(open: (messageId: string) => void): void {
+  openReplay = open;
+}
+
 /** What the edit screen opens with, once. */
 export function takeEditDraft(messageId: string): EditDraft {
   const draft = editDrafts.get(messageId) ?? { text: "", removes: null };
@@ -253,6 +269,14 @@ export function useDozoMessageActions(
   const pinned = pins?.some((entry) => entry.messageId === messageId) ?? false;
   const showPin = sent && pins !== undefined;
   const showReport = sent && reportable && Boolean(feedback?.mode);
+  // A bot's reply that took steps, in a chat with that bot; the server decides whose it is.
+  const showReplay =
+    sent &&
+    !readOnly &&
+    !inGroup &&
+    message.role === "bot" &&
+    Boolean(message.runId) &&
+    message.blocks.some((block) => block.kind === "steps");
   // The menu keeps its entries while only a save's state changes; a press runs the latest save.
   const saves = useRef({ regenerate, pin });
   saves.current = { regenerate, pin };
@@ -302,6 +326,14 @@ export function useDozoMessageActions(
         icon: pinned ? "pin" : "pin-outline",
         onPress: () => saves.current.pin.run(!pinned),
       });
+    if (showReplay)
+      actions.push({
+        name: "dozoReplay",
+        text: t`Share replay`,
+        symbol: "film",
+        icon: "film-outline",
+        onPress: () => openReplay?.(messageId),
+      });
     if (showReport)
       actions.push({
         name: "dozoReport",
@@ -341,6 +373,7 @@ export function useDozoMessageActions(
     confirmed,
     showPin,
     pinned,
+    showReplay,
     showReport,
     otherAuthor,
     text,

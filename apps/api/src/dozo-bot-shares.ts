@@ -10,7 +10,7 @@ import {
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError } from "@rakazo/db";
+import { IsolationError, runAsSystem } from "@rakazo/db";
 import type { AgentImportServices } from "./bots/agent-import.js";
 import { requestDigest, savedTimeZone, writeImportedBot } from "./bots/agent-import.js";
 import { templatePlan } from "./bots/bot-templates.js";
@@ -18,7 +18,7 @@ import { botShareKind, ownsBot, readBotShare } from "./dozo-bot-share-kind.js";
 import {
   createShareLink,
   listShareLinks,
-  readSharedLink,
+  openSharedLink,
   revokeShareLink,
 } from "./dozo-share-links.js";
 import type { RouterContext } from "./routes/context.js";
@@ -151,12 +151,10 @@ export async function revokeBotShare(prisma: PrismaClient, actor: Actor, botId: 
  * that does not open a bot's link is not found.
  */
 export async function openBotShare(prisma: PrismaClient, token: string) {
-  const shared = await readSharedLink(prisma, token, {
-    [DOZO_BOT_SHARE_KIND]: { canShare: botShareKind.canShare, load: readBotShare },
-  });
-  if (!shared) throw new IsolationError();
-  // The bot kind's own load gave it; parsed again rather than cast.
-  const definition = DozoBotDefinitionSchema.parse(shared.payload);
+  const opened = await openSharedLink(prisma, token, { [DOZO_BOT_SHARE_KIND]: botShareKind });
+  const definition =
+    opened && (await runAsSystem("bot share open", () => readBotShare(prisma, opened.target)));
+  if (!definition) throw new IsolationError();
   return { definition, fingerprint: botShareFingerprint(definition) };
 }
 

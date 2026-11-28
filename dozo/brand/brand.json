@@ -4256,7 +4256,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  mountScriptAssets(app);\n  mountSharedPages(",
-      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp);\n  mountSharedPages(",
+      "replace": "  mountScriptAssets(app);\n  mountDozoPublicRoutes(app, prisma, requestClientIp, artifacts);\n  mountSharedPages(",
       "requires": [
         "apps/api/src/dozo-public-routes.ts",
         "apps/api/src/dozo-plugin-catalog.ts"
@@ -15997,6 +15997,12 @@
       "find": "msgid \"Labs\"\nmsgstr \"Labs\"",
       "replace": "msgid \"Labs\"\nmsgstr \"Deneysel\"",
       "reason": "Turkish copy for the settings section upstream left in English"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Paylaş\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
+      "replace": "msgstr \"Paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Share replay\"\nmsgstr \"Tekrarı paylaş\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Create link\"\nmsgstr \"Bağlantı oluştur\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Previous\"\nmsgstr \"Önceki\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Screenshot\"\nmsgstr \"Ekran görüntüsü\"\n\n#: apps/web/src/pages/dozo-replay\nmsgid \"Anyone with the link can see what stays checked.\"\nmsgstr \"Bağlantıya sahip olan herkes işaretli kalanları görebilir.\"\n\n#: apps/web/src/components/pages/SharePopover.tsx\nmsgid \"Share “{title}”\"",
+      "reason": "Turkish copy for the task replay review and its signed-out player (dozo-replay-surface.tsx, dozo-replay-player.tsx, mobile dozo-replay.tsx)"
     },
     {
       "file": "apps/web/src/components/models/SubscriptionSignInSteps.tsx",

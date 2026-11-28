@@ -147,3 +147,32 @@ it("opens a message's Report on the feedback form, naming the message", async ()
     params: { threadId: "thread-1", messageId: "m-2" },
   });
 });
+
+it("opens a reply's Share replay on its review, naming the message", async () => {
+  api.rpc.mockImplementation(async (path: string) =>
+    path === "dozoMessages/pins"
+      ? { pins: [] }
+      : path === "dozoFeedback/status"
+        ? { mode: null }
+        : { editMessageId: null, regenerateMessageId: null },
+  );
+  let actions: ReturnType<typeof useDozoMessageActions> = [];
+  function Row() {
+    actions = useDozoMessageActions(
+      {
+        id: "m-3",
+        threadId: "thread-1",
+        role: "bot",
+        runId: "run-1",
+        blocks: [{ kind: "steps", steps: [{ label: "Browse", count: 1 }] }],
+      },
+      false,
+      false,
+    );
+    return null;
+  }
+  await render(<Row />);
+  await act(() => vi.waitFor(() => expect(actions.at(-1)?.name).toBe("dozoReplay")));
+  actions.at(-1)!.onPress();
+  expect(api.push).toHaveBeenCalledWith({ pathname: "/dozo-replay", params: { messageId: "m-3" } });
+});
