@@ -2,6 +2,7 @@ import { dozoBotCallsContract } from "./dozo-bot-calls.js";
 import { dozoShareLinksContract } from "./dozo-share-links.js";
 
 export * from "./dozo-bot-calls.js";
+export * from "./dozo-night-notes.js";
 export * from "./dozo-share-links.js";
 
 /**
