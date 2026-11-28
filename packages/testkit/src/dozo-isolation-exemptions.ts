@@ -198,6 +198,13 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
   },
   { path: "pageApps/remove", kind: "no-target", fields: ["appId"], reason: "An installed page app, which exists only once its owner's device holds the token issued at install, so no record of the target's fills it. The delete is filtered by the caller's own user id and answers the same for any id, so a foreign id removes nothing and tells nothing." },
   {
+    path: "dozoShareLinks/create",
+    kind: "no-target",
+    fields: ["targetId"],
+    reason:
+      "What a share link points at depends on its kind, and no kind ships yet, so every create is refused before the target is read; each kind's `canShare` checks the maker reaches it, and the kind that ships maps the field here.",
+  },
+  {
     path: "dozoTeach/removeTarget",
     kind: "no-target",
     fields: ["targetId"],
