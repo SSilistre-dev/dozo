@@ -9818,13 +9818,13 @@
     {
       "file": "apps/mobile/lib/bots/bot-template-copy.test.ts",
       "find": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES) {",
-      "replace": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES.filter((item) => ![\"meeting-prep\", \"night-notes\"].includes(item.id))) {",
+      "replace": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES.filter((item) => item.id !== \"meeting-prep\" && item.id !== \"night-notes\")) {",
       "reason": "meeting prep template: the fork translates meeting prep into Turkish only and night notes not at all (the app shows its English), so the every-language check leaves both out; dozo-meeting-prep-copy.test.ts holds the Turkish"
     },
     {
       "file": "apps/web/src/lib/locale/bot-templates-locales.test.ts",
       "find": "    const missing = BOT_TEMPLATES.flatMap((template) =>",
-      "replace": "    const missing = BOT_TEMPLATES.filter((template) => ![\"meeting-prep\", \"night-notes\"].includes(template.id)).flatMap((template) =>",
+      "replace": "    const missing = BOT_TEMPLATES.filter((template) => template.id !== \"meeting-prep\" && template.id !== \"night-notes\").flatMap((template) =>",
       "reason": "meeting prep and night notes templates: their strings are the fork's, not in upstream's extracted English catalog (meeting prep is held in the Turkish catalog by a rule, night notes shows its English)"
     },
     {
