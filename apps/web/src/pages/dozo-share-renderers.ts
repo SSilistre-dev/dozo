@@ -14,5 +14,6 @@ export type DozoShareRenderer = ComponentType<DozoShareRendererProps>;
  */
 export const DOZO_SHARE_RENDERERS: Readonly<Record<string, () => Promise<DozoShareRenderer>>> = {
   bot: () => import("./dozo-bot-share-page").then((module) => module.DozoBotSharePage),
+  stats: () => import("./dozo-stats-card").then((module) => module.DozoStatsCard),
   replay: () => import("./dozo-replay-player").then((module) => module.DozoReplayPlayer),
 };

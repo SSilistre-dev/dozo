@@ -1,3 +1,5 @@
+import { DOZO_STATS_SHARE_KIND } from "@rakazo/contracts";
+import { dozoStatsShareKind } from "./dozo-bot-stats.js";
 import { botShareKind } from "./dozo-bot-share-kind.js";
 import { dozoReplayKind } from "./dozo-replay-kind.js";
 import type { DozoShareKinds } from "./dozo-share-links.js";
@@ -9,5 +11,6 @@ import type { DozoShareKinds } from "./dozo-share-links.js";
  */
 export const DOZO_SHARE_KINDS: DozoShareKinds = Object.freeze({
   bot: botShareKind,
+  [DOZO_STATS_SHARE_KIND]: dozoStatsShareKind,
   replay: dozoReplayKind,
 });

@@ -80,8 +80,6 @@ const FIELD_KEYS: Record<string, PoolKey> = {
 };
 /** Fields that name another kind of thing in one procedure than everywhere else. */
 const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
-  // A share link to the target's published replay, the first kind that ships.
-  "dozoShareLinks/create": { targetId: "replayId" },
   // A finished reply of the owner's with tool steps: their first message is their own words.
   "dozoReplays/preview": { messageId: "replyMessageId" },
   "dozoReplays/publish": { messageId: "replyMessageId" },
@@ -131,11 +129,28 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
 const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
   // An agent a paired computer can run, so the owner's own call connects it.
   "dozoCliAccounts/connect": { provider: "codex-agent" },
-  "dozoShareLinks/create": { kind: "replay" },
   // A link's token in its own shape: no live link has it, so both are refused as not found.
   "dozoBotShares/open": { token: "A".repeat(43) },
   "dozoBotShares/clone": { token: "A".repeat(43) },
 };
+/**
+ * The pool key of the target's thing each share-link kind points at (a bot, a published replay).
+ * The matrix makes one `dozoShareLinks/create` case per registered kind from it, and fails when
+ * the server's kind map and this one differ, so a new kind cannot go untried.
+ */
+export const SHARE_KIND_TARGETS: Readonly<Record<string, PoolKey>> = {
+  bot: "botId",
+  replay: "replayId",
+  stats: "botId",
+};
+const SHARE_CREATE = "dozoShareLinks/create";
+/** The input generator's name for one kind's case; its fields are those of the procedure. */
+const shareCase = (kind: string) => `${SHARE_CREATE}#${kind}`;
+for (const [kind, pool] of Object.entries(SHARE_KIND_TARGETS)) {
+  PATH_FIELD_KEYS[shareCase(kind)] = { targetId: pool };
+  PATH_FIELD_VALUES[shareCase(kind)] = { kind };
+}
+
 /** A field whose name says it names something; each one must be filled from the target's things. */
 const ID_FIELD = /Id$|Ids$|^id$/;
 const ID_BY_NAMESPACE: Record<string, PoolKey> = {
@@ -504,10 +519,27 @@ type Variant = { label: string; input: unknown; keys: Set<PoolKey>; filled?: Set
 export function generateInputs(procedure: Procedure, resolve: Resolve): Variant[] | null {
   const schema = procedure.input;
   if (!schema) return [{ label: "no input", input: undefined, keys: new Set() }];
+  if (procedure.path === SHARE_CREATE) return shareLinkInputs(procedure, resolve);
+  return inputsAs(procedure, procedure.path, resolve);
+}
+
+/** One case per registered share-link kind, each naming the target's thing that kind points at. */
+function shareLinkInputs(procedure: Procedure, resolve: Resolve): Variant[] | null {
+  const variants = Object.keys(SHARE_KIND_TARGETS).flatMap((kind) =>
+    (inputsAs(procedure, shareCase(kind), resolve) ?? []).map((variant) => ({
+      ...variant,
+      label: `${kind}: ${variant.label}`,
+    })),
+  );
+  return variants.length ? variants : null;
+}
+
+function inputsAs(procedure: Procedure, as: string, resolve: Resolve): Variant[] | null {
+  const schema = procedure.input!;
   const variants: Variant[] = [];
   const add = (label: string, make: (generator: Generator) => Filled, fillAll = false) => {
     if (variants.length >= MAX_VARIANTS) return;
-    const generator = new Generator(procedure.path, resolve, fillAll);
+    const generator = new Generator(as, resolve, fillAll);
     const input = inChat(make(generator), generator, resolve);
     if (input === FAIL || input === OMIT || !schema.safeParse(input).success) return;
     const seen = JSON.stringify(input);
@@ -530,7 +562,7 @@ export function generateInputs(procedure: Procedure, resolve: Resolve): Variant[
 
   add("all ids", (generator) => generator.fill(schema));
   if (variants.length) return variants;
-  const optional = optionalIdFields(procedure.path, schema);
+  const optional = optionalIdFields(as, schema);
   const without = (keep: string[]) => (generator: Generator) => {
     const value = generator.fill(schema);
     if (!value || typeof value !== "object") return value;

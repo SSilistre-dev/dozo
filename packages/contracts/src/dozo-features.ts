@@ -1,3 +1,4 @@
+import { dozoBotStatsContract } from "./dozo-bot-stats.js";
 import { dozoBotCallsContract } from "./dozo-bot-calls.js";
 import { dozoBotSharesContract } from "./dozo-bot-shares.js";
 import { dozoComputerWallContract } from "./dozo-computer-wall.js";
@@ -5,6 +6,7 @@ import { dozoReplaysContract } from "./dozo-replays.js";
 import { dozoShareLinksContract } from "./dozo-share-links.js";
 import { dozoSpokenBriefingsContract } from "./dozo-spoken-briefings.js";
 
+export * from "./dozo-bot-stats.js";
 export * from "./dozo-bot-calls.js";
 export * from "./dozo-bot-shares.js";
 export * from "./dozo-computer-wall.js";
@@ -19,6 +21,7 @@ export * from "./dozo-spoken-briefings.js";
  * same key in `apps/api/src/dozo-features.ts`.
  */
 export const dozoFeaturesContract = /* @__PURE__ */ (() => ({
+  dozoBotStats: dozoBotStatsContract,
   dozoBotCalls: dozoBotCallsContract,
   dozoComputerWall: dozoComputerWallContract,
   dozoShareLinks: dozoShareLinksContract,
