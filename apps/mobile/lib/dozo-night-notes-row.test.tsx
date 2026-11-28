@@ -139,4 +139,20 @@ describe("DozoNightNotesRow on mobile", () => {
     await act(async () => toggle()?.click());
     expect(api.alert).toHaveBeenCalledWith("Nope");
   });
+
+  it("sends nothing when another device already switched it as asked, and falls back to the device zone before the account is known", async () => {
+    await render();
+    api.send.mockResolvedValueOnce([
+      { id: "r1", prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT, active: true },
+    ]);
+    await act(async () => toggle()?.click());
+    expect(api.send.mock.calls.map(([proc]) => proc)).toEqual(["routines/list"]);
+    api.me = undefined;
+    await render();
+    await act(async () => toggle()?.click());
+    expect(api.send).toHaveBeenLastCalledWith(
+      "routines/create",
+      expect.objectContaining({ timezone: "America/Los_Angeles" }),
+    );
+  });
 });
