@@ -2,10 +2,7 @@ import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 
-type AnnounceDeps = {
-  prisma: PrismaClient;
-  events: Pick<ThreadEvents, "append" | "publishRosterChange">;
-};
+type AnnounceDeps = { prisma: PrismaClient; events: ThreadEvents };
 
 /** How long the announcement's reads may take before it gives up; the start never waits on it. */
 export const ANNOUNCE_READ_MS = 5_000;
@@ -30,9 +27,8 @@ export async function announceWhenStarted<T>(
 
 /**
  * One content-light `computer.status` event per bot thread, only for a computer still running
- * whose clock began at `since` or later, then the Space's roster signal, on which the computers
- * wall reads again. A computer that was already running keeps its clock, so it is never announced;
- * a read past the deadline announces nothing.
+ * whose clock began at `since` or later. A computer that was already running keeps its clock, so
+ * it is never announced; a read past the deadline announces nothing.
  */
 export async function announceRunning(
   deps: AnnounceDeps,
@@ -67,5 +63,4 @@ export async function announceRunning(
       payload: { status: "running" },
     });
   }
-  await deps.events.publishRosterChange?.({ spaceIds: [computer.spaceId] });
 }

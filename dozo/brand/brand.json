@@ -16155,12 +16155,6 @@
       "reason": "one-to-one handoff: when a run has no owner words, the approval reviewer reads its task as what the user asked; the chat a handoff copied into the next bot's task is left out of it, so quoted text cannot pass for the user's request"
     },
     {
-      "file": "packages/adapters/src/computers/computer-idle.ts",
-      "find": "      payload: { status: \"suspended\" },\n    });\n  }\n}\n",
-      "replace": "      payload: { status: \"suspended\" },\n    });\n  }\n  await deps.events.publishRosterChange?.({ spaceIds: [computer.spaceId] });\n}\n",
-      "reason": "computers wall: a computer that went to sleep signals its Space on the roster, as a start does in dozo-computer-announce.ts, so an open wall drops its screen; the sleep path has no fork wrapper to say it from"
-    },
-    {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "import { useComputerControls, useComputerState } from \"./shell/computers/use-computer\";",
       "replace": "import { useComputerState } from \"./shell/computers/use-computer\";\nimport { useComputerControls } from \"./shell/computers/dozo-use-computer-controls\";",
@@ -16168,24 +16162,6 @@
         "apps/web/src/pages/shell/computers/dozo-use-computer-controls.ts"
       ],
       "reason": "computers wall: the wall is a surface outside the shell, and opening a tile's full view is the shell's own openComputer, which only this hook holds; the wrapper hands it and the shell's bots over"
-    },
-    {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "import type { RpcClient } from \"../../lib/query/rpc\";\nimport { isReadChangeKind, spaceChanged }",
-      "replace": "import type { RpcClient } from \"../../lib/query/rpc\";\nimport { dozoRosterChanged } from \"../../lib/dozo-stream-changed\";\nimport { isReadChangeKind, spaceChanged }",
-      "requires": [
-        "apps/web/src/lib/dozo-stream-changed.ts"
-      ],
-      "reason": "roster reads hub: the fork reads the roster signal carries are listed in dozo-stream-changed.ts, so a feature adds a line there instead of two rules here; the computers wall is the first"
-    },
-    {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n",
-      "replace": "        else if (frame.type === \"roster\") {\n          void dozoRosterChanged();\n          rosterRef.current?.changed();\n",
-      "requires": [
-        "apps/web/src/lib/dozo-stream-changed.ts"
-      ],
-      "reason": "roster reads hub: on the roster signal, the fork reads listed in dozo-stream-changed.ts read again (the computers wall's list among them)"
     },
     {
       "file": "apps/web/src/pages/shell/sidebar/sidebar-header.tsx",
@@ -16204,6 +16180,15 @@
         "apps/web/src/pages/shell/sidebar/dozo-computers-button.tsx"
       ],
       "reason": "computers wall: the icon stands before Activity and, like it, only in the full sidebar"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./computers/screens/computer-control.js\";\nexport * from \"./computers/screens/computer-screens.js\";",
+      "replace": "export * from \"./computers/screens/computer-control.js\";\nexport * from \"./computers/dozo-screen-watch.js\";\nexport * from \"./computers/screens/computer-screens.js\";",
+      "requires": [
+        "packages/adapters/src/computers/dozo-screen-watch.ts"
+      ],
+      "reason": "computers wall: which sandbox kinds can show a screen without waking it is declared beside the providers, and the API reads it through the package's one entry point"
     }
   ],
   "assets": {

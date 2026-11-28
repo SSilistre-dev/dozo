@@ -13,7 +13,6 @@ const LONG_AGO = new Date("2024-01-01T00:00:00Z");
 function fakeDeps(
   row: () => { state: string; runningSince: Date | null } | null,
   append = vi.fn(async () => ({}) as never),
-  publishRosterChange = vi.fn(async () => undefined),
 ) {
   const findUnique = vi.fn(async () => {
     const value = row();
@@ -21,9 +20,9 @@ function fakeDeps(
   });
   const deps = {
     prisma: { computer: { findUnique }, bot: { findMany: vi.fn(async () => BOTS) } },
-    events: { append, publishRosterChange },
+    events: { append },
   } as never;
-  return { deps, append, findUnique, publishRosterChange };
+  return { deps, append, findUnique };
 }
 
 it("tells every bot thread a computer it woke is running, after the start finished", async () => {
@@ -46,18 +45,6 @@ it("tells every bot thread a computer it woke is running, after the start finish
     payload: { status: "running" },
   });
   expect(append).toHaveBeenCalledWith(expect.objectContaining({ botId: "bot-2" }));
-});
-
-it("signals the Space once its threads are told, so the computers wall reads again", async () => {
-  const { deps, append, publishRosterChange } = fakeDeps(() => ({
-    state: "running",
-    runningSince: new Date(),
-  }));
-  await announceRunning(deps, "computer-1", LONG_AGO);
-  expect(publishRosterChange).toHaveBeenCalledExactlyOnceWith({ spaceIds: ["space-1"] });
-  expect(append.mock.invocationCallOrder.at(-1)).toBeLessThan(
-    publishRosterChange.mock.invocationCallOrder[0]!,
-  );
 });
 
 it("announces nothing for a computer that was already running, which keeps its clock", async () => {

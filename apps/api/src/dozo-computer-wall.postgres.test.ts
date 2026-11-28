@@ -42,6 +42,33 @@ describePostgres("computers wall (PostgreSQL)", () => {
     return { userId: id, spaceId, email: `${id}@example.test`, isDeploymentOwner: false };
   }
 
+  /** Another person, a member of `owner`'s Space beside their own. */
+  async function memberOf(owner: Actor): Promise<Actor> {
+    const other = await person();
+    const space = await system.space.findUniqueOrThrow({ where: { id: owner.spaceId } });
+    const createdAt = new Date();
+    await system.member.create({
+      data: {
+        id: `m-${other.userId}-shared`,
+        organizationId: space.organizationId,
+        userId: other.userId,
+        role: "member",
+        createdAt,
+      },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId: owner.spaceId,
+        organizationId: space.organizationId,
+        userId: other.userId,
+        role: "member",
+        createdAt,
+      },
+    });
+    return { ...other, spaceId: owner.spaceId };
+  }
+
   /** A bot whose computer is running now, as a start leaves it. */
   async function runningBot(actor: Actor) {
     const bot = await runAsTenant(actor, () =>
@@ -55,7 +82,7 @@ describePostgres("computers wall (PostgreSQL)", () => {
     const { computerId } = await system.bot.findUniqueOrThrow({ where: { id: bot.id } });
     await system.computer.update({
       where: { id: computerId! },
-      data: { state: "running", providerRef: `ref-${bot.id}`, runningSince: new Date() },
+      data: { kind: "fake", state: "running", providerRef: `ref-${bot.id}`, runningSince: new Date() },
     });
     return bot.id;
   }
@@ -116,16 +143,36 @@ describePostgres("computers wall (PostgreSQL)", () => {
     expect(connectScreen).not.toHaveBeenCalled();
   });
 
-  it("never shows a member another person's computer, nor hands out its screen", async () => {
+  it("streams only a member's own bots in a shared Space, and shows the others' as their bot", async () => {
     const owner = await person();
     const ownerBot = await runningBot(owner);
-    const other = await person();
-    const otherBot = await runningBot(other);
-    const listed = await call(other, "dozoComputerWall/list");
-    expect((listed.json as Array<{ botId: string }>).map((tile) => tile.botId)).toEqual([otherBot]);
-    const screen = await call(other, "computer/screenUrl", { botId: ownerBot, preview: true });
-    expect(screen.status).toBe(404);
-    expect(JSON.stringify(screen.json)).not.toContain("novnc");
+    const member = await memberOf(owner);
+    const memberBot = await runningBot(member);
+    const listed = (await call(member, "dozoComputerWall/list")).json as Array<{
+      botId: string;
+      screen: boolean;
+    }>;
+    expect(Object.fromEntries(listed.map((tile) => [tile.botId, tile.screen]))).toEqual({
+      [ownerBot]: false,
+      [memberBot]: true,
+    });
+    const refused = await call(member, "dozoComputerWall/screen", { botId: ownerBot });
+    expect(refused).toEqual({ status: 200, json: { url: null } });
     expect(connectScreen).not.toHaveBeenCalled();
+    connectScreen.mockResolvedValueOnce({ url: "http://sandbox.internal/screen" });
+    const watched = await call(member, "dozoComputerWall/screen", { botId: memberBot });
+    expect((watched.json as { url: string }).url).toContain("/novnc/session/view/");
+    expect(connectScreen).toHaveBeenCalledOnce();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses a screen of a bot in a Space the caller is not in", async () => {
+    const owner = await person();
+    const ownerBot = await runningBot(owner);
+    const outsider = await person();
+    const screen = await call(outsider, "dozoComputerWall/screen", { botId: ownerBot });
+    expect(screen.status).toBe(404);
+    const listed = (await call(outsider, "dozoComputerWall/list")).json as unknown[];
+    expect(listed).toEqual([]);
   });
 });

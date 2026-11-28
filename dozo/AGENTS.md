@@ -79,8 +79,8 @@ Add a file and one line in a hub below; a new anchored rule needs a reason none 
 - Web: a surface over the shell in `apps/web/src/pages/dozo-surfaces.tsx` (open it with
   `openDozoSurface`); a bot's menu item or settings row in
   `apps/web/src/pages/shell/dozo-bot-extensions.tsx`. Every entry loads lazily. A web read the
-  server's roster signal makes stale: its query path in `ROSTER_READS` of
-  `apps/web/src/lib/dozo-stream-changed.ts`.
+  roster signal makes stale (it fires on any event in a chat of the member's Spaces): its query
+  path in `ROSTER_READS` of `apps/web/src/lib/dozo-stream-changed.ts`.
 - Mobile: a bot settings row or a bot action hook in `apps/mobile/components/dozo-extensions.tsx`;
   a new screen is a file under `apps/mobile/app/`.
 

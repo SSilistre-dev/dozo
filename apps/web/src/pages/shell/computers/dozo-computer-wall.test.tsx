@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SCREEN_FRAME_LOAD_TIMEOUT_MS } from "../../../lib/computers/computer-screen";
-import { dozoRosterChanged } from "../../../lib/dozo-stream-changed";
+import { dozoPinsChanged } from "../../../lib/dozo-stream-changed";
 import type * as Query from "../../../lib/query/query";
 import type { DozoWallShell } from "./dozo-use-computer-controls";
 
@@ -55,7 +55,8 @@ import {
   DOZO_WALL_LIVE_MAX,
   DozoComputerWall,
   dozoWallTiles,
-  wallScreenUrl,
+  stillDropped,
+  wallFrameSandbox,
 } from "./dozo-computer-wall";
 
 const bot = (id: string): Bot => ({ id, name: id.toUpperCase(), color: "#888888" }) as Bot;
@@ -65,7 +66,6 @@ const tile = (botId: string, state: DozoComputerTile["state"], screen = false) =
   screen,
 });
 const VIEW = "/novnc/session/view/9999999999999.abc/vnc.html";
-const CONTROL = "/novnc/session/control/9999999999999.abc/vnc.html";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -75,6 +75,7 @@ const openComputer = vi.fn();
 
 function wall(bots: Bot[]) {
   const rpc = {
+    dozoComputerWall: { screen: api.screenUrl },
     computer: {
       screenUrl: api.screenUrl,
       boot: api.boot,
@@ -150,12 +151,21 @@ it("shows a bot without a computer as off", () => {
   ]);
 });
 
-it("never frames a single-use sign-in or the control view of someone driving it", () => {
-  expect(wallScreenUrl({ url: VIEW })).toBe(`${window.location.origin}${VIEW}`);
-  expect(wallScreenUrl({ url: VIEW, singleUseSignIn: { screen: "s" } })).toBeNull();
-  expect(wallScreenUrl({ url: CONTROL })).toBeNull();
-  expect(wallScreenUrl({ url: null })).toBeNull();
-  expect(wallScreenUrl(undefined)).toBeNull();
+it("forgets a dropped screen once the list shows it without one, and keeps it before", () => {
+  const dropped = new Set(["a", "b"]);
+  expect(stillDropped(dropped, [tile("a", "running", true), tile("b", "running", true)])).toBe(
+    dropped,
+  );
+  expect([...stillDropped(dropped, [tile("a", "running", true), tile("b", "suspended")])]).toEqual(
+    ["a"],
+  );
+});
+
+it("lets a wall frame run its page but never take the pointer", () => {
+  expect(wallFrameSandbox(VIEW)).toBe("allow-scripts");
+  expect(wallFrameSandbox("https://screen.example.test/view")).toBe(
+    "allow-scripts allow-same-origin",
+  );
 });
 
 it("streams a running computer view-only, and shows sleeping and absent ones without starting them", async () => {
@@ -167,8 +177,11 @@ it("streams a running computer view-only, and shows sleeping and absent ones wit
     { name: "B", state: "Asleep", frame: null, opens: null },
     { name: "C", state: "Off", frame: null, opens: null },
   ]);
-  expect(api.screenUrl).toHaveBeenCalledExactlyOnceWith({ botId: "a", preview: true });
-  expect(container.querySelector("iframe")?.className).toContain("pointer-events-none");
+  expect(api.screenUrl).toHaveBeenCalledExactlyOnceWith({ botId: "a" });
+  const frame = container.querySelector("iframe")!;
+  expect(frame.className).toContain("pointer-events-none");
+  expect(frame.hasAttribute("inert")).toBe(true);
+  expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
   for (const fn of [api.boot, api.heartbeat, api.takeover]) expect(fn).not.toHaveBeenCalled();
 });
 
@@ -234,6 +247,29 @@ it("keeps a screen that reported in, and drops one still silent at the load time
   ]);
 });
 
+it("streams a screen again that dropped, once its computer slept and runs again", async () => {
+  api.list.mockResolvedValue([tile("a", "running", true)]);
+  await wall([bot("a")]);
+  const frame = await vi.waitFor(() => {
+    const found = container.querySelector("iframe");
+    if (!found) throw new Error("no frame");
+    return found;
+  });
+  await act(async () => {
+    window.dispatchEvent(
+      new MessageEvent("message", { data: { rakazoScreen: "disconnected" }, source: frame.contentWindow }),
+    );
+  });
+  await vi.waitFor(() => expect(container.querySelector("iframe")).toBeNull());
+  api.list.mockResolvedValue([tile("a", "suspended")]);
+  await act(() => dozoPinsChanged(client));
+  await vi.waitFor(() => expect(tiles()[0]?.state).toBe("Asleep"));
+  api.list.mockResolvedValue([tile("a", "running", true)]);
+  await act(() => dozoPinsChanged(client));
+  await vi.waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+  expect(api.screenUrl).toHaveBeenCalledTimes(2);
+});
+
 it("leaves a frame alone for another page's messages", async () => {
   api.list.mockResolvedValue([tile("a", "running", true)]);
   await wall([bot("a")]);
@@ -250,7 +286,7 @@ it("adds a computer that started on the roster signal, with no timer of its own"
   await wall([bot("a")]);
   await vi.waitFor(() => expect(tiles()[0]?.state).toBe("Asleep"));
   api.list.mockResolvedValue([tile("a", "running", true)]);
-  await act(() => dozoRosterChanged(client));
+  await act(() => dozoPinsChanged(client));
   await vi.waitFor(() => expect(tiles()[0]?.frame).not.toBeNull());
   expect(api.list).toHaveBeenCalledTimes(2);
 });

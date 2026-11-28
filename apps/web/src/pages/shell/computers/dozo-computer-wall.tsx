@@ -5,12 +5,10 @@ import { computerLabel } from "@rakazo/i18n/computer-usage";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { useRef, useState } from "react";
-import type { ComputerScreenResult } from "../../../lib/computers/computer-screen";
+import { useEffect, useRef, useState } from "react";
 import {
   embeddableScreenUrl,
   isProxiedScreenUrl,
-  proxiedScreenCapability,
   SCREEN_FRAME_LOAD_TIMEOUT_MS,
   screenFrameMessage,
   screenFrameStarted,
@@ -61,15 +59,25 @@ export function dozoWallTiles(
 }
 
 /**
- * The address a tile may frame: never a single-use sign-in (loading it would end the screen
- * someone already watches) nor the control view of a person driving it now.
+ * Bots whose screen dropped stay shown as their bot while the list still offers a screen, so a
+ * failing screen is not asked for again and again; once the list shows one without a screen (it
+ * went to sleep or stopped), it may stream again the next time it runs.
  */
-export function wallScreenUrl(
-  screen: Pick<ComputerScreenResult, "url" | "singleUseSignIn"> | undefined,
-): string | null {
-  if (!screen?.url || screen.singleUseSignIn) return null;
-  if (proxiedScreenCapability(screen.url)?.policy === "control") return null;
-  return embeddableScreenUrl(screen.url);
+export function stillDropped(
+  dropped: ReadonlySet<string>,
+  rows: readonly DozoComputerTile[],
+): ReadonlySet<string> {
+  const offered = new Set(rows.filter((row) => row.screen).map((row) => row.botId));
+  const kept = new Set([...dropped].filter((botId) => offered.has(botId)));
+  return kept.size === dropped.size ? dropped : kept;
+}
+
+/** A wall frame shows only: scripts run, but nothing it draws can take the pointer. */
+export function wallFrameSandbox(url: string): string | undefined {
+  return screenIframeSandbox(url)
+    ?.split(" ")
+    .filter((token) => token !== "allow-pointer-lock")
+    .join(" ");
 }
 
 /** Every bot's computer side by side, live where already running; opening it starts nothing. */
@@ -80,6 +88,9 @@ export function DozoComputerWall({ onClose }: DozoSurfaceProps) {
   const client = useQueryClient();
   const list = useQuery(queries.dozoComputerWall.list.queryOptions());
   const [dropped, setDropped] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    if (list.data) setDropped((current) => stillDropped(current, list.data));
+  }, [list.data]);
   useEventListener(window, "keydown", (event) => {
     if (event.key === "Escape") onClose();
   });
@@ -159,17 +170,17 @@ function WallTile({
 }) {
   const { t } = useLingui();
   const { bot, state, live } = tile;
-  // A preview read only watches: it neither starts the computer nor holds off its sleep.
+  // The wall's own read: view only, never waking the computer or holding off its sleep.
   const screen = useQuery({
     queryKey: screenKey(bot.id),
-    queryFn: () => shell.rpc.computer.screenUrl({ botId: bot.id, preview: true }),
+    queryFn: () => shell.rpc.dozoComputerWall.screen({ botId: bot.id }),
     enabled: live,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
   });
-  const url = live ? wallScreenUrl(screen.data) : null;
+  const url = live && screen.data?.url ? embeddableScreenUrl(screen.data.url) : null;
   const frame = useRef<HTMLIFrameElement>(null);
   const [started, setStarted] = useState<string | null>(null);
   useEventListener(window, "message", (event) => {
@@ -200,8 +211,9 @@ function WallTile({
             ref={frame}
             title={t`Bot screen preview`}
             tabIndex={-1}
+            inert
             src={url}
-            sandbox={screenIframeSandbox(url)}
+            sandbox={wallFrameSandbox(url)}
             className="pointer-events-none h-full w-full border-0 bg-black"
           />
         ) : (
