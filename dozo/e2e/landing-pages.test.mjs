@@ -2,15 +2,17 @@
 // with no build step. This holds each language to the English pages' structure: the same tags,
 // attributes, link targets and text slots, differing only in the words.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 const dir = new URL("../landing/", import.meta.url);
 const site = "https://dozo.bot";
 const read = (path) => readFileSync(new URL(path, dir), "utf8");
+// A language directory is a two-letter one with its own 404 page; vs/ (the comparison pages) is not.
 const languages = readdirSync(dir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && /^[a-z]{2}$/.test(entry.name))
+  .filter((entry) => existsSync(new URL(`${entry.name}/404.html`, dir)))
   .map((entry) => entry.name);
 const pathOf = (lang) => (lang === "en" ? "/" : `/${lang}/`);
 

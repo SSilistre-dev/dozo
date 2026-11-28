@@ -1,0 +1,451 @@
+{
+  "contact": "info@dozo.bot",
+  "labels": {
+    "where": {
+      "en": "Where it runs",
+      "tr": "Nerede çalışır"
+    },
+    "computer": {
+      "en": "The bot's computer",
+      "tr": "Botun bilgisayarı"
+    },
+    "asks": {
+      "en": "Asks before acting",
+      "tr": "Harekete geçmeden önce onay"
+    },
+    "source": {
+      "en": "Source code",
+      "tr": "Kaynak kodu"
+    },
+    "selfHost": {
+      "en": "Self-hosting",
+      "tr": "Kendi sunucunuza kurma"
+    },
+    "price": {
+      "en": "Price",
+      "tr": "Fiyat"
+    }
+  },
+  "dozo": {
+    "where": {
+      "en": "On a server: ours, your own, or the one the desktop app runs on your computer. On a server, bots keep working when your computer is off.",
+      "tr": "Bir sunucuda: bizim, sizin ya da masaüstü uygulamasının bilgisayarınızda çalıştırdığı sunucuda. Sunucudaki botlar bilgisayarınız kapalıyken de çalışmayı sürdürür."
+    },
+    "computer": {
+      "en": "Bots work on their own sandboxed computer with a browser, files and a terminal. On the hosted Free plan, they use your own computer through the desktop app.",
+      "tr": "Botlar tarayıcısı, dosyaları ve terminali olan kendi yalıtılmış bilgisayarlarında çalışır. Barındırılan Free planında masaüstü uygulaması üzerinden sizin bilgisayarınızı kullanırlar."
+    },
+    "asks": {
+      "en": "Asks before anything consequential. You approve, edit or deny.",
+      "tr": "Sonuç doğuracak her işten önce sorar. Onaylar, düzenler ya da reddedersiniz."
+    },
+    "source": {
+      "en": "Source available (Elastic License 2.0 and Apache-2.0). Work use is allowed.",
+      "tr": "Kaynak kodu erişilebilir (Elastic License 2.0 ve Apache-2.0). İş için kullanmak serbesttir."
+    },
+    "selfHost": {
+      "en": "Free on your own server.",
+      "tr": "Kendi sunucunuzda ücretsiz."
+    },
+    "price": {
+      "en": "Free. Premium at $49 a month is coming soon.",
+      "tr": "Ücretsiz. Aylık 49 $ olan Premium yakında geliyor."
+    }
+  },
+  "products": [
+    {
+      "slug": "turnstone",
+      "name": "Turnstone",
+      "officialUrl": "https://myturnstone.ai/",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "Turnstone is a Mac app that runs persistent AI agents, coordinated by a Chief of Staff agent, on your existing AI subscriptions or API keys.",
+        "tr": "Turnstone, mevcut yapay zekâ aboneliklerinizle ya da API anahtarlarınızla kalıcı yapay zekâ ajanları çalıştıran ve bu ajanları bir Chief of Staff ajanıyla yöneten bir Mac uygulamasıdır."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "On your Mac; agents, chats and memory are kept in a folder there. A cloud add-on that keeps agents running with the Mac closed is listed as coming soon.",
+          "tr": "Mac'inizde; ajanlar, sohbetler ve bellek orada bir klasörde tutulur. Mac kapalıyken ajanları çalıştıran bir bulut eklentisi yakında olarak listelenir.",
+          "sources": [
+            "https://myturnstone.ai/"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "Each agent works in its own tab of the Turnstone Browser on your Mac.",
+          "tr": "Her ajan, Mac'inizdeki Turnstone Browser içinde kendi sekmesinde çalışır.",
+          "sources": [
+            "https://myturnstone.ai/"
+          ]
+        },
+        {
+          "key": "asks",
+          "en": "Drafted emails and messages are not sent until you send them. Agents come to you when they need a decision.",
+          "tr": "Taslak e-postalar ve mesajlar siz göndermeden gönderilmez. Ajanlar bir karar gerektiğinde size gelir.",
+          "sources": [
+            "https://myturnstone.ai/"
+          ]
+        },
+        {
+          "key": "price",
+          "en": "Free on your Mac with your own subscription or key. The cloud add-on is $49 a month, coming soon. Optional prepaid credits start at a $10 top-up.",
+          "tr": "Kendi aboneliğiniz ya da anahtarınızla Mac'inizde ücretsiz. Bulut eklentisi aylık 49 $, yakında. İsteğe bağlı ön ödemeli krediler en az 10 $ yüklemeyle başlar.",
+          "sources": [
+            "https://myturnstone.ai/plan"
+          ]
+        }
+      ],
+      "sources": [
+        "https://myturnstone.ai/",
+        "https://myturnstone.ai/plan"
+      ]
+    },
+    {
+      "slug": "openbot",
+      "name": "OpenBot",
+      "officialUrl": "https://openbot.run/",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "OpenBot is a desktop app for running a persistent team of AI agents through many providers' agent command-line tools.",
+        "tr": "OpenBot, birçok sağlayıcının ajan komut satırı araçları üzerinden kalıcı bir yapay zekâ ajanı ekibi çalıştırmaya yarayan bir masaüstü uygulamasıdır."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "On your own computer, or as an always-on server you run on Ubuntu or Docker.",
+          "tr": "Kendi bilgisayarınızda ya da Ubuntu veya Docker üzerinde sizin çalıştırdığınız sürekli açık bir sunucuda.",
+          "sources": [
+            "https://github.com/nightly-labs/openbot"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "Agents act on your own machine with full local access, which the docs say is not a security boundary. The built-in browser uses a separate sandboxed session.",
+          "tr": "Ajanlar kendi makinenizde tam yerel erişimle çalışır; belgeler bunun bir güvenlik sınırı olmadığını söyler. Yerleşik tarayıcı ayrı, yalıtılmış bir oturum kullanır.",
+          "sources": [
+            "https://github.com/nightly-labs/openbot"
+          ]
+        },
+        {
+          "key": "asks",
+          "en": "After consent at first launch, agents act without asking before each action. Workflows can add approval steps.",
+          "tr": "İlk açılıştaki onaydan sonra ajanlar her işlemden önce sormadan çalışır. İş akışlarına onay adımları eklenebilir.",
+          "sources": [
+            "https://github.com/nightly-labs/openbot",
+            "https://openbot.run/"
+          ]
+        },
+        {
+          "key": "source",
+          "en": "Source available under PolyForm Noncommercial 1.0.0. Commercial use needs a separate licence.",
+          "tr": "PolyForm Noncommercial 1.0.0 lisansıyla kaynak kodu erişilebilir. Ticari kullanım ayrı bir lisans gerektirir.",
+          "sources": [
+            "https://github.com/nightly-labs/openbot"
+          ]
+        },
+        {
+          "key": "selfHost",
+          "en": "Yes, on Ubuntu or Docker; free for noncommercial use.",
+          "tr": "Evet, Ubuntu veya Docker üzerinde; ticari olmayan kullanımda ücretsiz.",
+          "sources": [
+            "https://github.com/nightly-labs/openbot"
+          ]
+        },
+        {
+          "key": "price",
+          "en": "Free for personal use, with all features. You pay for your own AI plans or keys.",
+          "tr": "Kişisel kullanımda tüm özellikleriyle ücretsiz. Yapay zekâ planlarınızı ya da anahtarlarınızı siz ödersiniz.",
+          "sources": [
+            "https://openbot.run/"
+          ]
+        }
+      ],
+      "sources": [
+        "https://github.com/nightly-labs/openbot",
+        "https://openbot.run/"
+      ]
+    },
+    {
+      "slug": "openclaw",
+      "name": "OpenClaw",
+      "officialUrl": "https://openclaw.ai",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "OpenClaw is a personal AI assistant that runs on your own machine through a local Gateway and is used from chat apps, a dashboard and apps.",
+        "tr": "OpenClaw, yerel bir Gateway üzerinden kendi makinenizde çalışan ve sohbet uygulamaları, bir panel ve uygulamalar üzerinden kullanılan kişisel bir yapay zekâ asistanıdır."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "On your own computer or a server you run. The site says there is no hosted version.",
+          "tr": "Kendi bilgisayarınızda ya da çalıştırdığınız bir sunucuda. Site, barındırılan bir sürüm olmadığını söyler.",
+          "sources": [
+            "https://openclaw.ai"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "For the main session, tools run on the host machine by default; sandboxing is available once configured.",
+          "tr": "Ana oturumda araçlar varsayılan olarak ana makinede çalışır; yalıtım yapılandırıldığında kullanılabilir.",
+          "sources": [
+            "https://github.com/openclaw/openclaw"
+          ]
+        },
+        {
+          "key": "source",
+          "en": "Published under the MIT licence.",
+          "tr": "MIT lisansıyla yayımlanır.",
+          "sources": [
+            "https://github.com/openclaw/openclaw"
+          ]
+        },
+        {
+          "key": "selfHost",
+          "en": "Yes, free; it is built to run on your own machine.",
+          "tr": "Evet, ücretsiz; kendi makinenizde çalışmak üzere yapılmıştır.",
+          "sources": [
+            "https://github.com/openclaw/openclaw"
+          ]
+        },
+        {
+          "key": "price",
+          "en": "No subscription and no paid tier, per the project. You pay your own model provider and any server.",
+          "tr": "Projeye göre abonelik ve ücretli katman yok. Model sağlayıcınızı ve varsa sunucunuzu siz ödersiniz.",
+          "sources": [
+            "https://github.com/openclaw/openclaw"
+          ]
+        }
+      ],
+      "sources": [
+        "https://openclaw.ai",
+        "https://github.com/openclaw/openclaw"
+      ]
+    },
+    {
+      "slug": "hermes-agent",
+      "name": "Hermes Agent",
+      "officialUrl": "https://hermes-agent.nousresearch.com/",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "Hermes Agent is a self-improving AI agent that keeps a persistent memory and creates skills, used from a terminal, a desktop app and chat apps.",
+        "tr": "Hermes Agent, kalıcı bir bellek tutan ve beceriler oluşturan, kendini geliştiren bir yapay zekâ ajanıdır; terminalden, bir masaüstü uygulamasından ve sohbet uygulamalarından kullanılır."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "On your own computer or a server you run, or optionally as a hosted cloud agent on a paid Nous Portal plan.",
+          "tr": "Kendi bilgisayarınızda ya da çalıştırdığınız bir sunucuda; isteğe bağlı olarak ücretli bir Nous Portal planında barındırılan bir bulut ajanı olarak.",
+          "sources": [
+            "https://hermes-agent.nousresearch.com/"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "A choice of terminal backends: your own machine, Docker, SSH or hosted sandboxes.",
+          "tr": "Terminal altyapısı seçilebilir: kendi makineniz, Docker, SSH ya da barındırılan yalıtılmış ortamlar.",
+          "sources": [
+            "https://github.com/NousResearch/hermes-agent"
+          ]
+        },
+        {
+          "key": "asks",
+          "en": "Approvals default to a smart mode: a helper model approves low-risk commands, denies dangerous ones and asks you about the rest. A prompt left unanswered is denied after 300 seconds.",
+          "tr": "Onaylar varsayılan olarak akıllı kipte: yardımcı bir model düşük riskli komutları onaylar, tehlikelileri reddeder, kalanları size sorar. Yanıtsız kalan bir soru 300 saniye sonra reddedilir.",
+          "sources": [
+            "https://hermes-agent.nousresearch.com/docs/user-guide/security"
+          ]
+        },
+        {
+          "key": "source",
+          "en": "Published under the MIT licence.",
+          "tr": "MIT lisansıyla yayımlanır.",
+          "sources": [
+            "https://github.com/NousResearch/hermes-agent"
+          ]
+        },
+        {
+          "key": "selfHost",
+          "en": "Yes, free on your own machine or server.",
+          "tr": "Evet, kendi makinenizde ya da sunucunuzda ücretsiz.",
+          "sources": [
+            "https://github.com/NousResearch/hermes-agent"
+          ]
+        },
+        {
+          "key": "price",
+          "en": "The software is free. Nous Portal plans: Free, Plus at $20, Super at $100 and Ultra at $200 a month.",
+          "tr": "Yazılım ücretsiz. Nous Portal planları: Free, aylık Plus 20 $, Super 100 $ ve Ultra 200 $.",
+          "sources": [
+            "https://hermes-agent.nousresearch.com/"
+          ]
+        }
+      ],
+      "sources": [
+        "https://hermes-agent.nousresearch.com/",
+        "https://github.com/NousResearch/hermes-agent",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/security"
+      ]
+    },
+    {
+      "slug": "mausbot",
+      "name": "MausBot",
+      "officialUrl": "https://mausbot.com/",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "MausBot is a desktop app where each chat contact is an AI bot, with its own model and connected apps, running on the agent command-line tools you have installed.",
+        "tr": "MausBot, her sohbet kişisinin kendi modeli ve bağlı uygulamaları olan, kurduğunuz ajan komut satırı araçları üzerinde çalışan bir yapay zekâ botu olduğu bir masaüstü uygulamasıdır."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "On the Free plan, bots run on your own computer while it is on. Paid plans run always-on bots in MausBot's cloud.",
+          "tr": "Free planında botlar kendi bilgisayarınızda, bilgisayar açıkken çalışır. Ücretli planlar sürekli açık botları MausBot bulutunda çalıştırır.",
+          "sources": [
+            "https://mausbot.com/pricing"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "A choice of a cloud Linux desktop, an isolated local virtual machine or your own computer. Control of your own computer stays off until you turn it on.",
+          "tr": "Bulutta bir Linux masaüstü, yalıtılmış yerel bir sanal makine ya da kendi bilgisayarınız seçilebilir. Kendi bilgisayarınızın denetimi siz açana kadar kapalı kalır.",
+          "sources": [
+            "https://github.com/milind-soni/OpenMausBot"
+          ]
+        },
+        {
+          "key": "asks",
+          "en": "Shell commands, file edits and questions can appear as cards to allow, deny or answer. New app connections stay off until approved, and new routines start paused.",
+          "tr": "Kabuk komutları, dosya düzenlemeleri ve sorular izin verme, reddetme ya da yanıtlama kartları olarak görünebilir. Yeni uygulama bağlantıları onaylanana kadar kapalı kalır, yeni rutinler duraklatılmış başlar.",
+          "sources": [
+            "https://github.com/milind-soni/OpenMausBot"
+          ]
+        },
+        {
+          "key": "source",
+          "en": "Apache-2.0, except an enterprise folder under its own source-available licence.",
+          "tr": "Apache-2.0; yalnız enterprise klasörü kendi kaynak kodu erişilebilir lisansıyla.",
+          "sources": [
+            "https://github.com/milind-soni/OpenMausBot"
+          ]
+        },
+        {
+          "key": "selfHost",
+          "en": "Yes, the Apache-2.0 edition is free on your own server.",
+          "tr": "Evet, Apache-2.0 sürümü kendi sunucunuzda ücretsiz.",
+          "sources": [
+            "https://github.com/milind-soni/OpenMausBot"
+          ]
+        }
+      ],
+      "sources": [
+        "https://mausbot.com/pricing",
+        "https://github.com/milind-soni/OpenMausBot"
+      ]
+    },
+    {
+      "slug": "claude-cowork",
+      "name": "Claude Cowork",
+      "officialUrl": "https://claude.com/product/cowork",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "Claude Cowork is a mode of Claude that completes tasks across your files and tools, producing documents, slides and similar work.",
+        "tr": "Claude Cowork, dosyalarınız ve araçlarınız üzerinde görevleri tamamlayıp belgeler, sunular ve benzeri işler üreten bir Claude kipidir."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "Sessions on Pro, Max and Ultra plans run on Anthropic's servers and continue after you close the laptop. Local files, local connectors and computer use need the desktop app open.",
+          "tr": "Pro, Max ve Ultra planlarında oturumlar Anthropic sunucularında çalışır ve dizüstünüzü kapattıktan sonra da sürer. Yerel dosyalar, yerel bağlayıcılar ve bilgisayar kullanımı için masaüstü uygulamasının açık olması gerekir.",
+          "sources": [
+            "https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "Through the desktop app it works in the folders you connect and in a built-in browser kept apart from your own. Computer use asks permission for each application.",
+          "tr": "Masaüstü uygulaması üzerinden bağladığınız klasörlerde ve kendi tarayıcınızdan ayrı, yerleşik bir tarayıcıda çalışır. Bilgisayar kullanımı her uygulama için izin ister.",
+          "sources": [
+            "https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile",
+            "https://support.claude.com/en/articles/16607400",
+            "https://support.claude.com/en/articles/14128542"
+          ]
+        },
+        {
+          "key": "asks",
+          "en": "Asks before acting by default; you can allow fewer check-ins.",
+          "tr": "Varsayılan olarak harekete geçmeden önce sorar; daha az sormasını seçebilirsiniz.",
+          "sources": [
+            "https://claude.com/blog/cowork-is-now-claude"
+          ]
+        },
+        {
+          "key": "price",
+          "en": "Part of paid Claude plans. Pro: $20 a month, or $17 a month billed yearly. Max: $100 a month.",
+          "tr": "Ücretli Claude planlarına dahildir. Pro: aylık 20 $ ya da yıllık ödemede aylık 17 $. Max: aylık 100 $.",
+          "sources": [
+            "https://claude.com/pricing"
+          ]
+        }
+      ],
+      "sources": [
+        "https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile",
+        "https://support.claude.com/en/articles/16607400",
+        "https://support.claude.com/en/articles/14128542",
+        "https://claude.com/blog/cowork-is-now-claude",
+        "https://claude.com/pricing"
+      ]
+    },
+    {
+      "slug": "viktor",
+      "name": "Viktor",
+      "officialUrl": "https://viktor.com",
+      "checked": "2026-11-28",
+      "summary": {
+        "en": "Viktor is an AI coworker that teams talk to in Slack, Microsoft Teams, Discord or a web app, and that does work across connected tools on its own cloud computer.",
+        "tr": "Viktor, ekiplerin Slack, Microsoft Teams, Discord ya da bir web uygulaması üzerinden konuştuğu ve bağlı araçlardaki işleri kendi bulut bilgisayarında yapan bir yapay zekâ çalışma arkadaşıdır."
+      },
+      "rows": [
+        {
+          "key": "where",
+          "en": "In the cloud; you reach it in Slack, Microsoft Teams, Discord or its web app.",
+          "tr": "Bulutta; Slack, Microsoft Teams, Discord ya da web uygulaması üzerinden erişilir.",
+          "sources": [
+            "https://viktor.com/docs"
+          ]
+        },
+        {
+          "key": "computer",
+          "en": "It has its own computer in the cloud, where it writes and runs code, and can work through a browser when a tool has no integration.",
+          "tr": "Kod yazıp çalıştırdığı kendi bulut bilgisayarı vardır; bir aracın entegrasyonu yoksa tarayıcı üzerinden çalışabilir.",
+          "sources": [
+            "https://viktor.com",
+            "https://viktor.com/llms.txt"
+          ]
+        },
+        {
+          "key": "asks",
+          "en": "Asks for confirmation before high-stakes actions such as sending emails or deploying to production. Admins choose which tools need approval.",
+          "tr": "E-posta göndermek ya da canlıya dağıtmak gibi riskli işlemlerden önce onay ister. Hangi araçların onay gerektirdiğini yöneticiler seçer.",
+          "sources": [
+            "https://viktor.com"
+          ]
+        },
+        {
+          "key": "price",
+          "en": "Free with up to $100 in starting credits. Team from $50 a month, priced per workspace rather than per seat.",
+          "tr": "En çok 100 $ başlangıç kredisiyle ücretsiz. Team aylık 50 $'dan başlar; fiyat kişi başına değil çalışma alanı başınadır.",
+          "sources": [
+            "https://viktor.com/pricing"
+          ]
+        }
+      ],
+      "sources": [
+        "https://viktor.com/docs",
+        "https://viktor.com",
+        "https://viktor.com/llms.txt",
+        "https://viktor.com/pricing"
+      ]
+    }
+  ]
+}
