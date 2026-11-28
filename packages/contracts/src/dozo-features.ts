@@ -1,7 +1,9 @@
 import { dozoShareLinksContract } from "./dozo-share-links.js";
+import { dozoSpokenBriefingsContract } from "./dozo-spoken-briefings.js";
 
 export * from "./dozo-night-notes.js";
 export * from "./dozo-share-links.js";
+export * from "./dozo-spoken-briefings.js";
 
 /**
  * The fork's feature procedures, spread into the app contract by one anchored rule. A feature adds
@@ -10,4 +12,5 @@ export * from "./dozo-share-links.js";
  */
 export const dozoFeaturesContract = /* @__PURE__ */ (() => ({
   dozoShareLinks: dozoShareLinksContract,
+  dozoSpokenBriefings: dozoSpokenBriefingsContract,
 }))();

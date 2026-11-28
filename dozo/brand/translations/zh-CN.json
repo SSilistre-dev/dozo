@@ -475,5 +475,6 @@
  "Memory provider": "记忆提供商",
  "Renew for {price}": "以 {price} 续订",
  "{name}, {price} / month": "{name}，{price} / 月",
- "{name}, {price} / year": "{name}，{price} / 年"
+ "{name}, {price} / year": "{name}，{price} / 年",
+ "Spoken briefing": "语音简报"
 }

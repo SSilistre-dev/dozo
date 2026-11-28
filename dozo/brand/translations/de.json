@@ -536,5 +536,6 @@
  "Memory provider": "Erinnerungsanbieter",
  "Renew for {price}": "Für {price} verlängern",
  "{name}, {price} / month": "{name}, {price} / Monat",
- "{name}, {price} / year": "{name}, {price} / Jahr"
+ "{name}, {price} / year": "{name}, {price} / Jahr",
+ "Spoken briefing": "Gesprochenes Briefing"
 }

@@ -476,5 +476,6 @@
  "Memory provider": "ספק זיכרון",
  "Renew for {price}": "חידוש תמורת {price}",
  "{name}, {price} / month": "{name}, {price} / חודש",
- "{name}, {price} / year": "{name}, {price} / שנה"
+ "{name}, {price} / year": "{name}, {price} / שנה",
+ "Spoken briefing": "תדריך קולי"
 }

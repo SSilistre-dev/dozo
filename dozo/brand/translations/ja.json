@@ -476,5 +476,6 @@
  "Memory provider": "メモリプロバイダー",
  "Renew for {price}": "{price}で更新",
  "{name}, {price} / month": "{name}、{price} / 月",
- "{name}, {price} / year": "{name}、{price} / 年"
+ "{name}, {price} / year": "{name}、{price} / 年",
+ "Spoken briefing": "音声ブリーフィング"
 }

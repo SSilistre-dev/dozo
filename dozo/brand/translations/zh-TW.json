@@ -474,5 +474,6 @@
  "Memory provider": "記憶供應商",
  "Renew for {price}": "以 {price} 續訂",
  "{name}, {price} / month": "{name}，{price} / 月",
- "{name}, {price} / year": "{name}，{price} / 年"
+ "{name}, {price} / year": "{name}，{price} / 年",
+ "Spoken briefing": "語音簡報"
 }

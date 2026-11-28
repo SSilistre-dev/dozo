@@ -475,5 +475,6 @@
  "Memory provider": "기억 서비스",
  "Renew for {price}": "{price}에 갱신",
  "{name}, {price} / month": "{name}, {price} / 월",
- "{name}, {price} / year": "{name}, {price} / 년"
+ "{name}, {price} / year": "{name}, {price} / 년",
+ "Spoken briefing": "음성 브리핑"
 }

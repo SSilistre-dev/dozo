@@ -82,6 +82,8 @@ const FIELD_KEYS: Record<string, PoolKey> = {
 const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   // A share link to the target's bot, as the bot kinds (clone, stats) take it.
   "dozoShareLinks/create": { targetId: "botId" },
+  // The routine's co-host: another of the target's bots than the routine's own.
+  "dozoSpokenBriefings/set": { coHostBotId: "secondBotId" },
   "threads/declineCall": { callId: "declineCallId" },
   "notifications/declineIncomingCall": { callId: "incomingCallId" },
   // Not the canary's own document: a member's edit replaces its content, and the read that shows

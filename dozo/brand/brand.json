@@ -16153,6 +16153,105 @@
         "packages/adapters/src/dozo-direct-handoff.prompt.ts"
       ],
       "reason": "one-to-one handoff: when a run has no owner words, the approval reviewer reads its task as what the user asked; the chat a handoff copied into the next bot's task is left out of it, so quoted text cannot pass for the user's request"
+    },
+    {
+      "file": "packages/adapters/src/runs/lifecycle/run-complete.ts",
+      "find": "import { runReadOutsideContent } from \"../../dozo-read-outside.js\";\nimport {\n  answeredSteeringMessageIds,",
+      "replace": "import { runReadOutsideContent } from \"../../dozo-read-outside.js\";\nimport { dozoSpokenBriefingAfterRun } from \"../../dozo-spoken-briefing.js\";\nimport {\n  answeredSteeringMessageIds,",
+      "requires": [
+        "packages/adapters/src/dozo-spoken-briefing.ts"
+      ],
+      "reason": "spoken briefing: the import of the rule below; anchored on the fork's own import lines"
+    },
+    {
+      "file": "packages/adapters/src/runs/lifecycle/run-complete.ts",
+      "find": "  await dozoRecordLearningTurn(ctx);\n  await enqueueHistoryCompaction(ctx);",
+      "replace": "  await dozoRecordLearningTurn(ctx);\n  await dozoSpokenBriefingAfterRun(ctx);\n  await enqueueHistoryCompaction(ctx);",
+      "requires": [
+        "packages/adapters/src/dozo-spoken-briefing.ts"
+      ],
+      "reason": "spoken briefing: a completed run of a routine with a co-host gets its briefing's backup job and starts the briefing in the process that finished it; any other run reads nothing, a routine run one primary key, and it never fails the run. Anchored on the fork's learning line, so it adds no upstream anchor"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  \"memory.learning-review\": { botId: string; settleOnly?: boolean };\n  /**\n   * One lifecycle mail",
+      "replace": "  \"memory.learning-review\": { botId: string; settleOnly?: boolean };\n  /** Make and post a routine run's spoken briefing (dozo-spoken-briefing.ts). */\n  \"routine.spoken-briefing\": { runId: string };\n  /**\n   * One lifecycle mail",
+      "reason": "spoken briefing: the job kind of a briefing, the durable backup of one started at once and the retry of one that failed; beside the fork's learning job"
+    },
+    {
+      "file": "packages/adapter-kit/src/background-jobs.ts",
+      "find": "    settleOnly: z.boolean().optional(),\n  }),\n  \"push.receipt\"",
+      "replace": "    settleOnly: z.boolean().optional(),\n  }),\n  \"routine.spoken-briefing\": z.object({ runId: z.string().min(1) }),\n  \"push.receipt\"",
+      "reason": "spoken briefing: the payload of the briefing job; beside the fork's learning job"
+    },
+    {
+      "file": "packages/adapters/src/runs/wakeups/background-job-handlers.ts",
+      "find": "import { dozoLearningReviewJob } from \"../../dozo-learning-review.js\";\nimport { settleCallRequest }",
+      "replace": "import { dozoLearningReviewJob } from \"../../dozo-learning-review.js\";\nimport { dozoSpokenBriefingJob } from \"../../dozo-spoken-briefing.js\";\nimport { settleCallRequest }",
+      "requires": [
+        "packages/adapters/src/dozo-spoken-briefing.ts"
+      ],
+      "reason": "spoken briefing: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/runs/wakeups/background-job-handlers.ts",
+      "find": "    \"memory.learning-review\": dozoLearningReviewJob(deps),\n    // A receipt belongs",
+      "replace": "    \"memory.learning-review\": dozoLearningReviewJob(deps),\n    \"routine.spoken-briefing\": dozoSpokenBriefingJob(deps),\n    // A receipt belongs",
+      "requires": [
+        "packages/adapters/src/dozo-spoken-briefing.ts"
+      ],
+      "reason": "spoken briefing: the handler of the briefing job, in every process that runs jobs; it reads only what the handlers already have"
+    },
+    {
+      "file": "packages/adapters/src/runs/wakeups/wakeup-graphile-host.test-support.ts",
+      "find": "    \"memory.learning-review\": vi.fn(async () => undefined),\n    \"email.lifecycle\": vi.fn(async () => undefined),\n  };",
+      "replace": "    \"memory.learning-review\": vi.fn(async () => undefined),\n    \"routine.spoken-briefing\": vi.fn(async () => undefined),\n    \"email.lifecycle\": vi.fn(async () => undefined),\n  };",
+      "reason": "spoken briefing: the handler map these tests build lists the briefing job, as every handler map must"
+    },
+    {
+      "file": "packages/adapters/src/runs/wakeups/wakeup.test.ts",
+      "find": "    \"memory.learning-review\": vi.fn(async () => undefined),\n    \"email.lifecycle\": vi.fn(async () => undefined),\n  };",
+      "replace": "    \"memory.learning-review\": vi.fn(async () => undefined),\n    \"routine.spoken-briefing\": vi.fn(async () => undefined),\n    \"email.lifecycle\": vi.fn(async () => undefined),\n  };",
+      "reason": "spoken briefing: the handler map these tests build lists the briefing job, as every handler map must"
+    },
+    {
+      "file": "packages/adapters/src/runs/wakeups/wakeup.postgres.test.ts",
+      "find": "    \"memory.learning-review\": vi.fn(async () => undefined),\n    \"email.lifecycle\": vi.fn(async () => undefined),\n    ...overrides,",
+      "replace": "    \"memory.learning-review\": vi.fn(async () => undefined),\n    \"routine.spoken-briefing\": vi.fn(async () => undefined),\n    \"email.lifecycle\": vi.fn(async () => undefined),\n    ...overrides,",
+      "reason": "spoken briefing: the handler map these tests build lists the briefing job, as every handler map must"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./dozo-learning-store.js\";\nexport { estimateTextTokens }",
+      "replace": "export * from \"./dozo-learning-store.js\";\nexport { ownSpeechReady, spokenBriefingCoHost } from \"./dozo-spoken-briefing.js\";\nexport { estimateTextTokens }",
+      "requires": [
+        "packages/adapters/src/dozo-spoken-briefing.ts"
+      ],
+      "reason": "spoken briefing: the routine editor's read uses the same co-host lookup and voice check as the briefing; anchored on the fork's own export line"
+    },
+    {
+      "file": "apps/mobile/app/routine.tsx",
+      "find": "import { useBotEmail } from \"../components/bots/bot-email\";\nimport { GlassIconButton }",
+      "replace": "import { useBotEmail } from \"../components/bots/bot-email\";\nimport { DozoRoutineBriefing } from \"../components/dozo-routine-briefing\";\nimport { GlassIconButton }",
+      "requires": [
+        "apps/mobile/components/dozo-routine-briefing.tsx"
+      ],
+      "reason": "spoken briefing: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/routine.tsx",
+      "find": "      ) : null}\n      {base ? (\n        <SettingsGroup>\n          <SettingsRow\n            key=\"delete\"",
+      "replace": "      ) : null}\n      {base ? <DozoRoutineBriefing routineId={base.id} /> : null}\n      {base ? (\n        <SettingsGroup>\n          <SettingsRow\n            key=\"delete\"",
+      "requires": [
+        "apps/mobile/components/dozo-routine-briefing.tsx"
+      ],
+      "reason": "spoken briefing: a saved routine's owner picks the briefing's co-host above Delete; the screen has no fork hook and no hub reaches a routine's editor, and the row saves on its own, so it touches nothing else of the screen"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Spending limit\"\nmsgstr \"Harcama limiti\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Sprout\"",
+      "replace": "msgid \"Spending limit\"\nmsgstr \"Harcama limiti\"\n\n#: apps/mobile/components/dozo-routine-briefing.tsx\n#: apps/web/src/pages/routines/routine-editor/dozo-routine-briefing.tsx\nmsgid \"Spoken briefing\"\nmsgstr \"Sesli özet\"\n\n#: packages/i18n/src/app-icon.ts\nmsgid \"Sprout\"",
+      "reason": "spoken briefing: the Turkish copy of the routine editor's one new label"
     }
   ],
   "assets": {

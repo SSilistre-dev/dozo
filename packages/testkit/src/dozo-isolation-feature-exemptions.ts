@@ -14,4 +14,12 @@ export const FEATURE_EXEMPTIONS: readonly IsolationExemption[] = [
     reason:
       "No kind of share link ships yet, so every create is refused; the first bot kind makes the owner's call get through, and this entry must then go.",
   },
+  {
+    path: "dozoSpokenBriefings/set",
+    kind: "unreached",
+    verifiedByCode:
+      "apps/api/src/dozo-spoken-briefings.ts:18 \"id: routineId, spaceId: actor.spaceId, userId: actor.userId,\" — only the caller's own routine in the caller's Space is found",
+    reason:
+      "A co-host must speak in a voice of its own, and the test world's bots have none, so the owner's own pick is refused as not found.",
+  },
 ];

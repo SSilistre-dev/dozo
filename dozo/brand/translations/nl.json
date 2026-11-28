@@ -553,5 +553,6 @@
  "Memory provider": "Geheugenaanbieder",
  "Renew for {price}": "Verlengen voor {price}",
  "{name}, {price} / month": "{name}, {price} / maand",
- "{name}, {price} / year": "{name}, {price} / jaar"
+ "{name}, {price} / year": "{name}, {price} / jaar",
+ "Spoken briefing": "Gesproken briefing"
 }
