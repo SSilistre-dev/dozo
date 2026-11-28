@@ -70,7 +70,10 @@ with `down`.
      fork tooling would otherwise rebuild everything and ship it in the image. The stage tools read
      the real `dozo/` (mounted at `/dozo`), not the stage. The staged `.dockerignore` also lists
      `**/dozo-*.test.*` and the root `README.md` (the fork notice), so editing either does not
-     rebuild the images. `stage` reports the number of source files, not counting `src/data`.
+     rebuild the images. It also loses upstream's `!` exceptions (the `.env.example` files): an
+     exception makes the build client walk into the ignored `src/data`, which fails on the bot
+     homes and browser profiles a first run left there (a second `make up` on a runner).
+     `stage` reports the number of source files, not counting `src/data`.
    - Local versus CI: the Makefile turns the overlay on, so a local `make qa` tests uncommitted
      files and can pass where CI fails. CI stages HEAD only (it calls `build.sh stage` without the
      overlay). Commit before trusting a local pass.
