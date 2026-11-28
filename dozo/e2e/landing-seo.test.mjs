@@ -45,9 +45,15 @@ test("the server does not send noindex, and redirects www to the bare domain", (
 test("the sitemap lists the indexable pages with their alternates, and nothing else", () => {
   const xml = read("sitemap.xml");
   const locs = [...xml.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
-  assert.deepEqual(locs, [home.en, home.tr, support.en, support.tr]);
+  // The comparison pages (vs/data.json), each in both languages; landing-vs.test.mjs holds the rest.
+  const vs = JSON.parse(read("vs/data.json")).products.flatMap(({ slug }) => [
+    `https://dozo.bot/vs/${slug}/`,
+    `https://dozo.bot/tr/vs/${slug}/`,
+  ]);
+  assert.ok(vs.length > 0);
+  assert.deepEqual(locs, [home.en, home.tr, support.en, support.tr, ...vs]);
   const alternates = (xml.match(/hreflang="[^"]+" href="[^"]+"/g) ?? []).length;
-  assert.equal(alternates, 12);
+  assert.equal(alternates, 3 * locs.length);
   for (const [lang, file] of Object.entries(pages)) {
     const html = read(file);
     assert.match(html, new RegExp(`<link rel="canonical" href="${home[lang]}">`));

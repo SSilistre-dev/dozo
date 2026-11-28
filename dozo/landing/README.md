@@ -8,8 +8,9 @@ static page needs no framework. Publishing: `dozo/deploy/README.md`, "Landing pa
 
 Languages: English at `/` (`index.html`, `404.html`) and Turkish at `/tr/` (`tr/`). Each language is
 its own hand-kept static page, so it works without scripts and previews show the right language;
-the CSS, script and images are one shared copy. There is no generator: a second copy of the markup
-is cheaper than a build step, a generated tree to keep in step and a deploy that knows about both.
+the CSS, script and images are one shared copy. The home, legal and support pages have no
+generator: a second copy of their markup is cheaper than a build step, a generated tree to keep in
+step and a deploy that knows about both. The comparison pages are the one exception (below).
 `dozo/e2e/landing-pages.test.mjs` (part of `make olc`) holds every language to the English page's
 structure: same tags, attributes, link targets and text slots. The words the script shows during
 the animations are `data-*` attributes on the page, not strings in `landing.js`. Nothing redirects
@@ -45,8 +46,8 @@ the calls to action, every page's `canonical` and `hreflang` links, `dozo/e2e/la
 and the site links in `dozo/brand/brand.json` and the `dozo-*` files that name it (`git grep`).
 
 Search and answer engines: the site is open to them. `robots.txt` allows every crawler, names the
-AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages and the two
-support pages with their `hreflang` alternates. The legal pages and the deletion page stay `noindex` (plain boilerplate with no search value;
+AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages, the two
+support pages and the comparison pages with their `hreflang` alternates. The legal pages and the deletion page stay `noindex` (plain boilerplate with no search value;
 crawlers still follow their links) and are not in the sitemap, like the 404 pages. `llms.txt` is a
 short factual summary for answer engines: its prices are held to the page by the test. Each home
 page carries one JSON-LD block (Organization, WebSite, SoftwareApplication with the page's prices).
@@ -60,7 +61,7 @@ Closed pre-release state (lifted):
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the second hero and closing buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - Order: hero, the two ideas, "What it does." (`.does`: six short items, each read from the code; a new item needs the
   same check, and nothing that ships only with a new mobile build), then the run-it-yourself section (`#get`: the "Apps." block and
-  the self-hosting row), then "Hosted plans.", then the closing buttons. The header has no plans or
+  the self-hosting row), then "Hosted plans.", then "Compare." (links to the comparison pages), then the closing buttons. The header has no plans or
   pricing link; the plans are reached by scrolling. The first hero and closing button, "Download",
   links to `#get`; `landing.js` points it straight at the build for the visitor's system (the plain
   macOS, Windows, Linux and iOS links under the hero button, found by `data-os`; iPhone and iPad get
@@ -98,5 +99,18 @@ Closed pre-release state (lifted):
 - The iOS pill under the hero carries one bot (`.peek`, Sora in ink): it rises over the pill's top
   edge once after load and then only blinks, glances and hops on hover; static with reduced motion.
 - The demo scenes avoid plan and pricing words, so nothing in them reads as Dozo's own offer.
-- The page claims only what ships. The local-model panel is gone because the catalog is empty
+- The page claims only what ships.
+- Comparison pages: `vs/<slug>/` and `tr/vs/<slug>/`, one per product, linked from the home page's
+  "Compare." section (after the plans) and from nowhere else; there is no `/vs/` index. Each page is
+  a table of the same rows with different facts, so they are written from one file, `vs/data.json`,
+  by `vs/build.mjs` (plain Node, no dependency), which also writes the home links and the sitemap
+  block between their marker comments. The output is committed, so the deploy has no build step: edit
+  the data, run `node dozo/landing/vs/build.mjs` in the Node image, commit both.
+  `dozo/e2e/landing-vs.test.mjs` fails when the output is stale, when a row has no source on the
+  product's own pages listed on its page, when a product has fewer than four such rows, and when
+  `checked` is more than 180 days old: re-verify every row on the live pages or remove the product.
+  A row says only what the product's own pages say, in our words, without judgement; a row that
+  cannot be sourced there is left out, and a price row needs a published figure. The Dozo column is
+  one copy in the data. `deploy.sh site` publishes the whole directory, so `vs/data.json` and
+  `vs/build.mjs` are served too; neither holds anything private. The local-model panel is gone because the catalog is empty
   (`dozo/README.md`, "Status and known limits"); bring it back when models are listed.
