@@ -3,7 +3,8 @@
 # /api/dev/emails. Upstream runs the emulator only outside production and only for an API bound to
 # a loopback address, while this stack's API binds 0.0.0.0 so the web container can reach it. So
 # here the API binds 127.0.0.1:3101 and a few lines of Node, sharing its network namespace, relay
-# 0.0.0.0:3100 to it: the web's api:3100 and the API's own health check keep working unchanged.
+# 0.0.0.0:3100 to it (the API closing its side only ends the client's: a destroy would drop a large
+# mailbox still being written): the web's api:3100 and the API's own health check keep working unchanged.
 # Never part of the live stack (dozo/deploy/compose.deploy.yml).
 services:
   api:
@@ -27,5 +28,5 @@ services:
       - >-
         require("net").createServer((c) => { const u = require("net").connect(3101, "127.0.0.1");
         c.pipe(u); u.pipe(c); const e = () => { c.destroy(); u.destroy(); };
-        c.on("error", e); u.on("error", e); c.on("close", e); u.on("close", e);
+        c.on("error", e); u.on("error", e); c.on("close", () => u.destroy());
         }).listen(3100, "0.0.0.0")

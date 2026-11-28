@@ -123,6 +123,10 @@ stage() {
   # The fork's tests and its README (the notice block) are not part of any image either; ignored,
   # not removed: the unit step and the brand tools still read them from the stage.
   printf '%s\n' '' '# dozo' '**/dozo-*.test.*' '/README.md' >> "$new/.dockerignore"
+  # An exception (`!**/.env.example`) makes the build client walk into ignored directories to look
+  # for a match, and it fails on the app data a first run left there (bot homes, browser profiles
+  # owned by other users). The images need no example file, so the stage drops every exception.
+  sed -i '/^!/d' "$new/.dockerignore"
   [ ! -d "$new/dozo" ] || find "$new/dozo" -mindepth 1 -maxdepth 1 ! -name NOTICE ! -name LICENSE -exec rm -rf {} +
   [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
   # Swap in by contents, never moving data/ (the compose bind mount holding the app data). The
