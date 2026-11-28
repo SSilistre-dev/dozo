@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
   push: vi.fn(),
   header: undefined as unknown,
   previewInputs: [] as unknown[],
+  previewError: undefined as unknown,
 }));
 
 // The hub's settings rows are other features, tested on their own.
@@ -32,6 +33,7 @@ vi.mock("@lingui/react/macro", () => ({
     i18n: { date: (value: Date) => value.toISOString().slice(0, 10) },
   }),
 }));
+vi.mock("./i18n/i18n", () => ({ useUiLocale: () => "en" }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: api.push }),
   useLocalSearchParams: () => ({ botId: "bot-1", name: "Ada" }),
@@ -73,7 +75,7 @@ vi.mock("./query/screen-query", () => ({
   useScreenQuery: (read: { queryKey: [string, unknown] }) => {
     if (read.queryKey[0] === "dozoBotShares/status") return api.status;
     api.previewInputs.push(read.queryKey[1]);
-    return { data: api.preview };
+    return { data: api.preview, error: api.previewError };
   },
 }));
 vi.mock("../components/settings/settings-group", () => ({
@@ -145,6 +147,7 @@ beforeEach(() => {
   api.status = { data: { link: null }, isError: false };
   api.preview = { definition, fingerprint: "f".repeat(64), hasPicture: false };
   api.previewInputs = [];
+  api.previewError = undefined;
   api.send.mockReset().mockResolvedValue({ url: "https://example.test/s/x" });
   api.alert.mockReset();
   api.share.mockReset().mockResolvedValue({});
@@ -209,7 +212,7 @@ describe("bot share screen", () => {
       "Helpful",
       "Routines",
       "Morning",
-      "0 8 * * *, 0 9 * * 1",
+      "Every day at 8:00 AM, Every Monday at 9:00 AM",
       "Hi",
       "Anyone with the link can see this and make their own copy.",
       "Create link",
@@ -235,7 +238,7 @@ describe("bot share screen", () => {
       "Be kind.\nBe brief.",
       "Helpful",
       "Morning",
-      "0 8 * * *, 0 9 * * 1",
+      "Every day at 8:00 AM, Every Monday at 9:00 AM",
       "Hi",
     ]);
   });
@@ -263,6 +266,15 @@ describe("bot share screen", () => {
     api.preview = undefined;
     await render();
     expect(container.textContent).toBe("");
+  });
+
+  it("says which field holds hidden text when the preview is refused", async () => {
+    api.preview = undefined;
+    api.previewError = Object.assign(new Error("Remove hidden characters from the bot's name"), {
+      code: "BOT_SHARE_HIDDEN_TEXT",
+    });
+    await render();
+    expect(container.textContent).toBe("Remove hidden characters from the bot's name");
   });
 
   it("offers the picture only when the bot has one, and previews with the choice", async () => {

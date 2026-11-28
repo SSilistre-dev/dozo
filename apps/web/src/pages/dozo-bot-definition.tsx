@@ -1,5 +1,7 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoBotDefinition as Definition } from "@rakazo/contracts";
+import { formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { BotAvatar, SectionHeading } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 
@@ -8,17 +10,17 @@ export type DozoBotShown = {
   color: string | null;
   instructions: string;
   description?: string;
-  routines: { name: string; schedule?: string; prompt?: string }[];
+  routines: { name: string; crons?: string[]; prompt?: string }[];
 };
 
-/** Everything a definition publishes or copies, each part whole: nothing it holds goes unseen. */
+/** Everything a definition publishes or copies, each part whole: nothing it holds goes unseen. A schedule reads as the routine editor words it, and as its cron text when that cannot. */
 export function dozoBotShown(definition: Definition): DozoBotShown {
   return {
     ...definition,
     color: definition.avatar.color,
     routines: definition.routines.map((routine) => ({
       name: routine.name,
-      schedule: routine.crons.join(", "),
+      crons: routine.crons,
       prompt: routine.prompt,
     })),
   };
@@ -30,6 +32,8 @@ export function dozoBotShown(definition: Definition): DozoBotShown {
  * so one part's right-to-left text cannot reorder the next. Empty parts are left out.
  */
 export function DozoBotDefinition({ bot }: { bot: DozoBotShown }) {
+  const { i18n } = useLingui();
+  const labels = cronLabels(i18n.locale);
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <div className="flex items-center gap-3">
@@ -57,9 +61,9 @@ export function DozoBotDefinition({ bot }: { bot: DozoBotShown }) {
                 <span dir="auto" className="break-words font-medium">
                   {routine.name}
                 </span>
-                {routine.schedule ? (
+                {routine.crons?.length ? (
                   <span dir="auto" className="text-body-sm text-muted-foreground">
-                    {routine.schedule}
+                    {routine.crons.map((cron) => formatCron(cron, labels)).join(", ")}
                   </span>
                 ) : null}
                 {routine.prompt ? <Text>{routine.prompt}</Text> : null}

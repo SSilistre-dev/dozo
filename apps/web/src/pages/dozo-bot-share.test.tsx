@@ -46,7 +46,7 @@ vi.mock("../lib/dozo-error-text", () => ({ toastError: api.toastError }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray) => strings.join(""),
-    i18n: { date: (date: Date) => date.toISOString().slice(0, 10) },
+    i18n: { locale: "en", date: (date: Date) => date.toISOString().slice(0, 10) },
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
@@ -213,7 +213,7 @@ describe("the owner's review", () => {
     expect(text()).toContain("<b>not markup</b>");
     expect(document.querySelector("b")).toBeNull();
     expect(text()).toContain("Knows plants");
-    expect(text()).toContain("Morning0 8 * * *, 0 20 * * *Look at the garden");
+    expect(text()).toContain("MorningEvery day at 8:00 AM, Every day at 8:00 PMLook at the garden");
     expect(text()).not.toContain("Include picture");
   });
 
@@ -225,7 +225,7 @@ describe("the owner's review", () => {
       definition.instructions,
       "Knows plants",
       "Morning",
-      "0 8 * * *, 0 20 * * *",
+      "Every day at 8:00 AM, Every day at 8:00 PM",
       "Look at the garden",
     ]);
   });
@@ -315,6 +315,24 @@ describe("the owner's review", () => {
     await render(<DozoSurfaceHost />);
     await act(async () => openDozoSurface("bot-share", { botId: "bot-1" }));
     await vi.waitFor(() => expect(text()).toContain("This bot is too large to share."));
+  });
+
+  it("names the field when the bot holds hidden text", async () => {
+    const message = "Remove hidden characters or joined emoji from the bot's name";
+    api.preview.mockRejectedValue(
+      Object.assign(new Error(message), { code: "BOT_SHARE_HIDDEN_TEXT" }),
+    );
+    await render(<DozoSurfaceHost />);
+    await act(async () => openDozoSurface("bot-share", { botId: "bot-1" }));
+    await vi.waitFor(() => expect(text()).toContain(message));
+  });
+
+  it("falls back to the cron text for a schedule it cannot describe", async () => {
+    const odd = { ...definition, routines: [{ name: "Odd", prompt: "p", crons: ["7 8 1 2 *"] }] };
+    api.preview.mockResolvedValue({ ...shown, definition: odd });
+    await render(<DozoSurfaceHost />);
+    await act(async () => openDozoSurface("bot-share", { botId: "bot-1" }));
+    await vi.waitFor(() => expect(text()).toContain("7 8 1 2 *"));
   });
 
   it("shows a failure when the preview cannot be read", async () => {
@@ -434,6 +452,25 @@ describe("the shared page", () => {
     });
     await click("Make a copy");
     expect(api.selectSpace).toHaveBeenCalledWith("space-2");
+  });
+
+  it("starts the picker on the first Space and tells same-named Spaces apart", async () => {
+    api.open.mockResolvedValue({ definition, fingerprint: FINGERPRINT });
+    api.spaces.mockResolvedValue({
+      spaces: [
+        { id: "space-9", name: "Personal", bots: [{ name: "Ada" }] },
+        { id: "space-8", name: "Personal", bots: [{ name: "Bo" }, { name: "Cy" }] },
+      ],
+    });
+    api.clone.mockResolvedValue({ bot: { id: "copy-3" } });
+    await render(<DozoBotSharePage payload={publicPart} />);
+    await vi.waitFor(() => expect(document.querySelectorAll("option")).toHaveLength(2));
+    expect([...document.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
+      "Personal (Ada)",
+      "Personal (Bo, Cy)",
+    ]);
+    await click("Make a copy");
+    expect(api.selectSpace).toHaveBeenCalledWith("space-9");
   });
 
   it("reads the definition again when it changed, and reports a refused copy", async () => {
