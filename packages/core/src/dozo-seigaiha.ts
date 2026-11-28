@@ -1,7 +1,8 @@
 /**
  * The seigaiha tile behind the wordmark: scales of three concentric circles, drawn in this order
- * so a later scale covers the earlier ones. The sidebar's stylesheet (`dozo-shell.css`) draws the
- * same geometry as a mask; the mobile inbox header draws it from here.
+ * so a later scale covers the earlier ones. The sidebar's stylesheet (`dozo-shell.css`) draws only
+ * the visible arcs of those scales as plain paths in a mask; the mobile inbox header draws it from
+ * here.
  */
 export const DOZO_SEIGAIHA = {
   tile: { width: 40, height: 20 },

@@ -283,6 +283,15 @@ describe("dozo-shell.css", () => {
     expect(css).toContain("opacity: var(--dozo-seigaiha);");
   });
 
+  it("draws the sidebar pattern tile as plain paths, with no mask, use or defs inside it", () => {
+    const tile = css.match(/mask-image:\s*url\("(data:image\/svg\+xml,[^"]*)"\)/)?.[1];
+    expect(tile).toBeDefined();
+    expect(tile).not.toContain("%3Cmask");
+    expect(tile).not.toContain("%3Cuse");
+    expect(tile).not.toContain("%3Cdefs");
+    expect(tile).toContain("%3Cpath");
+  });
+
   it("moves only for those who have not asked for less motion, and uses no !important", () => {
     const quiet = "@media (prefers-reduced-motion: no-preference) {";
     const start = css.indexOf(quiet);
