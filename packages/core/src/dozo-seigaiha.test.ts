@@ -13,17 +13,41 @@ describe("the seigaiha tile", () => {
       DOZO_SEIGAIHA.tile.width,
       DOZO_SEIGAIHA.tile.height,
     ]);
-    const group = /<g id='s'>(.*?)<\/g>/.exec(svg)?.[1] ?? "";
-    expect([...group.matchAll(/<circle r='(\d+)'\/>/g)].map((match) => Number(match[1]))).toEqual(
-      DOZO_SEIGAIHA.radii,
+    expect(svg).not.toMatch(/<(mask|use|defs)/);
+    const path = /<path[^>]* stroke-width='([\d.]+)'[^>]* d='([^']*)'/.exec(svg);
+    expect(Number(path?.[1])).toBe(DOZO_SEIGAIHA.strokeWidth);
+
+    const number = "(-?\\d+(?:\\.\\d+)?)";
+    const arc = new RegExp(
+      `M${number} ${number}A${number} ${number} 0 0 1 ${number} ${number}`,
+      "g",
     );
-    const placed = /<g fill='black' stroke='white' stroke-width='([\d.]+)'>(.*?)<\/g>/.exec(svg);
-    expect(Number(placed?.[1])).toBe(DOZO_SEIGAIHA.strokeWidth);
-    const centers = [...(placed?.[2] ?? "").matchAll(/<use href='#s'([^>]*)\/>/g)].map((use) => [
-      Number(/ x='(-?\d+)'/.exec(use[1] ?? "")?.[1] ?? 0),
-      Number(/ y='(-?\d+)'/.exec(use[1] ?? "")?.[1] ?? 0),
-    ]);
-    expect(centers).toEqual(DOZO_SEIGAIHA.centers);
+    const d = path?.[2] ?? "";
+    const arcs = [...d.matchAll(arc)].map((match) => match.slice(1, 7).map(Number) as number[]);
+    expect(arcs.length).toBeGreaterThan(0);
+    expect(d.replace(arc, "")).toBe("");
+
+    const { tile: size, radii, centers } = DOZO_SEIGAIHA;
+    expect(new Set(arcs.map((a) => a[2]))).toEqual(new Set(radii));
+
+    const near = (a: number, b: number) => Math.abs(a - b) <= 0.05;
+    for (const [x0 = 0, y0 = 0, r = 0, ry = 0, x1 = 0, y1 = 0] of arcs) {
+      expect(ry).toBe(r);
+      expect(near(y0, y1)).toBe(true);
+      // The arc is the top cap of a circle whose centre sits below its two ends.
+      const cx = (x0 + x1) / 2;
+      const cy = y0 + Math.sqrt(r * r - ((x1 - x0) / 2) ** 2);
+      expect(centers.some(([x, y]) => near(x, cx) && near(y, cy))).toBe(true);
+      // Each end meets the edge of the next scale over it: the largest circle of the neighbour
+      // half a tile aside and half a tile down.
+      const reach = radii[0];
+      expect(near(Math.hypot(x0 - (cx - size.width / 2), y0 - (cy + size.height / 2)), reach)).toBe(
+        true,
+      );
+      expect(near(Math.hypot(x1 - (cx + size.width / 2), y1 - (cy + size.height / 2)), reach)).toBe(
+        true,
+      );
+    }
     expect(css).toContain(`height: min(${DOZO_SEIGAIHA.fadeHeight}px, 100%)`);
     expect(css).toContain(`linear-gradient(black ${DOZO_SEIGAIHA.solidUntil * 100}%, transparent)`);
   });
