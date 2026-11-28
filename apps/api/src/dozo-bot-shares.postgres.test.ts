@@ -121,6 +121,8 @@ describePostgres("bot shares (PostgreSQL)", () => {
         sandboxProvider: "fake",
       },
       jobs: { enqueue: async () => undefined },
+      // A copy posts its setup checklist and announces its routines in its new chat.
+      events: { notify: async () => undefined, append: async () => undefined },
       dataDir: "/tmp/rakazo-bot-shares-test",
     } as unknown as RouterDeps;
     handler = new RPCHandler(createRouter(deps), {

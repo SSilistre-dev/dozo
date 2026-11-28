@@ -128,6 +128,9 @@ const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
   "dozoCliAccounts/connect": { provider: "codex-agent" },
   // The bot kind, whose link names the target's bot: the owner's own create gets through.
   "dozoShareLinks/create": { kind: "bot" },
+  // A link's token in its own shape: no live link has it, so both are refused as not found.
+  "dozoBotShares/open": { token: "A".repeat(43) },
+  "dozoBotShares/clone": { token: "A".repeat(43) },
 };
 /** A field whose name says it names something; each one must be filled from the target's things. */
 const ID_FIELD = /Id$|Ids$|^id$/;

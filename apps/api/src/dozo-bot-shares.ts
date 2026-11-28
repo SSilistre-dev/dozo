@@ -159,6 +159,22 @@ export async function openBotShare(prisma: PrismaClient, token: string) {
   return { definition, fingerprint: botShareFingerprint(definition) };
 }
 
+/** The definition as the template path takes one: no skills and no apps. */
+function asTemplate(definition: DozoBotDefinition): BotTemplate {
+  return {
+    id: "shared-bot",
+    version: 1,
+    name: definition.name,
+    summary: definition.name,
+    sample: definition.name,
+    description: definition.description,
+    instructions: definition.instructions,
+    skills: [],
+    routines: definition.routines,
+    apps: [],
+  };
+}
+
 /** Import keys of copies; the key holds the caller's request id only, never the link or its bot. */
 const CLONE_KEY_PREFIX = "dozo-bot-share:";
 
@@ -174,18 +190,6 @@ export async function cloneBotShare<PreparedKey>(
 ) {
   const { definition, fingerprint } = await openBotShare(services.prisma, input.token);
   if (fingerprint !== input.fingerprint) throw new BotShareChangedError();
-  const template: BotTemplate = {
-    id: "shared-bot",
-    version: 1,
-    name: definition.name,
-    summary: definition.name,
-    sample: definition.name,
-    description: definition.description,
-    instructions: definition.instructions,
-    skills: [],
-    routines: definition.routines,
-    apps: [],
-  };
   const { bot } = await writeImportedBot(
     services,
     actor,
@@ -206,7 +210,8 @@ export async function cloneBotShare<PreparedKey>(
         apiKeys: [],
         leftovers: [],
       },
-      build: async () => templatePlan(template, await savedTimeZone(services.prisma, actor)),
+      build: async () =>
+        templatePlan(asTemplate(definition), await savedTimeZone(services.prisma, actor)),
     },
     signal,
   );
