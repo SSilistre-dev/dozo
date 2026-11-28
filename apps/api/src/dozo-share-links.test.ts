@@ -94,13 +94,13 @@ describe("the live link cap", () => {
 
 describe("procedures", () => {
   type Handler = (call: { context: { actor: Actor }; input?: unknown }) => Promise<unknown>;
-  function routes(prisma: never) {
+  function routes(prisma: never, map: DozoShareKinds = kinds()) {
     const authed = new Proxy(
       {},
       { get: () => new Proxy({}, { get: () => ({ handler: (fn: Handler) => fn }) }) },
     );
     const ctx = { deps: { prisma, env: { webOrigin: "https://app.example.test" } }, authed };
-    return dozoShareLinkRoutes(ctx as unknown as RouterContext, kinds())
+    return dozoShareLinkRoutes(ctx as unknown as RouterContext, map)
       .dozoShareLinks as unknown as Record<"create" | "list" | "revoke", Handler>;
   }
 
@@ -110,6 +110,19 @@ describe("procedures", () => {
       input: { kind: "note", targetId: "t", days: 1 },
     })) as { url: string };
     expect(made.url).toMatch(/^https:\/\/app\.example\.test\/s\/[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("refuses as not found a kind only its own feature makes, storing nothing", async () => {
+    const { prisma, statements } = fakeDb([row]);
+    const map = kinds();
+    const own: DozoShareKinds = { note: { ...map.note!, featureOnly: true } };
+    const made = routes(prisma, own).create({
+      context: { actor },
+      input: { kind: "note", targetId: "t", days: 1 },
+    });
+    await expect(made).rejects.toBeInstanceOf(IsolationError);
+    expect(statements).toEqual([]);
+    expect(own.note!.canShare).not.toHaveBeenCalled();
   });
 
   it("lists the member's own links in the Space", async () => {

@@ -129,6 +129,9 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
 const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
   // An agent a paired computer can run, so the owner's own call connects it.
   "dozoCliAccounts/connect": { provider: "codex-agent" },
+  // A link's token in its own shape: no live link has it, so both are refused as not found.
+  "dozoBotShares/open": { token: "A".repeat(43) },
+  "dozoBotShares/clone": { token: "A".repeat(43) },
 };
 /**
  * The pool key of the target's thing each share-link kind points at (a bot, a published replay).
@@ -136,6 +139,7 @@ const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
  * the server's kind map and this one differ, so a new kind cannot go untried.
  */
 export const SHARE_KIND_TARGETS: Readonly<Record<string, PoolKey>> = {
+  bot: "botId",
   replay: "replayId",
   stats: "botId",
 };

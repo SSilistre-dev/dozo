@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { BotProfileAction } from "./bots/bot-profile-menu";
 import { DozoBotCallsRow } from "./dozo-bot-calls-row";
+import { useDozoBotShareActions } from "./dozo-bot-share";
 import { DozoBotStatsRow } from "./dozo-bot-stats-row";
 import { DozoNightNotesRow } from "./dozo-night-notes-row";
 
@@ -27,6 +28,6 @@ export function DozoBotSettingsRows({
  * line calling its hook, `...useX(botId, name),`, which returns the actions it shows now (and the
  * first one drops the underscores).
  */
-export function useDozoBotActions(_botId: string, _name: string): BotProfileAction[] {
-  return [];
+export function useDozoBotActions(botId: string, name: string): BotProfileAction[] {
+  return [...useDozoBotShareActions(botId, name)];
 }

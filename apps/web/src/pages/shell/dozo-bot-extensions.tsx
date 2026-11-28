@@ -14,7 +14,9 @@ export type DozoBotSettingsRowProps = { botId: string; spaceId: string };
  * A bot's roster menu items after Export, each a `ContextMenuItem` that calls `onClose` first. A
  * feature adds one line: `() => import("./x").then((module) => module.X)`.
  */
-const BOT_MENU_ITEMS: DozoLazyLoader<DozoBotMenuItemProps>[] = [];
+const BOT_MENU_ITEMS: DozoLazyLoader<DozoBotMenuItemProps>[] = [
+  () => import("./dozo-bot-share-menu-item").then((module) => module.DozoBotShareMenuItem),
+];
 
 /** Rows in a bot's settings panel, after its model backups. A feature adds one line, as above. */
 const BOT_SETTINGS_ROWS: DozoLazyLoader<DozoBotSettingsRowProps>[] = [

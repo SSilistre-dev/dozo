@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DozoBotSettingsRows } from "../components/dozo-extensions";
 
+vi.mock("../components/dozo-bot-share", () => ({ useDozoBotShareActions: () => [] }));
 vi.mock("../components/dozo-night-notes-row", () => ({ DozoNightNotesRow: () => null }));
 vi.mock("../components/dozo-bot-stats-row", () => ({ DozoBotStatsRow: () => null }));
 vi.mock("../components/dozo-bot-calls-row", () => ({ DozoBotCallsRow: () => null }));
