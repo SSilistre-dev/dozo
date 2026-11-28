@@ -1,3 +1,4 @@
+import { dozoBotShareRoutes } from "./dozo-bot-shares.js";
 import { dozoShareLinkRoutes } from "./dozo-share-links.js";
 import type { RouterContext } from "./routes/context.js";
 
@@ -8,5 +9,6 @@ import type { RouterContext } from "./routes/context.js";
 export function dozoFeatureRoutes(ctx: RouterContext) {
   return {
     ...dozoShareLinkRoutes(ctx),
+    ...dozoBotShareRoutes(ctx),
   };
 }

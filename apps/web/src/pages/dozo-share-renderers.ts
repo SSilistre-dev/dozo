@@ -8,4 +8,6 @@ export type DozoShareRenderer = ComponentType<{ payload: unknown }>;
  * one line, `<kind>: () => import("./x").then((module) => module.X)`, with the same key as in the
  * server's kind map (`apps/api/src/dozo-share-kinds.ts`). A kind missing here shows the 404.
  */
-export const DOZO_SHARE_RENDERERS: Readonly<Record<string, () => Promise<DozoShareRenderer>>> = {};
+export const DOZO_SHARE_RENDERERS: Readonly<Record<string, () => Promise<DozoShareRenderer>>> = {
+  bot: () => import("./dozo-bot-share-page").then((module) => module.DozoBotSharePage),
+};

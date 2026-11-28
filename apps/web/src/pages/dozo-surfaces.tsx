@@ -11,7 +11,10 @@ type Surfaces = Readonly<Record<string, () => Promise<ComponentType<DozoSurfaceP
  * first opened. A feature adds one line, `<key>: () => import("./x").then((module) => module.X)`,
  * and opens it with `openDozoSurface(<key>, params)` from a menu item or row.
  */
-const SURFACES: Surfaces = {};
+const SURFACES: Surfaces = {
+  "bot-share": () =>
+    import("./shell/dozo-bot-share-dialog").then((module) => module.DozoBotShareDialog),
+};
 
 type Opened = { key: string; params: Readonly<Record<string, string>> };
 let request: ((opened: Opened | null) => void) | null = null;

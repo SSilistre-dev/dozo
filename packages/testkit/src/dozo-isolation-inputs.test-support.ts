@@ -126,7 +126,7 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
 const PATH_FIELD_VALUES: Record<string, Record<string, string>> = {
   // An agent a paired computer can run, so the owner's own call connects it.
   "dozoCliAccounts/connect": { provider: "codex-agent" },
-  // The bot clone kind: once it ships, the owner's own create gets through and the exemption goes.
+  // The bot kind, whose link names the target's bot: the owner's own create gets through.
   "dozoShareLinks/create": { kind: "bot" },
 };
 /** A field whose name says it names something; each one must be filled from the target's things. */

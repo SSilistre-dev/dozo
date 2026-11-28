@@ -7,11 +7,16 @@ import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
  */
 export const FEATURE_EXEMPTIONS: readonly IsolationExemption[] = [
   {
-    path: "dozoShareLinks/create",
-    kind: "unreached",
-    verifiedByCode:
-      'apps/api/src/dozo-share-links.ts:96 "if (!kind || !(await kind.canShare(prisma, actor, input.targetId))) throw new IsolationError();" — the kind decides for the caller\'s own actor',
+    path: "dozoBotShares/publish",
+    kind: "reached-409",
     reason:
-      "No kind of share link ships yet, so every create is refused; the first bot kind makes the owner's call get through, and this entry must then go.",
+      'The handler found the caller\'s own bot and built its definition; the generated fingerprint is not the one its preview gave, so the publish is refused as changed ("This bot changed. Look at it again first").',
+  },
+  {
+    path: "dozoBotShares/clone",
+    kind: "no-target",
+    fields: ["requestId"],
+    reason:
+      "A random id the client makes for one copy, so a retry returns the same bot: it names nothing anyone keeps; the link is named by its token.",
   },
 ];
