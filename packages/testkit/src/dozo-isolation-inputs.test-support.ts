@@ -84,6 +84,7 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   "dozoShareLinks/create": { targetId: "replayId" },
   // A finished reply of the owner's with tool steps: their first message is their own words.
   "dozoReplays/preview": { messageId: "replyMessageId" },
+  "dozoReplays/frame": { messageId: "replyMessageId" },
   "dozoReplays/publish": { messageId: "replyMessageId" },
   "threads/declineCall": { callId: "declineCallId" },
   "notifications/declineIncomingCall": { callId: "incomingCallId" },

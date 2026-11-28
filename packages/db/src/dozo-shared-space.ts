@@ -44,7 +44,7 @@ async function serverBills(tx: Pick<PrismaClient, "deploymentSettings">) {
 }
 
 /** The bytes of files the Space's organization may keep, or null without a limit. */
-async function sharedSpaceLimit(
+export async function sharedSpaceLimit(
   tx: Pick<PrismaClient, "deploymentSettings" | "space" | "dozoPlanQuota">,
   spaceId: string,
 ): Promise<{ organizationId: string; bytes: number } | null> {
@@ -73,7 +73,7 @@ async function sharedSpaceLimit(
 }
 
 /** The recorded bytes of every file the organization keeps. Runs across its Spaces. */
-async function usedBytes(db: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
+export async function usedBytes(db: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
   // ponytail: sums every file row of the organization on each write; keep a running total per
   // organization when one holds enough files for this to show.
   const [{ used }] = await db.$queryRaw<[{ used: string }]>(Prisma.sql`
@@ -99,23 +99,6 @@ export async function sharedSpaceFull(
     usedBytes(prisma, limit.organizationId),
   );
   return used >= BigInt(limit.bytes) ? new SharedSpaceFullError() : null;
-}
-
-/**
- * The bytes the Space's organization may still add, or null without a limit. A look without the
- * lock, for optional files that must leave room for the ones that matter (a reply's extra step
- * frames before its last one): the write itself is still held to the limit by `holdSharedSpace`.
- */
-export async function sharedSpaceRoom(
-  prisma: Pick<PrismaClient, "deploymentSettings" | "space" | "dozoPlanQuota" | "$queryRaw">,
-  spaceId: string,
-): Promise<number | null> {
-  const limit = await sharedSpaceLimit(prisma, spaceId);
-  if (!limit) return null;
-  const used = await runAsSystem("an organization's files span its Spaces", () =>
-    usedBytes(prisma, limit.organizationId),
-  );
-  return Number(BigInt(limit.bytes) - used);
 }
 
 /**
@@ -150,12 +133,17 @@ export async function holdSharedSpace(tx: Prisma.TransactionClient, spaceId: str
   const limit = await sharedSpaceLimit(tx, spaceId);
   if (!limit) return;
   await runAsSystemInTransaction(tx, "an organization's files span its Spaces", async () => {
-    await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-shared-space:${limit.organizationId}`}, 0))::text AS "lock"
-    `);
+    await lockSharedSpace(tx, limit.organizationId);
     if ((await usedBytes(tx, limit.organizationId)) > BigInt(limit.bytes))
       throw new SharedSpaceFullError();
   });
+}
+
+/** Waits for the organization's other file writes to commit; held until this transaction ends. */
+export async function lockSharedSpace(tx: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-shared-space:${organizationId}`}, 0))::text AS "lock"
+  `);
 }
 
 /**

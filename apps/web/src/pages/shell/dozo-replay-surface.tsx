@@ -29,7 +29,7 @@ export function startingChoice(steps: readonly DozoReplayDraftStep[]): Choice {
   return {
     omit: new Set(),
     frames: new Set(
-      steps.flatMap((step, index) => (step.frame !== null && !step.sensitive ? [index] : [])),
+      steps.flatMap((step, index) => (step.frame && !step.sensitive ? [index] : [])),
     ),
   };
 }
@@ -135,7 +135,7 @@ function Review({
                   {step.line}
                 </label>
               </div>
-              {step.frame !== null && on ? (
+              {step.frame && on ? (
                 <div className="ms-6.5 flex flex-col gap-1.5 text-body-sm text-muted-foreground">
                   <div className="flex items-center gap-2.5">
                     <Checkbox
@@ -149,12 +149,10 @@ function Review({
                       <Trans>Screenshot</Trans>
                     </label>
                   </div>
-                  <img
-                    src={step.frame}
-                    alt=""
-                    className={`max-h-48 w-fit rounded-md border border-border object-contain ${
-                      choice.frames.has(index) ? "" : "opacity-40"
-                    }`}
+                  <ReviewFrame
+                    messageId={messageId}
+                    index={index}
+                    chosen={choice.frames.has(index)}
                   />
                 </div>
               ) : null}
@@ -187,6 +185,30 @@ function Review({
         </Button>
       </DialogFooter>
     </>
+  );
+}
+
+/** One step's screenshot, read on its own when the review shows it; nothing when it is gone. */
+function ReviewFrame({
+  messageId,
+  index,
+  chosen,
+}: {
+  messageId: string;
+  index: number;
+  chosen: boolean;
+}) {
+  const queries = useSpaceQueries();
+  const frame = useQuery(queries.dozoReplays.frame.queryOptions({ input: { messageId, index } }));
+  if (!frame.data?.frame) return null;
+  return (
+    <img
+      src={frame.data.frame}
+      alt=""
+      className={`max-h-48 w-fit rounded-md border border-border object-contain ${
+        chosen ? "" : "opacity-40"
+      }`}
+    />
   );
 }
 

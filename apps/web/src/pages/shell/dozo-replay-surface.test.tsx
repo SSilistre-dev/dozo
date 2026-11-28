@@ -8,6 +8,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   preview: vi.fn(),
+  frame: vi.fn(async ({ index }: { index: number }) => ({
+    frame: index === 1 ? null : `data:image/png;base64,F${index}`,
+  })),
   publish: vi.fn(),
   revoke: vi.fn(),
   copy: vi.fn(async () => true),
@@ -30,6 +33,12 @@ vi.mock("../../lib/query/query", async (importOriginal) => ({
         queryOptions: ({ input }: { input: { messageId: string } }) => ({
           queryKey: [["dozoReplays", "preview"], input.messageId],
           queryFn: () => api.preview(input),
+        }),
+      },
+      frame: {
+        queryOptions: ({ input }: { input: { messageId: string; index: number } }) => ({
+          queryKey: [["dozoReplays", "frame"], input.messageId, input.index],
+          queryFn: () => api.frame(input),
         }),
       },
     },
@@ -84,13 +93,9 @@ import type * as Query from "../../lib/query/query";
 import { DozoReplaySurface, startingChoice } from "./dozo-replay-surface";
 
 const steps = [
-  {
-    line: "Browser navigate · shop.example.test",
-    frame: "data:image/png;base64,AA==",
-    sensitive: false,
-  },
-  { line: "Browser act", frame: null, sensitive: true },
-  { line: "Screenshot", frame: "data:image/png;base64,BB==", sensitive: true },
+  { line: "Browser navigate · shop.example.com", frame: true, sensitive: false },
+  { line: "Browser act", frame: false, sensitive: true },
+  { line: "Screenshot", frame: true, sensitive: true },
 ];
 const link = {
   id: "l-1",
@@ -152,7 +157,8 @@ it("shows every step and screenshot, then publishes what stays checked and copie
   api.publish.mockResolvedValue({ link, url: "https://app.example.test/s/token" });
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Browser act"));
-  expect(container.querySelectorAll("img")).toHaveLength(2);
+  await vi.waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(2));
+  expect(api.frame).toHaveBeenCalledWith({ messageId: "m-1", index: 2 });
   // Steps 0, 1, 2 and the two screenshots: leave out step 1, swap which screenshot goes.
   const [first, firstShot, second, third, thirdShot] = boxes();
   expect([first, firstShot, second, third, thirdShot].map((box) => box?.checked)).toEqual([
@@ -232,4 +238,15 @@ it("shows why a publish failed", async () => {
   await vi.waitFor(() =>
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Too many links"),
   );
+});
+
+it("shows a step whose screenshot cannot be read without it", async () => {
+  api.preview.mockResolvedValue({
+    steps: [{ line: "Browser snapshot", frame: true, sensitive: false }, steps[0]!],
+    links: [],
+  });
+  api.frame.mockImplementationOnce(async () => ({ frame: null }));
+  await render();
+  await vi.waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(1));
+  expect(container.textContent).toContain("Browser snapshot");
 });

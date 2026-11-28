@@ -17,8 +17,8 @@ const ReplayLine = z.string().max(200);
 export const DozoReplayDraftStepSchema = /* @__PURE__ */ (() =>
   z.object({
     line: ReplayLine,
-    /** The screenshot kept for this step, as a data URL; null when it has none. */
-    frame: z.string().nullable(),
+    /** The step kept a screenshot, read with `dozoReplays.frame`. */
+    frame: z.boolean(),
     /**
      * The screenshot starts left out: some step of the reply touched a sign-in, a saved value, a
      * payment, typed text or a signed-in site, or could not be read.
@@ -55,6 +55,10 @@ export const dozoReplaysContract = /* @__PURE__ */ (() => ({
       links: z.array(DozoShareLinkSchema),
     }),
   ),
+  /** One step's screenshot as a data URL, for the review; null when it has none to show. */
+  frame: oc
+    .input(ReplayMessage.extend({ index: z.number().int().nonnegative().max(DOZO_REPLAY_STEPS_MAX) }))
+    .output(z.object({ frame: z.string().nullable() })),
   /**
    * Publishes the reply's steps but those in `omit`, with the screenshots of the steps in
    * `frames` only (positions in the preview), as a new link.

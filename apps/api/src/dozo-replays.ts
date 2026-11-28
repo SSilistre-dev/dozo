@@ -25,7 +25,7 @@ import type { RouterContext } from "./routes/context.js";
 
 const SITE_SESSIONS_WAIT_MS = 5_000;
 const MINUTE_MS = 60_000;
-/** The share link read's own limit: a replay has at most one frame per reply it shows. */
+/** The share link read's own limit: a viewer loads a step's frame only when it opens that step. */
 const FRAME_READS_PER_IP_PER_MINUTE = 120;
 const FRAME_INDEX = /^\d{1,3}$/;
 const HEADERS = {
@@ -129,8 +129,9 @@ async function replyLinks(
 }
 
 /**
- * Everything of the reply a replay could show, for its owner to review: each step's line, its
- * screenshot, and whether that screenshot starts left out.
+ * Everything of the reply a replay could show, for its owner to review: each step's line, whether
+ * it has a screenshot (read one at a time with `previewFrame`), and whether screenshots start left
+ * out.
  */
 export async function previewReplay(
   deps: Deps,
@@ -142,16 +143,31 @@ export async function previewReplay(
   const steps = stepsOf(reply, sites);
   if (steps.length === 0) throw new ReplayUnavailableError();
   const leftOut = framesStartLeftOut(steps);
-  const drafts = await Promise.all(
-    steps.map(async (step) => ({
-      line: step.line,
-      frame: step.frameArtifactId
-        ? await frameDataUrl(deps, actor, reply, step.frameArtifactId)
-        : null,
-      sensitive: leftOut,
-    })),
-  );
+  const drafts = steps.map((step) => ({
+    line: step.line,
+    frame: Boolean(step.frameArtifactId),
+    sensitive: leftOut,
+  }));
   return { steps: drafts, links: await replyLinks(deps.prisma, actor, messageId) };
+}
+
+/**
+ * One step's screenshot for its owner's review, as a data URL; null when the step has none or its
+ * file cannot be read, so the step simply shows without it.
+ */
+export async function previewFrame(
+  deps: Deps,
+  actor: Actor,
+  input: { messageId: string; index: number },
+): Promise<{ frame: string | null }> {
+  const reply = await ownReply(deps.prisma, actor, input.messageId);
+  const artifactId = stepsOf(reply)[input.index]?.frameArtifactId;
+  if (!artifactId) return { frame: null };
+  const frame = await bestEffort(
+    "read a replay frame for its review",
+    frameDataUrl(deps, actor, reply, artifactId),
+  );
+  return { frame: frame ?? null };
 }
 
 /**
@@ -199,6 +215,9 @@ export function dozoReplayRoutes(ctx: RouterContext) {
     dozoReplays: {
       preview: authed.dozoReplays.preview.handler(({ context, input }) =>
         previewReplay(deps, context.actor, input.messageId),
+      ),
+      frame: authed.dozoReplays.frame.handler(({ context, input }) =>
+        previewFrame(deps, context.actor, input),
       ),
       publish: authed.dozoReplays.publish.handler(async ({ context, input }) => {
         const { link, token } = await publishReplay(deps.prisma, context.actor, input);

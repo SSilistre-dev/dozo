@@ -200,14 +200,16 @@ describePostgres("replays (PostgreSQL)", () => {
     expect(preview.status).toBe(200);
     expect(preview.json.steps).toEqual([
       // The bot has no computer, so its signed-in sites are unknown: the screenshot starts out.
-      { line: "Browser navigate · shop.example.com", frame: null, sensitive: true },
-      {
-        line: "Web search",
-        frame: `data:image/png;base64,${Buffer.from(PICTURE).toString("base64")}`,
-        sensitive: true,
-      },
+      { line: "Browser navigate · shop.example.com", frame: false, sensitive: true },
+      { line: "Web search", frame: true, sensitive: true },
     ]);
     expect(JSON.stringify(preview.json)).not.toContain("private");
+    const frame = await call(ada, "dozoReplays/frame", { messageId, index: 1 });
+    expect(frame.json).toEqual({
+      frame: `data:image/png;base64,${Buffer.from(PICTURE).toString("base64")}`,
+    });
+    const bob = await memberOf(ada);
+    expect((await call(bob, "dozoReplays/frame", { messageId, index: 1 })).status).toBe(404);
   });
 
   it("publishes only what the owner kept, and serves its one screenshot under the link", async () => {

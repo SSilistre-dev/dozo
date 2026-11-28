@@ -19,6 +19,7 @@ import { replayFingerprint } from "./dozo-replay-steps.js";
 import {
   dozoReplayRoutes,
   mountDozoReplayFrames,
+  previewFrame,
   previewReplay,
   publishReplay,
   ReplayUnavailableError,
@@ -63,7 +64,7 @@ function world() {
       helperBotId: null,
       externalConversationId: null,
     } as Record<string, unknown> | null,
-    bot: { id: "b-1", computer: null as Record<string, unknown> | null } as Record<
+    bot: { id: "b-1", userId: "user-1", computer: null as Record<string, unknown> | null } as Record<
       string,
       unknown
     > | null,
@@ -242,19 +243,19 @@ describe("previewReplay", () => {
 
   it("shows each step with its screenshot and the reply's links, all kept with nothing sensitive", async () => {
     const { state, deps } = world();
-    state.bot = { id: "b-1", computer: running };
+    state.bot = { id: "b-1", userId: "user-1", computer: running };
     adapters.listSiteSessions.mockResolvedValueOnce([{ site: "other.com" }]);
     const preview = await previewReplay(deps, actor, "m-1");
     expect(preview.steps).toEqual([
-      { line: "Browser navigate · shop.example.com", frame: null, sensitive: false },
-      { line: "Browser snapshot", frame: "data:image/png;base64,AQID", sensitive: false },
+      { line: "Browser navigate · shop.example.com", frame: false, sensitive: false },
+      { line: "Browser snapshot", frame: true, sensitive: false },
     ]);
     expect(preview.links.map((row) => row.id)).toEqual(["link-1"]);
   });
 
   it("leaves the reply's screenshots out after a step on a site the bot is signed in to", async () => {
     const { state, deps } = world();
-    state.bot = { id: "b-1", computer: running };
+    state.bot = { id: "b-1", userId: "user-1", computer: running };
     const preview = await previewReplay(deps, actor, "m-1");
     expect(preview.steps.map((step) => step.sensitive)).toEqual([true, true]);
   });
@@ -266,18 +267,39 @@ describe("previewReplay", () => {
     "takes the signed-in sites as unknown with %s, leaving the screenshots out",
     async (_n, computer) => {
       const { state, deps } = world();
-      state.bot = { id: "b-1", computer };
+      state.bot = { id: "b-1", userId: "user-1", computer };
       const preview = await previewReplay(deps, actor, "m-1");
       expect(preview.steps.map((step) => step.sensitive)).toEqual([true, true]);
       expect(adapters.listSiteSessions).not.toHaveBeenCalled();
     },
   );
 
-  it("offers no picture that is not a kept step screenshot", async () => {
-    const { state, deps } = world();
-    state.artifact = { ...state.artifact, mimeType: "image/png" };
-    const preview = await previewReplay(deps, actor, "m-1");
-    expect(preview.steps[1]?.frame).toBeNull();
+  it("reads a step's screenshot on its own, and none for a step without one", async () => {
+    const { deps } = world();
+    const read = (index: number) => previewFrame(deps, actor, { messageId: "m-1", index });
+    expect(await read(1)).toEqual({ frame: "data:image/png;base64,AQID" });
+    expect(await read(0)).toEqual({ frame: null });
+    expect(await read(9)).toEqual({ frame: null });
+  });
+
+  it("shows a step without its screenshot when the file is gone or is not a step screenshot", async () => {
+    const gone = world();
+    gone.artifacts.get.mockRejectedValueOnce(new Error("ENOENT"));
+    expect(await previewFrame(gone.deps, actor, { messageId: "m-1", index: 1 })).toEqual({
+      frame: null,
+    });
+    const other = world();
+    other.state.artifact = { ...other.state.artifact, mimeType: "image/png" };
+    expect(await previewFrame(other.deps, actor, { messageId: "m-1", index: 1 })).toEqual({
+      frame: null,
+    });
+  });
+
+  it("refuses another member a step's screenshot", async () => {
+    const { deps } = world();
+    await expect(
+      previewFrame(deps, { ...actor, userId: "u-2" }, { messageId: "m-1", index: 1 }),
+    ).rejects.toBeInstanceOf(ReplayUnavailableError);
   });
 
   it("refuses a reply without steps and a reply that is not the caller's", async () => {
@@ -339,7 +361,7 @@ describe("procedures", () => {
       { get: () => new Proxy({}, { get: () => ({ handler: (fn: Handler) => fn }) }) },
     );
     return dozoReplayRoutes({ deps, authed } as unknown as RouterContext)
-      .dozoReplays as unknown as Record<"preview" | "publish", Handler>;
+      .dozoReplays as unknown as Record<"preview" | "frame" | "publish", Handler>;
   };
 
   it("previews and publishes, answering the link's web address", async () => {
@@ -351,6 +373,9 @@ describe("procedures", () => {
       steps: unknown[];
     };
     expect(preview.steps).toHaveLength(2);
+    expect(
+      await routes(deps).frame({ context: { actor }, input: { messageId: "m-1", index: 1 } }),
+    ).toEqual({ frame: "data:image/png;base64,AQID" });
     const made = (await routes(deps).publish({
       context: { actor },
       input: { messageId: "m-1", omit: [], frames: [], days: 7 },

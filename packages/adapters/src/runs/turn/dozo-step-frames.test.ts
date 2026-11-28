@@ -3,27 +3,39 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   room: vi.fn(async (): Promise<number | null> => null),
-  store: vi.fn(),
+  hold: vi.fn(),
+  settle: vi.fn(),
   onToolCalled: vi.fn(async () => false),
   saveLatest: vi.fn(),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  sharedSpaceRoom: mocks.room,
+  stepFrameRoom: mocks.room,
+  holdStepFrame: mocks.hold,
+  settleStepFrames: mocks.settle,
 }));
-vi.mock("../../storage/thread-artifacts.js", () => ({ storeStepScreenshot: mocks.store }));
 vi.mock("./run-turn-tools.js", () => ({ onToolCalled: mocks.onToolCalled }));
 vi.mock("./tool-step-calls.js", () => ({
   saveLatestStepScreenshot: mocks.saveLatest,
+  keepToolStepResult: vi.fn(),
+  keptToolArguments: vi.fn(),
   keptTurnTranscript: vi.fn(),
 }));
 
 import type { RunContext } from "../assembly/run-context.js";
-import { onToolCalled, STEP_FRAMES_MAX, saveLatestStepScreenshot } from "./dozo-step-frames.js";
+import { onToolCalled } from "./dozo-step-frames-call.js";
+import { STEP_FRAMES_MAX, saveLatestStepScreenshot } from "./dozo-step-frames.js";
 
 type Call = { arguments?: string; image?: { artifactId: string } };
+const own = {
+  botId: "bot-1",
+  userId: "user-1",
+  groupId: null,
+  helperBotId: null,
+  externalConversationId: null,
+};
 
-function run() {
+function run(thread: Record<string, unknown> = own) {
   const calls = new Map<string, Call>();
   const reply = {
     toolStepCalls: calls,
@@ -32,49 +44,50 @@ function run() {
       | undefined,
   };
   const removed: string[] = [];
-  const rows = new Map<string, string>();
+  const put = vi.fn(async (file: { bytes: Uint8Array }) => ({
+    id: `key-${file.bytes[0]}`,
+    hash: "",
+  }));
   const ctx = {
     state: { reply },
     run: { spaceId: "space-1", userId: "user-1" },
-    bot: { id: "bot-1" },
-    thread: { groupId: null },
+    bot: { id: "bot-1", userId: "user-1" },
+    thread,
     runId: "run-1",
     deps: {
-      artifacts: { remove: vi.fn(async (key: string) => void removed.push(key)) },
+      artifacts: { put, remove: vi.fn(async (key: string) => void removed.push(key)) },
       prisma: {
-        artifact: {
-          findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
-            rows.has(where.id) ? { storageKey: rows.get(where.id) } : null,
-          ),
-          deleteMany: vi.fn(async ({ where }: { where: { id: string } }) => {
-            rows.delete(where.id);
-            return { count: 1 };
+        $transaction: async (work: (tx: unknown) => Promise<unknown>) =>
+          work({
+            artifact: {
+              create: async ({ data }: { data: { storageKey: string } }) => ({
+                id: `art-${data.storageKey.slice(4)}`,
+              }),
+            },
           }),
-        },
       },
     },
   } as unknown as RunContext;
+  let shots = 0;
   /** One tool call that returned a screenshot, then the next call starting. */
   const shoot = async (executionId: string) => {
     calls.set(executionId, { arguments: "{}" });
     reply.latestScreenshot = {
       executionId,
       mimeType: "image/png",
-      data: new Uint8Array([executionId.length]),
+      data: new Uint8Array([shots++]),
     };
     await onToolCalled(ctx, { name: "browser_snapshot" } as never);
     await flush();
   };
   const images = () => [...calls.entries()].flatMap(([id, call]) => (call.image ? [id] : []));
-  return { ctx, reply, calls, shoot, images, rows, removed };
+  return { ctx, reply, calls, shoot, images, removed, put };
 }
 
 beforeEach(() => {
   mocks.room.mockReset().mockResolvedValue(null);
-  mocks.store.mockReset().mockImplementation(async (_deps, input: { operationId: string }) => {
-    const id = `art-${input.operationId.split(":")[1]}`;
-    return id;
-  });
+  mocks.hold.mockReset().mockResolvedValue({ allowed: true, removed: [] });
+  mocks.settle.mockReset().mockResolvedValue([]);
   mocks.onToolCalled.mockClear();
   mocks.saveLatest.mockReset().mockImplementation(async (ctx: RunContext) => {
     const shot = ctx.state.reply.latestScreenshot;
@@ -94,12 +107,27 @@ describe("a reply's step frames", () => {
     for (const id of ["e1", "e2", "e3"]) await shoot(id);
     await saveLatestStepScreenshot(ctx);
     expect(images()).toEqual(["e1", "e2", "e3"]);
+    expect(calls.get("e1")?.image?.artifactId).toBe("art-0");
     expect(calls.get("e3")?.image?.artifactId).toBe("last-e3");
     expect(mocks.onToolCalled).toHaveBeenCalledTimes(3);
   });
 
+  it.each([
+    ["a group", { ...own, groupId: "g-1" }],
+    ["a helper chat", { ...own, helperBotId: "bot-2" }],
+    ["a chat app's conversation", { ...own, externalConversationId: "x-1" }],
+    ["another member's chat", { ...own, userId: "user-2" }],
+  ])("stores nothing for a reply that can never be replayed: %s", async (_name, thread) => {
+    const { ctx, shoot, images, put } = run(thread);
+    for (const id of ["e1", "e2"]) await shoot(id);
+    await saveLatestStepScreenshot(ctx);
+    expect(put).not.toHaveBeenCalled();
+    expect(mocks.settle).not.toHaveBeenCalled();
+    expect(images()).toEqual(["e2"]);
+  });
+
   it("keeps at most the limit, the first and the last included, at an even spread", async () => {
-    const { ctx, shoot, images } = run();
+    const { ctx, shoot, images, put } = run();
     for (let at = 0; at < 100; at++) await shoot(`e${at}`);
     await saveLatestStepScreenshot(ctx);
     const kept = images();
@@ -111,6 +139,7 @@ describe("a reply's step frames", () => {
       .slice(1, -1)
       .map((id, at) => Number(id.slice(1)) - Number(kept[at]!.slice(1)));
     expect(new Set(gaps).size).toBe(1);
+    expect(put.mock.calls.length).toBeLessThan(2 * STEP_FRAMES_MAX);
   });
 
   it("keeps no other frame when the last screenshot could not be kept, as before", async () => {
@@ -121,58 +150,76 @@ describe("a reply's step frames", () => {
     expect(images()).toEqual([]);
   });
 
-  it("leaves room for the last screenshot: no frame once the organization is nearly full", async () => {
-    const { ctx, shoot, images } = run();
-    mocks.room.mockResolvedValue(1024 * 1024);
-    for (const id of ["e1", "e2"]) await shoot(id);
+  it("writes one frame at a time and never after the reply ended", async () => {
+    const { ctx, shoot, images, put } = run();
+    const slow = deferred<{ id: string; hash: string }>();
+    put.mockImplementationOnce(() => slow.promise);
+    await shoot("e1");
+    await shoot("e2");
+    expect(put).toHaveBeenCalledTimes(1);
     await saveLatestStepScreenshot(ctx);
-    expect(mocks.store).not.toHaveBeenCalled();
     expect(images()).toEqual(["e2"]);
+    slow.resolve({ id: "key-slow", hash: "" });
+    await vi.waitFor(() => expect(mocks.settle).toHaveBeenCalledOnce());
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(mocks.settle.mock.calls[0]![1]).toMatchObject({ runId: "run-1", linked: ["last-e2"] });
   });
 
-  it("never fails the run when a frame cannot be stored", async () => {
-    const { ctx, shoot, images } = run();
-    mocks.store.mockRejectedValue(new Error("storage down"));
+  it("stops writing once the organization has no room to spare, reading the room again once", async () => {
+    const { ctx, shoot, put, removed } = run();
+    mocks.hold.mockResolvedValue({ allowed: false, removed: [{ id: "x", storageKey: "key-old" }] });
+    for (const id of ["e1", "e2", "e3", "e4"]) await shoot(id);
+    await saveLatestStepScreenshot(ctx);
+    await vi.waitFor(() => expect(mocks.settle).toHaveBeenCalled());
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(mocks.room).toHaveBeenCalledTimes(2);
+    expect(removed).toContain("key-old");
+    expect(removed).toContain("key-0");
+  });
+
+  it("writes nothing when the room read before the first frame is already too small", async () => {
+    const { ctx, shoot, put } = run();
+    mocks.room.mockResolvedValue(0);
+    for (const id of ["e1", "e2"]) await shoot(id);
+    await saveLatestStepScreenshot(ctx);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("counts each written frame against the room it read", async () => {
+    const { ctx, shoot, put } = run();
+    mocks.room.mockResolvedValue(1);
+    for (const id of ["e1", "e2", "e3"]) await shoot(id);
+    await saveLatestStepScreenshot(ctx);
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("never fails the run when a frame cannot be stored, and removes its file", async () => {
+    const { ctx, shoot, images, removed } = run();
+    mocks.hold.mockRejectedValueOnce(new Error("database down"));
     for (const id of ["e1", "e2"]) await shoot(id);
     await expect(saveLatestStepScreenshot(ctx)).resolves.toBeUndefined();
     expect(images()).toEqual(["e2"]);
+    expect(removed).toContain("key-0");
   });
 
-  it("never waits for a frame still being written, and removes it once written", async () => {
-    const { ctx, shoot, images, rows, removed } = run();
-    const slow = deferred<string>();
-    mocks.store.mockImplementationOnce(() => slow.promise);
+  it("removes the files of frames the bot's budget made room by removing", async () => {
+    const { ctx, shoot, removed } = run();
+    mocks.hold.mockResolvedValueOnce({
+      allowed: true,
+      removed: [{ id: "o", storageKey: "key-o" }],
+    });
     await shoot("e1");
     await shoot("e2");
     await saveLatestStepScreenshot(ctx);
-    expect(images()).toEqual(["e2"]);
-    rows.set("art-slow", "key-slow");
-    slow.resolve("art-slow");
-    await vi.waitFor(() => expect(removed).toEqual(["key-slow"]));
-    expect(images()).toEqual(["e2"]);
+    await vi.waitFor(() => expect(removed).toContain("key-o"));
   });
 
-  it("removes the frames a longer reply thinned out, but none still on a call", async () => {
-    const { ctx, shoot, rows, removed, images } = run();
-    mocks.store.mockImplementation(async (_d, input: { operationId: string }) => {
-      const id = `art-${input.operationId.split(":")[1]}`;
-      rows.set(id, `key-${id}`);
-      return id;
-    });
-    for (let at = 0; at < 30; at++) await shoot(`e${at}`);
+  it("removes the files of the frames the settle removed", async () => {
+    const { ctx, shoot, removed } = run();
+    mocks.settle.mockResolvedValue([{ id: "a", storageKey: "key-thinned" }]);
+    for (const id of ["e1", "e2"]) await shoot(id);
     await saveLatestStepScreenshot(ctx);
-    await vi.waitFor(() => expect(removed.length).toBeGreaterThan(0));
-    const linked = new Set(images().map((id) => `key-art-${id}`));
-    expect(removed.some((key) => linked.has(key))).toBe(false);
-  });
-
-  it("takes a screenshot once, however many calls start after it", async () => {
-    const { ctx, reply, shoot } = run();
-    await shoot("e1");
-    await onToolCalled(ctx, { name: "x" } as never);
-    reply.latestScreenshot = undefined;
-    await onToolCalled(ctx, { name: "x" } as never);
-    expect(mocks.store).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(removed).toContain("key-thinned"));
   });
 
   it("holds a reply that resumed after a pause to the limit, its first and last frames kept", async () => {
@@ -187,9 +234,20 @@ describe("a reply's step frames", () => {
     expect(kept.at(-1)).toBe("e1");
   });
 
-  it("saves as before for a reply that took no screenshot", async () => {
+  it("takes a screenshot once, however many calls start after it", async () => {
+    const { ctx, reply, shoot, put } = run();
+    await shoot("e1");
+    await onToolCalled(ctx, { name: "x" } as never);
+    reply.latestScreenshot = undefined;
+    await onToolCalled(ctx, { name: "x" } as never);
+    await flush();
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles a reply that took no screenshot of its own after a pause", async () => {
     const { ctx } = run();
     await saveLatestStepScreenshot(ctx);
     expect(mocks.saveLatest).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(mocks.settle).toHaveBeenCalledOnce());
   });
 });

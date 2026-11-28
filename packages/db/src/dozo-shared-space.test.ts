@@ -10,7 +10,6 @@ import {
   isReplayedUpload,
   SharedSpaceFullError,
   sharedSpaceFull,
-  sharedSpaceRoom,
   sharedSpaceUsage,
   withSharedSpace,
 } from "./dozo-shared-space.js";
@@ -83,20 +82,6 @@ function organization(
 }
 
 const paid = (byokTier: string, status = "active") => ({ status, byokTier });
-
-describe("sharedSpaceRoom", () => {
-  it("says how many bytes the organization may still add, none past full, and null without a limit", async () => {
-    await expect(
-      sharedSpaceRoom(organization({ files: [499 * MB] }).tx as never, "space-1"),
-    ).resolves.toBe(MB);
-    await expect(
-      sharedSpaceRoom(organization({ files: [501 * MB] }).tx as never, "space-1"),
-    ).resolves.toBe(-MB);
-    await expect(
-      sharedSpaceRoom(organization({ billingOn: false }).tx as never, "space-1"),
-    ).resolves.toBeNull();
-  });
-});
 
 describe("shared space", () => {
   it("lets Free add files up to 500 MB and refuses the one that goes over", async () => {
@@ -396,10 +381,10 @@ describe("writers of file rows", () => {
     expect(writers).toEqual({
       // Both through withResolvedArtifactVersion, which holds the check.
       "apps/api/src/content/artifacts.ts": 1,
-      // A run's hidden files through storeHiddenArtifact, held by withSharedSpace: a connector
-      // app's HTML and every step frame a reply keeps (its last one and, since replays, up to 23
-      // earlier ones, dozo-step-frames.ts), so the frames count against the shared space too.
       "packages/adapters/src/storage/thread-artifacts.ts": 2,
+      // A reply's extra replay frames (beyond its last screenshot, kept as before): held to the
+      // organization's room and the bot's frame budget by holdStepFrame, under the same lock.
+      "packages/adapters/src/runs/turn/dozo-step-frames.ts": 1,
       "apps/api/src/account/account-import.ts": 1,
       // The shared transcript file, in the meeting's own transaction, which holds the check.
       "packages/adapters/src/meetings/meeting-service.ts": 2,
@@ -419,6 +404,12 @@ describe("writers of file rows", () => {
     );
     expect(text("packages/adapters/src/meetings/meeting-service.ts")).toMatch(
       /tx\.artifact\.create\(\{[^;]*;\s+await holdSharedSpace\(tx, row\.spaceId\);/,
+    );
+    expect(text("packages/adapters/src/runs/turn/dozo-step-frames.ts")).toMatch(
+      /const held = await holdStepFrame\(tx, \{[^}]*\}\);\s+if \(!held\.allowed\) return[^;]*;\s+const row = await tx\.artifact\.create\(/,
+    );
+    expect(text("packages/db/src/dozo-step-frames.ts")).toContain(
+      "await lockSharedSpace(tx, limit.organizationId);",
     );
     expect(text("apps/api/src/account/account-import.ts")).toMatch(
       /withSharedSpace\(this\.deps\.prisma, space\.spaceId, \(tx\) =>\s+tx\.artifact\.createMany\(/,
