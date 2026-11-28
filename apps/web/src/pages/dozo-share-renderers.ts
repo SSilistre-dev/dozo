@@ -13,5 +13,6 @@ export type DozoShareRenderer = ComponentType<DozoShareRendererProps>;
  * server's kind map (`apps/api/src/dozo-share-kinds.ts`). A kind missing here shows the 404.
  */
 export const DOZO_SHARE_RENDERERS: Readonly<Record<string, () => Promise<DozoShareRenderer>>> = {
+  stats: () => import("./dozo-stats-card").then((module) => module.DozoStatsCard),
   replay: () => import("./dozo-replay-player").then((module) => module.DozoReplayPlayer),
 };
