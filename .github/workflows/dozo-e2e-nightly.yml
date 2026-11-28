@@ -86,6 +86,7 @@ jobs:
             dozo/e2e/.out
             dozo/e2e/.out-plain
             dozo/.stage/e2e/shots
+          include-hidden-files: true   # .out and .out-plain are dot folders
           retention-days: 7
           if-no-files-found: ignore
 

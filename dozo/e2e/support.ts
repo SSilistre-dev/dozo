@@ -41,8 +41,16 @@ export type Mail = { to?: string | string[]; subject?: string; text?: string; ht
  * whole mailbox can take long or arrive cut short through the web server; a caller that polls
  * reads it again.
  */
-const readMailbox = (request: APIRequestContext) =>
-  request.get("/api/dev/emails", { timeout: 30_000 });
+async function readMailbox(request: APIRequestContext) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await request.get("/api/dev/emails", { timeout: 30_000 });
+    } catch (error) {
+      // A thrown timeout ends an expect.poll at once, so the read itself tries again.
+      if (attempt === 3) throw error;
+    }
+  }
+}
 
 /** What the stack's email emulator holds for `address`; empty on a stack that has none. */
 export async function mailsTo(request: APIRequestContext, address: string): Promise<Mail[]> {
