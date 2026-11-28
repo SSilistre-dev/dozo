@@ -112,7 +112,6 @@ describe("DozoNightNotesRow", () => {
         crons: ["0 3 * * *"],
         prompt: DOZO_NIGHT_NOTES_ROUTINE_PROMPT,
       }),
-      expect.anything(),
     );
   });
 
@@ -123,7 +122,7 @@ describe("DozoNightNotesRow", () => {
     await render();
     expect(toggle().getAttribute("aria-checked")).toBe("true");
     await act(async () => toggle().click());
-    expect(api.update).toHaveBeenCalledWith({ routineId: "r1", active: false }, expect.anything());
+    expect(api.update).toHaveBeenCalledWith({ routineId: "r1", active: false });
     expect(api.create).not.toHaveBeenCalled();
   });
 });
