@@ -166,9 +166,9 @@
   }
 }
 
-/* Search and Create are the header's two round buttons. Activity and Minimize step in while the
-   pointer is over the header or focus is in it (Activity stays while it is on), so at rest the
-   wordmark and its kana have the row. */
+/* Search and Create are the header's two round buttons. Computers, Activity and Minimize step in
+   while the pointer is over the header or focus is in it (Activity stays while it is on), so at
+   rest the wordmark and its kana have the row. */
 :is([data-testid="sidebar-search-trigger"], [data-testid="create-menu-trigger"]) {
   width: 40px;
   height: 40px;
@@ -186,7 +186,7 @@
 @media (hover: hover) and (min-width: 768px) {
   [data-slot="sidebar-inner"]
     > .app-drag:first-child
-    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"]) {
+    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"], [data-testid="computers-wall-trigger"]) {
     width: 0;
     min-width: 0;
     margin-inline-end: -8px;
@@ -195,7 +195,7 @@
   }
   [data-slot="sidebar-inner"]
     > .app-drag:first-child:is(:hover, :focus-within)
-    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"]) {
+    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"], [data-testid="computers-wall-trigger"]) {
     width: 32px;
     margin-inline-end: 0;
     opacity: 1;
@@ -612,7 +612,7 @@
   }
   [data-slot="sidebar-inner"]
     > .app-drag:first-child
-    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"]),
+    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"], [data-testid="computers-wall-trigger"]),
   [data-slot="sidebar-inner"] > .app-drag:first-child::after {
     transition:
       width 0.12s var(--dozo-out),

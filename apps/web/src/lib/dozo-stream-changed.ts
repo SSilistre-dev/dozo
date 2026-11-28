@@ -26,3 +26,17 @@ export function dozoPinsChanged(client = queryClient): Promise<void> {
 export function dozoModelPoolChanged(client = queryClient): Promise<void> {
   return client.invalidateQueries({ queryKey: ["dozoModelPool"] });
 }
+
+/**
+ * Fork reads the roster signal carries, each named by the end of its query path. A feature whose
+ * data changes with that signal adds one entry here.
+ */
+const ROSTER_READS: readonly string[] = ["dozoComputerWall.list"];
+
+/** Reads again every fork read the roster signal carries; only mounted screens refetch. */
+export function dozoRosterChanged(client = queryClient): Promise<void> {
+  return client.invalidateQueries({
+    predicate: ({ queryKey: [path] }) =>
+      Array.isArray(path) && ROSTER_READS.includes(path.slice(-2).join(".")),
+  });
+}
