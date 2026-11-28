@@ -1,12 +1,31 @@
 import { Trans } from "@lingui/react/macro";
+import { DOZO_SHARE_LINK_WEB_PREFIX } from "@rakazo/contracts";
 import { ResultPage } from "./dozo-result";
+import { DozoSharePage } from "./dozo-share-page";
+
+/**
+ * Every address no route of App.tsx knows lands here, so the fork's signed-out pages live here
+ * too, with no rule in App.tsx: a share link (`/s/<token>`), then the 404.
+ */
+export function NotFoundPage() {
+  const { pathname } = window.location;
+  if (pathname.startsWith(DOZO_SHARE_LINK_WEB_PREFIX)) {
+    return (
+      <DozoSharePage
+        token={pathname.slice(DOZO_SHARE_LINK_WEB_PREFIX.length)}
+        notFound={<DozoNotFound />}
+      />
+    );
+  }
+  return <DozoNotFound />;
+}
 
 /**
  * The 404 page: the sign-in column's frame with the Dozo dragon of the landing page faint behind it. App.tsx loads this
  * page on demand (an anchored rule points its lazy import here), so the drawing never reaches the
  * startup bundle. The figure adds no words and does not move.
  */
-export function NotFoundPage() {
+function DozoNotFound() {
   return (
     <div className="relative isolate h-full bg-background [&>[data-rakazo-surface]]:bg-transparent">
       <div

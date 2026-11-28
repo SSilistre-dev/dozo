@@ -90,6 +90,7 @@ export type PoolKey =
   | "messagingConnectionId"
   | "approvalRuleId"
   | "commandRuleId"
+  | "shareLinkId"
   | "learningChangeId"
   | "externalConversationId"
   | "soloOrganizationId"

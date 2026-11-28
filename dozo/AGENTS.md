@@ -66,6 +66,22 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   (`standard`, `pro`, `max`) and price lookup keys never change. What the rules around it do and
   the known limits: `dozo/README.md`, Hosted plans. Never write a price the owner has not set.
 
+## Adding a fork feature
+
+Add a file and one line in a hub below; a new anchored rule needs a reason none of these fits.
+
+- Signed-in procedures: the contract's key in `packages/contracts/src/dozo-features.ts`, its
+  routes (`...xRoutes(ctx)`) in `apps/api/src/dozo-features.ts`.
+- Signed-out HTTP: one `mountX(app, prisma, clientIp)` line in `apps/api/src/dozo-public-routes.ts`.
+- Share link of a new kind: the server's loader in `apps/api/src/dozo-share-kinds.ts` and its
+  signed-out page in `apps/web/src/pages/dozo-share-renderers.ts`, same key. Links, expiry,
+  revoking and the rate-limited `/s/<token>` read are `apps/api/src/dozo-share-links.ts`.
+- Web: a surface over the shell in `apps/web/src/pages/dozo-surfaces.tsx` (open it with
+  `openDozoSurface`); a bot's menu item or settings row in
+  `apps/web/src/pages/shell/dozo-bot-extensions.tsx`. Every entry loads lazily.
+- Mobile: a bot settings row or a bot action hook in `apps/mobile/components/dozo-extensions.tsx`;
+  a new screen is a file under `apps/mobile/app/`.
+
 ## Commands
 
 - `make olc`: run after every change. Must finish in under 30 seconds. A missing Node image or a
