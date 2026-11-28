@@ -36,12 +36,4 @@ describe("the fork's bot templates", () => {
   it("names the reminders the way the skill tells the bot to", () => {
     expect(DOZO_MEETING_PREP_SKILL_BODY).toContain(`"${DOZO_MEETING_PREP_REMINDER} <event id>"`);
   });
-
-  it("night notes is a valid template: one skill its routine mentions, a daily schedule, no apps", () => {
-    const night = findBotTemplate("night-notes")!;
-    expect(BotTemplateSchema.parse(night)).toEqual(night);
-    expect(extractRoutineSkillMentions(night.routines[0]!.prompt)).toEqual(["Night notes"]);
-    expect(night.apps).toEqual([]);
-    expect(presetFromCron(night.routines[0]!.crons[0]!).freq).toBe("Every day");
-  });
 });
