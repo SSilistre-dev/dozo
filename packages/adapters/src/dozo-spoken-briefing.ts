@@ -9,8 +9,9 @@ import type {
   SecretStore,
   VoiceProvider,
 } from "@rakazo/adapter-kit";
-import { RetryJobLaterError } from "@rakazo/adapter-kit";
-import { deadlineSignal } from "@rakazo/core";
+import { RetryJobLaterError, VoiceAccountError } from "@rakazo/adapter-kit";
+import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { deadlineSignal, retry } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -23,7 +24,7 @@ import {
   storedMessageBlocks,
   withLease,
 } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { SpeechAudio } from "./dozo-briefing-audio.js";
 import { joinSpeechClips } from "./dozo-briefing-audio.js";
 import type { BriefingPersona } from "./dozo-spoken-briefing.prompt.js";
@@ -39,6 +40,7 @@ import { messageBlocksText } from "./runs/assembly/run-replies.prompt.js";
 import { resolveRunModel } from "./runs/turn/run-model.js";
 import { attachWorkspaceFileToThread } from "./storage/thread-artifacts.js";
 import { createVoiceProvider, isVoiceProviderId } from "./voice/voice-factory.js";
+import { VoiceProviderUnavailableError } from "./voice/voice-http.js";
 import { resolveVoiceKey } from "./voice/voice-model-connection.js";
 import { knownVoiceProvider } from "./voice/voice-providers.js";
 
@@ -54,26 +56,47 @@ import { knownVoiceProvider } from "./voice/voice-providers.js";
 const SCRIPT_TIMEOUT_MS = 60_000;
 /** One line's speech call. */
 const LINE_TIMEOUT_MS = 30_000;
-/** A whole briefing: the script, then every line spoken in turn, then the upload. */
-export const BRIEFING_TIMEOUT_MS = SCRIPT_TIMEOUT_MS + BRIEFING_MAX_LINES * LINE_TIMEOUT_MS;
+/**
+ * A whole briefing, waits between tries included: the script, then every line spoken in turn,
+ * then the upload. Past it the attempt ends and the result stays as text.
+ */
+export const BRIEFING_TIMEOUT_MS = 2 * SCRIPT_TIMEOUT_MS + BRIEFING_MAX_LINES * LINE_TIMEOUT_MS;
 /** The backup job of a briefing started at once fires only once that attempt is surely over. */
 export const BRIEFING_BACKUP_MS = BRIEFING_TIMEOUT_MS + 60_000;
-/** A provider that keeps failing stops being asked; the result stays as text. */
-const BRIEFING_MAX_ATTEMPTS = 3;
+/**
+ * The most briefings one routine speaks in a day (UTC); past it the routine delivers text only, so
+ * a routine that runs every few minutes cannot keep spending on speech.
+ */
+export const BRIEFINGS_PER_DAY = 3;
+/**
+ * Tries of one model or speech call within an attempt. A transient failure is tried again there,
+ * so the script and the clips already spoken are kept; once the tries are used up, or for any
+ * other failure, the attempt ends with the text only.
+ */
+const CALL_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 2_000;
+/**
+ * Runs of the job: the backup after a process stopped mid-briefing, and one more after a failure
+ * outside the model and speech calls (the database, the file store).
+ */
+const BRIEFING_JOB_ATTEMPTS = 2;
 /** A job that finds another process making the briefing looks again this much later. */
 const HELD_RETRY_MS = 60_000;
 const LEASE_TTL_MS = 60_000;
 
 export const spokenBriefingJobKey = (runId: string) => `routine.spoken-briefing:${runId}`;
 
+/** What a briefing needs, carried with its job: the routine and its row may be gone by then. */
+export type SpokenBriefingWork = { runId: string; coHostBotId: string };
+
 /** The briefing's one job per run: the backup of an attempt under way, or the retry of one that failed. */
-export function spokenBriefingJob(runId: string, availableAt: Date): BackgroundJob {
+export function spokenBriefingJob(work: SpokenBriefingWork, availableAt: Date): BackgroundJob {
   return {
     name: "routine.spoken-briefing",
-    payload: { runId },
+    payload: work,
     availableAt,
-    replaceKey: spokenBriefingJobKey(runId),
-    maxAttempts: BRIEFING_MAX_ATTEMPTS,
+    replaceKey: spokenBriefingJobKey(work.runId),
+    maxAttempts: BRIEFING_JOB_ATTEMPTS,
   };
 }
 
@@ -94,12 +117,31 @@ export interface SpokenBriefingDeps {
   maxUploadSizeBytes?: number;
   /** The operator's choice that a self-hosted speech server may sit on a private address. */
   allowPrivateEndpoint?: boolean;
+  /** The wait between tries of a call; tests pass 0. */
+  retryDelayMs?: number;
 }
 
 /** The co-host a routine's briefing is spoken with; null when the routine has none. */
 export async function spokenBriefingCoHost(db: Db, routineId: string): Promise<string | null> {
   const [row] = await db.$queryRaw<Array<{ coHostBotId: string }>>`
     SELECT "coHostBotId" FROM dozo_spoken_briefings WHERE "routineId" = ${routineId}`;
+  return row?.coHostBotId ?? null;
+}
+
+/**
+ * Takes one of the routine's briefings of the day (UTC) in one statement, and returns its co-host;
+ * null when the routine has none or its briefings of the day are used up.
+ */
+export async function takeSpokenBriefing(db: Db, routineId: string): Promise<string | null> {
+  const [row] = await db.$queryRaw<Array<{ coHostBotId: string }>>`
+    UPDATE dozo_spoken_briefings SET
+      "day" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date,
+      "spoken" = CASE WHEN "day" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+        THEN "spoken" + 1 ELSE 1 END
+    WHERE "routineId" = ${routineId}
+      AND ("day" IS DISTINCT FROM (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+        OR "spoken" < ${BRIEFINGS_PER_DAY})
+    RETURNING "coHostBotId"`;
   return row?.coHostBotId ?? null;
 }
 
@@ -178,8 +220,15 @@ export function parseBriefingScript(text: string): BriefingLine[] {
 }
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
-/** The runtime's own failure text, as compaction reads it (pi-runtime-errors.ts). */
+/**
+ * The runtime's own failure text. Copied from `apps/api/src/calls/speech-summary.ts` and the
+ * learning review, which read a tool-less call the same way (the text is pi-runtime-errors.ts').
+ */
 const RUNTIME_FAILURE = /^(?:I hit a problem:|Unknown model )/i;
+
+class ScriptCallFailed extends Error {
+  override readonly name = "ScriptCallFailed";
+}
 
 type Run = { id: string; spaceId: string; userId: string; botId: string };
 
@@ -200,42 +249,46 @@ async function writeScript(
       operationKind: "setup",
     });
   };
+  // No capability names a tool-less call; compaction is one, and the spoken summary
+  // (speech-summary.ts) and the learning review ask this same capability for theirs.
   if (!deps.runtime.describe().capabilities.compaction) return null;
+  const model = await deps.resolveModel(scope);
   let text = "";
-  try {
-    const model = await deps.resolveModel(scope);
-    for await (const event of deps.runtime.run(
-      {
-        botId: run.botId,
-        threadId: operationId,
-        runId: operationId,
-        usageOperationKind: "setup",
-        onUsage: record,
-        prompt,
-        instructions: spokenBriefingInstructions(),
-        history: [],
-        tools: [],
-        model: { ...model, thinkingLevel: "off" },
-        allowSilentEmpty: true,
-      },
-      {
-        operationId,
-        traceId: operationId,
-        ...scope,
-        signal: deadlineSignal(SCRIPT_TIMEOUT_MS, signal),
-      },
-    )) {
-      if (event.type === "usage" && !event.accounted) await record(event);
-      if (event.type === "done" && event.text) text = event.text.trim();
-    }
-  } catch (error) {
-    // Without hosted credits nothing is asked, nor asked again.
-    if (error instanceof HostedModelCreditsRequiredError) return null;
-    throw error;
+  for await (const event of deps.runtime.run(
+    {
+      botId: run.botId,
+      threadId: operationId,
+      runId: operationId,
+      usageOperationKind: "setup",
+      onUsage: record,
+      prompt,
+      instructions: spokenBriefingInstructions(),
+      history: [],
+      tools: [],
+      model: { ...model, thinkingLevel: "off" },
+      allowSilentEmpty: true,
+    },
+    {
+      operationId,
+      traceId: operationId,
+      ...scope,
+      signal: deadlineSignal(SCRIPT_TIMEOUT_MS, signal),
+    },
+  )) {
+    if (event.type === "usage" && !event.accounted) await record(event);
+    if (event.type === "done" && event.text) text = event.text.trim();
   }
-  if (RUNTIME_FAILURE.test(text)) throw new Error("spoken briefing script call failed");
+  if (RUNTIME_FAILURE.test(text)) throw new ScriptCallFailed("spoken briefing script call failed");
   return parseBriefingScript(text);
 }
+
+/** A speech call worth another try: the provider is down or did not answer in time. */
+const transientSpeech = (error: unknown) =>
+  error instanceof VoiceProviderUnavailableError ||
+  (error instanceof Error && error.name === "TimeoutError");
+
+/** Any model failure but a refusal for credits is worth another try. */
+const transientModel = (error: unknown) => !(error instanceof HostedModelCreditsRequiredError);
 
 const persona = (bot: BriefingPersona) => ({
   name: bot.name,
@@ -245,52 +298,88 @@ const persona = (bot: BriefingPersona) => ({
 
 /**
  * Makes and posts the briefing of one completed routine run, once: a run whose briefing is in its
- * chat, or that cannot have one, is done. Throws for a failure worth another try (a model or
- * speech call that failed), and `LeaseHeldError` while another process is making it.
+ * chat, or that cannot have one, is done. A model or speech call is tried again within the attempt
+ * while its failure is transient; a lasting failure ends it with the text only. Throws for a
+ * failure elsewhere (the database, the file store), and `LeaseHeldError` while another process is
+ * making it.
  */
-export async function makeSpokenBriefing(deps: SpokenBriefingDeps, runId: string): Promise<void> {
-  await withLease(deps.prisma, spokenBriefingJobKey(runId), { ttlMs: LEASE_TTL_MS }, (lease) =>
-    make(deps, runId, deadlineSignal(BRIEFING_TIMEOUT_MS, lease.signal)),
+export async function makeSpokenBriefing(
+  deps: SpokenBriefingDeps,
+  work: SpokenBriefingWork,
+): Promise<void> {
+  await withLease(deps.prisma, spokenBriefingJobKey(work.runId), { ttlMs: LEASE_TTL_MS }, (lease) =>
+    make(deps, work, deadlineSignal(BRIEFING_TIMEOUT_MS, lease.signal)),
   );
 }
 
-async function make(deps: SpokenBriefingDeps, runId: string, signal: AbortSignal) {
+/** Why a briefing ended with the text only, for the log; never shown. */
+const textOnly = (runId: string, reason: string, error?: unknown) => {
+  getLogger().warn("spoken briefing left as text", {
+    "run.id": runId,
+    reason,
+    ...(error instanceof Error ? { error: error.name } : {}),
+  });
+};
+
+/** The owner's speech; null, logged, when a linked model connection is gone or refused. */
+async function ownSpeechOrRefused(
+  deps: SpokenBriefingDeps,
+  run: Run,
+  signal: AbortSignal,
+): Promise<OwnSpeech | null> {
+  try {
+    return await ownSpeech(deps, run, signal);
+  } catch (error) {
+    // Lasting until the owner fixes the connection: no retry.
+    if (!(error instanceof VoiceAccountError)) throw error;
+    textOnly(run.id, "voice account", error);
+    return null;
+  }
+}
+
+/** The script, its transient failures tried again; null, logged, once the tries are used up. */
+async function scriptOrNone(
+  write: () => Promise<BriefingLine[] | null>,
+  options: Parameters<typeof retry>[1],
+  runId: string,
+): Promise<BriefingLine[] | null> {
+  try {
+    return await retry(write, options);
+  } catch (error) {
+    textOnly(runId, "script", error);
+    return null;
+  }
+}
+
+async function make(deps: SpokenBriefingDeps, work: SpokenBriefingWork, signal: AbortSignal) {
   const { prisma, artifacts } = deps;
+  // The routine may be gone (a one-time routine is deleted when its run completes): the run and
+  // the co-host the job carries are all a briefing reads.
   const run = await prisma.run.findFirst({
-    where: { id: runId, status: "completed", routineId: { not: null } },
+    where: { id: work.runId, status: "completed" },
     select: {
       id: true,
       spaceId: true,
       userId: true,
       botId: true,
       threadId: true,
-      routineId: true,
       thread: { select: { groupId: true } },
     },
   });
-  if (!run?.routineId || !artifacts) return;
+  if (!run || !artifacts || work.coHostBotId === run.botId) return;
   const done = await prisma.message.findFirst({
     where: { threadId: run.threadId, clientNonce: briefingNonce(run.id) },
     select: { id: true },
   });
   if (done) return;
-  const coHostId = await spokenBriefingCoHost(prisma, run.routineId);
-  if (!coHostId || coHostId === run.botId) return;
-  const personaFields = {
-    id: true,
-    name: true,
-    description: true,
-    instructions: true,
-    voiceId: true,
-  };
-  const [host, coHost] = await Promise.all([
-    prisma.bot.findFirst({ where: { id: run.botId }, select: personaFields }),
-    // Only the co-host's persona and voice are read: never its memory or its chats.
+  // Both bots as they are now: still the run owner's, in its Space, not archived. Only the
+  // co-host's persona and voice are read, never its memory or its chats.
+  const ownBot = (id: string) =>
     prisma.bot.findFirst({
-      where: { id: coHostId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-      select: personaFields,
-    }),
-  ]);
+      where: { id, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      select: { id: true, name: true, description: true, instructions: true, voiceId: true },
+    });
+  const [host, coHost] = await Promise.all([ownBot(run.botId), ownBot(work.coHostBotId)]);
   if (!host?.voiceId || !coHost?.voiceId) return;
   const replies = await prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id, role: "bot" },
@@ -302,15 +391,21 @@ async function make(deps: SpokenBriefingDeps, runId: string, signal: AbortSignal
     .filter(Boolean)
     .join("\n\n");
   if (!result) return;
-  const speech = await ownSpeech(deps, run, signal);
+  const speech = await ownSpeechOrRefused(deps, run, signal);
   if (!speech) return;
-  const lines = await writeScript(
-    deps,
-    run,
-    spokenBriefingPrompt({ host: persona(host), coHost: persona(coHost), result }),
-    signal,
+  const delayMs = deps.retryDelayMs ?? RETRY_DELAY_MS;
+  const lines = await scriptOrNone(
+    () =>
+      writeScript(
+        deps,
+        run,
+        spokenBriefingPrompt({ host: persona(host), coHost: persona(coHost), result }),
+        signal,
+      ),
+    { attempts: CALL_ATTEMPTS, delayMs, signal, retryable: transientModel },
+    run.id,
   );
-  if (!lines?.length) return;
+  if (!lines?.length) return textOnly(run.id, "no script");
   const context: AdapterContext = {
     operationId: `spoken-briefing:${run.id}`,
     traceId: `spoken-briefing:${run.id}`,
@@ -322,21 +417,32 @@ async function make(deps: SpokenBriefingDeps, runId: string, signal: AbortSignal
   const clips: SpeechAudio[] = [];
   // One line at a time: a briefing never sends the provider more than one request at once.
   for (const line of lines) {
-    clips.push(
-      await speech.provider.synthesize(
-        {
-          text: line.text,
-          voiceId: line.speaker === "A" ? host.voiceId : coHost.voiceId,
-          apiKey: speech.apiKey,
-          model: speech.model,
-          signal: deadlineSignal(LINE_TIMEOUT_MS, signal),
-        },
-        context,
-      ),
-    );
+    try {
+      clips.push(
+        await retry(
+          () =>
+            speech.provider.synthesize(
+              {
+                text: line.text,
+                voiceId: line.speaker === "A" ? host.voiceId! : coHost.voiceId!,
+                apiKey: speech.apiKey,
+                model: speech.model,
+                signal: deadlineSignal(LINE_TIMEOUT_MS, signal),
+              },
+              context,
+            ),
+          { attempts: CALL_ATTEMPTS, delayMs, signal, retryable: transientSpeech },
+        ),
+      );
+    } catch (error) {
+      // An account the provider refuses, an address it may not reach, a voice it lacks: lasting.
+      return textOnly(run.id, "speech", error);
+    }
   }
   const audio = joinSpeechClips(clips);
-  if (!audio) return;
+  if (!audio) return textOnly(run.id, "clips do not join");
+  if (audio.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES))
+    return textOnly(run.id, "too large");
   const extension = audio.mimeType === "audio/wav" ? "wav" : "mp3";
   let seq: number | undefined;
   await attachWorkspaceFileToThread(
@@ -383,22 +489,22 @@ async function make(deps: SpokenBriefingDeps, runId: string, signal: AbortSignal
 }
 
 /**
- * The briefing started at once: done or not worth trying, its backup job goes; a failure moves the
- * job to now, where the queue's retries and backoff take over.
+ * The briefing started at once: once it is posted or ended with the text only, its backup job
+ * goes; a failure outside the model and speech calls moves the job to now, for the queue's retry.
  */
 async function startNow(
   deps: SpokenBriefingDeps,
   jobs: Pick<JobPublisher, "enqueue" | "cancel">,
-  runId: string,
+  work: SpokenBriefingWork,
 ) {
   try {
-    await makeSpokenBriefing(deps, runId);
+    await makeSpokenBriefing(deps, work);
   } catch (error) {
     if (error instanceof LeaseHeldError) return;
-    await jobs.enqueue(spokenBriefingJob(runId, new Date()));
+    await jobs.enqueue(spokenBriefingJob(work, new Date()));
     throw error;
   }
-  await jobs.cancel(spokenBriefingJobKey(runId));
+  await jobs.cancel(spokenBriefingJobKey(work.runId));
 }
 
 const begin = (work: () => Promise<unknown>) => {
@@ -406,18 +512,29 @@ const begin = (work: () => Promise<unknown>) => {
 };
 
 /**
- * After a run completed: a routine run whose routine has a co-host gets its briefing's backup job,
- * then the briefing starts in this process. Every other run costs nothing; a routine run one
- * primary-key read. Never fails the run.
+ * Called first thing after a run's completion commits, before the routine can be deleted (a
+ * one-time routine is, with its briefing row). A routine run takes one of its routine's briefings
+ * of the day and, in the same transaction, records the briefing's backup job with its co-host;
+ * then the briefing starts in this process. Every other run costs nothing. Never fails the run.
  */
 export async function dozoSpokenBriefingAfterRun(ctx: RunContext, start = begin): Promise<void> {
   const { deps, run } = ctx;
-  if (run.trigger !== "routine" || !run.routineId) return;
+  const routineId = run.trigger === "routine" ? run.routineId : null;
+  if (!routineId) return;
   await bestEffort(
     "spoken briefing",
     (async () => {
-      if (!(await spokenBriefingCoHost(deps.prisma, run.routineId!))) return;
-      await deps.jobs.enqueue(spokenBriefingJob(run.id, new Date(Date.now() + BRIEFING_BACKUP_MS)));
+      const work = await deps.prisma.$transaction(async (tx) => {
+        const coHostBotId = await takeSpokenBriefing(tx, routineId);
+        if (!coHostBotId) return null;
+        const taken = { runId: run.id, coHostBotId };
+        await deps.jobs.enqueueIn(
+          tx,
+          spokenBriefingJob(taken, new Date(Date.now() + BRIEFING_BACKUP_MS)),
+        );
+        return taken;
+      });
+      if (!work) return;
       const briefingDeps: SpokenBriefingDeps = {
         prisma: deps.prisma,
         runtime: deps.runtime,
@@ -428,7 +545,7 @@ export async function dozoSpokenBriefingAfterRun(ctx: RunContext, start = begin)
         maxUploadSizeBytes: deps.maxUploadSizeBytes,
         allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint,
       };
-      start(() => startNow(briefingDeps, deps.jobs, run.id));
+      start(() => startNow(briefingDeps, deps.jobs, work));
     })(),
   );
 }
@@ -439,14 +556,17 @@ export function dozoSpokenBriefingJob(
     executor: { resolveModel: SpokenBriefingDeps["resolveModel"] };
   },
 ) {
-  return async ({ runId }: { runId: string }) => {
+  return async (work: SpokenBriefingWork) => {
     const owner = await runAsSystem("find the run a spoken briefing is for", () =>
-      deps.prisma.run.findUnique({ where: { id: runId }, select: { spaceId: true, userId: true } }),
+      deps.prisma.run.findUnique({
+        where: { id: work.runId },
+        select: { spaceId: true, userId: true },
+      }),
     );
     if (!owner) return;
     try {
       await runAsTenant(owner, () =>
-        makeSpokenBriefing({ ...deps, resolveModel: deps.executor.resolveModel }, runId),
+        makeSpokenBriefing({ ...deps, resolveModel: deps.executor.resolveModel }, work),
       );
     } catch (error) {
       if (error instanceof LeaseHeldError) throw new RetryJobLaterError(HELD_RETRY_MS);

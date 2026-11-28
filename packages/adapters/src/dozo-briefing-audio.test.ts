@@ -53,7 +53,7 @@ describe("joining speech clips", () => {
     });
   });
 
-  it("reads MPEG-2 frames and tags with a footer, and keeps bytes that start no frame", () => {
+  it("reads MPEG-2 frames and tags with a footer", () => {
     // 64 kbit/s at 24 kHz: 72 * 64000 / 24000 = 192 bytes.
     const info = new Uint8Array(192);
     info.set([0xff, 0xf3, 0x84, 0x00]);
@@ -65,18 +65,28 @@ describe("joining speech clips", () => {
     const footer = Uint8Array.from([
       0x49, 0x44, 0x33, 4, 0, 0x10, 0, 0, 0, 2, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
-    // MPEG 2.5, then a reserved version, layer II, a free and a reserved rate, and no sync at all.
-    const kept = [
-      [0xff, 0xe2, 0x90, 0x00, 1],
-      [0xff, 0xea, 0x90, 0x00, 2],
-      [0xff, 0xfd, 0x90, 0x00, 3],
-      [0xff, 0xfb, 0x00, 0x00, 4],
-      [0xff, 0xfb, 0x9c, 0x00, 5],
-      [0x00, 0x01, 0x02, 0x03, 6],
-    ].map((bytes) => Uint8Array.from(bytes));
-    expect(joinSpeechClips([mp3(join(footer, info, audio)), ...kept.map(mp3)])?.bytes).toEqual(
-      join(audio, ...kept),
+    const mpeg25 = Uint8Array.from([0xff, 0xe2, 0x90, 0x00, 1]);
+    expect(joinSpeechClips([mp3(join(footer, info, audio)), mp3(audio)])?.bytes).toEqual(
+      join(audio, audio),
     );
+    expect(joinSpeechClips([mp3(mpeg25), mp3(mpeg25)])?.bytes).toEqual(join(mpeg25, mpeg25));
+  });
+
+  it("joins no MP3 clips that disagree or start no audio frame", () => {
+    const clip = mp3(frame(1));
+    const unlike = [
+      [0xff, 0xf3, 0x84, 0x00, 1], // MPEG-2
+      [0xff, 0xfb, 0x94, 0x00, 1], // 48 kHz
+      [0xff, 0xfb, 0x90, 0xc0, 1], // mono
+      [0xff, 0xea, 0x90, 0x00, 2], // a reserved version
+      [0xff, 0xfd, 0x90, 0x00, 3], // layer II
+      [0xff, 0xfb, 0x00, 0x00, 4], // a free bitrate
+      [0xff, 0xfb, 0x9c, 0x00, 5], // a reserved sample rate
+      [0x00, 0x01, 0x02, 0x03, 6], // no sync
+    ];
+    for (const bytes of unlike)
+      expect(joinSpeechClips([clip, mp3(Uint8Array.from(bytes))]), String(bytes)).toBeNull();
+    expect(joinSpeechClips([mp3(frame(0, "Info")), clip])).toBeNull();
   });
 
   it("reads a WAV file's samples past other chunks, and to its end when the length is unknown", () => {

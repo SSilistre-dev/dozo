@@ -1,5 +1,5 @@
 import type { AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
-import { RetryJobLaterError } from "@rakazo/adapter-kit";
+import { RetryJobLaterError, VoiceAccountError } from "@rakazo/adapter-kit";
 import type { MockInstance } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +48,7 @@ import { HostedModelCreditsRequiredError } from "./models/credits/model-credit-o
 import { ScriptedVoiceProvider } from "./providers/voice/scripted/scripted-voice.js";
 import type { RunContext } from "./runs/assembly/run-context.js";
 import { pcmToWav } from "./voice/pcm-wav.js";
+import { VoiceProviderUnavailableError } from "./voice/voice-http.js";
 
 const run = {
   id: "run-1",
@@ -55,32 +56,45 @@ const run = {
   userId: "owner",
   botId: "bot-1",
   threadId: "thread-1",
-  routineId: "routine-1",
   thread: { groupId: null as string | null },
 };
-const host = {
+type Bot = {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  voiceId: string | null;
+  spaceId: string;
+  userId: string;
+  archivedAt: Date | null;
+};
+const host: Bot = {
   id: "bot-1",
   name: "Chef",
   description: "",
   instructions: "Be warm.",
   voiceId: "voice-a",
+  spaceId: "space-1",
+  userId: "owner",
+  archivedAt: null,
 };
-const nova = {
+const nova: Bot = {
+  ...host,
   id: "bot-2",
   name: "Nova",
   description: "Curious",
   instructions: "",
   voiceId: "voice-b",
 };
+const work = { runId: "run-1", coHostBotId: "bot-2" };
 
 let world: {
   run: typeof run | null;
   done: boolean;
-  coHost: string | null;
-  bots: Array<typeof host>;
+  bots: Bot[];
   result: string;
-  script: string | Error;
-  secret: boolean;
+  /** What the model answers, call by call; the last one repeats. */
+  scripts: Array<string | Error>;
 };
 let synthesize: MockInstance<ScriptedVoiceProvider["synthesize"]>;
 
@@ -96,18 +110,19 @@ function prisma() {
         { id: "message-1", blocks: [{ kind: "text", text: world.result }] },
       ]),
     },
-    $queryRaw: vi.fn(async () => (world.coHost ? [{ coHostBotId: world.coHost }] : [])),
     bot: {
       findFirst: vi.fn(
-        async ({ where }: { where: { id: string } }) =>
-          world.bots.find((bot) => bot.id === where.id) ?? null,
+        async ({ where }: { where: Pick<Bot, "id" | "spaceId" | "userId" | "archivedAt"> }) =>
+          world.bots.find(
+            (bot) =>
+              bot.id === where.id &&
+              bot.spaceId === where.spaceId &&
+              bot.userId === where.userId &&
+              bot.archivedAt === where.archivedAt,
+          ) ?? null,
       ),
     },
-    secret: {
-      findFirst: vi.fn(async () =>
-        world.secret ? { id: "secret-1", ciphertext: "sealed" } : null,
-      ),
-    },
+    secret: { findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "sealed" })) },
   };
 }
 
@@ -116,10 +131,11 @@ function runtime(): AgentRuntime & { calls: number } {
     calls: 0,
     describe: () => ({ capabilities: { compaction: true } }),
     async *run(): AsyncGenerator<AgentRuntimeEvent> {
+      const script = world.scripts[Math.min(fake.calls, world.scripts.length - 1)]!;
       fake.calls++;
-      if (world.script instanceof Error) throw world.script;
+      if (script instanceof Error) throw script;
       yield { type: "usage", inputTokens: 10, outputTokens: 5 } as AgentRuntimeEvent;
-      yield { type: "done", text: world.script } as AgentRuntimeEvent;
+      yield { type: "done", text: script } as AgentRuntimeEvent;
     },
   };
   return fake as unknown as AgentRuntime & { calls: number };
@@ -138,11 +154,9 @@ beforeEach(() => {
   world = {
     run: { ...run },
     done: false,
-    coHost: "bot-2",
     bots: [host, nova],
     result: "Three orders shipped. The fourth ships tomorrow.",
-    script: "A: Three orders shipped.\nB: And the fourth?\nA: It ships tomorrow.",
-    secret: true,
+    scripts: ["A: Three orders shipped.\nB: And the fourth?\nA: It ships tomorrow."],
   };
   attach.mockImplementation(async (_deps, input) => {
     await input.onAttached("tx", {
@@ -163,12 +177,15 @@ beforeEach(() => {
       publishSpaceChange: vi.fn(async () => undefined),
     },
     resolveModel: vi.fn(async () => ({ provider: "test", modelId: "model" })) as never,
+    retryDelayMs: 0,
   };
 });
 
+const unavailable = () => new VoiceProviderUnavailableError();
+
 describe("making a routine run's spoken briefing", () => {
   it("speaks each line in its bot's own voice and posts one audio message after the result", async () => {
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
     expect(synthesize.mock.calls.map(([request]) => [request.voiceId, request.text])).toEqual([
       ["voice-a", "Three orders shipped."],
       ["voice-b", "And the fourth?"],
@@ -218,7 +235,7 @@ describe("making a routine run's spoken briefing", () => {
       prompt = request.prompt;
       yield { type: "done", text: "A: One.\nB: Two." } as AgentRuntimeEvent;
     } as never;
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
     expect(prompt).toContain("<host_b>\nNova\nCurious\n</host_b>");
     expect(prompt).toContain(
       "<result>\nThree orders shipped. The fourth ships tomorrow.\n</result>",
@@ -227,36 +244,55 @@ describe("making a routine run's spoken briefing", () => {
 
   it("posts a group chat's briefing into the group", async () => {
     world.run = { ...run, thread: { groupId: "group-1" } };
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
     expect(attach.mock.calls[0]?.[1]).toMatchObject({ groupId: "group-1" });
   });
 
   it.each([
     ["the run's briefing is already in its chat", () => (world.done = true)],
-    ["the run is not a completed routine run", () => (world.run = null)],
-    ["the routine has no co-host", () => (world.coHost = null)],
-    ["the co-host is the routine's own bot", () => (world.coHost = "bot-1")],
+    ["the run is not a completed run", () => (world.run = null)],
+    ["the co-host is the routine's own bot", () => (work.coHostBotId = "bot-1")],
     ["the co-host has no voice of its own", () => (world.bots = [host, { ...nova, voiceId: "" }])],
-    ["the co-host is not the owner's bot here", () => (world.bots = [host])],
+    ["the co-host is archived", () => (world.bots = [host, { ...nova, archivedAt: new Date() }])],
+    [
+      "the co-host was moved to someone else",
+      () => (world.bots = [host, { ...nova, userId: "other" }]),
+    ],
+    [
+      "the routine's bot is archived",
+      () => (world.bots = [{ ...host, archivedAt: new Date() }, nova]),
+    ],
+    [
+      "the routine's bot was moved to someone else",
+      () => (world.bots = [{ ...host, userId: "other" }, nova]),
+    ],
+    ["the routine's bot has no voice", () => (world.bots = [{ ...host, voiceId: null }, nova])],
     ["the result has no text", () => (world.result = "  ")],
     ["the owner has no voice connection", () => (db.credential = null)],
-    ["the connection's secret is gone", () => (world.secret = false)],
-    ["the script has one host", () => (world.script = "A: Only me.")],
+    ["the script has one host", () => (world.scripts = ["A: Only me."])],
     [
       "the model needs hosted credits",
-      () => (world.script = new HostedModelCreditsRequiredError("no credits")),
+      () => (world.scripts = [new HostedModelCreditsRequiredError("no credits")]),
     ],
-  ])("posts nothing and asks for nothing more when %s", async (_case, arrange) => {
+  ])("posts nothing and throws nothing when %s", async (_case, arrange) => {
+    const coHost = work.coHostBotId;
     arrange();
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
+    work.coHostBotId = coHost;
     expect(attach).not.toHaveBeenCalled();
     expect(deps.events.notify).not.toHaveBeenCalled();
   });
 
   it("posts nothing without a store for files, or when the clips do not join", async () => {
-    await makeSpokenBriefing({ ...deps, artifacts: undefined }, "run-1");
+    await makeSpokenBriefing({ ...deps, artifacts: undefined }, work);
     synthesize.mockResolvedValueOnce({ bytes: new Uint8Array(4), mimeType: "audio/ogg" });
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("uploads nothing past the attachment limit", async () => {
+    await makeSpokenBriefing({ ...deps, maxUploadSizeBytes: 20 }, work);
+    expect(synthesize).toHaveBeenCalledTimes(3);
     expect(attach).not.toHaveBeenCalled();
   });
 
@@ -266,20 +302,78 @@ describe("making a routine run's spoken briefing", () => {
       mimeType: "audio/wav" as const,
     };
     for (const _line of [1, 2, 3]) synthesize.mockResolvedValueOnce(clip);
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
     expect(attach.mock.calls[0]?.[1]).toMatchObject({ filePath: "briefing.wav" });
   });
 
-  it("throws for a failed model call, so it is tried again", async () => {
-    world.script = "I hit a problem: the provider is down";
-    await expect(makeSpokenBriefing(deps, "run-1")).rejects.toThrow("script call failed");
-    world.script = new Error("network");
-    await expect(makeSpokenBriefing(deps, "run-1")).rejects.toThrow("network");
+  it("tries a provider that is briefly down again, keeping the script and the lines already spoken", async () => {
+    synthesize.mockRejectedValueOnce(unavailable());
+    const timeout = new Error("slow");
+    timeout.name = "TimeoutError";
+    synthesize.mockResolvedValueOnce({
+      bytes: new Uint8Array([0xff, 0xfb, 0x90, 0]),
+      mimeType: "audio/mpeg",
+    });
+    synthesize.mockRejectedValueOnce(timeout);
+    await makeSpokenBriefing(deps, work);
+    expect(deps.runtime.calls).toBe(1);
+    expect(synthesize.mock.calls.map(([request]) => request.text)).toEqual([
+      "Three orders shipped.",
+      "Three orders shipped.",
+      "And the fourth?",
+      "And the fourth?",
+      "It ships tomorrow.",
+    ]);
+    expect(attach).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends with the text only, at once, on a speech failure that lasts", async () => {
+    synthesize.mockRejectedValueOnce(new VoiceAccountError("VOICE_KEY_REJECTED", "refused"));
+    await makeSpokenBriefing(deps, work);
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("ends with the text only once a provider stays down, never asking the model again", async () => {
+    synthesize.mockRejectedValue(unavailable());
+    await makeSpokenBriefing(deps, work);
+    expect(synthesize).toHaveBeenCalledTimes(3);
+    expect(deps.runtime.calls).toBe(1);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("asks the model again after a failed call, and ends with the text only when it keeps failing", async () => {
+    world.scripts = [new Error("network"), "A: One.\nB: Two."];
+    await makeSpokenBriefing(deps, work);
+    expect(deps.runtime.calls).toBe(2);
+    expect(attach).toHaveBeenCalledTimes(1);
+    attach.mockClear();
+    deps.runtime = runtime();
+    world.done = false;
+    world.scripts = ["I hit a problem: the provider is down"];
+    await expect(makeSpokenBriefing(deps, work)).resolves.toBeUndefined();
+    expect(deps.runtime.calls).toBe(3);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("ends with the text only when the voice connection's model link is refused", async () => {
+    deps.secretStore.load = vi.fn(async () => {
+      throw new VoiceAccountError(undefined, "Connect it in Models settings.");
+    }) as never;
+    await makeSpokenBriefing(deps, work);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  it("throws for a failure outside the model and speech, for the queue to retry", async () => {
+    deps.secretStore.load = vi.fn(async () => {
+      throw new Error("secret store down");
+    }) as never;
+    await expect(makeSpokenBriefing(deps, work)).rejects.toThrow("secret store down");
   });
 
   it("never asks a runtime that cannot make tool-less calls", async () => {
     deps.runtime.describe = () => ({ capabilities: { compaction: false } }) as never;
-    await makeSpokenBriefing(deps, "run-1");
+    await makeSpokenBriefing(deps, work);
     expect(deps.runtime.calls).toBe(0);
   });
 });
@@ -294,11 +388,16 @@ describe("the owner's own voice", () => {
 
 describe("the briefing started at once and its job", () => {
   function context() {
-    const jobs = { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) };
+    const jobs = {
+      enqueue: vi.fn(async () => undefined),
+      enqueueIn: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    };
+    const tx = { $queryRaw: vi.fn(async () => [{ coHostBotId: "bot-2" }]) };
     const ctx = {
       run: { id: "run-1", trigger: "routine", routineId: "routine-1" },
       deps: {
-        prisma: deps.prisma,
+        prisma: { ...deps.prisma, $transaction: async (fn: (db: unknown) => unknown) => fn(tx) },
         runtime: deps.runtime,
         secretStore: deps.secretStore,
         artifacts: deps.artifacts,
@@ -306,14 +405,14 @@ describe("the briefing started at once and its job", () => {
         jobs,
       },
     } as unknown as RunContext;
-    let work: (() => Promise<unknown>) | undefined;
+    let started: (() => Promise<unknown>) | undefined;
     return {
       ctx,
       jobs,
       start: (next: () => Promise<unknown>) => {
-        work = next;
+        started = next;
       },
-      work: () => work!(),
+      work: () => started!(),
     };
   }
 
@@ -325,18 +424,27 @@ describe("the briefing started at once and its job", () => {
     expect(started.jobs.cancel).toHaveBeenCalledWith(spokenBriefingJobKey("run-1"));
   });
 
-  it("moves its job to now when the attempt fails, for the queue to try again", async () => {
-    world.script = new Error("network");
+  it("drops its backup job when the briefing ends with the text only", async () => {
+    synthesize.mockRejectedValue(new VoiceAccountError("VOICE_KEY_REJECTED", "refused"));
+    const started = context();
+    await dozoSpokenBriefingAfterRun(started.ctx, started.start);
+    await started.work();
+    expect(started.jobs.cancel).toHaveBeenCalledWith(spokenBriefingJobKey("run-1"));
+    expect(started.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("moves its job to now after a failure outside the model and speech", async () => {
+    attach.mockRejectedValue(new Error("file store down"));
     const started = context();
     await dozoSpokenBriefingAfterRun(started.ctx, started.start);
     const before = Date.now();
-    await expect(started.work()).rejects.toThrow("network");
-    const [, [job]] = started.jobs.enqueue.mock.calls as unknown as [
-      unknown,
-      [{ availableAt: Date }],
+    await expect(started.work()).rejects.toThrow("file store down");
+    const [[job]] = started.jobs.enqueue.mock.calls as unknown as [
+      [{ availableAt: Date; payload: unknown }],
     ];
-    expect(job.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(job.payload).toEqual(work);
     expect(job.availableAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(job.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
     expect(started.jobs.cancel).not.toHaveBeenCalled();
   });
 
@@ -345,23 +453,23 @@ describe("the briefing started at once and its job", () => {
     const started = context();
     await dozoSpokenBriefingAfterRun(started.ctx, started.start);
     await started.work();
-    expect(started.jobs.enqueue).toHaveBeenCalledTimes(1);
+    expect(started.jobs.enqueue).not.toHaveBeenCalled();
     expect(started.jobs.cancel).not.toHaveBeenCalled();
   });
 
   it("makes the briefing from the job as its run's owner, and waits while another process holds it", async () => {
     const job = dozoSpokenBriefingJob({ ...deps, executor: { resolveModel: deps.resolveModel } });
-    await job({ runId: "run-1" });
+    await job(work);
     expect(attach).toHaveBeenCalledTimes(1);
     db.leaseHeld = true;
-    await expect(job({ runId: "run-1" })).rejects.toBeInstanceOf(RetryJobLaterError);
+    await expect(job(work)).rejects.toBeInstanceOf(RetryJobLaterError);
     world.run = null;
-    await expect(job({ runId: "gone" })).resolves.toBeUndefined();
+    await expect(job({ runId: "gone", coHostBotId: "bot-2" })).resolves.toBeUndefined();
   });
 
-  it("passes a failure on to the queue's retries", async () => {
-    world.script = new Error("network");
+  it("passes a failure outside the model and speech on to the queue's retries", async () => {
+    attach.mockRejectedValue(new Error("file store down"));
     const job = dozoSpokenBriefingJob({ ...deps, executor: { resolveModel: deps.resolveModel } });
-    await expect(job({ runId: "run-1" })).rejects.toThrow("network");
+    await expect(job(work)).rejects.toThrow("file store down");
   });
 });

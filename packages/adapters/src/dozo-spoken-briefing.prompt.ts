@@ -26,12 +26,20 @@ export function spokenBriefingInstructions(): string {
   ].join("\n");
 }
 
-const persona = (tag: string, host: BriefingPersona) =>
-  `<${tag}>\n${[host.name, host.description, host.instructions]
+/**
+ * The fences' own tags inside the data, opening or closing, in any case or spacing, lose their
+ * angle bracket, so fetched text cannot close a fence and speak as the instructions.
+ */
+const fenceSafe = (text: string) => text.replace(/<(\s*\/?\s*(?:result|host_a|host_b)\b)/gi, "‹$1");
+
+const persona = (tag: string, host: BriefingPersona) => {
+  const text = [host.name, host.description, host.instructions]
     .map((part) => part.trim())
     .filter(Boolean)
     .join("\n")
-    .slice(0, PERSONA_MAX_CHARS)}\n</${tag}>`;
+    .slice(0, PERSONA_MAX_CHARS);
+  return `<${tag}>\n${fenceSafe(text)}\n</${tag}>`;
+};
 
 export function spokenBriefingPrompt(input: {
   host: BriefingPersona;
@@ -41,6 +49,6 @@ export function spokenBriefingPrompt(input: {
   return [
     persona("host_a", input.host),
     persona("host_b", input.coHost),
-    `<result>\n${input.result.slice(0, BRIEFING_RESULT_MAX_CHARS)}\n</result>`,
+    `<result>\n${fenceSafe(input.result.slice(0, BRIEFING_RESULT_MAX_CHARS))}\n</result>`,
   ].join("\n\n");
 }

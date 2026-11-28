@@ -8,12 +8,14 @@ export interface SpeechAudio {
 /**
  * Joins clips of one format into one file the audio player plays through: MP3 frames end to end,
  * or 16-bit PCM WAV samples under one header. Null for a mix of formats, another format (an Ogg
- * stream would need remuxing), or WAV clips whose sample rate or channels differ.
+ * stream would need remuxing), or clips that disagree: MP3 frames of another MPEG version, layer,
+ * sample rate or channel mode, or WAV samples of another rate or channel count. The types are the
+ * ones `SpeechClip` allows; no adapter returns an alias such as `audio/mp3`.
  */
 export function joinSpeechClips(clips: readonly SpeechAudio[]): SpeechAudio | null {
   const mimeType = clips[0]?.mimeType;
   if (!mimeType || clips.some((clip) => clip.mimeType !== mimeType)) return null;
-  if (mimeType === "audio/mpeg") return { mimeType, bytes: concat(clips.map(mpegFrames)) };
+  if (mimeType === "audio/mpeg") return joinMpeg(clips);
   if (mimeType === "audio/wav") return joinWav(clips);
   return null;
 }
@@ -42,25 +44,36 @@ const SAMPLE_RATES = {
   2.5: [11025, 12000, 8000],
 };
 
-/** The byte length of the Layer III frame at `at`, or 0 when no such frame starts there. */
-function layer3FrameLength(bytes: Uint8Array, at: number): number {
-  if (at + 4 > bytes.byteLength || bytes[at] !== 0xff || (bytes[at + 1]! & 0xe0) !== 0xe0) return 0;
+interface MpegFrame {
+  /** What every frame of the joined file must share. */
+  format: string;
+  length: number;
+}
+
+/** The Layer III frame header at `at`, or undefined when no such frame starts there. */
+function layer3Frame(bytes: Uint8Array, at: number): MpegFrame | undefined {
+  if (at + 4 > bytes.byteLength || bytes[at] !== 0xff || (bytes[at + 1]! & 0xe0) !== 0xe0) return;
   const versionBits = (bytes[at + 1]! >> 3) & 0b11;
   const layerBits = (bytes[at + 1]! >> 1) & 0b11;
-  if (versionBits === 0b01 || layerBits !== 0b01) return 0;
+  if (versionBits === 0b01 || layerBits !== 0b01) return;
   const version = versionBits === 0b11 ? 1 : versionBits === 0b10 ? 2 : 2.5;
   const bitrate = BITRATES[version === 1 ? 1 : 2][(bytes[at + 2]! >> 4) & 0x0f];
   const sampleRate = SAMPLE_RATES[version][(bytes[at + 2]! >> 2) & 0b11];
-  if (!bitrate || !sampleRate) return 0;
+  if (!bitrate || !sampleRate) return;
   const padding = (bytes[at + 2]! >> 1) & 1;
-  return Math.floor(((version === 1 ? 144 : 72) * bitrate * 1000) / sampleRate) + padding;
+  const channelMode = (bytes[at + 3]! >> 6) & 0b11;
+  return {
+    format: `${version}/${sampleRate}/${channelMode}`,
+    length: Math.floor(((version === 1 ? 144 : 72) * bitrate * 1000) / sampleRate) + padding,
+  };
 }
 
 /**
- * A clip's audio frames without its tags or its leading info frame, which states the length of
- * that clip alone: kept in a joined file, players would stop or show the wrong duration.
+ * A clip's audio frames without its ID3 tags or its leading info frame (Xing, Info or VBRI). The
+ * info frame states the length of that clip alone, so it goes from the first clip too: kept, players
+ * stop early or show the wrong duration. Undefined when no audio frame starts what is left.
  */
-function mpegFrames(clip: SpeechAudio): Uint8Array {
+function mpegFrames(clip: SpeechAudio): { format: string; bytes: Uint8Array } | undefined {
   let { bytes } = clip;
   if (bytes.byteLength >= 10 && ascii(bytes, 0, "ID3")) {
     const size =
@@ -73,15 +86,25 @@ function mpegFrames(clip: SpeechAudio): Uint8Array {
   }
   if (bytes.byteLength >= 128 && ascii(bytes, bytes.byteLength - 128, "TAG"))
     bytes = bytes.subarray(0, bytes.byteLength - 128);
-  const first = layer3FrameLength(bytes, 0);
-  if (first > 0) {
-    const head = bytes.subarray(4, Math.min(first, 64));
+  let frame = layer3Frame(bytes, 0);
+  if (frame) {
+    const head = bytes.subarray(4, Math.min(frame.length, 64));
     for (let at = 0; at + 4 <= head.byteLength; at++) {
-      if (["Xing", "Info", "VBRI"].some((tag) => ascii(head, at, tag)))
-        return bytes.subarray(first);
+      if (["Xing", "Info", "VBRI"].some((tag) => ascii(head, at, tag))) {
+        bytes = bytes.subarray(frame.length);
+        frame = layer3Frame(bytes, 0);
+        break;
+      }
     }
   }
-  return bytes;
+  return frame && { format: frame.format, bytes };
+}
+
+function joinMpeg(clips: readonly SpeechAudio[]): SpeechAudio | null {
+  const parts = clips.map(mpegFrames);
+  const first = parts[0];
+  if (!first || parts.some((part) => part?.format !== first.format)) return null;
+  return { mimeType: "audio/mpeg", bytes: concat(parts.map((part) => part!.bytes)) };
 }
 
 interface WavPcm {

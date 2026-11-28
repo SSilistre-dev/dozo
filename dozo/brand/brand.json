@@ -16171,23 +16171,23 @@
     },
     {
       "file": "packages/adapters/src/runs/lifecycle/run-complete.ts",
-      "find": "  await dozoRecordLearningTurn(ctx);\n  await enqueueHistoryCompaction(ctx);",
-      "replace": "  await dozoRecordLearningTurn(ctx);\n  await dozoSpokenBriefingAfterRun(ctx);\n  await enqueueHistoryCompaction(ctx);",
+      "find": "  if (!completed) return;\n  ctx.stopHeartbeatAfterCompletion();\n  if (run.trigger === \"routine\" && run.routineId) {",
+      "replace": "  if (!completed) return;\n  ctx.stopHeartbeatAfterCompletion();\n  await dozoSpokenBriefingAfterRun(ctx);\n  if (run.trigger === \"routine\" && run.routineId) {",
       "requires": [
         "packages/adapters/src/dozo-spoken-briefing.ts"
       ],
-      "reason": "spoken briefing: a completed run of a routine with a co-host gets its briefing's backup job and starts the briefing in the process that finished it; any other run reads nothing, a routine run one primary key, and it never fails the run. Anchored on the fork's learning line, so it adds no upstream anchor"
+      "reason": "spoken briefing: a completed run of a routine with a co-host gets its briefing's backup job and starts the briefing in the process that finished it; any other run reads nothing, a routine run with a co-host takes one of its routine's briefings of the day in the transaction that records the job, and it never fails the run. It is the first thing after the completion commits, so nothing that can throw after it loses the backup job, and it reads the co-host before a one-time routine (and its briefing row) is deleted below"
     },
     {
       "file": "packages/adapter-kit/src/types.ts",
       "find": "  \"memory.learning-review\": { botId: string; settleOnly?: boolean };\n  /**\n   * One lifecycle mail",
-      "replace": "  \"memory.learning-review\": { botId: string; settleOnly?: boolean };\n  /** Make and post a routine run's spoken briefing (dozo-spoken-briefing.ts). */\n  \"routine.spoken-briefing\": { runId: string };\n  /**\n   * One lifecycle mail",
+      "replace": "  \"memory.learning-review\": { botId: string; settleOnly?: boolean };\n  /** Make and post a routine run's spoken briefing (dozo-spoken-briefing.ts). */\n  \"routine.spoken-briefing\": { runId: string; coHostBotId: string };\n  /**\n   * One lifecycle mail",
       "reason": "spoken briefing: the job kind of a briefing, the durable backup of one started at once and the retry of one that failed; beside the fork's learning job"
     },
     {
       "file": "packages/adapter-kit/src/background-jobs.ts",
       "find": "    settleOnly: z.boolean().optional(),\n  }),\n  \"push.receipt\"",
-      "replace": "    settleOnly: z.boolean().optional(),\n  }),\n  \"routine.spoken-briefing\": z.object({ runId: z.string().min(1) }),\n  \"push.receipt\"",
+      "replace": "    settleOnly: z.boolean().optional(),\n  }),\n  \"routine.spoken-briefing\": z.object({\n    runId: z.string().min(1),\n    coHostBotId: z.string().min(1),\n  }),\n  \"push.receipt\"",
       "reason": "spoken briefing: the payload of the briefing job; beside the fork's learning job"
     },
     {

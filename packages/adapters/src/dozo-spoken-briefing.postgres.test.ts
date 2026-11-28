@@ -13,7 +13,12 @@ import {
   voicePreferenceTarget,
 } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeSpokenBriefing, spokenBriefingCoHost } from "./dozo-spoken-briefing.js";
+import {
+  BRIEFINGS_PER_DAY,
+  makeSpokenBriefing,
+  spokenBriefingCoHost,
+  takeSpokenBriefing,
+} from "./dozo-spoken-briefing.js";
 import { SCRIPTED_VOICE_ID } from "./providers/voice/scripted/scripted-voice.js";
 import { EncryptedSecretStore } from "./secrets/secrets.js";
 
@@ -188,10 +193,13 @@ describePostgres("spoken briefings (PostgreSQL)", () => {
     const host = await voicedBot(actor, "Chef");
     const coHost = await voicedBot(actor, "Nova");
     await connectVoice(actor);
-    const { runId, threadId } = await completedRoutineRun(actor, host.id, coHost.id);
+    const { runId, threadId, routineId } = await completedRoutineRun(actor, host.id, coHost.id);
     const briefing = deps();
-    await runAsTenant(actor, () => makeSpokenBriefing(briefing, runId));
-    await runAsTenant(actor, () => makeSpokenBriefing(briefing, runId));
+    // A one-time routine is deleted when its run completes: the job carries what it needs.
+    await system.routine.delete({ where: { id: routineId } });
+    const work = { runId, coHostBotId: coHost.id };
+    await runAsTenant(actor, () => makeSpokenBriefing(briefing, work));
+    await runAsTenant(actor, () => makeSpokenBriefing(briefing, work));
     const messages = await system.message.findMany({
       where: { threadId, role: "bot" },
       orderBy: { seq: "asc" },
@@ -225,7 +233,27 @@ describePostgres("spoken briefings (PostgreSQL)", () => {
     const host = await voicedBot(actor, "Chef");
     const coHost = await voicedBot(actor, "Nova");
     const { runId, threadId } = await completedRoutineRun(actor, host.id, coHost.id);
-    await runAsTenant(actor, () => makeSpokenBriefing(deps(), runId));
+    await runAsTenant(actor, () => makeSpokenBriefing(deps(), { runId, coHostBotId: coHost.id }));
     expect(await system.message.count({ where: { threadId, role: "bot" } })).toBe(1);
+  });
+
+  it("takes a routine's briefings up to the day's cap, and a new day starts again", async () => {
+    const actor = await person();
+    const host = await voicedBot(actor, "Chef");
+    const coHost = await voicedBot(actor, "Nova");
+    const { routineId } = await completedRoutineRun(actor, host.id, coHost.id);
+    const take = () => runAsTenant(actor, () => takeSpokenBriefing(prisma, routineId));
+    const taken = [];
+    for (let at = 0; at <= BRIEFINGS_PER_DAY; at++) taken.push(await take());
+    expect(taken).toEqual([...Array(BRIEFINGS_PER_DAY).fill(coHost.id), null]);
+    await system.$executeRaw`
+      UPDATE dozo_spoken_briefings SET "day" = "day" - 1 WHERE "routineId" = ${routineId}`;
+    expect(await take()).toBe(coHost.id);
+    const [row] = await system.$queryRaw<Array<{ spoken: number; today: boolean }>>`
+      SELECT "spoken", "day" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date AS today
+      FROM dozo_spoken_briefings WHERE "routineId" = ${routineId}`;
+    expect(row).toEqual({ spoken: 1, today: true });
+    const stranger = await person();
+    expect(await runAsTenant(stranger, () => takeSpokenBriefing(prisma, routineId))).toBeNull();
   });
 });
