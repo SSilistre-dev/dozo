@@ -65,3 +65,12 @@ svg("welcome-hero.svg", 1040, 546,
     f'<rect width="1040" height="546" fill="{DARK}"/>'
     f'<g transform="translate({(1040 - vb[2] * S) / 2:.2f} 130) scale({S}) translate({-vb[0]:g} {-vb[1]:g})">'
     f'{inner("logo-dark.svg")}</g>' + heads)
+
+# Bot computer desktop, 1280x800 like the computer's screen: the lockup centred, a fifth of the width
+# wide, dimmed to a watermark on the desktop's own colour (#111113, as in the computer's start script).
+LW = 256
+svg("computer-background.svg", 1280, 800,
+    '<rect width="1280" height="800" fill="#111113"/>'
+    f'<g opacity="0.3" transform="translate({(1280 - LW) / 2:g} {400 - vb[3] * LW / vb[2] / 2:.2f}) '
+    f'scale({LW / vb[2]:.5f}) translate({-vb[0]:g} {-vb[1]:g})">{inner("logo-dark.svg")}</g>',
+    title="Dozo")

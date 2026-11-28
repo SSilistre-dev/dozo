@@ -16411,6 +16411,24 @@
       "reason": "spoken briefing: this test's fakes stub every row of the routine screen, so it stubs the fork's briefing row too (it reads the server); its expectations are unchanged"
     },
     {
+      "file": "infra/sandboxes/computer/Dockerfile",
+      "find": "COPY --chmod=644 clipboard-bridge.js /usr/share/novnc/clipboard-bridge.js\nCOPY --chmod=644 mobile-keyboard.js /usr/share/novnc/mobile-keyboard.js",
+      "replace": "COPY --chmod=644 clipboard-bridge.js /usr/share/novnc/clipboard-bridge.js\nCOPY --chmod=755 dozo-desktop-background /usr/local/bin/dozo-desktop-background\nCOPY --chmod=644 dozo-desktop-background.png /usr/share/pixmaps/dozo-computer-background.png\nCOPY --chmod=644 mobile-keyboard.js /usr/share/novnc/mobile-keyboard.js",
+      "reason": "bot computer desktop: puts the watermark script and picture into the image (inserted between two lines, the picture goes to an existing folder: a COPY that creates one with --chmod=644 leaves it unreadable)"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/computer-spec.ts",
+      "find": "  \"fluxbox.apps\",\n  \"fluxbox.menu\",",
+      "replace": "  \"fluxbox.apps\",\n  \"dozo-desktop-background\",\n  \"dozo-desktop-background.png\",\n  \"fluxbox.menu\",",
+      "reason": "bot computer desktop: the files the supervisor sends when it builds the computer image locally, so a build from them finds the two files the Dockerfile now copies"
+    },
+    {
+      "file": "infra/sandboxes/computer/Dockerfile",
+      "find": "'exec xsetroot -solid \"#111113\" \"$@\"'",
+      "replace": "'exec /usr/local/bin/dozo-desktop-background'",
+      "reason": "bot computer desktop: fluxbox paints its style background through fbsetbg after the root command, so the stand-in for fbsetbg paints the watermark too"
+    },
+    {
       "file": "apps/web/src/pages/shell/use-routine-list.ts",
       "find": "import { routineNeedsOneShotArm } from \"../../lib/routines/routine-draft\";\nimport type { RoutineList }",
       "replace": "import { routineNeedsOneShotArm } from \"../../lib/routines/routine-draft\";\nimport { useDozoRoutineSync } from \"./dozo-routine-sync\";\nimport type { RoutineList }",
@@ -16509,7 +16527,9 @@
     "apps/desktop/assets/app-icons/tie.png": "app-icons/desktop.png",
     "apps/desktop/assets/app-icons/tie-macos.png": "app-icons/desktop-macos.png",
     "apps/web/public/og-image.png": "og-image.png",
-    "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png": "shared/icon-layer.png"
+    "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png": "shared/icon-layer.png",
+    "infra/sandboxes/computer/dozo-desktop-background": "computer/dozo-desktop-background",
+    "infra/sandboxes/computer/dozo-desktop-background.png": "computer/background.png"
   },
   "literals": [
     {
