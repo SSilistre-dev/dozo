@@ -16417,6 +16417,12 @@
       "reason": "bot computer desktop: puts the watermark script and picture into the image (inserted between two lines, the picture goes to an existing folder: a COPY that creates one with --chmod=644 leaves it unreadable)"
     },
     {
+      "file": "infra/sandboxes/supervisor/src/computer-spec.ts",
+      "find": "  \"fluxbox.apps\",\n  \"fluxbox.menu\",",
+      "replace": "  \"fluxbox.apps\",\n  \"dozo-desktop-background\",\n  \"dozo-desktop-background.png\",\n  \"fluxbox.menu\",",
+      "reason": "bot computer desktop: the files the supervisor sends when it builds the computer image locally, so a build from them finds the two files the Dockerfile now copies"
+    },
+    {
       "file": "infra/sandboxes/computer/Dockerfile",
       "find": "'exec xsetroot -solid \"#111113\" \"$@\"'",
       "replace": "'exec /usr/local/bin/dozo-desktop-background'",
